@@ -100,6 +100,7 @@ import tachiyomi.presentation.core.components.material.FabPosition
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.collectAsState as collectPreferenceAsState
 import tachiyomi.source.local.image.LocalChapterCover
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
@@ -182,6 +183,13 @@ fun MangaScreen(
     val goodDoujinChapterIds = remember(goodDoujinMarks) {
         goodDoujinMarks.mapTo(mutableSetOf()) { it.chapterId }
     }
+    val basePreferences = remember { Injekt.get<BasePreferences>() }
+    val chapterCoversEnabled by basePreferences.localChapterCoversEnabled.collectPreferenceAsState()
+    val chapterCoverGridEnabled by basePreferences.localChapterCoverGridEnabled.collectPreferenceAsState()
+    val chapterLayoutAvailable = state.manga.isLocal() && chapterCoversEnabled
+    val onChapterLayoutChanged: (Boolean) -> Unit = { grid ->
+        basePreferences.localChapterCoverGridEnabled.set(grid)
+    }
     // Duplicate marks only make sense for the local library.
     val onToggleMarkClicked: ((List<Chapter>) -> Unit)? = if (state.manga.isLocal()) {
         { chapters ->
@@ -240,6 +248,9 @@ fun MangaScreen(
             onMigrateClicked = onMigrateClicked,
             onClearHistoryClicked = onClearHistoryClicked,
             onEditNotesClicked = onEditNotesClicked,
+            chapterLayoutAvailable = chapterLayoutAvailable,
+            chapterLayoutGridEnabled = chapterCoverGridEnabled,
+            onChapterLayoutChanged = onChapterLayoutChanged,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiGoodDoujinClicked = onMultiGoodDoujinClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
@@ -289,6 +300,9 @@ fun MangaScreen(
             onMigrateClicked = onMigrateClicked,
             onClearHistoryClicked = onClearHistoryClicked,
             onEditNotesClicked = onEditNotesClicked,
+            chapterLayoutAvailable = chapterLayoutAvailable,
+            chapterLayoutGridEnabled = chapterCoverGridEnabled,
+            onChapterLayoutChanged = onChapterLayoutChanged,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiGoodDoujinClicked = onMultiGoodDoujinClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
@@ -348,6 +362,11 @@ private fun MangaScreenSmallImpl(
     onMigrateClicked: (() -> Unit)?,
     onClearHistoryClicked: () -> Unit,
     onEditNotesClicked: () -> Unit,
+
+    // For chapter layout action
+    chapterLayoutAvailable: Boolean,
+    chapterLayoutGridEnabled: Boolean,
+    onChapterLayoutChanged: (Boolean) -> Unit,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -421,6 +440,9 @@ private fun MangaScreenSmallImpl(
                 onClickMigrate = onMigrateClicked,
                 onClickClearHistory = onClearHistoryClicked,
                 onClickEditNotes = onEditNotesClicked,
+                chapterLayoutAvailable = chapterLayoutAvailable,
+                chapterLayoutGridEnabled = chapterLayoutGridEnabled,
+                onChapterLayoutChanged = onChapterLayoutChanged,
                 actionModeCounter = selectedChapterCount,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 onSelectAll = { onAllChapterSelected(true) },
@@ -578,6 +600,8 @@ private fun MangaScreenSmallImpl(
                     sharedChapterItems(
                         manga = state.manga,
                         chapters = chapterItems,
+                        localChapterCoversEnabled = chapterLayoutAvailable,
+                        localChapterCoverGridEnabled = chapterLayoutGridEnabled,
                         reorderableState = reorderableState,
                         onReorder = {
                             pendingReorder = true
@@ -640,6 +664,11 @@ fun MangaScreenLargeImpl(
     onMigrateClicked: (() -> Unit)?,
     onClearHistoryClicked: () -> Unit,
     onEditNotesClicked: () -> Unit,
+
+    // For chapter layout action
+    chapterLayoutAvailable: Boolean,
+    chapterLayoutGridEnabled: Boolean,
+    onChapterLayoutChanged: (Boolean) -> Unit,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -705,6 +734,9 @@ fun MangaScreenLargeImpl(
                 onClickMigrate = onMigrateClicked,
                 onClickClearHistory = onClearHistoryClicked,
                 onClickEditNotes = onEditNotesClicked,
+                chapterLayoutAvailable = chapterLayoutAvailable,
+                chapterLayoutGridEnabled = chapterLayoutGridEnabled,
+                onChapterLayoutChanged = onChapterLayoutChanged,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 actionModeCounter = selectedChapterCount,
                 onSelectAll = { onAllChapterSelected(true) },
@@ -863,6 +895,8 @@ fun MangaScreenLargeImpl(
                             sharedChapterItems(
                                 manga = state.manga,
                                 chapters = chapterItems,
+                                localChapterCoversEnabled = chapterLayoutAvailable,
+                                localChapterCoverGridEnabled = chapterLayoutGridEnabled,
                                 reorderableState = reorderableState,
                                 onReorder = {
                                     pendingReorder = true
@@ -962,6 +996,8 @@ private fun List<ChapterList.Item>.matchesVisibleChapterOrder(
 private fun LazyListScope.sharedChapterItems(
     manga: Manga,
     chapters: List<ChapterList.Item>,
+    localChapterCoversEnabled: Boolean,
+    localChapterCoverGridEnabled: Boolean,
     reorderableState: ReorderableLazyListState,
     onReorder: () -> Unit,
     isAnyChapterSelected: Boolean,
@@ -975,9 +1011,8 @@ private fun LazyListScope.sharedChapterItems(
     goodDoujinChapterIds: Set<Long>,
 ) {
     val localManga = manga.isLocal()
-    val basePreferences = Injekt.get<BasePreferences>()
-    val showLocalChapterCovers = localManga && basePreferences.localChapterCoversEnabled.get()
-    if (showLocalChapterCovers && basePreferences.localChapterCoverGridEnabled.get()) {
+    val showLocalChapterCovers = localChapterCoversEnabled
+    if (showLocalChapterCovers && localChapterCoverGridEnabled) {
         sharedChapterGridItems(
             manga = manga,
             chapters = chapters,

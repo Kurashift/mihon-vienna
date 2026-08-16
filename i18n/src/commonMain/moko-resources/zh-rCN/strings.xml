@@ -1071,6 +1071,9 @@
     <string name="local_chapter_covers_summary">将每个本地章节的第一张图片显示为持久缓存缩略图</string>
     <string name="local_chapter_covers_grid">本地详情页使用封面网格</string>
     <string name="local_chapter_covers_grid_summary">默认开启；关闭后使用章节列表并支持拖动排序</string>
+    <string name="chapter_layout">章节布局</string>
+    <string name="chapter_layout_list">列表</string>
+    <string name="chapter_layout_grid">网格</string>
     <string name="local_chapter_covers_generate">生成并更新封面</string>
     <string name="local_chapter_covers_idle">已有 %1$d 张封面 · %2$s</string>
     <string name="local_chapter_covers_progress">正在生成 %1$d / %2$d</string>
