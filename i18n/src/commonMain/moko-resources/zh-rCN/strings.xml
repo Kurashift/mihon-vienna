@@ -248,13 +248,16 @@
     <string name="picture_saved">图片已保存</string>
     <string name="custom_filter">滤镜</string>
     <string name="set_as_cover">设为封面</string>
+    <string name="set_as_chapter_cover">设为篇目封面</string>
     <string name="cover_updated">封面已更新</string>
+    <string name="chapter_cover_updated">篇目封面已更新</string>
     <string name="chapter_progress">第 %1$d 页</string>
     <string name="chapter_progress_ratio">%1$d/%2$d</string>
     <string name="chapter_progress_ratio_unknown">%1$d/?</string>
     <string name="no_next_chapter">后面没有啦</string>
     <string name="decode_image_error">加载图片失败</string>
     <string name="confirm_set_image_as_cover">要将此页设为封面吗？</string>
+    <string name="confirm_set_image_as_chapter_cover">要将此页设为当前篇目的封面吗？</string>
     <string name="transition_finished">已读完：</string>
     <string name="transition_current">本篇：</string>
     <string name="transition_next">下一篇：</string>

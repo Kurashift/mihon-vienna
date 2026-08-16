@@ -67,6 +67,12 @@ fun ChapterSettingsDialog(
     }
 
     val downloadedOnly = remember { Injekt.get<BasePreferences>().downloadedOnly.get() }
+    val basePreferences = remember { Injekt.get<BasePreferences>() }
+    val chapterCoversEnabled = remember { basePreferences.localChapterCoversEnabled.get() }
+    val chapterLayoutAvailable = manga?.isLocal() == true && chapterCoversEnabled
+    var chapterCoverGridEnabled by remember {
+        mutableStateOf(basePreferences.localChapterCoverGridEnabled.get())
+    }
 
     TabbedDialog(
         onDismissRequest = onDismissRequest,
@@ -122,6 +128,12 @@ fun ChapterSettingsDialog(
                 2 -> {
                     DisplayPage(
                         displayMode = manga?.displayMode ?: 0,
+                        chapterLayoutAvailable = chapterLayoutAvailable,
+                        chapterCoverGridEnabled = chapterCoverGridEnabled,
+                        onChapterLayoutChanged = { grid ->
+                            chapterCoverGridEnabled = grid
+                            basePreferences.localChapterCoverGridEnabled.set(grid)
+                        },
                         onItemSelected = onDisplayModeChanged,
                     )
                 }
@@ -221,6 +233,9 @@ private fun ColumnScope.SortPage(
 @Composable
 private fun ColumnScope.DisplayPage(
     displayMode: Long,
+    chapterLayoutAvailable: Boolean,
+    chapterCoverGridEnabled: Boolean,
+    onChapterLayoutChanged: (Boolean) -> Unit,
     onItemSelected: (Long) -> Unit,
 ) {
     listOf(
@@ -231,6 +246,18 @@ private fun ColumnScope.DisplayPage(
             label = stringResource(titleRes),
             selected = displayMode == mode,
             onClick = { onItemSelected(mode) },
+        )
+    }
+    if (chapterLayoutAvailable) {
+        RadioItem(
+            label = stringResource(MR.strings.chapter_layout_list),
+            selected = !chapterCoverGridEnabled,
+            onClick = { onChapterLayoutChanged(false) },
+        )
+        RadioItem(
+            label = stringResource(MR.strings.chapter_layout_grid),
+            selected = chapterCoverGridEnabled,
+            onClick = { onChapterLayoutChanged(true) },
         )
     }
 }

@@ -5,13 +5,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.outlined.BookmarkAdd
@@ -58,7 +61,6 @@ import tachiyomi.presentation.core.util.selectedBackground
 @Composable
 fun MangaChapterListItem(
     title: String,
-    date: String?,
     readProgress: String?,
     scanlator: String?,
     read: Boolean,
@@ -122,8 +124,8 @@ fun MangaChapterListItem(
                 Box(
                     modifier = Modifier
                         .padding(end = 12.dp)
-                        .width(64.dp)
-                        .height(88.dp)
+                        .width(96.dp)
+                        .aspectRatio(2f / 3f)
                         .clip(MaterialTheme.shapes.extraSmall),
                 ) {
                     AsyncImage(
@@ -136,58 +138,45 @@ fun MangaChapterListItem(
                             .matchParentSize()
                             .alpha(if (read) 0.55f else 1f),
                     )
-                    if (readProgressFraction != null) {
-                        LinearProgressIndicator(
-                            progress = { readProgressFraction },
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .height(3.dp),
-                        )
-                    }
                 }
             }
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .let { if (cover != null) it.heightIn(min = 144.dp) else it },
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LocalContentColor.current.copy(alpha = if (read) DISABLED_ALPHA else 1f),
-                        modifier = when {
-                            onCopyTitle != null && copyTitleOnLongPress -> Modifier.combinedClickable(
-                                onClick = onClick,
-                                onLongClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onCopyTitle()
-                                },
-                            )
-                            onTitleBoundsChanged != null -> Modifier.onGloballyPositioned(onTitleBoundsChanged)
-                            else -> Modifier
-                        },
-                    )
-                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LocalContentColor.current.copy(alpha = if (read) DISABLED_ALPHA else 1f),
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = when {
+                                onCopyTitle != null && copyTitleOnLongPress -> Modifier.combinedClickable(
+                                    onClick = onClick,
+                                    onLongClick = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onCopyTitle()
+                                    },
+                                )
+                                onTitleBoundsChanged != null -> Modifier.onGloballyPositioned(onTitleBoundsChanged)
+                                else -> Modifier
+                            },
+                        )
+                    }
 
-                Row {
-                    val subtitleStyle = MaterialTheme.typography.bodySmall
+                    val metadataStyle = MaterialTheme.typography.bodySmall
                         .merge(
                             color = LocalContentColor.current
                                 .copy(alpha = if (read) DISABLED_ALPHA else SECONDARY_ALPHA),
                         )
-                    ProvideTextStyle(value = subtitleStyle) {
-                        if (date != null) {
-                            Text(
-                                text = date,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (scanlator != null) DotSeparatorText()
-                        }
+                    ProvideTextStyle(value = metadataStyle) {
                         if (scanlator != null) {
                             Text(
                                 text = scanlator,
@@ -197,31 +186,42 @@ fun MangaChapterListItem(
                         }
                     }
                 }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .clip(MaterialTheme.shapes.extraSmall),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (readProgressFraction != null) {
+                        LinearProgressIndicator(
+                            progress = { readProgressFraction },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        )
+                    }
+                }
             }
 
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier
-                    .align(Alignment.CenterVertically)
+                    .let { if (cover != null) it.heightIn(min = 144.dp) else it }
                     .padding(start = 8.dp, end = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                ChapterDownloadIndicator(
-                    enabled = downloadIndicatorEnabled,
-                    downloadStateProvider = downloadStateProvider,
-                    downloadProgressProvider = downloadProgressProvider,
-                    onClick = { onDownloadClick?.invoke(it) },
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    if (readProgress != null) {
-                        Text(
-                            text = readProgress,
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            color = LocalContentColor.current.copy(alpha = SECONDARY_ALPHA),
+                    if (read) {
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = stringResource(MR.strings.action_mark_as_read),
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                     if (flagMarked) {
@@ -248,6 +248,23 @@ fun MangaChapterListItem(
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
+                    if (downloadIndicatorEnabled) {
+                        ChapterDownloadIndicator(
+                            enabled = true,
+                            downloadStateProvider = downloadStateProvider,
+                            downloadProgressProvider = downloadProgressProvider,
+                            onClick = { onDownloadClick?.invoke(it) },
+                        )
+                    }
+                }
+
+                if (readProgress != null) {
+                    Text(
+                        text = readProgress,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        color = LocalContentColor.current.copy(alpha = SECONDARY_ALPHA),
+                    )
                 }
             }
         }

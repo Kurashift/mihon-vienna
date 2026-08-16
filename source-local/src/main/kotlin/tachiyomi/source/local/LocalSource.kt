@@ -1508,6 +1508,22 @@ class LocalSource(
         }
     }
 
+    /**
+     * Returns page counts from the local chapter index, keyed by the chapter URL used in the
+     * database. This lets the detail screen prefill progress bars without entering the reader
+     * and without rewriting source order.
+     */
+    suspend fun getChapterPageCounts(manga: SManga): Map<String, Long> = withIOContext {
+        val chapterFiles = fileSystem.getFilesInMangaDirectory(manga.url)
+            // Only keep supported formats
+            .filterNot { it.name.orEmpty().startsWith('.') }
+            .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
+
+        val chapterUrlPrefix = manga.url.trimEnd('/') + "/"
+        getChapterIndex(manga, chapterFiles)
+            .associate { entry -> chapterUrlPrefix + entry.name to entry.pageCount.toLong() }
+    }
+
     private suspend fun getChapterList(manga: SManga): List<SChapter> = withIOContext {
         val chapterFiles = fileSystem.getFilesInMangaDirectory(manga.url)
             // Only keep supported formats

@@ -1,6 +1,7 @@
 package eu.kanade.presentation.reader
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -29,54 +30,69 @@ import tachiyomi.presentation.core.i18n.stringResource
 fun ReaderPageActionsDialog(
     onDismissRequest: () -> Unit,
     onSetAsCover: () -> Unit,
+    onSetAsChapterCover: (() -> Unit)? = null,
     onShare: (Boolean) -> Unit,
     onSave: () -> Unit,
 ) {
     var showSetCoverDialog by remember { mutableStateOf(false) }
+    var showSetChapterCoverDialog by remember { mutableStateOf(false) }
 
     AdaptiveSheet(onDismissRequest = onDismissRequest) {
-        Row(
+        Column(
             modifier = Modifier.padding(vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
         ) {
-            ActionButton(
-                modifier = Modifier.weight(1f),
-                title = stringResource(MR.strings.set_as_cover),
-                icon = Icons.Outlined.Photo,
-                onClick = { showSetCoverDialog = true },
-            )
-            ActionButton(
-                modifier = Modifier.weight(1f),
-                title = stringResource(MR.strings.action_copy_to_clipboard),
-                icon = Icons.Outlined.ContentCopy,
-                onClick = {
-                    onShare(true)
-                    onDismissRequest()
-                },
-            )
-            ActionButton(
-                modifier = Modifier.weight(1f),
-                title = stringResource(MR.strings.action_share),
-                icon = Icons.Outlined.Share,
-                onClick = {
-                    onShare(false)
-                    onDismissRequest()
-                },
-            )
-            ActionButton(
-                modifier = Modifier.weight(1f),
-                title = stringResource(MR.strings.action_save),
-                icon = Icons.Outlined.Save,
-                onClick = {
-                    onSave()
-                    onDismissRequest()
-                },
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small)) {
+                ActionButton(
+                    modifier = Modifier.weight(1f),
+                    title = stringResource(MR.strings.set_as_cover),
+                    icon = Icons.Outlined.Photo,
+                    onClick = { showSetCoverDialog = true },
+                )
+                if (onSetAsChapterCover != null) {
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.set_as_chapter_cover),
+                        icon = Icons.Outlined.Photo,
+                        onClick = { showSetChapterCoverDialog = true },
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small)) {
+                ActionButton(
+                    modifier = Modifier.weight(1f),
+                    title = stringResource(MR.strings.action_copy_to_clipboard),
+                    icon = Icons.Outlined.ContentCopy,
+                    onClick = {
+                        onShare(true)
+                        onDismissRequest()
+                    },
+                )
+                ActionButton(
+                    modifier = Modifier.weight(1f),
+                    title = stringResource(MR.strings.action_share),
+                    icon = Icons.Outlined.Share,
+                    onClick = {
+                        onShare(false)
+                        onDismissRequest()
+                    },
+                )
+                ActionButton(
+                    modifier = Modifier.weight(1f),
+                    title = stringResource(MR.strings.action_save),
+                    icon = Icons.Outlined.Save,
+                    onClick = {
+                        onSave()
+                        onDismissRequest()
+                    },
+                )
+            }
         }
     }
 
     if (showSetCoverDialog) {
         SetCoverDialog(
+            text = stringResource(MR.strings.confirm_set_image_as_cover),
             onConfirm = {
                 onSetAsCover()
                 showSetCoverDialog = false
@@ -84,16 +100,27 @@ fun ReaderPageActionsDialog(
             onDismiss = { showSetCoverDialog = false },
         )
     }
+    if (showSetChapterCoverDialog) {
+        SetCoverDialog(
+            text = stringResource(MR.strings.confirm_set_image_as_chapter_cover),
+            onConfirm = {
+                onSetAsChapterCover?.invoke()
+                showSetChapterCoverDialog = false
+            },
+            onDismiss = { showSetChapterCoverDialog = false },
+        )
+    }
 }
 
 @Composable
 private fun SetCoverDialog(
+    text: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         text = {
-            Text(stringResource(MR.strings.confirm_set_image_as_cover))
+            Text(text)
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {

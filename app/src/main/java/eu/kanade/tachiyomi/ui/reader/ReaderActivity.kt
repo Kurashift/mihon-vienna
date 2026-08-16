@@ -335,6 +335,9 @@ class ReaderActivity : BaseActivity() {
                     is ReaderViewModel.Event.SetCoverResult -> {
                         onSetAsCoverResult(event.result)
                     }
+                    is ReaderViewModel.Event.SetChapterCoverResult -> {
+                        onSetChapterCoverResult(event.result)
+                    }
                 }
             }
             .launchIn(lifecycleScope)
@@ -480,6 +483,9 @@ class ReaderActivity : BaseActivity() {
                 ReaderPageActionsDialog(
                     onDismissRequest = onDismissRequest,
                     onSetAsCover = viewModel::setAsCover,
+                    onSetAsChapterCover = viewModel::setAsChapterCover.takeIf {
+                        viewModel.manga?.isLocal() == true
+                    },
                     onShare = viewModel::shareImage,
                     onSave = viewModel::saveImage,
                 )
@@ -1171,6 +1177,15 @@ class ReaderActivity : BaseActivity() {
                 Success -> MR.strings.cover_updated
                 AddToLibraryFirst -> MR.strings.notification_first_add_to_library
                 Error -> MR.strings.notification_cover_update_failed
+            },
+        )
+    }
+
+    private fun onSetChapterCoverResult(result: ReaderViewModel.SetChapterCoverStatus) {
+        toast(
+            when (result) {
+                ReaderViewModel.SetChapterCoverStatus.Success -> MR.strings.chapter_cover_updated
+                ReaderViewModel.SetChapterCoverStatus.Error -> MR.strings.notification_cover_update_failed
             },
         )
     }

@@ -65,7 +65,6 @@ import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastMap
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.presentation.components.relativeDateText
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
 import eu.kanade.presentation.manga.components.ChapterHeader
 import eu.kanade.presentation.manga.components.ExpandableMangaDescription
@@ -187,9 +186,6 @@ fun MangaScreen(
     val chapterCoversEnabled by basePreferences.localChapterCoversEnabled.collectPreferenceAsState()
     val chapterCoverGridEnabled by basePreferences.localChapterCoverGridEnabled.collectPreferenceAsState()
     val chapterLayoutAvailable = state.manga.isLocal() && chapterCoversEnabled
-    val onChapterLayoutChanged: (Boolean) -> Unit = { grid ->
-        basePreferences.localChapterCoverGridEnabled.set(grid)
-    }
     // Duplicate marks only make sense for the local library.
     val onToggleMarkClicked: ((List<Chapter>) -> Unit)? = if (state.manga.isLocal()) {
         { chapters ->
@@ -250,7 +246,6 @@ fun MangaScreen(
             onEditNotesClicked = onEditNotesClicked,
             chapterLayoutAvailable = chapterLayoutAvailable,
             chapterLayoutGridEnabled = chapterCoverGridEnabled,
-            onChapterLayoutChanged = onChapterLayoutChanged,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiGoodDoujinClicked = onMultiGoodDoujinClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
@@ -302,7 +297,6 @@ fun MangaScreen(
             onEditNotesClicked = onEditNotesClicked,
             chapterLayoutAvailable = chapterLayoutAvailable,
             chapterLayoutGridEnabled = chapterCoverGridEnabled,
-            onChapterLayoutChanged = onChapterLayoutChanged,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiGoodDoujinClicked = onMultiGoodDoujinClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
@@ -366,7 +360,6 @@ private fun MangaScreenSmallImpl(
     // For chapter layout action
     chapterLayoutAvailable: Boolean,
     chapterLayoutGridEnabled: Boolean,
-    onChapterLayoutChanged: (Boolean) -> Unit,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -440,9 +433,6 @@ private fun MangaScreenSmallImpl(
                 onClickMigrate = onMigrateClicked,
                 onClickClearHistory = onClearHistoryClicked,
                 onClickEditNotes = onEditNotesClicked,
-                chapterLayoutAvailable = chapterLayoutAvailable,
-                chapterLayoutGridEnabled = chapterLayoutGridEnabled,
-                onChapterLayoutChanged = onChapterLayoutChanged,
                 actionModeCounter = selectedChapterCount,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 onSelectAll = { onAllChapterSelected(true) },
@@ -668,7 +658,6 @@ fun MangaScreenLargeImpl(
     // For chapter layout action
     chapterLayoutAvailable: Boolean,
     chapterLayoutGridEnabled: Boolean,
-    onChapterLayoutChanged: (Boolean) -> Unit,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -734,9 +723,6 @@ fun MangaScreenLargeImpl(
                 onClickMigrate = onMigrateClicked,
                 onClickClearHistory = onClearHistoryClicked,
                 onClickEditNotes = onEditNotesClicked,
-                chapterLayoutAvailable = chapterLayoutAvailable,
-                chapterLayoutGridEnabled = chapterLayoutGridEnabled,
-                onChapterLayoutChanged = onChapterLayoutChanged,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 actionModeCounter = selectedChapterCount,
                 onSelectAll = { onAllChapterSelected(true) },
@@ -1024,21 +1010,21 @@ private fun LazyListScope.sharedChapterItems(
         )
         return
     }
-    // The good-doujin swipe only applies to local books.
-    val effectiveSwipeStart = if (!localManga &&
-        chapterSwipeStartAction == LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin
-    ) {
-        LibraryPreferences.ChapterSwipeAction.Disabled
-    } else {
-        chapterSwipeStartAction
+    // The good-doujin swipe only applies to local books. Keep the legacy bookmark enum for
+    // cloud sources, but for local chapters any bookmark-configured swipe acts on good doujin.
+    val normalizeSwipeAction: (LibraryPreferences.ChapterSwipeAction) -> LibraryPreferences.ChapterSwipeAction = { action ->
+        when {
+            localManga && action == LibraryPreferences.ChapterSwipeAction.ToggleBookmark -> {
+                LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin
+            }
+            !localManga && action == LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin -> {
+                LibraryPreferences.ChapterSwipeAction.Disabled
+            }
+            else -> action
+        }
     }
-    val effectiveSwipeEnd = if (!localManga &&
-        chapterSwipeEndAction == LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin
-    ) {
-        LibraryPreferences.ChapterSwipeAction.Disabled
-    } else {
-        chapterSwipeEndAction
-    }
+    val effectiveSwipeStart = normalizeSwipeAction(chapterSwipeStartAction)
+    val effectiveSwipeEnd = normalizeSwipeAction(chapterSwipeEndAction)
     items(
         items = chapters,
         key = { item -> "chapter-${item.id}" },
@@ -1153,7 +1139,6 @@ private fun LazyListScope.sharedChapterItems(
                         },
                     ),
                 title = chapterTitle,
-                date = relativeDateText(item.chapter.dateUpload),
                 readProgress = item.chapter.totalPages
                     .takeIf { it > 0L }
                     ?.let { totalPages ->

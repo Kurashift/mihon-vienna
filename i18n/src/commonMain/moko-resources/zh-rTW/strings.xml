@@ -148,8 +148,11 @@
     <string name="snack_categories_deleted">已刪除類別</string>
     <string name="picture_saved">圖片已儲存</string>
     <string name="set_as_cover">設為封面</string>
+    <string name="set_as_chapter_cover">設為篇目封面</string>
     <string name="cover_updated">已更新封面</string>
+    <string name="chapter_cover_updated">已更新篇目封面</string>
     <string name="copy">副本</string>
+    <string name="confirm_set_image_as_chapter_cover">要將此頁設為目前篇目的封面嗎？</string>
     <string name="update_check_confirm">下載</string>
     <string name="update_check_no_new_updates">沒有可用的更新</string>
     <string name="update_check_notification_download_in_progress">正在下載更新…</string>

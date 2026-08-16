@@ -87,6 +87,7 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.isLocal
 import tachiyomi.source.local.io.Format
+import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.Date
@@ -1348,9 +1349,48 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Saves the selected reader page as the custom cover for the current local chapter. The
+     * chapter row is touched after the file is written so the detail screen observes a new cover
+     * version instead of serving the stale generated thumbnail.
+     */
+    fun setAsChapterCover() {
+        val page = (state.value.dialog as? Dialog.PageActions)?.page
+        if (page?.status != Page.State.Ready) return
+        val chapter = page.chapter.chapter
+        val chapterId = chapter.id ?: return
+        val chapterUrl = chapter.url
+        val stream = page.stream ?: return
+
+        viewModelScope.launchNonCancellable {
+            val result = try {
+                val coverManager = Injekt.get<LocalChapterCoverManager>()
+                if (!coverManager.setCustom(chapterUrl, stream)) {
+                    SetChapterCoverStatus.Error
+                } else {
+                    updateChapter.await(
+                        ChapterUpdate(
+                            id = chapterId,
+                            totalPages = chapter.total_pages.toLong(),
+                        ),
+                    )
+                    SetChapterCoverStatus.Success
+                }
+            } catch (e: Exception) {
+                SetChapterCoverStatus.Error
+            }
+            eventChannel.send(Event.SetChapterCoverResult(result))
+        }
+    }
+
     enum class SetAsCoverResult {
         Success,
         AddToLibraryFirst,
+        Error,
+    }
+
+    enum class SetChapterCoverStatus {
+        Success,
         Error,
     }
 
@@ -1436,6 +1476,7 @@ class ReaderViewModel @JvmOverloads constructor(
         data object PageChanged : Event
         data class SetOrientation(val orientation: Int) : Event
         data class SetCoverResult(val result: SetAsCoverResult) : Event
+        data class SetChapterCoverResult(val result: SetChapterCoverStatus) : Event
 
         data class SavedImage(val result: SaveImageResult) : Event
         data class ShareImage(val uri: Uri, val page: ReaderPage) : Event

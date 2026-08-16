@@ -857,7 +857,9 @@
     <!-- Reader activity -->
     <string name="custom_filter">Custom filter</string>
     <string name="set_as_cover">Set as cover</string>
+    <string name="set_as_chapter_cover">Set as chapter cover</string>
     <string name="cover_updated">Cover updated</string>
+    <string name="chapter_cover_updated">Chapter cover updated</string>
     <string name="share_page_info">%1$s: %2$s, page %3$d</string>
     <string name="chapter_progress">Page: %1$d</string>
     <string name="chapter_progress_ratio">%1$d/%2$d</string>
@@ -865,6 +867,7 @@
     <string name="no_next_chapter">Next work not found</string>
     <string name="decode_image_error">The image couldn\'t be loaded</string>
     <string name="confirm_set_image_as_cover">Use this image as cover art?</string>
+    <string name="confirm_set_image_as_chapter_cover">Use this image as this chapter\'s cover?</string>
     <string name="pref_category_for_this_series">For this series</string>
     <string name="pref_category_global">Global</string>
     <string name="viewer">Reading mode</string>

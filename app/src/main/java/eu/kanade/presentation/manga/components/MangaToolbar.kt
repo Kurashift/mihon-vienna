@@ -2,7 +2,6 @@ package eu.kanade.presentation.manga.components
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FilterList
@@ -10,12 +9,10 @@ import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.SelectAll
-import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,8 +30,6 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.DownloadDropdownMenu
-import eu.kanade.presentation.components.DropdownMenu
-import eu.kanade.presentation.components.RadioMenuItem
 import eu.kanade.presentation.manga.DownloadAction
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import tachiyomi.i18n.MR
@@ -65,17 +60,12 @@ fun MangaToolbar(
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
 
-    chapterLayoutAvailable: Boolean = false,
-    chapterLayoutGridEnabled: Boolean = false,
-    onChapterLayoutChanged: ((Boolean) -> Unit)? = null,
-
     titleAlphaProvider: () -> Float,
     backgroundAlphaProvider: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val isActionMode = actionModeCounter > 0
     val context = LocalContext.current
-    var chapterLayoutExpanded by remember { mutableStateOf(false) }
     AppBar(
         titleContent = {
             if (isActionMode) {
@@ -139,19 +129,6 @@ fun MangaToolbar(
                             ),
                         )
                         return@buildList
-                    }
-                    if (chapterLayoutAvailable && onChapterLayoutChanged != null) {
-                        add(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.chapter_layout),
-                                icon = if (chapterLayoutGridEnabled) {
-                                    Icons.Filled.ViewModule
-                                } else {
-                                    Icons.AutoMirrored.Filled.ViewList
-                                },
-                                onClick = { chapterLayoutExpanded = true },
-                            ),
-                        )
                     }
                     if (onClickDownload != null) {
                         add(
@@ -241,26 +218,6 @@ fun MangaToolbar(
                     )
                 },
             )
-
-            DropdownMenu(
-                expanded = chapterLayoutExpanded,
-                onDismissRequest = { chapterLayoutExpanded = false },
-            ) {
-                RadioMenuItem(
-                    text = { Text(text = stringResource(MR.strings.chapter_layout_list)) },
-                    isChecked = !chapterLayoutGridEnabled,
-                ) {
-                    chapterLayoutExpanded = false
-                    onChapterLayoutChanged?.invoke(false)
-                }
-                RadioMenuItem(
-                    text = { Text(text = stringResource(MR.strings.chapter_layout_grid)) },
-                    isChecked = chapterLayoutGridEnabled,
-                ) {
-                    chapterLayoutExpanded = false
-                    onChapterLayoutChanged?.invoke(true)
-                }
-            }
         },
         isActionMode = isActionMode,
         onCancelActionMode = onCancelActionMode,

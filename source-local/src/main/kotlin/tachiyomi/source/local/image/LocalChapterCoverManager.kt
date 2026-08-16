@@ -67,6 +67,9 @@ class LocalChapterCoverManager(
 ) {
 
     private val coverDirectory = File(context.filesDir, COVER_DIRECTORY_NAME)
+    private val coverVersionFile = File(context.filesDir, "$COVER_DIRECTORY_NAME.version")
+    private val coverVersionLock = Any()
+    private var coverVersionChecked = false
     private val generationSemaphore = Semaphore(MAX_CONCURRENT_GENERATIONS)
     private val keyLocks = ConcurrentHashMap<String, Mutex>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -104,9 +107,32 @@ class LocalChapterCoverManager(
         getOrCreate(data.chapterUrl, chapterFile)
     }
 
+    /**
+     * Replaces the generated chapter cover with a user-selected page. The generated cache file
+     * keeps the same stable name, so the normal fetcher can serve it without changing how chapter
+     * covers are requested. The caller is expected to touch the chapter's database row so readers
+     * observe a new cache version.
+     */
+    suspend fun setCustom(chapterUrl: String, openStream: () -> InputStream): Boolean = withContext(Dispatchers.IO) {
+        val chapterFile = findChapterFile(chapterUrl) ?: return@withContext false
+        ensureCoverDirectoryVersion()
+        val target = targetFile(chapterUrl, chapterFile)
+        val lock = keyLocks.getOrPut(target.name) { Mutex() }
+        try {
+            lock.withLock {
+                val bitmap = decodeThumbnail(openStream) ?: return@withLock false
+                missingFile(target).delete()
+                writeCover(bitmap, target) != null
+            }
+        } finally {
+            keyLocks.remove(target.name, lock)
+        }
+    }
+
     suspend fun generateAll(
         onProgress: suspend (completed: Int, total: Int) -> Unit = { _, _ -> },
     ): LocalChapterCoverGenerationResult = withContext(Dispatchers.IO) {
+        ensureCoverDirectoryVersion()
         val snapshot = fileSystem.getBaseDirectorySnapshot()
         if (!snapshot.isAccessible) {
             return@withContext LocalChapterCoverGenerationResult(0, 0, 0, 0, 0)
@@ -171,6 +197,7 @@ class LocalChapterCoverManager(
         chapterFile: UniFile,
         retryMissing: Boolean = false,
     ): File? {
+        ensureCoverDirectoryVersion()
         val target = targetFile(chapterUrl, chapterFile)
         if (target.isValidCover()) return target
         val missing = missingFile(target)
@@ -204,26 +231,33 @@ class LocalChapterCoverManager(
                 is Format.Epub -> decodeEpubCover(format.file)
             } ?: return null
 
-            coverDirectory.mkdirs()
-            val temp = File(coverDirectory, "${target.name}.tmp")
-            try {
-                temp.outputStream().buffered().use { output ->
-                    @Suppress("DEPRECATION")
-                    check(bitmap.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, output))
-                }
-                if (!temp.renameTo(target)) {
-                    temp.copyTo(target, overwrite = true)
-                }
-                target.takeIf { it.isValidCover() }
-            } finally {
-                bitmap.recycle()
-                temp.delete()
-            }
+            writeCover(bitmap, target)
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             target.delete()
             logcat(LogPriority.WARN, e) { "Unable to generate local chapter cover for ${chapterFile.name}" }
             null
+        }
+    }
+
+    private fun writeCover(bitmap: Bitmap, target: File): File? {
+        coverDirectory.mkdirs()
+        val temp = File(coverDirectory, "${target.name}.tmp")
+        return try {
+            temp.outputStream().buffered().use { output ->
+                @Suppress("DEPRECATION")
+                check(bitmap.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, output))
+            }
+            if (target.exists()) {
+                target.delete()
+            }
+            if (!temp.renameTo(target)) {
+                temp.copyTo(target, overwrite = true)
+            }
+            target.takeIf { it.isValidCover() }
+        } finally {
+            bitmap.recycle()
+            temp.delete()
         }
     }
 
@@ -332,6 +366,9 @@ class LocalChapterCoverManager(
                 chapterUrl = chapterUrl,
                 size = chapterFile.length(),
                 lastModified = chapterFile.lastModified(),
+                targetWidth = TARGET_WIDTH,
+                targetHeight = TARGET_HEIGHT,
+                quality = WEBP_QUALITY,
             ),
         )
     }
@@ -358,13 +395,33 @@ class LocalChapterCoverManager(
         return isFile && extension == COVER_EXTENSION && length() > 0L
     }
 
+    private fun ensureCoverDirectoryVersion() {
+        synchronized(coverVersionLock) {
+            if (coverVersionChecked) return
+            val expectedVersion = "$TARGET_WIDTH-$TARGET_HEIGHT-$WEBP_QUALITY"
+            val currentVersion = if (coverVersionFile.isFile) {
+                runCatching { coverVersionFile.readText() }.getOrNull()
+            } else {
+                null
+            }
+            if (currentVersion != expectedVersion) {
+                coverDirectory.listFiles().orEmpty().forEach { file ->
+                    if (file.isFile) file.delete()
+                }
+                coverDirectory.mkdirs()
+                coverVersionFile.writeText(expectedVersion)
+            }
+            coverVersionChecked = true
+        }
+    }
+
     companion object {
         private const val COVER_DIRECTORY_NAME = "local_chapter_covers"
         private const val COVER_EXTENSION = "webp"
         private const val MISSING_EXTENSION = "missing"
-        private const val TARGET_WIDTH = 160
-        private const val TARGET_HEIGHT = 224
-        private const val WEBP_QUALITY = 78
+        private const val TARGET_WIDTH = 480
+        private const val TARGET_HEIGHT = 672
+        private const val WEBP_QUALITY = 80
         private const val MAX_CONCURRENT_GENERATIONS = 2
     }
 }
@@ -373,8 +430,11 @@ internal fun localChapterCoverCacheFileName(
     chapterUrl: String,
     size: Long,
     lastModified: Long,
+    targetWidth: Int,
+    targetHeight: Int,
+    quality: Int,
 ): String {
-    val fingerprint = "$chapterUrl|$size|$lastModified"
+    val fingerprint = "$chapterUrl|$size|$lastModified|$targetWidth|$targetHeight|$quality"
     val digest = MessageDigest.getInstance("SHA-256")
         .digest(fingerprint.toByteArray())
         .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }

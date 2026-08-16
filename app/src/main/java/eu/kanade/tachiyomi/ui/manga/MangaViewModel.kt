@@ -22,6 +22,7 @@ import eu.kanade.domain.manga.interactor.SetExcludedScanlators
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.manga.model.chaptersFiltered
 import eu.kanade.domain.manga.model.downloadedFilter
+import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.domain.track.interactor.RefreshTracks
 import eu.kanade.domain.track.interactor.TrackChapter
@@ -91,6 +92,7 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.isLocal
+import tachiyomi.source.local.LocalSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -265,6 +267,11 @@ class MangaViewModel(
 
             val chapters = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = true)
                 .toChapterListItems(manga)
+            val localChaptersMissingPageCounts = if (manga.isLocal()) {
+                chapters.filter { it.chapter.totalPages <= 0L }
+            } else {
+                emptyList()
+            }
 
             // Do not rescan a local manga merely to prefill page counts. On a cold start that
             // opens every archive, updates source order, and re-emits the entire list after it
@@ -286,6 +293,23 @@ class MangaViewModel(
                     isRefreshingData = needRefreshInfo || needRefreshChapter,
                     dialog = null,
                 )
+            }
+
+            if (localChaptersMissingPageCounts.isNotEmpty()) {
+                viewModelScope.launchIO {
+                    val localSource = Injekt.get<SourceManager>().getOrStub(manga.source) as? LocalSource
+                        ?: return@launchIO
+                    val pageCounts = localSource.getChapterPageCounts(manga.toSManga())
+                    if (pageCounts.isEmpty()) return@launchIO
+                    val updates = localChaptersMissingPageCounts.mapNotNull { item ->
+                        pageCounts[item.chapter.url]
+                            ?.takeIf { it > 0L }
+                            ?.let { ChapterUpdate(id = item.chapter.id, totalPages = it) }
+                    }
+                    if (updates.isNotEmpty()) {
+                        updateChapter.awaitAll(updates)
+                    }
+                }
             }
 
             // Start observe tracking since it only needs mangaId
