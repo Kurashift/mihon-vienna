@@ -1,0 +1,78 @@
+CREATE TABLE good_doujins(
+    chapter_id INTEGER NOT NULL PRIMARY KEY,
+    manga_id INTEGER NOT NULL,
+    marked_at INTEGER NOT NULL,
+    FOREIGN KEY(chapter_id) REFERENCES chapters(_id) ON DELETE CASCADE,
+    FOREIGN KEY(manga_id) REFERENCES mangas(_id) ON DELETE CASCADE
+);
+
+CREATE INDEX good_doujins_manga_id_index ON good_doujins(manga_id);
+
+CREATE TRIGGER update_good_doujin_versions_after_insert
+AFTER INSERT ON good_doujins
+BEGIN
+    UPDATE chapters SET version = version + 1 WHERE _id = new.chapter_id;
+    UPDATE mangas SET version = version + 1 WHERE _id = new.manga_id AND is_syncing = 0;
+END;
+
+CREATE TRIGGER update_good_doujin_versions_after_delete
+AFTER DELETE ON good_doujins
+BEGIN
+    UPDATE chapters SET version = version + 1 WHERE _id = old.chapter_id;
+    UPDATE mangas SET version = version + 1 WHERE _id = old.manga_id AND is_syncing = 0;
+END;
+
+getAll:
+SELECT
+    GD.manga_id,
+    M.title AS manga_title,
+    GD.chapter_id,
+    C.name AS chapter_name,
+    GD.marked_at
+FROM good_doujins GD
+JOIN mangas M ON M._id = GD.manga_id
+JOIN chapters C ON C._id = GD.chapter_id AND C.manga_id = GD.manga_id
+WHERE M.source = 0
+ORDER BY GD.marked_at DESC;
+
+watchChanges:
+SELECT count(*) || ':' || coalesce(sum(chapter_id + manga_id + marked_at), 0)
+FROM good_doujins;
+
+upsert:
+INSERT INTO good_doujins(chapter_id, manga_id, marked_at)
+SELECT :chapterId, :mangaId, :markedAt
+WHERE EXISTS (
+    SELECT 1
+    FROM chapters C
+    JOIN mangas M ON M._id = C.manga_id
+    WHERE C._id = :chapterId
+      AND C.manga_id = :mangaId
+      AND M.source = 0
+)
+ON CONFLICT(chapter_id) DO UPDATE SET
+    manga_id = excluded.manga_id,
+    marked_at = excluded.marked_at;
+
+remove:
+DELETE FROM good_doujins
+WHERE chapter_id = :chapterId;
+
+removeMany:
+DELETE FROM good_doujins
+WHERE chapter_id IN :chapterIds;
+
+clearManga:
+DELETE FROM good_doujins
+WHERE manga_id = :mangaId;
+
+clearMangas:
+DELETE FROM good_doujins
+WHERE manga_id IN :mangaIds;
+
+clear:
+DELETE FROM good_doujins;
+
+removeNonLocal:
+DELETE FROM good_doujins
+WHERE manga_id IN (SELECT _id FROM mangas WHERE source != 0);

@@ -1,0 +1,23 @@
+CREATE TABLE good_doujins(
+    chapter_id INTEGER NOT NULL PRIMARY KEY,
+    manga_id INTEGER NOT NULL,
+    marked_at INTEGER NOT NULL,
+    FOREIGN KEY(chapter_id) REFERENCES chapters(_id) ON DELETE CASCADE,
+    FOREIGN KEY(manga_id) REFERENCES mangas(_id) ON DELETE CASCADE
+);
+
+CREATE INDEX good_doujins_manga_id_index ON good_doujins(manga_id);
+
+CREATE TRIGGER update_good_doujin_versions_after_insert
+AFTER INSERT ON good_doujins
+BEGIN
+    UPDATE chapters SET version = version + 1 WHERE _id = new.chapter_id;
+    UPDATE mangas SET version = version + 1 WHERE _id = new.manga_id AND is_syncing = 0;
+END;
+
+CREATE TRIGGER update_good_doujin_versions_after_delete
+AFTER DELETE ON good_doujins
+BEGIN
+    UPDATE chapters SET version = version + 1 WHERE _id = old.chapter_id;
+    UPDATE mangas SET version = version + 1 WHERE _id = old.manga_id AND is_syncing = 0;
+END;

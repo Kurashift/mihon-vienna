@@ -1,0 +1,2 @@
+-- Custom manual chapter ordering: 0 means unpositioned (sorts after positioned chapters by name).
+ALTER TABLE chapters ADD COLUMN custom_order INTEGER NOT NULL DEFAULT 0;

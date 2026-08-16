@@ -1,0 +1,10 @@
+-- Older restores could contain full-looking progress without an explicit completion flag.
+-- Keep them unread and reserve the final progress slot for an actual completion event.
+UPDATE chapters
+SET last_page_read = CASE
+    WHEN total_pages > 1 THEN total_pages - 1
+    ELSE 0
+END
+WHERE read = 0
+AND total_pages > 0
+AND last_page_read >= total_pages;

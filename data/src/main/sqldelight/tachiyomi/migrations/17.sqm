@@ -1,0 +1,6 @@
+-- The explicit read flag is authoritative. Normalize only chapters already marked read;
+-- reaching the final stored page alone must never promote a chapter to completed.
+UPDATE chapters
+SET last_page_read = total_pages
+WHERE total_pages > 0
+AND read = 1;

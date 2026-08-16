@@ -1,0 +1,4 @@
+-- last_page_read is now stored as the 1-based page number the reader is currently on
+-- (previously it was a 0-based page index). Shift existing non-zero progress by one so
+-- resume positions stay unchanged and fully-read chapters keep last_page_read == total_pages.
+UPDATE chapters SET last_page_read = last_page_read + 1 WHERE last_page_read != 0;
