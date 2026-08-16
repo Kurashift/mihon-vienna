@@ -21,6 +21,12 @@ class LocalPagingTest {
         assertTrue(first.hasNextPage)
         assertTrue(second.hasNextPage)
         assertFalse(third.hasNextPage)
+        assertEquals(0, first.itemsBefore)
+        assertEquals(75, first.itemsAfter)
+        assertEquals(50, second.itemsBefore)
+        assertEquals(25, second.itemsAfter)
+        assertEquals(100, third.itemsBefore)
+        assertEquals(0, third.itemsAfter)
     }
 
     @Test
@@ -29,6 +35,8 @@ class LocalPagingTest {
 
         assertTrue(page.items.isEmpty())
         assertFalse(page.hasNextPage)
+        assertEquals(10, page.itemsBefore)
+        assertEquals(0, page.itemsAfter)
     }
 
     private fun List<Int>.asRange(): IntRange = first()..last()

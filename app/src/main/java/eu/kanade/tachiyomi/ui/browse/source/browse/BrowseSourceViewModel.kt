@@ -468,7 +468,13 @@ class BrowseSourceViewModel(
 
     private fun buildPager(listing: Listing): Flow<PagingData<Manga>> {
         val pageSize = if (source is LocalSource) LocalSource.PAGE_SIZE else 25
-        return Pager(PagingConfig(pageSize = pageSize, initialLoadSize = pageSize)) {
+        return Pager(
+            PagingConfig(
+                pageSize = pageSize,
+                initialLoadSize = pageSize,
+                enablePlaceholders = source is LocalSource,
+            ),
+        ) {
             getRemoteManga(sourceId, listing.query ?: "", listing.filters).also {
                 pagingSources += it
             }

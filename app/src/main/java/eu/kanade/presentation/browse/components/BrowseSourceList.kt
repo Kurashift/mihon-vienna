@@ -137,9 +137,7 @@ fun BrowseSourceList(
                         )
                     }
                     null -> {
-                        if (isLoadingPaused) {
-                            BrowseSourceListItemPlaceholder()
-                        }
+                        BrowseSourceListItemPlaceholder()
                     }
                 }
             }

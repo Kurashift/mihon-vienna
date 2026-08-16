@@ -714,7 +714,10 @@ class LocalSource(
     ): MangasPage {
         val derived = getSearchMangaList(query, filters, latestWindow)
         val result = derived.localPage(page, PAGE_SIZE)
-        return MangasPage(result.items, result.hasNextPage)
+        return MangasPage(result.items, result.hasNextPage).apply {
+            itemsBefore = result.itemsBefore
+            itemsAfter = result.itemsAfter
+        }
     }
 
     private suspend fun getSearchMangaList(
@@ -1628,16 +1631,20 @@ class LocalSource(
 internal data class LocalPage<T>(
     val items: List<T>,
     val hasNextPage: Boolean,
+    val itemsBefore: Int,
+    val itemsAfter: Int,
 )
 
 internal fun <T> List<T>.localPage(page: Int, pageSize: Int): LocalPage<T> {
     require(pageSize > 0)
     val start = (page.coerceAtLeast(1) - 1) * pageSize
-    if (start >= size) return LocalPage(emptyList(), false)
+    if (start >= size) return LocalPage(emptyList(), false, size, 0)
     val end = (start + pageSize).coerceAtMost(size)
     return LocalPage(
         items = subList(start, end),
         hasNextPage = end < size,
+        itemsBefore = start,
+        itemsAfter = size - end,
     )
 }
 

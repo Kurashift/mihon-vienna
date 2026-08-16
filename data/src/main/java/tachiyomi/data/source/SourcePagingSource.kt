@@ -40,6 +40,7 @@ abstract class BaseSourcePagingSource(
 ) : SourcePagingSource() {
 
     private val seenManga = hashSetOf<String>()
+    private var positionedPageSize: Int? = null
 
     abstract suspend fun requestNextPage(currentPage: Int): MangasPage
 
@@ -71,17 +72,40 @@ abstract class BaseSourcePagingSource(
                     if (local.memo == remote.memo) local else local.copy(memo = remote.memo)
                 }
 
-            LoadResult.Page(
-                data = manga,
-                prevKey = null,
-                nextKey = if (mangasPage.hasNextPage) page + 1 else null,
-            )
+            val nextKey = if (mangasPage.hasNextPage) page + 1 else null
+            if (mangasPage.itemsBefore >= 0 && mangasPage.itemsAfter >= 0) {
+                val inferredPageSize = if (page > 1L) {
+                    (mangasPage.itemsBefore / (page - 1L)).toInt()
+                } else {
+                    manga.size
+                }
+                if (inferredPageSize > 0) {
+                    positionedPageSize = maxOf(positionedPageSize ?: 0, inferredPageSize)
+                }
+                LoadResult.Page(
+                    data = manga,
+                    prevKey = if (mangasPage.itemsBefore > 0) page - 1 else null,
+                    nextKey = nextKey,
+                    itemsBefore = mangasPage.itemsBefore,
+                    itemsAfter = mangasPage.itemsAfter,
+                )
+            } else {
+                LoadResult.Page(
+                    data = manga,
+                    prevKey = null,
+                    nextKey = nextKey,
+                )
+            }
         } catch (e: Exception) {
             LoadResult.Error(e)
         }
     }
 
     override fun getRefreshKey(state: PagingState<Long, Manga>): Long? {
+        val pageSize = positionedPageSize
+        if (pageSize != null) {
+            return state.anchorPosition?.let { position -> position / pageSize + 1L }
+        }
         return state.anchorPosition?.let { anchorPosition ->
             val anchorPage = state.closestPageToPosition(anchorPosition)
             anchorPage?.prevKey ?: anchorPage?.nextKey

@@ -120,6 +120,14 @@ android {
 
             buildConfigField("boolean", "LOCAL_SOURCE_FIRST", "true")
         }
+        create("shortCovers") {
+            initWith(release)
+
+            applicationIdSuffix = ".dev"
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "LOCAL_SOURCE_FIRST", "true")
+        }
         create("benchmark") {
             initWith(release)
 
@@ -132,6 +140,7 @@ android {
 
     sourceSets {
         getByName("preview").res.directories.add("src/debug/res")
+        getByName("shortCovers").res.directories.add("src/debug/res")
         getByName("benchmark").res.directories.add("src/debug/res")
     }
 

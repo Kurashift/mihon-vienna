@@ -152,9 +152,7 @@ fun BrowseSourceCompactGrid(
                         )
                     }
                     null -> {
-                        if (isLoadingPaused) {
-                            BrowseSourceCompactGridItemPlaceholder()
-                        }
+                        BrowseSourceCompactGridItemPlaceholder()
                     }
                 }
             }

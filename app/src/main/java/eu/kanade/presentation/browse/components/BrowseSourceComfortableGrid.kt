@@ -152,9 +152,7 @@ fun BrowseSourceComfortableGrid(
                         )
                     }
                     null -> {
-                        if (isLoadingPaused) {
-                            BrowseSourceComfortableGridItemPlaceholder()
-                        }
+                        BrowseSourceComfortableGridItemPlaceholder()
                     }
                 }
             }
