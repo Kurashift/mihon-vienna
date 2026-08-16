@@ -1067,4 +1067,17 @@
     <string name="audio_quality_high">音质：高音质</string>
     <string name="audio_sleep_minutes">%1$d 分钟</string>
     <string name="audio_sleep_off">关闭定时</string>
+    <string name="local_chapter_covers">本地短篇封面</string>
+    <string name="local_chapter_covers_summary">将每个本地章节的第一张图片显示为持久缓存缩略图</string>
+    <string name="local_chapter_covers_grid">本地详情页使用封面网格</string>
+    <string name="local_chapter_covers_grid_summary">默认开启；关闭后使用章节列表并支持拖动排序</string>
+    <string name="local_chapter_covers_generate">生成并更新封面</string>
+    <string name="local_chapter_covers_idle">已有 %1$d 张封面 · %2$s</string>
+    <string name="local_chapter_covers_progress">正在生成 %1$d / %2$d</string>
+    <string name="local_chapter_covers_finished">新生成 %1$d，跳过 %2$d，失败 %3$d，清理 %4$d</string>
+    <string name="local_chapter_covers_failed">封面生成失败</string>
+    <string name="local_chapter_covers_cancel">取消生成封面</string>
+    <string name="local_chapter_covers_clear">清空已生成封面</string>
+    <string name="local_chapter_covers_clear_confirm">删除全部已生成的缩略图？不会改动 CBZ 文件、本地库数据和阅读进度。</string>
+    <string name="local_chapter_covers_cleared">已清理 %1$d 张封面</string>
 </resources>

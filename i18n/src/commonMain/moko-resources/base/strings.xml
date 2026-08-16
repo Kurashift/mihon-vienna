@@ -1207,4 +1207,17 @@
     <string name="audio_quality_high">Quality: high</string>
     <string name="audio_sleep_minutes">%1$d minutes</string>
     <string name="audio_sleep_off">Turn off timer</string>
+    <string name="local_chapter_covers">Local short-story covers</string>
+    <string name="local_chapter_covers_summary">Show the first image from each local chapter as a cached thumbnail</string>
+    <string name="local_chapter_covers_grid">Use cover grid in local details</string>
+    <string name="local_chapter_covers_grid_summary">Enabled by default; turn off to use the chapter list and drag sorting</string>
+    <string name="local_chapter_covers_generate">Generate and update covers</string>
+    <string name="local_chapter_covers_idle">%1$d covers · %2$s</string>
+    <string name="local_chapter_covers_progress">Generating %1$d / %2$d</string>
+    <string name="local_chapter_covers_finished">Generated %1$d, skipped %2$d, failed %3$d, cleaned %4$d</string>
+    <string name="local_chapter_covers_failed">Cover generation failed</string>
+    <string name="local_chapter_covers_cancel">Cancel cover generation</string>
+    <string name="local_chapter_covers_clear">Clear generated covers</string>
+    <string name="local_chapter_covers_clear_confirm">Delete all generated thumbnails? Your CBZ files, library data, and reading progress will not be changed.</string>
+    <string name="local_chapter_covers_cleared">Cleared %1$d covers</string>
 </resources>

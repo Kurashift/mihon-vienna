@@ -45,6 +45,16 @@ class BasePreferences(
         false,
     )
 
+    val localChapterCoversEnabled: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_local_chapter_covers_enabled",
+        true,
+    )
+
+    val localChapterCoverGridEnabled: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_local_chapter_cover_grid_enabled",
+        true,
+    )
+
     val installationId: Preference<String> = preferenceStore.getString(Preference.appStateKey("installation_id"), "")
 
     val donationCampaignShown: Preference<Boolean> = preferenceStore.getBoolean(

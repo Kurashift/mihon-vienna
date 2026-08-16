@@ -1,11 +1,15 @@
 package eu.kanade.presentation.manga
 
-import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -20,13 +24,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import tachiyomi.presentation.core.components.material.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,8 +35,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,36 +47,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.unit.toSize
-import kotlin.math.abs
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastMap
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.components.relativeDateText
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
 import eu.kanade.presentation.manga.components.ChapterHeader
 import eu.kanade.presentation.manga.components.ExpandableMangaDescription
 import eu.kanade.presentation.manga.components.MangaActionRow
 import eu.kanade.presentation.manga.components.MangaBottomActionMenu
+import eu.kanade.presentation.manga.components.MangaChapterGridItem
 import eu.kanade.presentation.manga.components.MangaChapterListItem
 import eu.kanade.presentation.manga.components.MangaInfoBox
 import eu.kanade.presentation.manga.components.MangaToolbar
 import eu.kanade.presentation.util.formatChapterNumber
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.ReorderableLazyListState
-import sh.calvin.reorderable.rememberReorderableLazyListState
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaMark
@@ -85,6 +85,9 @@ import eu.kanade.tachiyomi.ui.manga.ChapterList
 import eu.kanade.tachiyomi.ui.manga.MangaViewModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.ReorderableLazyListState
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.model.Manga
@@ -92,12 +95,16 @@ import tachiyomi.domain.source.model.StubSource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.TwoPanelBox
 import tachiyomi.presentation.core.components.VerticalFastScroller
+import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
+import tachiyomi.presentation.core.components.material.FabPosition
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.source.local.image.LocalChapterCover
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import kotlin.math.abs
 import kotlin.time.Instant
 
 @Composable
@@ -808,14 +815,15 @@ fun MangaScreenLargeImpl(
                     )
                     val chapterItems = remember { chapters.toMutableStateList() }
                     var pendingReorder by remember { mutableStateOf(false) }
-                    val reorderableState = rememberReorderableLazyListState(chapterListState, chapterContentPadding) { from, to ->
-                        val fromIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == from.key }
-                        val toIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == to.key }
-                        if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {
-                            val item = chapterItems.removeAt(fromIndex)
-                            chapterItems.add(toIndex, item)
+                    val reorderableState =
+                        rememberReorderableLazyListState(chapterListState, chapterContentPadding) { from, to ->
+                            val fromIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == from.key }
+                            val toIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == to.key }
+                            if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {
+                                val item = chapterItems.removeAt(fromIndex)
+                                chapterItems.add(toIndex, item)
+                            }
                         }
-                    }
                     LaunchedEffect(chapters, state.manga, pendingReorder) {
                         if (pendingReorder) {
                             if (state.manga.sorting == Manga.CHAPTER_SORTING_CUSTOM &&
@@ -967,13 +975,31 @@ private fun LazyListScope.sharedChapterItems(
     goodDoujinChapterIds: Set<Long>,
 ) {
     val localManga = manga.isLocal()
+    val basePreferences = Injekt.get<BasePreferences>()
+    val showLocalChapterCovers = localManga && basePreferences.localChapterCoversEnabled.get()
+    if (showLocalChapterCovers && basePreferences.localChapterCoverGridEnabled.get()) {
+        sharedChapterGridItems(
+            manga = manga,
+            chapters = chapters,
+            isAnyChapterSelected = isAnyChapterSelected,
+            onChapterClicked = onChapterClicked,
+            onChapterSelected = onChapterSelected,
+            markedChapterIds = markedChapterIds,
+            goodDoujinChapterIds = goodDoujinChapterIds,
+        )
+        return
+    }
     // The good-doujin swipe only applies to local books.
-    val effectiveSwipeStart = if (!localManga && chapterSwipeStartAction == LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin) {
+    val effectiveSwipeStart = if (!localManga &&
+        chapterSwipeStartAction == LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin
+    ) {
         LibraryPreferences.ChapterSwipeAction.Disabled
     } else {
         chapterSwipeStartAction
     }
-    val effectiveSwipeEnd = if (!localManga && chapterSwipeEndAction == LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin) {
+    val effectiveSwipeEnd = if (!localManga &&
+        chapterSwipeEndAction == LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin
+    ) {
         LibraryPreferences.ChapterSwipeAction.Disabled
     } else {
         chapterSwipeEndAction
@@ -1034,7 +1060,10 @@ private fun LazyListScope.sharedChapterItems(
                                             // Long-press in place: consume the up event so the
                                             // row's clickable handler does not mistake it for a
                                             // tap and open the reader.
-                                            if (!moved && change.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) {
+                                            if (!moved &&
+                                                change.uptimeMillis - down.uptimeMillis >=
+                                                viewConfiguration.longPressTimeoutMillis
+                                            ) {
                                                 change.consume()
                                             }
                                             break
@@ -1115,6 +1144,14 @@ private fun LazyListScope.sharedChapterItems(
                 chapterSwipeEndAction = effectiveSwipeEnd,
                 goodDoujinMarked = item.chapter.id in goodDoujinChapterIds,
                 flagMarked = item.chapter.id in markedChapterIds,
+                cover = if (showLocalChapterCovers) {
+                    LocalChapterCover(
+                        chapterUrl = item.chapter.url,
+                        version = item.chapter.dateUpload xor item.chapter.lastModifiedAt,
+                    )
+                } else {
+                    null
+                },
                 onLongClick = if (manga.isLocal()) {
                     selectFromLongPress.takeIf { isAnyChapterSelected }
                 } else {
@@ -1148,6 +1185,78 @@ private fun LazyListScope.sharedChapterItems(
     }
 }
 
+private fun LazyListScope.sharedChapterGridItems(
+    manga: Manga,
+    chapters: List<ChapterList.Item>,
+    isAnyChapterSelected: Boolean,
+    onChapterClicked: (Chapter) -> Unit,
+    onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
+    markedChapterIds: Set<Long>,
+    goodDoujinChapterIds: Set<Long>,
+) {
+    items(
+        items = chapters.chunked(LOCAL_CHAPTER_GRID_COLUMNS),
+        key = { row -> "chapter-grid-row-${row.first().id}" },
+        contentType = { "chapter_grid_row" },
+    ) { row ->
+        val haptic = LocalHapticFeedback.current
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            row.forEach { item ->
+                val chapterTitle = if (manga.displayMode == Manga.CHAPTER_DISPLAY_NUMBER) {
+                    stringResource(
+                        MR.strings.display_mode_chapter,
+                        formatChapterNumber(item.chapter.chapterNumber),
+                    )
+                } else {
+                    item.chapter.name
+                }
+                val totalPages = item.chapter.totalPages
+                val readPages = if (item.chapter.read) {
+                    totalPages
+                } else {
+                    item.chapter.lastPageRead.coerceIn(1L, totalPages.coerceAtLeast(1L))
+                }
+                MangaChapterGridItem(
+                    modifier = Modifier.weight(1f),
+                    title = chapterTitle,
+                    cover = LocalChapterCover(
+                        chapterUrl = item.chapter.url,
+                        version = item.chapter.dateUpload xor item.chapter.lastModifiedAt,
+                    ),
+                    readProgress = totalPages.takeIf { it > 0L }?.let {
+                        stringResource(MR.strings.chapter_progress_ratio, readPages, it)
+                    },
+                    read = item.chapter.read,
+                    selected = item.selected,
+                    bookmark = item.chapter.bookmark,
+                    goodDoujinMarked = item.chapter.id in goodDoujinChapterIds,
+                    flagMarked = item.chapter.id in markedChapterIds,
+                    onLongClick = {
+                        onChapterSelected(item, !item.selected, true)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    },
+                    onClick = {
+                        onChapterItemClick(
+                            chapterItem = item,
+                            isAnyChapterSelected = isAnyChapterSelected,
+                            onToggleSelection = { onChapterSelected(item, !item.selected, false) },
+                            onChapterClicked = onChapterClicked,
+                        )
+                    },
+                )
+            }
+            repeat(LOCAL_CHAPTER_GRID_COLUMNS - row.size) {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
 private fun onChapterItemClick(
     chapterItem: ChapterList.Item,
     isAnyChapterSelected: Boolean,
@@ -1160,3 +1269,5 @@ private fun onChapterItemClick(
         else -> onChapterClicked(chapterItem.chapter)
     }
 }
+
+private const val LOCAL_CHAPTER_GRID_COLUMNS = 3

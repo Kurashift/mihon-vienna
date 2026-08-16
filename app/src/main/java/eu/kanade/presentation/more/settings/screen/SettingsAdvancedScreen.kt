@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.provider.Settings
+import android.text.format.Formatter
 import android.webkit.WebStorage
 import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,7 +13,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,7 +59,9 @@ import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import okhttp3.Headers
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchNonCancellable
+import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
@@ -65,6 +70,9 @@ import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
+import tachiyomi.source.local.image.LocalChapterCoverGenerationState
+import tachiyomi.source.local.image.LocalChapterCoverManager
+import tachiyomi.source.local.image.LocalChapterCoverStats
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
@@ -290,42 +298,151 @@ object SettingsAdvancedScreen : SearchableSettings {
     ): Preference.PreferenceGroup {
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
+        val basePreferences = remember { Injekt.get<BasePreferences>() }
+        val chapterCoversEnabled by basePreferences.localChapterCoversEnabled.collectAsState()
+        val chapterCoverManager = remember { Injekt.get<LocalChapterCoverManager>() }
+        val generationState by chapterCoverManager.generationState.collectAsState()
+        var coverStats by remember { mutableStateOf(LocalChapterCoverStats(0, 0L)) }
+        var showClearCoversDialog by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(generationState) {
+            if (generationState !is LocalChapterCoverGenerationState.Running) {
+                coverStats = withIOContext { chapterCoverManager.stats() }
+            }
+        }
+
+        val coverStatus = when (val state = generationState) {
+            LocalChapterCoverGenerationState.Idle -> stringResource(
+                MR.strings.local_chapter_covers_idle,
+                coverStats.count,
+                Formatter.formatFileSize(context, coverStats.size),
+            )
+            is LocalChapterCoverGenerationState.Running -> stringResource(
+                MR.strings.local_chapter_covers_progress,
+                state.completed,
+                state.total,
+            )
+            is LocalChapterCoverGenerationState.Finished -> stringResource(
+                MR.strings.local_chapter_covers_finished,
+                state.result.generated,
+                state.result.skipped,
+                state.result.failed,
+                state.result.removed,
+            )
+            LocalChapterCoverGenerationState.Failed -> stringResource(MR.strings.local_chapter_covers_failed)
+        }
+        val isGenerating = generationState is LocalChapterCoverGenerationState.Running
+
+        if (showClearCoversDialog) {
+            val dismiss = { showClearCoversDialog = false }
+            AlertDialog(
+                onDismissRequest = dismiss,
+                title = { Text(text = stringResource(MR.strings.local_chapter_covers_clear)) },
+                text = { Text(text = stringResource(MR.strings.local_chapter_covers_clear_confirm)) },
+                dismissButton = {
+                    TextButton(onClick = dismiss) {
+                        Text(text = stringResource(MR.strings.action_cancel))
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            dismiss()
+                            scope.launch {
+                                val cleared = withIOContext { chapterCoverManager.clear() }
+                                coverStats = withIOContext { chapterCoverManager.stats() }
+                                context.toast(
+                                    context.stringResource(MR.strings.local_chapter_covers_cleared, cleared),
+                                )
+                            }
+                        },
+                    ) {
+                        Text(text = stringResource(MR.strings.action_delete))
+                    }
+                },
+            )
+        }
 
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.label_library),
-            preferenceItems = listOf(
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.pref_refresh_library_covers),
-                    onClick = { MetadataUpdateJob.startNow(context) },
-                ),
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.pref_reset_viewer_flags),
-                    subtitle = stringResource(MR.strings.pref_reset_viewer_flags_summary),
-                    onClick = {
-                        scope.launchNonCancellable {
-                            val success = Injekt.get<ResetViewerFlags>().await()
-                            withUIContext {
-                                val message = if (success) {
-                                    MR.strings.pref_reset_viewer_flags_success
-                                } else {
-                                    MR.strings.pref_reset_viewer_flags_error
+            preferenceItems = buildList {
+                add(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = basePreferences.localChapterCoversEnabled,
+                        title = stringResource(MR.strings.local_chapter_covers),
+                        subtitle = stringResource(MR.strings.local_chapter_covers_summary),
+                    ),
+                )
+                add(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = basePreferences.localChapterCoverGridEnabled,
+                        title = stringResource(MR.strings.local_chapter_covers_grid),
+                        subtitle = stringResource(MR.strings.local_chapter_covers_grid_summary),
+                        enabled = chapterCoversEnabled,
+                    ),
+                )
+                add(
+                    Preference.PreferenceItem.TextPreference(
+                        title = stringResource(MR.strings.local_chapter_covers_generate),
+                        subtitle = coverStatus,
+                        enabled = !isGenerating,
+                        onClick = chapterCoverManager::startGenerateAll,
+                    ),
+                )
+                if (isGenerating) {
+                    add(
+                        Preference.PreferenceItem.TextPreference(
+                            title = stringResource(MR.strings.local_chapter_covers_cancel),
+                            onClick = chapterCoverManager::cancelGeneration,
+                        ),
+                    )
+                }
+                add(
+                    Preference.PreferenceItem.TextPreference(
+                        title = stringResource(MR.strings.local_chapter_covers_clear),
+                        enabled = !isGenerating && coverStats.count > 0,
+                        onClick = { showClearCoversDialog = true },
+                    ),
+                )
+                add(
+                    Preference.PreferenceItem.TextPreference(
+                        title = stringResource(MR.strings.pref_refresh_library_covers),
+                        onClick = { MetadataUpdateJob.startNow(context) },
+                    ),
+                )
+                add(
+                    Preference.PreferenceItem.TextPreference(
+                        title = stringResource(MR.strings.pref_reset_viewer_flags),
+                        subtitle = stringResource(MR.strings.pref_reset_viewer_flags_summary),
+                        onClick = {
+                            scope.launchNonCancellable {
+                                val success = Injekt.get<ResetViewerFlags>().await()
+                                withUIContext {
+                                    val message = if (success) {
+                                        MR.strings.pref_reset_viewer_flags_success
+                                    } else {
+                                        MR.strings.pref_reset_viewer_flags_error
+                                    }
+                                    context.toast(message)
                                 }
-                                context.toast(message)
                             }
-                        }
-                    },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = libraryPreferences.updateMangaTitles,
-                    title = stringResource(MR.strings.pref_update_library_manga_titles),
-                    subtitle = stringResource(MR.strings.pref_update_library_manga_titles_summary),
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = libraryPreferences.disallowNonAsciiFilenames,
-                    title = stringResource(MR.strings.pref_disallow_non_ascii_filenames),
-                    subtitle = stringResource(MR.strings.pref_disallow_non_ascii_filenames_details),
-                ),
-            ),
+                        },
+                    ),
+                )
+                add(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = libraryPreferences.updateMangaTitles,
+                        title = stringResource(MR.strings.pref_update_library_manga_titles),
+                        subtitle = stringResource(MR.strings.pref_update_library_manga_titles_summary),
+                    ),
+                )
+                add(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = libraryPreferences.disallowNonAsciiFilenames,
+                        title = stringResource(MR.strings.pref_disallow_non_ascii_filenames),
+                        subtitle = stringResource(MR.strings.pref_disallow_non_ascii_filenames_details),
+                    ),
+                )
+            },
         )
     }
 
