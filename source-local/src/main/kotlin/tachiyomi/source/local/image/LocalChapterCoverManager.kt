@@ -236,7 +236,7 @@ class LocalChapterCoverManager(
             }
             .firstOrNull { ImageUtil.isImage(it.name) { it.openInputStream() } }
             ?: return null
-        return decodeThumbnail { image.openInputStream() }
+        return decodeCopiedThumbnail(image.openInputStream())
     }
 
     private fun decodeArchiveCover(archive: UniFile): Bitmap? {
@@ -249,14 +249,30 @@ class LocalChapterCoverManager(
                     }
                     .firstOrNull { ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
             } ?: return@use null
-            decodeThumbnail { reader.getInputStream(entry.name)!! }
+            val input = reader.getInputStream(entry.name) ?: return@use null
+            decodeCopiedThumbnail(input)
         }
     }
 
     private fun decodeEpubCover(epubFile: UniFile): Bitmap? {
         return epubFile.epubReader(context).use { epub ->
             val entry = epub.getImagesFromPages().firstOrNull() ?: return@use null
-            decodeThumbnail { epub.getInputStream(entry)!! }
+            val input = epub.getInputStream(entry) ?: return@use null
+            decodeCopiedThumbnail(input)
+        }
+    }
+
+    private fun decodeCopiedThumbnail(input: InputStream): Bitmap? {
+        val temp = File.createTempFile("local-chapter-cover-", ".image", context.cacheDir)
+        return try {
+            input.use { source ->
+                temp.outputStream().buffered().use { output ->
+                    source.copyTo(output)
+                }
+            }
+            decodeThumbnail { temp.inputStream().buffered() }
+        } finally {
+            temp.delete()
         }
     }
 

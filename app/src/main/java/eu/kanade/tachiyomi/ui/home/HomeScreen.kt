@@ -42,7 +42,6 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
-import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.browse.OnlineSourceCenterScreen
 import eu.kanade.tachiyomi.ui.browse.source.local.LocalSourceTab
@@ -82,11 +81,7 @@ object HomeScreen : Screen() {
 
     private val primaryTab = LibraryTab
 
-    private val tabs = if (BuildConfig.LOCAL_SOURCE_FIRST) {
-        listOf(LibraryTab, UpdatesTab, LocalSourceTab, HistoryTab, MoreTab)
-    } else {
-        listOf(LibraryTab, UpdatesTab, BrowseTab, HistoryTab, MoreTab)
-    }
+    private val tabs = listOf(LibraryTab, UpdatesTab, LocalSourceTab, HistoryTab, MoreTab)
 
     @Composable
     override fun Content() {
@@ -179,18 +174,11 @@ object HomeScreen : Screen() {
                             Tab.Updates -> UpdatesTab
                             Tab.History -> HistoryTab
                             is Tab.Browse -> {
-                                if (BuildConfig.LOCAL_SOURCE_FIRST) {
-                                    if (it.toExtensions) {
-                                        BrowseTab.showExtension()
-                                    }
-                                    navigator.push(OnlineSourceCenterScreen)
-                                    tabNavigator.current
-                                } else {
-                                    if (it.toExtensions) {
-                                        BrowseTab.showExtension()
-                                    }
-                                    BrowseTab
+                                if (it.toExtensions) {
+                                    BrowseTab.showExtension()
                                 }
+                                navigator.push(OnlineSourceCenterScreen)
+                                tabNavigator.current
                             }
                             is Tab.More -> MoreTab
                         }
