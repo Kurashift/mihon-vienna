@@ -1152,6 +1152,16 @@ private fun LazyListScope.sharedChapterItems(
                 } else {
                     null
                 },
+                readProgressFraction = item.chapter.totalPages
+                    .takeIf { it > 0L }
+                    ?.let { totalPages ->
+                        val readPages = if (isRead) {
+                            totalPages
+                        } else {
+                            item.chapter.lastPageRead.coerceIn(1L, totalPages)
+                        }
+                        (readPages.toFloat() / totalPages).coerceIn(0f, 1f)
+                    },
                 onLongClick = if (manga.isLocal()) {
                     selectFromLongPress.takeIf { isAnyChapterSelected }
                 } else {

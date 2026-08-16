@@ -2,8 +2,10 @@ package eu.kanade.presentation.manga.components
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FileDownloadOff
 import androidx.compose.material.icons.outlined.RemoveDone
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +32,7 @@ import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -68,6 +72,7 @@ fun MangaChapterListItem(
     goodDoujinMarked: Boolean = false,
     flagMarked: Boolean = false,
     cover: Any? = null,
+    readProgressFraction: Float? = null,
     onLongClick: (() -> Unit)?,
     onClick: () -> Unit,
     onDownloadClick: ((ChapterDownloadAction) -> Unit)?,
@@ -114,18 +119,33 @@ fun MangaChapterListItem(
                 .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 12.dp),
         ) {
             if (cover != null) {
-                AsyncImage(
-                    model = cover,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    placeholder = ColorPainter(MaterialTheme.colorScheme.surfaceContainerHighest),
-                    error = ColorPainter(MaterialTheme.colorScheme.surfaceContainerHighest),
+                Box(
                     modifier = Modifier
                         .padding(end = 12.dp)
-                        .width(52.dp)
-                        .height(72.dp)
+                        .width(64.dp)
+                        .height(88.dp)
                         .clip(MaterialTheme.shapes.extraSmall),
-                )
+                ) {
+                    AsyncImage(
+                        model = cover,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        placeholder = ColorPainter(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        error = ColorPainter(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        modifier = Modifier
+                            .matchParentSize()
+                            .alpha(if (read) 0.55f else 1f),
+                    )
+                    if (readProgressFraction != null) {
+                        LinearProgressIndicator(
+                            progress = { readProgressFraction },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(3.dp),
+                        )
+                    }
+                }
             }
             Column(
                 modifier = Modifier.weight(1f),
