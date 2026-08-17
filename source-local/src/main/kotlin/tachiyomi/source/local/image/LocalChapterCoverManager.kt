@@ -120,7 +120,12 @@ class LocalChapterCoverManager(
         val lock = keyLocks.getOrPut(target.name) { Mutex() }
         try {
             lock.withLock {
-                val bitmap = decodeThumbnail(openStream) ?: return@withLock false
+                // Copy the reader page's stream to a local temp file first, then decode from it.
+                // Decoding directly re-opens the archive-backed stream (and even opens it twice:
+                // bounds + full decode), which races with the reader's own page decoding on the
+                // same native archive handle and crashes with a SIGSEGV. The batch generation
+                // path already copies first; do the same here.
+                val bitmap = decodeCopiedThumbnail(openStream()) ?: return@withLock false
                 missingFile(target).delete()
                 writeCover(bitmap, target) != null
             }

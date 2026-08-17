@@ -8,14 +8,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +39,7 @@ fun MangaChapterGridItem(
     title: String,
     cover: Any,
     readProgress: String?,
+    readProgressFraction: Float?,
     read: Boolean,
     selected: Boolean,
     bookmark: Boolean,
@@ -69,7 +73,7 @@ fun MangaChapterGridItem(
                     .alpha(if (read) 0.55f else 1f),
             )
 
-            if (bookmark || goodDoujinMarked || flagMarked) {
+            if (read || bookmark || goodDoujinMarked || flagMarked) {
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -80,6 +84,9 @@ fun MangaChapterGridItem(
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (read) {
+                        Icon(Icons.Filled.CheckCircle, null, Modifier.size(12.dp), tint = Color.White)
+                    }
                     if (flagMarked) {
                         Icon(Icons.Filled.Flag, null, Modifier.size(12.dp), tint = Color.White)
                     }
@@ -90,6 +97,18 @@ fun MangaChapterGridItem(
                         Icon(Icons.Filled.Favorite, null, Modifier.size(12.dp), tint = Color.White)
                     }
                 }
+            }
+
+            if (readProgressFraction != null) {
+                LinearProgressIndicator(
+                    progress = { readProgressFraction },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(4.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f),
+                )
             }
         }
 

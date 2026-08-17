@@ -72,6 +72,9 @@
     <string name="action_install">安装</string>
     <string name="action_share">分享</string>
     <string name="action_save">保存</string>
+    <string name="action_cover">主封面</string>
+    <string name="action_chapter_cover">篇目封面</string>
+    <string name="action_copy">复制</string>
     <string name="action_reset">重置</string>
     <string name="action_undo">撤销</string>
     <string name="track">进度记录</string>

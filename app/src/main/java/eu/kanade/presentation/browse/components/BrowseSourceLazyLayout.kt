@@ -4,6 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
@@ -173,9 +175,13 @@ internal suspend fun LazyListState.smoothLocateToItem(
             transition.animateOut(direction, slideDistancePx)
             scrollToItem(targetIndex)
             withFrameNanos { }
+            scrollTargetSlightlyAboveCenter(targetIndex, animated = false)
+            withFrameNanos { }
             transition.animateIn(direction, slideDistancePx)
         } else {
             animateScrollToItem(targetIndex)
+            withFrameNanos { }
+            scrollTargetSlightlyAboveCenter(targetIndex, animated = true)
         }
     } finally {
         withContext(NonCancellable) { transition.reset() }
@@ -200,11 +206,43 @@ internal suspend fun LazyGridState.smoothLocateToItem(
             transition.animateOut(direction, slideDistancePx)
             scrollToItem(targetIndex)
             withFrameNanos { }
+            scrollTargetSlightlyAboveCenter(targetIndex, animated = false)
+            withFrameNanos { }
             transition.animateIn(direction, slideDistancePx)
         } else {
             animateScrollToItem(targetIndex)
+            withFrameNanos { }
+            scrollTargetSlightlyAboveCenter(targetIndex, animated = true)
         }
     } finally {
         withContext(NonCancellable) { transition.reset() }
     }
 }
+
+/**
+ * Nudges the target item so it sits slightly above the viewport center. Reading the target's
+ * real size after [scrollToItem] keeps the offset accurate for items of any height.
+ */
+private suspend fun LazyListState.scrollTargetSlightlyAboveCenter(index: Int, animated: Boolean) {
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val viewport = layoutInfo.viewportSize.height
+    val centerOffset = (viewport - item.size) / 2f
+    val targetOffset = (centerOffset - viewport * LOCATE_ABOVE_CENTER_FRACTION).coerceAtLeast(0f)
+    val delta = item.offset - targetOffset
+    if (abs(delta) > 1f) {
+        if (animated) animateScrollBy(delta) else scrollBy(delta)
+    }
+}
+
+private suspend fun LazyGridState.scrollTargetSlightlyAboveCenter(index: Int, animated: Boolean) {
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val viewport = layoutInfo.viewportSize.height
+    val centerOffset = (viewport - item.size.height) / 2f
+    val targetOffset = (centerOffset - viewport * LOCATE_ABOVE_CENTER_FRACTION).coerceAtLeast(0f)
+    val delta = item.offset.y - targetOffset
+    if (abs(delta) > 1f) {
+        if (animated) animateScrollBy(delta) else scrollBy(delta)
+    }
+}
+
+private const val LOCATE_ABOVE_CENTER_FRACTION = 0.18f

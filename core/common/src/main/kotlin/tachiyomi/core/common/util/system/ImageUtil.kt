@@ -39,8 +39,12 @@ object ImageUtil {
     fun isImage(name: String?, openStream: (() -> InputStream)? = null): Boolean {
         if (name == null) return false
 
-        val extension = name.substringAfterLast('.')
-        return ImageType.entries.any { it.extension == extension } || openStream?.let { findImageType(it) } != null
+        // Match extensions case-insensitively, and treat the long ".jpeg" form as ".jpg" so
+        // page counting and cover picking don't miss common uppercase / long-form file names.
+        val extension = name.substringAfterLast('.', "").lowercase()
+        val normalizedExtension = if (extension == "jpeg") "jpg" else extension
+        return ImageType.entries.any { it.extension == normalizedExtension } ||
+            openStream?.let { findImageType(it) } != null
     }
 
     fun findImageType(openStream: () -> InputStream): ImageType? {

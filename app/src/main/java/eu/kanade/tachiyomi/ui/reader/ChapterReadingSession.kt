@@ -37,14 +37,17 @@ internal class ChapterReadingSession(
     ): ChapterProgressDecision? {
         if (alreadyRead || totalPages <= 0 || pageIndex !in 0..lastIndex) return null
 
+        // Single-page chapters have no page-turn action that can confirm reading; settling on
+        // the only page must not mark them as read (the same guard that was previously only
+        // applied to protected backward entries).
+        if (totalPages == 1) return null
+
         if (!protectedBackwardEntry) {
             return ChapterProgressDecision(
                 pageIndex = pageIndex,
                 completed = canComplete(pageIndex, completingOnExit),
             )
         }
-
-        if (totalPages == 1) return null
 
         settledPages += pageIndex
         if (!completionArmed && settledPages.size >= minOf(REQUIRED_SETTLED_PAGES, totalPages)) {

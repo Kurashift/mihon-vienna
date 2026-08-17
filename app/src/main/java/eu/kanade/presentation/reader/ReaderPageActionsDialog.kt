@@ -2,6 +2,7 @@ package eu.kanade.presentation.reader
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -37,36 +38,45 @@ fun ReaderPageActionsDialog(
     var showSetCoverDialog by remember { mutableStateOf(false) }
     var showSetChapterCoverDialog by remember { mutableStateOf(false) }
 
+    // Compact single-row action bar: every action gets an equal slice, so labels stay short
+    // and the sheet stays one line tall even with five actions.
+    val rowLabelStyle = MaterialTheme.typography.labelSmall
+    val rowContentPadding = PaddingValues(horizontal = 2.dp, vertical = 10.dp)
+
     AdaptiveSheet(onDismissRequest = onDismissRequest) {
         Column(
-            modifier = Modifier.padding(vertical = 16.dp),
+            modifier = Modifier.padding(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall)) {
                 ActionButton(
                     modifier = Modifier.weight(1f),
-                    title = stringResource(MR.strings.set_as_cover),
+                    title = stringResource(MR.strings.action_cover),
                     icon = Icons.Outlined.Photo,
                     onClick = { showSetCoverDialog = true },
+                    labelStyle = rowLabelStyle,
+                    contentPadding = rowContentPadding,
                 )
                 if (onSetAsChapterCover != null) {
                     ActionButton(
                         modifier = Modifier.weight(1f),
-                        title = stringResource(MR.strings.set_as_chapter_cover),
+                        title = stringResource(MR.strings.action_chapter_cover),
                         icon = Icons.Outlined.Photo,
                         onClick = { showSetChapterCoverDialog = true },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
                     )
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small)) {
                 ActionButton(
                     modifier = Modifier.weight(1f),
-                    title = stringResource(MR.strings.action_copy_to_clipboard),
+                    title = stringResource(MR.strings.action_copy),
                     icon = Icons.Outlined.ContentCopy,
                     onClick = {
                         onShare(true)
                         onDismissRequest()
                     },
+                    labelStyle = rowLabelStyle,
+                    contentPadding = rowContentPadding,
                 )
                 ActionButton(
                     modifier = Modifier.weight(1f),
@@ -76,6 +86,8 @@ fun ReaderPageActionsDialog(
                         onShare(false)
                         onDismissRequest()
                     },
+                    labelStyle = rowLabelStyle,
+                    contentPadding = rowContentPadding,
                 )
                 ActionButton(
                     modifier = Modifier.weight(1f),
@@ -85,6 +97,8 @@ fun ReaderPageActionsDialog(
                         onSave()
                         onDismissRequest()
                     },
+                    labelStyle = rowLabelStyle,
+                    contentPadding = rowContentPadding,
                 )
             }
         }
@@ -96,6 +110,7 @@ fun ReaderPageActionsDialog(
             onConfirm = {
                 onSetAsCover()
                 showSetCoverDialog = false
+                onDismissRequest()
             },
             onDismiss = { showSetCoverDialog = false },
         )
@@ -106,6 +121,7 @@ fun ReaderPageActionsDialog(
             onConfirm = {
                 onSetAsChapterCover?.invoke()
                 showSetChapterCoverDialog = false
+                onDismissRequest()
             },
             onDismiss = { showSetChapterCoverDialog = false },
         )

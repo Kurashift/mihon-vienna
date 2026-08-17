@@ -399,17 +399,27 @@ class ReaderViewModel @JvmOverloads constructor(
             val previousTotalPages = chapter.chapter.total_pages
             val previousLastPageRead = chapter.chapter.last_page_read
             chapter.chapter.total_pages = totalPages
+
+            // Normalize legacy progress whose total page count was unknown until now. An unread
+            // chapter with last_page_read >= totalPages would otherwise resume on the last page
+            // and instantly complete when the page settles.
+            var normalizedLastPageRead: Long? = null
             if (chapter.chapter.read) {
                 chapter.chapter.last_page_read = totalPages
+                normalizedLastPageRead = totalPages.toLong()
+            } else if (previousTotalPages == 0 && previousLastPageRead >= totalPages) {
+                chapter.chapter.last_page_read = 0
+                normalizedLastPageRead = 0L
             }
+
             val progressChanged = previousTotalPages != totalPages ||
-                (chapter.chapter.read && previousLastPageRead != totalPages)
+                (normalizedLastPageRead != null && previousLastPageRead.toLong() != normalizedLastPageRead)
             chapter.chapter.id?.takeIf { progressChanged }?.let { chapterId ->
                 updateChapter.await(
                     ChapterUpdate(
                         id = chapterId,
                         totalPages = totalPages.toLong(),
-                        lastPageRead = totalPages.toLong().takeIf { chapter.chapter.read },
+                        lastPageRead = normalizedLastPageRead,
                     ),
                 )
             }

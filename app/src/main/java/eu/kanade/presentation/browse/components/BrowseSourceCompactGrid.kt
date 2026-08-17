@@ -1,5 +1,8 @@
 package eu.kanade.presentation.browse.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +40,7 @@ import eu.kanade.presentation.library.components.LastReadBadge
 import eu.kanade.presentation.library.components.MangaCompactGridItem
 import eu.kanade.presentation.library.components.ProgressBadge
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceUiModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import tachiyomi.domain.manga.model.Manga
@@ -68,6 +73,17 @@ fun BrowseSourceCompactGrid(
     val isLoadingPaused = isLocating || isThumbDragging
     var handledLocateManga by remember { mutableStateOf<Long?>(null) }
     var handledScrollToTopRequest by remember { mutableStateOf(scrollToTopRequest) }
+
+    // Brief highlight on the located last-read manga; fades out cleanly on its own.
+    var highlightedMangaId by remember { mutableStateOf<Long?>(null) }
+    val highlightAlpha = remember { Animatable(0f) }
+    LaunchedEffect(highlightedMangaId) {
+        val target = highlightedMangaId ?: return@LaunchedEffect
+        highlightAlpha.snapTo(1f)
+        delay(HIGHLIGHT_HOLD_MILLIS)
+        highlightAlpha.animateTo(0f, tween(HIGHLIGHT_FADE_OUT_MILLIS))
+        highlightedMangaId = null
+    }
 
     LaunchedEffect(locateMangaId, mangaList.itemCount) {
         val target = locateMangaId ?: return@LaunchedEffect
@@ -147,6 +163,11 @@ fun BrowseSourceCompactGrid(
                             loadCover = !isLoadingPaused,
                             progressFor = progressFor,
                             isLastRead = isLastRead,
+                            highlightColor = if (highlightedMangaId == manga.id) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha.value)
+                            } else {
+                                Color.Transparent
+                            },
                             onClick = { onMangaClick(manga) },
                             onLongClick = { onMangaLongClick(manga) },
                         )
@@ -188,6 +209,7 @@ fun BrowseSourceCompactGrid(
             onScrollToIndex = { index ->
                 scope.launch {
                     if (isLocating) return@launch
+                    highlightedMangaId = lastReadMangaId
                     isLocating = true
                     try {
                         gridState.smoothLocateToItem(index + leadingItemCount, locateTransition)
@@ -209,58 +231,70 @@ private fun BrowseSourceCompactGridItem(
     loadCover: Boolean = true,
     progressFor: (mangaId: Long, url: String) -> MangaProgress = { _, _ -> MangaProgress.EMPTY },
     isLastRead: (mangaId: Long) -> Boolean = { false },
+    highlightColor: Color = Color.Transparent,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = onClick,
 ) {
     val manga = item.manga
     val progress = progressFor(manga.id, manga.url)
     val isFavorite = if (favoriteIds != null) manga.id in favoriteIds else manga.favorite
-    MangaCompactGridItem(
-        title = manga.title,
-        coverData = MangaCover(
-            mangaId = manga.id,
-            sourceId = manga.source,
-            isMangaFavorite = manga.favorite,
-            url = manga.thumbnailUrl,
-            lastModified = manga.coverLastModified,
+    Box(
+        modifier = Modifier.border(
+            width = 3.dp,
+            color = highlightColor,
+            shape = RoundedCornerShape(8.dp),
         ),
-        coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
-        loadCover = loadCover,
-        coverBadgeStart = {
-            if (index != null) {
-                IndexLabel(
-                    index = index,
-                    style = MaterialTheme.typography.labelSmall.copy(color = Color.White),
-                    background = Color.Black.copy(alpha = 0.55f),
-                )
-            }
-        },
-        coverBadgeBottomStart = {
-            InLibraryBadge(enabled = isFavorite)
-        },
-        coverBadgeEnd = {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                if (item.matchedChapter != null) {
-                    MatchedChapterBadge(chapter = item.matchedChapter)
+    ) {
+        MangaCompactGridItem(
+            title = manga.title,
+            coverData = MangaCover(
+                mangaId = manga.id,
+                sourceId = manga.source,
+                isMangaFavorite = manga.favorite,
+                url = manga.thumbnailUrl,
+                lastModified = manga.coverLastModified,
+            ),
+            coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
+            loadCover = loadCover,
+            coverBadgeStart = {
+                if (index != null) {
+                    IndexLabel(
+                        index = index,
+                        style = MaterialTheme.typography.labelSmall.copy(color = Color.White),
+                        background = Color.Black.copy(alpha = 0.55f),
+                    )
                 }
-                ProgressBadge(
-                    finishedCount = progress.finishedCount,
-                    totalChapters = progress.totalChapters,
-                )
-            }
-        },
-        coverBadgeBottomEnd = {
-            if (isLastRead(manga.id)) {
-                LastReadBadge()
-            }
-        },
-        badgesStartFlush = true,
-        badgesBottomEndFlush = true,
-        badgesBottomStartFlush = true,
-        onLongClick = onLongClick,
-        onClick = onClick,
-    )
+            },
+            coverBadgeBottomStart = {
+                InLibraryBadge(enabled = isFavorite)
+            },
+            coverBadgeEnd = {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (item.matchedChapter != null) {
+                        MatchedChapterBadge(chapter = item.matchedChapter)
+                    }
+                    ProgressBadge(
+                        finishedCount = progress.finishedCount,
+                        totalChapters = progress.totalChapters,
+                    )
+                }
+            },
+            coverBadgeBottomEnd = {
+                if (isLastRead(manga.id)) {
+                    LastReadBadge()
+                }
+            },
+            badgesStartFlush = true,
+            badgesBottomEndFlush = true,
+            badgesBottomStartFlush = true,
+            onLongClick = onLongClick,
+            onClick = onClick,
+        )
+    }
 }
+
+private const val HIGHLIGHT_HOLD_MILLIS = 1200L
+private const val HIGHLIGHT_FADE_OUT_MILLIS = 350

@@ -19,11 +19,14 @@ open class GestureDetectorWithLongTap(
 
     private val handler = Handler(Looper.getMainLooper())
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val doubleTapSlop = ViewConfiguration.get(context).scaledDoubleTapSlop
     private val longTapTime = ViewConfiguration.getLongPressTimeout().toLong()
     private val doubleTapTime = ViewConfiguration.getDoubleTapTimeout().toLong()
 
     private var downX = 0f
     private var downY = 0f
+    private var lastDownX = 0f
+    private var lastDownY = 0f
     private var lastUp = 0L
     private var lastDownEvent: MotionEvent? = null
 
@@ -38,9 +41,17 @@ open class GestureDetectorWithLongTap(
                 lastDownEvent?.recycle()
                 lastDownEvent = MotionEvent.obtain(ev)
 
-                // This is the key difference with the built-in detector. We have to ignore the
-                // event if the last up and current down are too close in time (double tap).
-                if (ev.downTime - lastUp > doubleTapTime) {
+                // A quick second tap on the same spot is the start of a double-tap zoom, so its
+                // long-press must not fire while zooming. Any other spot (or a later press) arms
+                // the long-press normally — a tap to turn the page followed by an immediate
+                // long-press on the image is a plain long-press, not a double-tap.
+                val isDoubleTap = ev.downTime - lastUp <= doubleTapTime &&
+                    abs(ev.x - lastDownX) <= doubleTapSlop &&
+                    abs(ev.y - lastDownY) <= doubleTapSlop
+                lastDownX = ev.x
+                lastDownY = ev.y
+                handler.removeCallbacks(longTapFn)
+                if (!isDoubleTap) {
                     downX = ev.x
                     downY = ev.y
                     handler.postDelayed(longTapFn, longTapTime)

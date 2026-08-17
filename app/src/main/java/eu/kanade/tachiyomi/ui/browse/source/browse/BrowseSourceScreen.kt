@@ -145,7 +145,6 @@ data class BrowseSourceScreen(
             },
         )
         val state by viewModel.state.collectAsStateWithLifecycle()
-        val returnAnchorMangaId by viewModel.returnAnchorMangaId.collectAsStateWithLifecycle()
         val progressContext by viewModel.progressContextState.collectAsStateWithLifecycle()
         val lastReadMangaId = progressContext.lastReadMangaId
         val currentViewMangaCount by viewModel.currentViewMangaCount.collectAsStateWithLifecycle()
@@ -492,7 +491,7 @@ data class BrowseSourceScreen(
                 columns = viewModel.getColumnsPreference(LocalConfiguration.current.orientation),
                 displayMode = viewModel.displayMode,
                 lastReadMangaId = lastReadMangaId,
-                locateMangaId = returnAnchorMangaId,
+                locateMangaId = null,
                 favoriteIds = favoriteIds,
                 progressFor = { mangaId, url ->
                     val ctx = progressContext
@@ -523,7 +522,6 @@ data class BrowseSourceScreen(
                                 .map { manga -> manga.manga.id },
                         ),
                     )
-                    viewModel.rememberReturnAnchor(it.id)
                 },
                 onMangaLongClick = { manga ->
                     scope.launchIO {
@@ -541,7 +539,6 @@ data class BrowseSourceScreen(
                     }
                 },
                 onRefreshChapters = viewModel::refreshAllChapters,
-                onLocateMangaHandled = viewModel::consumeReturnAnchor,
                 scrollToTopRequest = scrollToTopRequest,
             )
         }

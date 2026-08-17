@@ -69,7 +69,18 @@ class ChapterReadingSessionTest {
         val session = backwardSession(totalPages = 1)
 
         assertNull(session.onSettled(0))
-        assertNull(session.onSettled(0))
+        assertNull(session.onExit(0))
+    }
+
+    @Test
+    fun `single page direct and forward entry never auto completes`() {
+        val direct = ChapterReadingSession(1, ChapterEntryDirection.Direct, alreadyRead = false)
+        val forward = ChapterReadingSession(1, ChapterEntryDirection.Forward, alreadyRead = false)
+
+        assertNull(direct.onSettled(0))
+        assertNull(direct.onExit(0))
+        assertNull(forward.onSettled(0))
+        assertNull(forward.onExit(0))
     }
 
     @Test

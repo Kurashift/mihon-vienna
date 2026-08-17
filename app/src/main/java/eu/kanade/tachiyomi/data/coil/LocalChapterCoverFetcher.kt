@@ -26,7 +26,10 @@ class LocalChapterCoverFetcher(
             source = ImageSource(
                 file = file.toOkioPath(),
                 fileSystem = FileSystem.SYSTEM,
-                diskCacheKey = file.name,
+                // Include the DB-derived version so a freshly written custom cover is not
+                // shadowed by Coil's disk cache, which would otherwise serve the stale snapshot
+                // forever because the on-disk file name is stable.
+                diskCacheKey = "${file.name};${data.version}",
             ),
             mimeType = "image/webp",
             dataSource = DataSource.DISK,

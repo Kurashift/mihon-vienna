@@ -33,6 +33,17 @@ class ReadingCompletionPolicyTest {
     }
 
     @Test
+    fun `unread legacy progress equal to total pages starts at first page`() {
+        val chapter = ChapterImpl().apply {
+            read = false
+            last_page_read = 12
+            total_pages = 0
+        }
+
+        assertEquals(0, ReaderChapter(chapter).resumePageIndex(12))
+    }
+
+    @Test
     fun `random pool follows explicit read state`() {
         assertTrue(Chapter.create().copy(lastPageRead = 10, totalPages = 12).isEligibleForRandomPool)
         assertFalse(Chapter.create().copy(read = true, lastPageRead = 8, totalPages = 12).isEligibleForRandomPool)

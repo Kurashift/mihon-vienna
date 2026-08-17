@@ -208,19 +208,27 @@ fun MangaChapterListItem(
             Column(
                 modifier = Modifier
                     .let { if (cover != null) it.heightIn(min = 144.dp) else it }
-                    .padding(start = 8.dp, end = 4.dp),
+                    .padding(start = 10.dp, end = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(
+                    // With a cover the rail is 144dp tall: spread the status icons evenly so
+                    // sparse rows fill the vertical space instead of leaving a dead zone.
+                    // Without a cover the row stays compact, so fall back to fixed spacing.
+                    modifier = if (cover != null) Modifier.weight(1f) else Modifier,
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = if (cover != null) {
+                        Arrangement.SpaceEvenly
+                    } else {
+                        Arrangement.spacedBy(10.dp)
+                    },
                 ) {
                     if (read) {
                         Icon(
                             imageVector = Icons.Filled.CheckCircle,
                             contentDescription = stringResource(MR.strings.action_mark_as_read),
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -228,7 +236,7 @@ fun MangaChapterListItem(
                         Icon(
                             imageVector = Icons.Filled.Flag,
                             contentDescription = stringResource(MR.strings.action_mark_duplicate),
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -236,7 +244,7 @@ fun MangaChapterListItem(
                         Icon(
                             imageVector = Icons.Filled.Bookmark,
                             contentDescription = stringResource(MR.strings.action_filter_bookmarked),
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -244,7 +252,7 @@ fun MangaChapterListItem(
                         Icon(
                             imageVector = Icons.Filled.Favorite,
                             contentDescription = stringResource(MR.strings.action_add_to_good_doujin),
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -294,7 +302,7 @@ private fun getSwipeAction(
             onSwipe = onSwipe,
         )
         LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin -> swipeAction(
-            icon = if (goodDoujinMarked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+            icon = if (goodDoujinMarked) Icons.Outlined.FavoriteBorder else Icons.Filled.Favorite,
             background = background,
             isUndo = goodDoujinMarked,
             onSwipe = onSwipe,

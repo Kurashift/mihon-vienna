@@ -1034,6 +1034,7 @@ private fun LazyListScope.sharedChapterItems(
         val context = LocalContext.current
 
         val isRead = item.chapter.read
+        val chapterProgress = item.chapter.toChapterProgressUi()
         val chapterTitle = if (manga.displayMode == Manga.CHAPTER_DISPLAY_NUMBER) {
             stringResource(
                 MR.strings.display_mode_chapter,
@@ -1139,18 +1140,12 @@ private fun LazyListScope.sharedChapterItems(
                         },
                     ),
                 title = chapterTitle,
-                readProgress = item.chapter.totalPages
-                    .takeIf { it > 0L }
-                    ?.let { totalPages ->
-                        val readPages = if (isRead) {
-                            totalPages
-                        } else {
-                            item.chapter.lastPageRead.coerceIn(1L, totalPages)
-                        }
+                readProgress = chapterProgress
+                    ?.let { progress ->
                         stringResource(
                             MR.strings.chapter_progress_ratio,
-                            readPages,
-                            totalPages,
+                            progress.readPages,
+                            progress.totalPages,
                         )
                     },
                 scanlator = item.chapter.scanlator.takeIf { !it.isNullOrBlank() },
@@ -1172,16 +1167,7 @@ private fun LazyListScope.sharedChapterItems(
                 } else {
                     null
                 },
-                readProgressFraction = item.chapter.totalPages
-                    .takeIf { it > 0L }
-                    ?.let { totalPages ->
-                        val readPages = if (isRead) {
-                            totalPages
-                        } else {
-                            item.chapter.lastPageRead.coerceIn(1L, totalPages)
-                        }
-                        (readPages.toFloat() / totalPages).coerceIn(0f, 1f)
-                    },
+                readProgressFraction = chapterProgress?.fraction,
                 onLongClick = if (manga.isLocal()) {
                     selectFromLongPress.takeIf { isAnyChapterSelected }
                 } else {
@@ -1245,12 +1231,7 @@ private fun LazyListScope.sharedChapterGridItems(
                 } else {
                     item.chapter.name
                 }
-                val totalPages = item.chapter.totalPages
-                val readPages = if (item.chapter.read) {
-                    totalPages
-                } else {
-                    item.chapter.lastPageRead.coerceIn(1L, totalPages.coerceAtLeast(1L))
-                }
+                val chapterProgress = item.chapter.toChapterProgressUi()
                 MangaChapterGridItem(
                     modifier = Modifier.weight(1f),
                     title = chapterTitle,
@@ -1258,9 +1239,14 @@ private fun LazyListScope.sharedChapterGridItems(
                         chapterUrl = item.chapter.url,
                         version = item.chapter.dateUpload xor item.chapter.lastModifiedAt,
                     ),
-                    readProgress = totalPages.takeIf { it > 0L }?.let {
-                        stringResource(MR.strings.chapter_progress_ratio, readPages, it)
+                    readProgress = chapterProgress?.let { progress ->
+                        stringResource(
+                            MR.strings.chapter_progress_ratio,
+                            progress.readPages,
+                            progress.totalPages,
+                        )
                     },
+                    readProgressFraction = chapterProgress?.fraction,
                     read = item.chapter.read,
                     selected = item.selected,
                     bookmark = item.chapter.bookmark,

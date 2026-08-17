@@ -171,6 +171,12 @@ SET manga_id = coalesce(:mangaId, manga_id),
         WHEN coalesce(:totalPages, total_pages) > 0
             AND coalesce(:read, read) = 1
             THEN coalesce(:totalPages, total_pages)
+        WHEN :totalPages IS NOT NULL
+            AND :totalPages > 0
+            AND total_pages <= 0
+            AND coalesce(:read, read) = 0
+            AND coalesce(:lastPageRead, last_page_read) >= :totalPages
+            THEN 0
         ELSE coalesce(:lastPageRead, last_page_read)
     END,
     total_pages = coalesce(:totalPages, total_pages),

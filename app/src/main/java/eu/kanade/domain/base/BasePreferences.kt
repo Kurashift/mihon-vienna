@@ -52,7 +52,7 @@ class BasePreferences(
 
     val localChapterCoverGridEnabled: Preference<Boolean> = preferenceStore.getBoolean(
         "pref_local_chapter_cover_grid_enabled",
-        true,
+        false,
     )
 
     val installationId: Preference<String> = preferenceStore.getString(Preference.appStateKey("installation_id"), "")

@@ -38,7 +38,10 @@ data class ReaderChapter(val chapter: Chapter) {
         val lastPageRead = chapter.last_page_read
         return when {
             chapter.read && totalPages > 0 -> totalPages - 1
-            lastPageRead in 1..totalPages -> lastPageRead - 1
+            // A stored page equal to the total page count is only valid for a chapter already
+            // marked as read. Unread chapters in this state (legacy data where total_pages was
+            // persisted as 0) would otherwise open on the last page and be completed instantly.
+            lastPageRead in 1 until totalPages -> lastPageRead - 1
             else -> 0
         }
     }

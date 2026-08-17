@@ -176,6 +176,9 @@
     <string name="action_install">Install</string>
     <string name="action_share">Share</string>
     <string name="action_save">Save</string>
+    <string name="action_cover">Main</string>
+    <string name="action_chapter_cover">Chapter</string>
+    <string name="action_copy">Copy</string>
     <string name="action_reset">Reset</string>
     <string name="action_revert_to_default">Revert to default</string>
     <!-- missing undo feature after Compose rewrite #7454 -->

@@ -1412,7 +1412,7 @@ class LocalSource(
                 emptyMap()
             } else {
                 val root = JSONObject(chapterIndexFile.readText())
-                if (root.optInt("version", -1) != 2) {
+                if (root.optInt("version", -1) != 3) {
                     emptyMap()
                 } else {
                     val mangaObject = root.optJSONObject("manga")
@@ -1476,7 +1476,7 @@ class LocalSource(
                 mangaObject.put(url, JSONObject().put("chapters", array))
             }
             val root = JSONObject()
-                .put("version", 2)
+                .put("version", 3)
                 .put("manga", mangaObject)
 
             writeIndexAtomically(chapterIndexFile, root.toString())
@@ -1519,9 +1519,8 @@ class LocalSource(
             .filterNot { it.name.orEmpty().startsWith('.') }
             .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
 
-        val chapterUrlPrefix = manga.url.trimEnd('/') + "/"
         getChapterIndex(manga, chapterFiles)
-            .associate { entry -> chapterUrlPrefix + entry.name to entry.pageCount.toLong() }
+            .associate { entry -> "${manga.url}/${entry.name}" to entry.pageCount.toLong() }
     }
 
     private suspend fun getChapterList(manga: SManga): List<SChapter> = withIOContext {
