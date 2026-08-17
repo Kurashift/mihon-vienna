@@ -120,9 +120,11 @@ android {
 
             buildConfigField("boolean", "LOCAL_SOURCE_FIRST", "true")
         }
-        create("shortCovers") {
+        create("personal") {
             initWith(release)
 
+            // Keep the existing application ID so the formally named primary build remains an
+            // in-place upgrade and preserves app data.
             applicationIdSuffix = ".dev"
             matchingFallbacks.addAll(commonMatchingFallbacks)
 
@@ -140,7 +142,7 @@ android {
 
     sourceSets {
         getByName("preview").res.directories.add("src/debug/res")
-        getByName("shortCovers").res.directories.add("src/debug/res")
+        getByName("personal").res.directories.add("src/debug/res")
         getByName("benchmark").res.directories.add("src/debug/res")
     }
 

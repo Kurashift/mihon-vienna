@@ -9,7 +9,7 @@
 在 Mihon 基础上增加/调整的个人功能包括：
 
 - 音频/有声内容支持
-- 本地源优先的构建变体（`localFirst`）
+- 本地源优先的个人主版本（`personal`）
 - 阅读器增强：随机阅读历史、阅读进度会话、滑动手势、Webtoon 选择等
 - 浏览页增强：刷新章节、最近阅读、日期分组等
 - 历史/搜索增强：搜索历史、一键清除历史等
@@ -22,12 +22,11 @@
 需要 JDK 17+ 和 Android SDK。
 
 ```bash
-# 普通个人版
-./gradlew app:assembleRelease
-
-# 本地源优先版
-./gradlew app:assembleLocalFirst
+# 个人主版本（默认）
+./gradlew app:assemblePersonal
 ```
+
+其他变体仅在明确需要时构建。
 
 ## 免责声明
 
