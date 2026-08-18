@@ -2,14 +2,19 @@ package eu.kanade.presentation.audio
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +48,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 import tachiyomi.i18n.MR
@@ -74,7 +80,11 @@ fun AudioReaderFloatingBar(
 
     var volumeVisible by remember { mutableStateOf(false) }
     Column(modifier = modifier) {
-        AnimatedVisibility(visible = volumeVisible) {
+        AnimatedVisibility(
+            visible = volumeVisible,
+            enter = fadeIn(tween(90)),
+            exit = fadeOut(tween(90)),
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -83,7 +93,7 @@ fun AudioReaderFloatingBar(
             ) {
                 AudioVerticalVolumeControl(
                     controller = controller,
-                    modifier = Modifier.padding(end = 52.dp),
+                    modifier = Modifier.padding(end = 69.dp),
                 )
             }
         }
@@ -223,12 +233,7 @@ private fun AudioReaderMiniControl(
         modifier = modifier,
         horizontalAlignment = Alignment.Start,
     ) {
-        AnimatedVisibility(visible = volumeVisible) {
-            AudioVerticalVolumeControl(
-                controller = controller,
-                modifier = Modifier.padding(start = 40.dp),
-            )
-        }
+        MiniVolumePopup(controller = controller, visible = volumeVisible)
 
         Surface(
             shape = RoundedCornerShape(6.dp),
@@ -284,6 +289,23 @@ private fun AudioReaderMiniControl(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MiniVolumePopup(
+    controller: AudioPlayerController,
+    visible: Boolean,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(90)),
+        exit = fadeOut(tween(90)),
+    ) {
+        AudioVerticalVolumeControl(
+            controller = controller,
+            modifier = Modifier.padding(start = 40.dp),
+        )
     }
 }
 
@@ -369,7 +391,15 @@ private fun AudioVerticalVolumeControl(
                     val trackWidth = 5.dp.toPx()
                     val x = size.width / 2f
                     val bottom = size.height
-                    val thumbY = size.height * (1f - fraction)
+                    // Keep the lowest non-zero volume visible as a distinct notch instead of
+                    // looking like 0 on devices with a large volume range.
+                    val minVisibleFraction = (10.dp.toPx() / size.height.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                    val displayFraction = if (fraction <= 0f) {
+                        0f
+                    } else {
+                        fraction.coerceAtLeast(minVisibleFraction)
+                    }
+                    val thumbY = size.height * (1f - displayFraction)
                     val corner = CornerRadius(trackWidth / 2f)
 
                     drawRoundRect(
@@ -378,7 +408,7 @@ private fun AudioVerticalVolumeControl(
                         size = Size(trackWidth, size.height),
                         cornerRadius = corner,
                     )
-                    if (fraction > 0f) {
+                    if (displayFraction > 0f) {
                         drawRoundRect(
                             color = progressColor,
                             topLeft = Offset(x - trackWidth / 2f, thumbY),

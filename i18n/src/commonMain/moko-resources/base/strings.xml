@@ -1195,6 +1195,7 @@
     <string name="audio_quick_choose_work">Choose a work to play</string>
     <string name="audio_quick_queue_summary">%1$d works · %2$d tracks</string>
     <string name="audio_quick_switch_work">Switch work</string>
+    <string name="audio_quick_open_work_details">Open work details</string>
     <string name="audio_quick_track_count">%1$d tracks</string>
     <string name="audio_previous_track">Previous track</string>
     <string name="audio_next_track">Next track</string>

@@ -1055,6 +1055,7 @@
     <string name="audio_quick_choose_work">选一部作品开始播放</string>
     <string name="audio_quick_queue_summary">%1$d 部作品 · %2$d 首音轨</string>
     <string name="audio_quick_switch_work">切换作品</string>
+    <string name="audio_quick_open_work_details">打开作品详情</string>
     <string name="audio_quick_track_count">%1$d 首</string>
     <string name="audio_previous_track">上一首</string>
     <string name="audio_next_track">下一首</string>

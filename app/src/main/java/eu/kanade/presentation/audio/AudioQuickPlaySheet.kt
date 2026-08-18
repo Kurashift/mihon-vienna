@@ -9,14 +9,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -24,18 +22,11 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
-import androidx.compose.material.icons.outlined.SkipNext
-import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -52,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -100,331 +90,239 @@ fun AudioQuickPlaySheet(
         works.firstOrNull { it.first == selectedWork }?.second.orEmpty()
     }
 
+    val queueRows = remember(selectedTracks, expandedFolders) {
+        buildList {
+            selectedTracks
+                .groupBy { it.folderPath }
+                .toList()
+                .forEach { (folderPath, folderTracks) ->
+                    if (folderPath.isNotBlank()) {
+                        add(QueueRow.Folder(folderPath))
+                        if (folderPath in expandedFolders) {
+                            folderTracks.forEachIndexed { index, item ->
+                                add(QueueRow.Track(item, index + 1))
+                            }
+                        }
+                    } else {
+                        folderTracks.forEachIndexed { index, item ->
+                            add(QueueRow.Track(item, index + 1))
+                        }
+                    }
+                }
+        }
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxHeight(0.88f)
                 .fillMaxWidth(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(MR.strings.audio_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = stringResource(
-                            MR.strings.audio_quick_queue_summary,
-                            works.size,
-                            playlist.size,
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (playlist.isNotEmpty()) {
-                    TextButton(
-                        onClick = {
-                            playAudio(playlist, playlist.indices.random(), controller, context)
-                        },
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Shuffle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
+            item(key = "header") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(MR.strings.audio_title),
+                            style = MaterialTheme.typography.titleMedium,
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(MR.strings.audio_quick_random))
+                        Text(
+                            text = stringResource(
+                                MR.strings.audio_quick_queue_summary,
+                                works.size,
+                                playlist.size,
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (playlist.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                playAudio(playlist, playlist.indices.random(), controller, context)
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Shuffle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(stringResource(MR.strings.audio_quick_random))
+                        }
                     }
                 }
             }
 
-            CurrentAudioPanel(
-                controller = controller,
-                onOpenWork = onOpenWork,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-
-            HorizontalDivider()
+            item(key = "divider") { HorizontalDivider() }
 
             if (playlist.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(MR.strings.audio_playlist_empty_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                item(key = "empty") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp, horizontal = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(MR.strings.audio_playlist_empty_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
-                return@Column
-            }
-
-            Text(
-                text = stringResource(MR.strings.audio_quick_switch_work),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
-            )
-            LazyRow(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(
-                    items = works,
-                    key = { it.first },
-                ) { (workKey, tracks) ->
-                    AudioWorkItem(
-                        item = tracks.first(),
-                        trackCount = tracks.size,
-                        selected = workKey == selectedWork,
-                        onClick = {
-                            selectedWork = workKey
-                            val index = playlist.indexOfFirst { it.mediaStreamUrl == tracks.first().mediaStreamUrl }
-                            playAudio(playlist, index, controller, context)
-                        },
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = selectedTracks.firstOrNull()?.workTitle.orEmpty(),
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = stringResource(MR.strings.audio_quick_track_count, selectedTracks.size),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
-                selectedTracks
-                    .groupBy { it.folderPath }
-                    .toList()
-                    .forEach { (folderPath, folderTracks) ->
-                        if (folderPath.isNotBlank()) {
-                            val expanded = folderPath in expandedFolders
-                            item(key = "folder:$folderPath") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            expandedFolders = if (expanded) {
-                                                expandedFolders - folderPath
-                                            } else {
-                                                expandedFolders + folderPath
-                                            }
-                                        }
-                                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        imageVector = if (expanded) {
-                                            Icons.Outlined.KeyboardArrowDown
-                                        } else {
-                                            Icons.AutoMirrored.Outlined.KeyboardArrowRight
-                                        },
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                    Icon(
-                                        imageVector = Icons.Outlined.Folder,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                    Text(
-                                        text = folderPath,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(start = 6.dp),
-                                    )
-                                }
-                            }
-                            if (expanded) {
-                                itemsIndexed(
-                                    items = folderTracks,
-                                    key = { _, item -> item.mediaStreamUrl },
-                                ) { index, item ->
-                                    val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
-                                    val isCurrent = state.item?.mediaStreamUrl == item.mediaStreamUrl
-                                    AudioTrackItem(
-                                        number = index + 1,
-                                        item = item,
-                                        isCurrent = isCurrent,
-                                        isPlaying = isCurrent && state.isPlaying,
-                                        onClick = { playAudio(playlist, globalIndex, controller, context) },
-                                    )
-                                }
-                            }
-                        } else {
-                            itemsIndexed(
-                                items = folderTracks,
-                                key = { _, item -> item.mediaStreamUrl },
-                            ) { index, item ->
-                                val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
-                                val isCurrent = state.item?.mediaStreamUrl == item.mediaStreamUrl
-                                AudioTrackItem(
-                                    number = index + 1,
-                                    item = item,
-                                    isCurrent = isCurrent,
-                                    isPlaying = isCurrent && state.isPlaying,
-                                    onClick = { playAudio(playlist, globalIndex, controller, context) },
+            } else {
+                item(key = "switch-title") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(MR.strings.audio_playlist),
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        val currentItem = state.item
+                        if (currentItem != null && onOpenWork != null) {
+                            Surface(
+                                onClick = { onOpenWork(currentItem) },
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                    contentDescription = stringResource(MR.strings.audio_quick_open_work_details),
+                                    modifier = Modifier.size(28.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
                     }
+                }
+
+                item(key = "works") {
+                    LazyRow(
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(
+                            items = works,
+                            key = { it.first },
+                        ) { (workKey, tracks) ->
+                            AudioWorkItem(
+                                item = tracks.first(),
+                                trackCount = tracks.size,
+                                selected = workKey == selectedWork,
+                                onClick = {
+                                    selectedWork = workKey
+                                    val index = playlist.indexOfFirst { it.mediaStreamUrl == tracks.first().mediaStreamUrl }
+                                    playAudio(playlist, index, controller, context)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                item(key = "selected-title") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = selectedTracks.firstOrNull()?.workTitle.orEmpty(),
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = stringResource(MR.strings.audio_quick_track_count, selectedTracks.size),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                items(
+                    items = queueRows,
+                    key = { row ->
+                        when (row) {
+                            is QueueRow.Folder -> "folder:${row.path}"
+                            is QueueRow.Track -> "track:${row.item.mediaStreamUrl}"
+                        }
+                    },
+                ) { row ->
+                    when (row) {
+                        is QueueRow.Folder -> {
+                            val expanded = row.path in expandedFolders
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        expandedFolders = if (expanded) {
+                                            expandedFolders - row.path
+                                        } else {
+                                            expandedFolders + row.path
+                                        }
+                                    }
+                                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = if (expanded) {
+                                        Icons.Outlined.KeyboardArrowDown
+                                    } else {
+                                        Icons.AutoMirrored.Outlined.KeyboardArrowRight
+                                    },
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Icon(
+                                    imageVector = Icons.Outlined.Folder,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Text(
+                                    text = row.path,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(start = 6.dp),
+                                )
+                            }
+                        }
+                        is QueueRow.Track -> {
+                            val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == row.item.mediaStreamUrl }
+                            val isCurrent = state.item?.mediaStreamUrl == row.item.mediaStreamUrl
+                            AudioTrackItem(
+                                number = row.number,
+                                item = row.item,
+                                isCurrent = isCurrent,
+                                isPlaying = isCurrent && state.isPlaying,
+                                onClick = { playAudio(playlist, globalIndex, controller, context) },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-@Composable
-private fun CurrentAudioPanel(
-    controller: AudioPlayerController,
-    onOpenWork: ((AudioPlayItem) -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    val state = controller.state
-    val item = state.item
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AudioCover(
-                coverUrl = item?.coverUrl,
-                contentDescription = item?.workTitle,
-                onClick = item?.let { current ->
-                    onOpenWork?.let { open -> { open(current) } }
-                },
-                modifier = Modifier.size(56.dp),
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp),
-            ) {
-                Text(
-                    text = item?.trackTitle ?: stringResource(MR.strings.audio_quick_choose_work),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = item?.workTitle ?: stringResource(MR.strings.audio_playlist),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            IconButton(
-                onClick = controller::previous,
-                enabled = state.hasPrevious,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.SkipPrevious,
-                    contentDescription = stringResource(MR.strings.audio_previous_track),
-                )
-            }
-            FilledIconButton(
-                onClick = controller::togglePlay,
-                enabled = item != null,
-            ) {
-                if (state.isBuffering) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                        contentDescription = null,
-                    )
-                }
-            }
-            IconButton(
-                onClick = controller::next,
-                enabled = state.hasNext,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.SkipNext,
-                    contentDescription = stringResource(MR.strings.audio_next_track),
-                )
-            }
-        }
-
-        AudioSeekBar(
-            controller = controller,
-            modifier = Modifier.padding(top = 2.dp),
-        )
-
-        AudioVolumeControl(
-            controller = controller,
-            compact = true,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (item != null && state.totalCount > 0) {
-                Text(
-                    text = stringResource(MR.strings.audio_player_position, state.index + 1, state.totalCount),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                Spacer(modifier = Modifier.weight(1f))
-            }
-            IconButton(onClick = controller::random, enabled = state.totalCount > 0) {
-                Icon(
-                    imageVector = Icons.Outlined.Shuffle,
-                    contentDescription = stringResource(MR.strings.audio_quick_random),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = controller::toggleLoop, enabled = item != null) {
-                Icon(
-                    imageVector = Icons.Outlined.Repeat,
-                    contentDescription = stringResource(MR.strings.audio_repeat_one),
-                    tint = if (state.isLooping) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        }
-    }
+private sealed interface QueueRow {
+    data class Folder(val path: String) : QueueRow
+    data class Track(val item: AudioPlayItem, val number: Int) : QueueRow
 }
 
 @Composable

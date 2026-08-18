@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
@@ -26,12 +27,15 @@ import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +50,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
 import androidx.core.graphics.Insets
@@ -107,6 +115,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
@@ -360,12 +369,20 @@ class ReaderActivity : BaseActivity() {
         val hasAudioSession = audioController.state.item != null
         val audioVisible = audioController.readerControlsVisible
         var showAudioSheet by rememberSaveable { mutableStateOf(false) }
+        val configuration = LocalConfiguration.current
+        val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        var miniBarOffsetX by remember { mutableStateOf(0f) }
+        var fullBarOffsetX by remember { mutableStateOf(0f) }
+        var miniBarWidthPx by remember { mutableStateOf(0) }
+        var fullBarWidthPx by remember { mutableStateOf(0) }
 
         LaunchedEffect(hasAudioSession) {
             if (!hasAudioSession) showAudioSheet = false
         }
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val readerWidthPx = constraints.maxWidth
+
             if (!state.menuVisible && showPageNumber) {
                 ReaderPageIndicator(
                     currentPage = state.currentPage,
@@ -392,15 +409,32 @@ class ReaderActivity : BaseActivity() {
                 },
                 audioControls = if (hasAudioSession && audioVisible) {
                     {
-                        AudioReaderFloatingBar(
-                            compact = false,
-                            onExpand = {},
-                            onDismiss = audioController::hideReaderControls,
-                            onOpenPlaylist = { showAudioSheet = true },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp),
-                        )
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            AudioReaderFloatingBar(
+                                compact = false,
+                                onExpand = {},
+                                onDismiss = audioController::hideReaderControls,
+                                onOpenPlaylist = { showAudioSheet = true },
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .offset { IntOffset(fullBarOffsetX.roundToInt(), 0) }
+                                    .onSizeChanged {
+                                        fullBarWidthPx = it.width
+                                        val maxOffset = (readerWidthPx - it.width).coerceAtLeast(0)
+                                        fullBarOffsetX = fullBarOffsetX.coerceIn(0f, maxOffset.toFloat())
+                                    }
+                                    .fillMaxWidth(if (isLandscape) 0.5f else 1f)
+                                    .padding(horizontal = 12.dp)
+                                    .pointerInput(Unit) {
+                                        detectDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            val maxOffset = (readerWidthPx - fullBarWidthPx).coerceAtLeast(0)
+                                            fullBarOffsetX = (fullBarOffsetX + dragAmount.x)
+                                                .coerceIn(0f, maxOffset.toFloat())
+                                        }
+                                    },
+                            )
+                        }
                     }
                 } else {
                     null
@@ -415,8 +449,22 @@ class ReaderActivity : BaseActivity() {
                     onOpenPlaylist = { showAudioSheet = true },
                     modifier = Modifier
                         .align(Alignment.BottomStart)
+                        .offset { IntOffset(miniBarOffsetX.roundToInt(), 0) }
+                        .onSizeChanged {
+                            miniBarWidthPx = it.width
+                            val maxOffset = (readerWidthPx - it.width).coerceAtLeast(0)
+                            miniBarOffsetX = miniBarOffsetX.coerceIn(0f, maxOffset.toFloat())
+                        }
                         .navigationBarsPadding()
-                        .padding(12.dp),
+                        .padding(12.dp)
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                val maxOffset = (readerWidthPx - miniBarWidthPx).coerceAtLeast(0)
+                                miniBarOffsetX = (miniBarOffsetX + dragAmount.x)
+                                    .coerceIn(0f, maxOffset.toFloat())
+                            }
+                        },
                 )
             }
         }
