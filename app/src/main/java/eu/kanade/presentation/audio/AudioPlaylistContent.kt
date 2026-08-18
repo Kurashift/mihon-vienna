@@ -59,6 +59,7 @@ fun AudioPlaylistContent(
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
     var expandedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var expandedFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     Scaffold(
         topBar = { scrollBehavior ->
@@ -121,13 +122,31 @@ fun AudioPlaylistContent(
                             .toList()
                             .forEach { (folderPath, folderTracks) ->
                                 if (folderPath.isNotBlank()) {
+                                    val expanded = folderPath in expandedFolders
                                     item(key = "folder:${group.key}:$folderPath") {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
+                                                .clickable {
+                                                    expandedFolders = if (expanded) {
+                                                        expandedFolders - folderPath
+                                                    } else {
+                                                        expandedFolders + folderPath
+                                                    }
+                                                }
                                                 .padding(start = 28.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
+                                            Icon(
+                                                imageVector = if (expanded) {
+                                                    Icons.Outlined.KeyboardArrowDown
+                                                } else {
+                                                    Icons.AutoMirrored.Outlined.KeyboardArrowRight
+                                                },
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp),
+                                            )
                                             Icon(
                                                 imageVector = Icons.Outlined.Folder,
                                                 contentDescription = null,
@@ -144,14 +163,26 @@ fun AudioPlaylistContent(
                                             )
                                         }
                                     }
-                                }
-                                folderTracks.forEachIndexed { index, item ->
-                                    item(key = "track:${group.key}:${item.mediaStreamUrl}") {
-                                        PlaylistTrackRow(
-                                            item = item,
-                                            onClick = { onClickTrack(group, group.tracks.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }) },
-                                            onRemove = { onRemoveTrack(item) },
-                                        )
+                                    if (expanded) {
+                                        folderTracks.forEachIndexed { index, item ->
+                                            item(key = "track:${group.key}:${item.mediaStreamUrl}") {
+                                                PlaylistTrackRow(
+                                                    item = item,
+                                                    onClick = { onClickTrack(group, group.tracks.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }) },
+                                                    onRemove = { onRemoveTrack(item) },
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    folderTracks.forEachIndexed { index, item ->
+                                        item(key = "track:${group.key}:${item.mediaStreamUrl}") {
+                                            PlaylistTrackRow(
+                                                item = item,
+                                                onClick = { onClickTrack(group, group.tracks.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }) },
+                                                onRemove = { onRemoveTrack(item) },
+                                            )
+                                        }
                                     }
                                 }
                             }

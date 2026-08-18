@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,7 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,7 +81,10 @@ fun AudioReaderFloatingBar(
                     .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                AudioVerticalVolumeControl(controller = controller)
+                AudioVerticalVolumeControl(
+                    controller = controller,
+                    modifier = Modifier.padding(end = 52.dp),
+                )
             }
         }
 
@@ -219,7 +226,7 @@ private fun AudioReaderMiniControl(
         AnimatedVisibility(visible = volumeVisible) {
             AudioVerticalVolumeControl(
                 controller = controller,
-                modifier = Modifier.padding(horizontal = 4.dp),
+                modifier = Modifier.padding(start = 40.dp),
             )
         }
 
@@ -255,7 +262,7 @@ private fun AudioReaderMiniControl(
                     modifier = Modifier.size(34.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Headphones,
+                        imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
                         contentDescription = stringResource(MR.strings.audio_volume_up),
                         tint = if (volumeVisible) {
                             MaterialTheme.colorScheme.primary
@@ -347,7 +354,7 @@ private fun AudioVerticalVolumeControl(
                     },
             ) {
                 val fraction = volume / maximum
-                val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
+                val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                 val progressColor = if (state.isMediaVolumeFixed) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                 } else {
@@ -356,30 +363,36 @@ private fun AudioVerticalVolumeControl(
 
                 Canvas(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .align(Alignment.Center),
                 ) {
-                    val trackWidth = 3.dp.toPx()
+                    val trackWidth = 5.dp.toPx()
                     val x = size.width / 2f
                     val bottom = size.height
                     val thumbY = size.height * (1f - fraction)
+                    val corner = CornerRadius(trackWidth / 2f)
 
-                    drawLine(
+                    drawRoundRect(
                         color = trackColor,
-                        start = Offset(x, 0f),
-                        end = Offset(x, bottom),
-                        strokeWidth = trackWidth,
+                        topLeft = Offset(x - trackWidth / 2f, 0f),
+                        size = Size(trackWidth, size.height),
+                        cornerRadius = corner,
                     )
                     if (fraction > 0f) {
-                        drawLine(
+                        drawRoundRect(
                             color = progressColor,
-                            start = Offset(x, bottom),
-                            end = Offset(x, thumbY),
-                            strokeWidth = trackWidth,
+                            topLeft = Offset(x - trackWidth / 2f, thumbY),
+                            size = Size(trackWidth, bottom - thumbY),
+                            cornerRadius = corner,
+                        )
+                        drawCircle(
+                            color = Color.White,
+                            radius = 7.dp.toPx(),
+                            center = Offset(x, thumbY),
                         )
                         drawCircle(
                             color = progressColor,
-                            radius = 4.dp.toPx(),
+                            radius = 5.dp.toPx(),
                             center = Offset(x, thumbY),
                         )
                     }

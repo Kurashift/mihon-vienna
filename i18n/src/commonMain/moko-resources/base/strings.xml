@@ -479,6 +479,8 @@
     <string name="reader_group_flash">Page flash</string>
     <string name="reader_group_other">Other</string>
     <string name="webtoon_nav">Webtoon</string>
+    <string name="audio_added_to_playlist">Added to play queue</string>
+    <string name="audio_removed_from_playlist">Removed from play queue</string>
     <string name="l_nav">L shaped</string>
     <string name="kindlish_nav">Kindle-ish</string>
     <string name="edge_nav">Edge</string>

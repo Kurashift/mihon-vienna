@@ -457,6 +457,8 @@
     <string name="edge_nav">邊緣式</string>
     <string name="kindlish_nav">Kindle 式</string>
     <string name="webtoon_nav">條漫</string>
+    <string name="audio_added_to_playlist">已加入待播列表</string>
+    <string name="audio_removed_from_playlist">已從待播列表移除</string>
     <string name="l_nav">L 式</string>
     <string name="action_filter_tracked">已登錄歷程</string>
     <string name="pref_dump_crash_logs_summary">產生錯誤記錄檔以便分享予開發人員</string>

@@ -68,7 +68,7 @@ fun AudioMiniPlayerBar(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .clickable(enabled = item != null && item.workId > 0, onClick = onOpenWork),
+                        .clickable(enabled = item != null, onClick = onOpenWork),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
                     if (item?.coverUrl.isNullOrBlank()) {

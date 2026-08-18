@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.audio
 
 import android.app.Activity
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,6 +34,8 @@ import kotlinx.coroutines.flow.update
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -49,6 +52,16 @@ class AudioDetailScreen(
         val state by viewModel.state.collectAsState()
         val playlistUrls by viewModel.playlistUrls.collectAsState()
         val isFavorite by viewModel.isFavorite.collectAsState()
+        val addedToPlaylistText = stringResource(MR.strings.audio_added_to_playlist)
+        val removedFromPlaylistText = stringResource(MR.strings.audio_removed_from_playlist)
+
+        fun toastPlaylistChange(added: Boolean) {
+            Toast.makeText(
+                activity,
+                if (added) addedToPlaylistText else removedFromPlaylistText,
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
 
         LaunchedEffect(work.id) {
             viewModel.load(work)
@@ -75,9 +88,15 @@ class AudioDetailScreen(
                 if (state.flatTracks.isNotEmpty()) navigator.push(AudioPlayerScreen(state.flatTracks, 0))
             },
             onClickTrack = { index -> navigator.push(AudioPlayerScreen(state.flatTracks, index)) },
-            onTogglePlaylist = viewModel::toggleInPlaylist,
-            onToggleWorkPlaylist = { viewModel.toggleWorkPlaylist(state.flatTracks) },
-            onToggleFolderPlaylist = viewModel::toggleFolderPlaylist,
+            onTogglePlaylist = { item ->
+                toastPlaylistChange(viewModel.toggleInPlaylist(item))
+            },
+            onToggleWorkPlaylist = {
+                toastPlaylistChange(viewModel.toggleWorkPlaylist(state.flatTracks))
+            },
+            onToggleFolderPlaylist = { folderPath ->
+                toastPlaylistChange(viewModel.toggleFolderPlaylist(folderPath))
+            },
             onToggleFavorite = { viewModel.toggleFavorite(work) },
             onClickCircle = { name ->
                 navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = "\$circle:$name\$"))
@@ -153,32 +172,39 @@ class AudioDetailViewModel(
         }
     }
 
-    fun toggleInPlaylist(item: AudioPlayItem) {
-        playlistStore.toggle(item)
+    fun toggleInPlaylist(item: AudioPlayItem): Boolean {
+        val added = playlistStore.toggle(item)
         refreshPlaylistState()
+        return added
     }
 
-    fun toggleWorkPlaylist(items: List<AudioPlayItem>) {
-        if (items.isEmpty()) return
+    fun toggleWorkPlaylist(items: List<AudioPlayItem>): Boolean {
+        if (items.isEmpty()) return false
         val queuedUrls = playlistStore.load().mapTo(hashSetOf()) { it.mediaStreamUrl }
-        if (items.all { it.mediaStreamUrl in queuedUrls }) {
+        return if (items.all { it.mediaStreamUrl in queuedUrls }) {
             playlistStore.removeWork(items.first().workId, items.first().workTitle)
+            refreshPlaylistState()
+            false
         } else {
-            playlistStore.addAll(items)
+            val added = playlistStore.addAll(items) > 0
+            refreshPlaylistState()
+            added
         }
-        refreshPlaylistState()
     }
 
-    fun toggleFolderPlaylist(folderPath: String) {
+    fun toggleFolderPlaylist(folderPath: String): Boolean {
         val items = _state.value.flatTracks.filter { it.folderPath == folderPath }
-        if (items.isEmpty()) return
+        if (items.isEmpty()) return false
         val queuedUrls = playlistStore.load().mapTo(hashSetOf()) { it.mediaStreamUrl }
-        if (items.all { it.mediaStreamUrl in queuedUrls }) {
+        return if (items.all { it.mediaStreamUrl in queuedUrls }) {
             playlistStore.removeAll(items.map { it.mediaStreamUrl })
+            refreshPlaylistState()
+            false
         } else {
-            playlistStore.addAll(items)
+            val added = playlistStore.addAll(items) > 0
+            refreshPlaylistState()
+            added
         }
-        refreshPlaylistState()
     }
 
     fun toggleFavorite(work: Work) {

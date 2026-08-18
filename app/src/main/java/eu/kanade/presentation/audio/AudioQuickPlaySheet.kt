@@ -19,9 +19,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Repeat
@@ -78,6 +80,12 @@ fun AudioQuickPlaySheet(
         playlist.groupBy { it.workId to it.workTitle }.toList()
     }
     var selectedWork by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    var expandedFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    LaunchedEffect(state.item?.folderPath) {
+        val currentFolder = state.item?.folderPath.orEmpty()
+        expandedFolders = if (currentFolder.isBlank()) emptySet() else setOf(currentFolder)
+    }
 
     LaunchedEffect(works, state.item?.workId, state.item?.workTitle) {
         val playingWork = state.item?.let { it.workId to it.workTitle }
@@ -217,13 +225,31 @@ fun AudioQuickPlaySheet(
                     .toList()
                     .forEach { (folderPath, folderTracks) ->
                         if (folderPath.isNotBlank()) {
+                            val expanded = folderPath in expandedFolders
                             item(key = "folder:$folderPath") {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .clickable {
+                                            expandedFolders = if (expanded) {
+                                                expandedFolders - folderPath
+                                            } else {
+                                                expandedFolders + folderPath
+                                            }
+                                        }
                                         .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    Icon(
+                                        imageVector = if (expanded) {
+                                            Icons.Outlined.KeyboardArrowDown
+                                        } else {
+                                            Icons.AutoMirrored.Outlined.KeyboardArrowRight
+                                        },
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
                                     Icon(
                                         imageVector = Icons.Outlined.Folder,
                                         contentDescription = null,
@@ -240,20 +266,37 @@ fun AudioQuickPlaySheet(
                                     )
                                 }
                             }
-                        }
-                        itemsIndexed(
-                            items = folderTracks,
-                            key = { _, item -> item.mediaStreamUrl },
-                        ) { index, item ->
-                            val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
-                            val isCurrent = state.item?.mediaStreamUrl == item.mediaStreamUrl
-                            AudioTrackItem(
-                                number = index + 1,
-                                item = item,
-                                isCurrent = isCurrent,
-                                isPlaying = isCurrent && state.isPlaying,
-                                onClick = { playAudio(playlist, globalIndex, controller, context) },
-                            )
+                            if (expanded) {
+                                itemsIndexed(
+                                    items = folderTracks,
+                                    key = { _, item -> item.mediaStreamUrl },
+                                ) { index, item ->
+                                    val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
+                                    val isCurrent = state.item?.mediaStreamUrl == item.mediaStreamUrl
+                                    AudioTrackItem(
+                                        number = index + 1,
+                                        item = item,
+                                        isCurrent = isCurrent,
+                                        isPlaying = isCurrent && state.isPlaying,
+                                        onClick = { playAudio(playlist, globalIndex, controller, context) },
+                                    )
+                                }
+                            }
+                        } else {
+                            itemsIndexed(
+                                items = folderTracks,
+                                key = { _, item -> item.mediaStreamUrl },
+                            ) { index, item ->
+                                val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
+                                val isCurrent = state.item?.mediaStreamUrl == item.mediaStreamUrl
+                                AudioTrackItem(
+                                    number = index + 1,
+                                    item = item,
+                                    isCurrent = isCurrent,
+                                    isPlaying = isCurrent && state.isPlaying,
+                                    onClick = { playAudio(playlist, globalIndex, controller, context) },
+                                )
+                            }
                         }
                     }
             }

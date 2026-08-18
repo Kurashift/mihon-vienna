@@ -288,7 +288,7 @@ private fun SlimSeekBar(
     Box(
         modifier = modifier
             .height(28.dp)
-            .pointerInput(totalPages, currentPage) {
+            .pointerInput(totalPages) {
                 val widthPx = size.width.toFloat()
                 fun seekAt(px: Float) {
                     val fraction = (px / widthPx).coerceIn(0f, 1f)

@@ -106,6 +106,18 @@ class AudioPlayerController(
 
     init {
         refreshSystemVolume(notifyService = false)
+        restoreLastSession()
+    }
+
+    /** Restores the most recent history entry so the persistent mini player is not blank. */
+    private fun restoreLastSession() {
+        val latest = historyStore.load().firstOrNull() ?: return
+        state = state.copy(
+            item = latest.item,
+            positionMs = latest.positionMs.coerceIn(0, latest.item.durationMs),
+            durationMs = latest.item.durationMs,
+            totalCount = 1,
+        )
     }
 
     private var items: List<AudioPlayItem> = emptyList()
@@ -302,7 +314,11 @@ class AudioPlayerController(
     }
 
     fun togglePlay() {
-        if (player.mediaItemCount == 0) return
+        if (player.mediaItemCount == 0) {
+            val item = state.item ?: return
+            start(listOf(item), 0, state.positionMs, playWhenReady = true)
+            return
+        }
         if (player.isPlaying) {
             pause()
         } else {
