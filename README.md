@@ -1,4 +1,4 @@
-# Mihon Personal
+# Mihon Vienna
 
 基于 [Mihon](https://github.com/mihonapp/mihon) 的个人定制版漫画阅读器（Android）。
 
@@ -6,10 +6,10 @@
 
 ## 与原项目（官方 Mihon）的对比
 
-| 对比项 | 官方 Mihon | Mihon Personal（本项目） |
+| 对比项 | 官方 Mihon | Mihon Vienna（本项目） |
 | --- | --- | --- |
 | 定位 | 通用漫画阅读器 | 以「本地源 + 随机点开即看」为核心的个人版 |
-| 默认构建 | 多版本（`standard` / `release` 等） | `personal` 版本，应用 ID 保持 `app.mihon.dev`，可原地升级 |
+| 默认构建 | 多版本（`standard` / `release` 等） | `vienna` 版本，应用 ID 保持 `app.mihon.dev`，可原地升级 |
 | 随机入口 | 仅有「随机排序」 | 全链路随机机制（浏览 / 漫画页 / 阅读器手势跳转） |
 | 音声 | 无 | 独立 **音声频道**（在线流播 + 收藏 + 播放列表） |
 | 收藏 | 无 | 「收藏」清单 + 随机打开收藏作品 |
@@ -101,7 +101,7 @@
 
 在 Mihon 基础上还调整 / 增加了这些功能：
 
-- **本地源优先**的个人主版本（`personal`），应用 ID 保持 `app.mihon.dev`；
+- **本地源优先**的个人主版本（`vienna`），应用 ID 保持 `app.mihon.dev`；
 - 阅读器增强：随机阅读历史、阅读进度会话、滑动手势（普通翻页 + 随机跳转）、Webtoon 布局选择等；
 - 浏览页增强：刷新章节目录、最近阅读、按日期分组等；
 - 历史 / 搜索增强：搜索历史、一键清除历史等；
@@ -115,7 +115,7 @@
 
 ```bash
 # 个人主版本（默认，应用 ID：app.mihon.dev，可原地升级）
-./gradlew app:assemblePersonal
+./gradlew app:assembleVienna
 ```
 
 其他变体（`localFirst` / `release` 等）仅在明确需要时构建。连接的主力设备建议使用 `arm64-v8a` APK。

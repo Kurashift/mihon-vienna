@@ -79,7 +79,7 @@ android {
             isPseudoLocalesEnabled = true
         }
         val release = getByName("release") {
-            applicationIdSuffix = ".personal"
+            applicationIdSuffix = ".vienna"
             isMinifyEnabled = true
             isShrinkResources = true
 
@@ -120,10 +120,10 @@ android {
 
             buildConfigField("boolean", "LOCAL_SOURCE_FIRST", "true")
         }
-        create("personal") {
+        create("vienna") {
             initWith(release)
 
-            // Keep the existing application ID so the formally named primary build remains an
+            // Keep the existing application ID so the formerly named primary build remains an
             // in-place upgrade and preserves app data.
             applicationIdSuffix = ".dev"
             matchingFallbacks.addAll(commonMatchingFallbacks)
