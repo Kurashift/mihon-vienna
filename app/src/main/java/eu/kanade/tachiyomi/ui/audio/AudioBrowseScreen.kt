@@ -18,6 +18,7 @@ import eu.kanade.tachiyomi.data.audio.AudioAccountSync
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
+import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.Work
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,8 +64,7 @@ class AudioBrowseScreen(
             bottomBar = { AudioMiniPlayerNavigationBar() },
             onClickWork = { work -> navigator.push(AudioDetailScreen(work)) },
             onClickHistory = { navigator.push(AudioHistoryScreen()) },
-            onClickCategories = { navigator.push(AudioCategoryScreen()) },
-            onClickPlaylist = { navigator.push(AudioPlaylistScreen()) },
+            onClickCategory = { type -> navigator.push(AudioCategoryScreen(type)) },
             navigateUp = navigator::pop,
             onSearch = viewModel::search,
             onExitSearch = viewModel::exitSearch,

@@ -32,9 +32,16 @@ class SubtitleParserTest {
         val content = """
             [Events]
             Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-            Dialogue: 0,0:00:01.50,0:00:03.00,Default,,0,0,0,,{\i1}first\Nsecond
+            Dialogue: 0,0:00:01.50,0:00:03.00,Default,,0,0,0,,{\i1}first{\i0}\Nsecond
         """.trimIndent()
 
         assertEquals(LyricLine(1_500L, "first\nsecond"), SubtitleParser.parse(content, "test.ass").single())
+    }
+
+    @Test
+    fun `ass text keeps unmatched opening brace`() {
+        val content = "Dialogue: 0,0:00:01.50,0:00:03.00,Default,,0,0,0,,line {note"
+
+        assertEquals(LyricLine(1_500L, "line {note"), SubtitleParser.parse(content, "test.ass").single())
     }
 }

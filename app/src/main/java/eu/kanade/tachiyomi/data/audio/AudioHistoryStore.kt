@@ -17,6 +17,7 @@ data class AudioPlayItem(
     val trackTitle: String = "",
     val mediaStreamUrl: String = "",
     val subtitleUrl: String? = null,
+    val subtitleFallbackUrl: String? = null,
     val durationMs: Long = 0,
 ) : JavaSerializable
 

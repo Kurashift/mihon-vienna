@@ -1,9 +1,12 @@
 package eu.kanade.tachiyomi.ui.audio
 
+import android.app.Activity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.BackHandler
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -33,11 +36,15 @@ import tachiyomi.core.common.util.system.logcat
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-class AudioDetailScreen(internal val work: Work) : Screen() {
+class AudioDetailScreen(
+    internal val work: Work,
+    private val finishActivityOnBack: Boolean = false,
+) : Screen() {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val activity = LocalContext.current as? Activity
         val viewModel = viewModel<AudioDetailViewModel>()
         val state by viewModel.state.collectAsState()
         val playlistUrls by viewModel.playlistUrls.collectAsState()
@@ -47,19 +54,29 @@ class AudioDetailScreen(internal val work: Work) : Screen() {
             viewModel.load(work)
         }
 
+        fun navigateBack() {
+            navigator.pop()
+            if (finishActivityOnBack) activity?.finish()
+        }
+
+        if (finishActivityOnBack) {
+            BackHandler(onBack = ::navigateBack)
+        }
+
         AudioDetailContent(
             work = work,
             state = state,
             playlistUrls = playlistUrls,
             isFavorite = isFavorite,
             bottomBar = { AudioMiniPlayerNavigationBar() },
-            navigateUp = navigator::pop,
+            navigateUp = ::navigateBack,
             onRetry = { viewModel.load(work) },
             onPlayAll = {
                 if (state.flatTracks.isNotEmpty()) navigator.push(AudioPlayerScreen(state.flatTracks, 0))
             },
             onClickTrack = { index -> navigator.push(AudioPlayerScreen(state.flatTracks, index)) },
             onTogglePlaylist = viewModel::toggleInPlaylist,
+            onToggleWorkPlaylist = { viewModel.toggleWorkPlaylist(state.flatTracks) },
             onToggleFavorite = { viewModel.toggleFavorite(work) },
             onClickCircle = { name ->
                 navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = "\$circle:$name\$"))
@@ -137,6 +154,17 @@ class AudioDetailViewModel(
 
     fun toggleInPlaylist(item: AudioPlayItem) {
         playlistStore.toggle(item)
+        refreshPlaylistState()
+    }
+
+    fun toggleWorkPlaylist(items: List<AudioPlayItem>) {
+        if (items.isEmpty()) return
+        val queuedUrls = playlistStore.load().mapTo(hashSetOf()) { it.mediaStreamUrl }
+        if (items.all { it.mediaStreamUrl in queuedUrls }) {
+            playlistStore.removeWork(items.first().workId, items.first().workTitle)
+        } else {
+            playlistStore.addAll(items)
+        }
         refreshPlaylistState()
     }
 

@@ -20,6 +20,7 @@ import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.LyricLine
 import eu.kanade.tachiyomi.data.audio.SubtitleParser
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.util.lang.withIOContext
 import uy.kohesive.injekt.Injekt
@@ -57,6 +58,7 @@ class AudioPlayerScreen(
         var subtitleRetry by remember { mutableStateOf(0) }
         val currentItem = controller.state.item
         val subtitleUrl = currentItem?.subtitleUrl
+        val subtitleFallbackUrl = currentItem?.subtitleFallbackUrl
         var isFavorite by remember { mutableStateOf(false) }
 
         LaunchedEffect(controller) {
@@ -71,29 +73,27 @@ class AudioPlayerScreen(
             isFavorite = currentItem?.let { favoriteStore.contains(it.workId) } == true
         }
 
-        LaunchedEffect(subtitleUrl, subtitleRetry) {
+        LaunchedEffect(currentItem?.mediaStreamUrl, subtitleUrl, subtitleFallbackUrl, subtitleRetry) {
             if (subtitleUrl == null) {
                 lyrics = emptyList()
                 subtitleState = AudioSubtitleState.NOT_AVAILABLE
                 return@LaunchedEffect
             }
             subtitleState = AudioSubtitleState.LOADING
-            val result = runCatching {
-                withIOContext {
-                    val content = api.fetchSubtitle(subtitleUrl)
+            lyrics = emptyList()
+            try {
+                val parsed = withIOContext {
+                    val content = api.fetchSubtitle(subtitleUrl, subtitleFallbackUrl)
                     SubtitleParser.parse(content, subtitleUrl)
                 }
+                lyrics = parsed
+                subtitleState = if (parsed.isEmpty()) AudioSubtitleState.EMPTY else AudioSubtitleState.READY
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                lyrics = emptyList()
+                subtitleState = AudioSubtitleState.ERROR
             }
-            result.fold(
-                onSuccess = { parsed ->
-                    lyrics = parsed
-                    subtitleState = if (parsed.isEmpty()) AudioSubtitleState.EMPTY else AudioSubtitleState.READY
-                },
-                onFailure = {
-                    lyrics = emptyList()
-                    subtitleState = AudioSubtitleState.ERROR
-                },
-            )
         }
 
         val toggleFavorite = {

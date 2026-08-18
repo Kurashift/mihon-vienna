@@ -1,20 +1,17 @@
 package eu.kanade.presentation.audio
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -45,58 +42,53 @@ fun AudioMiniPlayerBar(
     controller: AudioPlayerController,
     onOpenPlayer: () -> Unit,
     onOpenWork: () -> Unit,
+    onOpenPlaylist: () -> Unit,
 ) {
     val state = controller.state
     val item = state.item
 
-    AnimatedVisibility(
-        visible = item != null,
-        enter = slideInVertically { it / 2 } + fadeIn(),
-        exit = slideOutVertically { it / 2 } + fadeOut(),
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp,
     ) {
-        if (item == null) return@AnimatedVisibility
-
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 3.dp,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding(),
         ) {
-            Column(
+            HorizontalDivider()
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding(),
+                    .clickable(enabled = item != null, onClick = onOpenPlayer)
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                HorizontalDivider()
-                Row(
+                Surface(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onOpenPlayer)
-                        .padding(horizontal = 10.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(enabled = item != null && item.workId > 0, onClick = onOpenWork),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
-                    Surface(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable(enabled = item.workId > 0, onClick = onOpenWork),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                    ) {
-                        if (item.coverUrl.isNullOrBlank()) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Headphones,
-                                    contentDescription = item.workTitle,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        } else {
-                            AsyncImage(
-                                model = item.coverUrl,
-                                contentDescription = item.workTitle,
-                                contentScale = ContentScale.Crop,
+                    if (item?.coverUrl.isNullOrBlank()) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.Headphones,
+                                contentDescription = item?.workTitle,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    } else {
+                        AsyncImage(
+                            model = item.coverUrl,
+                            contentDescription = item.workTitle,
+                            contentScale = ContentScale.Crop,
+                        )
                     }
+                }
 
+                if (item != null) {
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -116,7 +108,6 @@ fun AudioMiniPlayerBar(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-
                     FilledIconButton(
                         onClick = controller::togglePlay,
                         modifier = Modifier.size(42.dp),
@@ -145,19 +136,28 @@ fun AudioMiniPlayerBar(
                             contentDescription = stringResource(MR.strings.audio_next_track),
                         )
                     }
+                } else {
+                    Spacer(Modifier.weight(1f))
                 }
 
-                val duration = state.durationMs.coerceAtLeast(0)
-                val progress = if (duration > 0) {
-                    (state.positionMs.toFloat() / duration).coerceIn(0f, 1f)
-                } else {
-                    0f
+                IconButton(onClick = onOpenPlaylist) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                        contentDescription = stringResource(MR.strings.audio_playlist),
+                    )
                 }
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
+
+            val duration = state.durationMs.coerceAtLeast(0)
+            val progress = if (duration > 0) {
+                (state.positionMs.toFloat() / duration).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

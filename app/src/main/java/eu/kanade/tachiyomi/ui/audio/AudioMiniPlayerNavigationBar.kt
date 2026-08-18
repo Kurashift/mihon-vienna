@@ -29,5 +29,10 @@ internal fun AudioMiniPlayerNavigationBar() {
                 }
             }
         },
+        onOpenPlaylist = {
+            if (navigator.lastItem !is AudioPlaylistScreen) {
+                navigator.push(AudioPlaylistScreen())
+            }
+        },
     )
 }

@@ -34,7 +34,9 @@ enum class AudioCategoryType(
     TAG(MR.strings.audio_filter_tags, "tag"),
 }
 
-class AudioCategoryScreen : Screen() {
+class AudioCategoryScreen(
+    private val initialType: AudioCategoryType = AudioCategoryType.CIRCLE,
+) : Screen() {
 
     @Composable
     override fun Content() {
@@ -44,6 +46,7 @@ class AudioCategoryScreen : Screen() {
 
         AudioCategoryContent(
             state = state,
+            initialType = initialType,
             bottomBar = { AudioMiniPlayerNavigationBar() },
             navigateUp = navigator::pop,
             onRetry = viewModel::load,

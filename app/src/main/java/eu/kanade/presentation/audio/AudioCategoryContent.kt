@@ -46,12 +46,13 @@ import tachiyomi.presentation.core.screens.LoadingScreen
 @Composable
 fun AudioCategoryContent(
     state: AudioCategoryState,
+    initialType: AudioCategoryType,
     bottomBar: @Composable () -> Unit,
     navigateUp: () -> Unit,
     onRetry: () -> Unit,
     onSelect: (AudioCategoryType, String) -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(AudioCategoryType.CIRCLE) }
+    var selectedTab by remember(initialType) { mutableStateOf(initialType) }
     var query by remember { mutableStateOf("") }
     var historyExpanded by remember { mutableStateOf(false) }
     val searchHistoryStore = rememberSearchHistoryStore()

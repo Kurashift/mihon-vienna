@@ -37,4 +37,19 @@ class KikoeruApiAuthTest {
             subtitleUrls("https://raw.example/media/download/work/track.lrc"),
         )
     }
+
+    @Test
+    fun `subtitle URLs include a fallback download endpoint`() {
+        assertEquals(
+            listOf(
+                "https://api.example/media/stream/1/2",
+                "https://raw.example/media/stream/1/3",
+                "https://raw.example/media/download/1/3",
+            ),
+            subtitleUrls(
+                "https://api.example/media/stream/1/2",
+                "https://raw.example/media/download/1/3",
+            ),
+        )
+    }
 }

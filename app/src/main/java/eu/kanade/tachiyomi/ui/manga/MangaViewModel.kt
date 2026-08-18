@@ -46,6 +46,9 @@ import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -55,6 +58,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import mihon.core.viewmodel.StateViewModel
 import mihon.domain.chapter.interactor.FilterChaptersForDownload
@@ -168,6 +174,8 @@ class MangaViewModel(
 
     private val filteredChapters: List<ChapterList.Item>?
         get() = successState?.processedChapters
+
+    private val chapterReorderMutex = Mutex()
 
     val chapterSwipeStartAction = libraryPreferences.swipeToEndAction.get()
     val chapterSwipeEndAction = libraryPreferences.swipeToStartAction.get()
@@ -879,27 +887,32 @@ class MangaViewModel(
      */
     fun reorderChapters(orderedIds: List<Long>) {
         if (orderedIds.isEmpty()) return
-        val manga = successState?.manga ?: return
-        viewModelScope.launchNonCancellable {
-            val currentIds = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = false)
-                .sortedWith(getChapterSort(manga))
-                .map { it.id }
-            val finalIds = mergeVisibleChapterOrder(currentIds, orderedIds)
+        if (successState == null) return
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(Dispatchers.IO + NonCancellable) {
+                chapterReorderMutex.withLock {
+                    val manga = getMangaAndChapters.awaitManga(mangaId)
+                    val currentIds = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = false)
+                        .sortedWith(getChapterSort(manga))
+                        .map { it.id }
+                    val finalIds = mergeVisibleChapterOrder(currentIds, orderedIds)
 
-            // Persist the complete order first. Switching the manga to custom sorting before
-            // these values exist briefly sorts every chapter by its fallback key and makes the
-            // whole list jump around.
-            updateChapter.awaitAll(
-                finalIds.mapIndexed { index, id ->
-                    ChapterUpdate(id = id, customOrder = (index + 1).toLong())
-                },
-            )
-            if (manga.sorting != Manga.CHAPTER_SORTING_CUSTOM || manga.sortDescending()) {
-                setMangaChapterFlags.awaitSetSortingAndDirection(
-                    manga,
-                    Manga.CHAPTER_SORTING_CUSTOM,
-                    Manga.CHAPTER_SORT_ASC,
-                )
+                    // Save the selected mode before rewriting every chapter position. On large
+                    // local series this prevents leaving the screen mid-save from retaining the
+                    // previous alphabetical/source sort mode.
+                    if (manga.sorting != Manga.CHAPTER_SORTING_CUSTOM || manga.sortDescending()) {
+                        setMangaChapterFlags.awaitSetSortingAndDirection(
+                            manga,
+                            Manga.CHAPTER_SORTING_CUSTOM,
+                            Manga.CHAPTER_SORT_ASC,
+                        )
+                    }
+                    updateChapter.awaitAll(
+                        finalIds.mapIndexed { index, id ->
+                            ChapterUpdate(id = id, customOrder = (index + 1).toLong())
+                        },
+                    )
+                }
             }
         }
     }

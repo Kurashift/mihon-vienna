@@ -29,11 +29,12 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetHistory
-import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.history.interactor.RemoveHistory
 import tachiyomi.domain.history.model.HistoryWithRelations
+import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.manga.interactor.GetManga
@@ -46,10 +47,11 @@ import uy.kohesive.injekt.api.get
 class HistoryViewModel(
     private val addTracks: AddTracks = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
+    private val getChapter: GetChapter = Injekt.get(),
     private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
     private val getHistory: GetHistory = Injekt.get(),
     private val getManga: GetManga = Injekt.get(),
-    private val getNextChapters: GetNextChapters = Injekt.get(),
+    private val historyRepository: HistoryRepository = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val removeHistory: RemoveHistory = Injekt.get(),
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
@@ -92,18 +94,31 @@ class HistoryViewModel(
             }
     }
 
+    /**
+     * Opens the chapter referenced by the most recent history entry, at the page it was last left.
+     *
+     * This intentionally does not advance to the next chapter: the history tab should resume
+     * exactly where the user left off.
+     */
     suspend fun getNextChapter(): Chapter? {
-        return withIOContext { getNextChapters.await(onlyUnread = false).firstOrNull() }
+        return withIOContext { getHistoryLastReadChapter() }
     }
 
-    fun getNextChapterForManga(mangaId: Long, chapterId: Long) {
+    /**
+     * Opens the chapter referenced by [chapterId], at the page it was last left.
+     */
+    fun getNextChapterForManga(chapterId: Long) {
         viewModelScope.launchIO {
-            sendNextChapterEvent(getNextChapters.await(mangaId, chapterId, onlyUnread = false))
+            sendChapterEvent(getChapter.await(chapterId))
         }
     }
 
-    private suspend fun sendNextChapterEvent(chapters: List<Chapter>) {
-        val chapter = chapters.firstOrNull()
+    private suspend fun getHistoryLastReadChapter(): Chapter? {
+        val history = historyRepository.getLastHistory() ?: return null
+        return getChapter.await(history.chapterId)
+    }
+
+    private suspend fun sendChapterEvent(chapter: Chapter?) {
         _events.send(Event.OpenChapter(chapter))
     }
 

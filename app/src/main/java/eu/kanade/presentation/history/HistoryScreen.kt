@@ -37,7 +37,7 @@ fun HistoryScreen(
     snackbarHostState: SnackbarHostState,
     onSearchQueryChange: (String?) -> Unit,
     onClickCover: (mangaId: Long) -> Unit,
-    onClickResume: (mangaId: Long, chapterId: Long) -> Unit,
+    onClickResume: (chapterId: Long) -> Unit,
     onClickFavorite: (mangaId: Long) -> Unit,
     onDialogChange: (HistoryViewModel.Dialog?) -> Unit,
 ) {
@@ -84,7 +84,7 @@ fun HistoryScreen(
                     history = it,
                     contentPadding = contentPadding,
                     onClickCover = { history -> onClickCover(history.mangaId) },
-                    onClickResume = { history -> onClickResume(history.mangaId, history.chapterId) },
+                    onClickResume = { history -> onClickResume(history.chapterId) },
                     onClickDelete = { item -> onDialogChange(HistoryViewModel.Dialog.Delete(item)) },
                     onClickFavorite = { history -> onClickFavorite(history.mangaId) },
                 )
@@ -155,7 +155,7 @@ internal fun HistoryScreenPreviews(
             snackbarHostState = SnackbarHostState(),
             onSearchQueryChange = {},
             onClickCover = {},
-            onClickResume = { _, _ -> run {} },
+            onClickResume = { run {} },
             onDialogChange = {},
             onClickFavorite = {},
         )

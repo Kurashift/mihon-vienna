@@ -27,6 +27,7 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
                             .removeSubtitleSuffix()
                         subtitleCandidates += SubtitleCandidate(
                             url = url,
+                            fallbackUrl = node.mediaDownloadUrl?.takeUnless { it == url },
                             logicalKey = logicalKey(ancestors, baseName),
                             baseName = baseName.normalizedKey(),
                             trackNumber = baseName.trackNumber(),
@@ -74,12 +75,12 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
 
     val subtitlesByKey = subtitleCandidates
         .groupBy { it.logicalKey }
-        .mapValues { (_, candidates) -> candidates.minBy { it.priority }.url }
+        .mapValues { (_, candidates) -> candidates.minBy { it.priority } }
     val uniqueSubtitlesByBase = subtitleCandidates
         .groupBy { it.baseName }
         .mapNotNull { (baseName, candidates) ->
             val urls = candidates.map { it.url }.distinct()
-            if (urls.size == 1) baseName to urls.single() else null
+            if (urls.size == 1) baseName to candidates.minBy { it.priority } else null
         }
         .toMap()
     val uniqueSubtitlesByTrackNumber = subtitleCandidates
@@ -87,15 +88,21 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
         .groupBy { it.trackNumber }
         .mapNotNull { (trackNumber, candidates) ->
             val urls = candidates.map { it.url }.distinct()
-            if (urls.size == 1) trackNumber to urls.single() else null
+            if (urls.size == 1) trackNumber to candidates.minBy { it.priority } else null
         }
         .toMap()
-    val onlySubtitleUrl = subtitleCandidates.map { it.url }.distinct().singleOrNull()
+    val onlySubtitle = subtitleCandidates
+        .takeIf { it.map { candidate -> candidate.url }.distinct().size == 1 }
+        ?.minByOrNull { it.priority }
 
     val coverUrl = work.mainCoverUrl ?: work.thumbnailCoverUrl ?: work.samCoverUrl
     val tracks = selectedAudio.map { selected ->
         val candidate = selected.displayCandidate
         val node = candidate.node
+        val subtitle = subtitlesByKey[candidate.logicalKey]
+            ?: uniqueSubtitlesByBase[candidate.baseName]
+            ?: candidate.trackNumber?.let(uniqueSubtitlesByTrackNumber::get)
+            ?: onlySubtitle?.takeIf { selectedAudio.size == 1 }
         AudioPlayItem(
             workId = work.id,
             workTitle = work.title,
@@ -103,10 +110,8 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
             coverUrl = coverUrl,
             trackTitle = node.title,
             mediaStreamUrl = selected.streamUrl,
-            subtitleUrl = subtitlesByKey[candidate.logicalKey]
-                ?: uniqueSubtitlesByBase[candidate.baseName]
-                ?: candidate.trackNumber?.let(uniqueSubtitlesByTrackNumber::get)
-                ?: onlySubtitleUrl?.takeIf { selectedAudio.size == 1 },
+            subtitleUrl = subtitle?.url,
+            subtitleFallbackUrl = subtitle?.fallbackUrl,
             durationMs = ((node.duration ?: 0.0) * 1000).toLong(),
         )
     }
@@ -165,6 +170,7 @@ private data class AudioCandidate(
 
 private data class SubtitleCandidate(
     val url: String,
+    val fallbackUrl: String?,
     val logicalKey: String,
     val baseName: String,
     val trackNumber: String?,

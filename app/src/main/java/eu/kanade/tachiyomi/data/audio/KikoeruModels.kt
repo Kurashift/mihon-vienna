@@ -35,6 +35,8 @@ data class Work(
     val release: String? = null,
     val duration: Double? = null,
     @SerialName("rate_average_2dp") val rateAverage2dp: Double? = null,
+    @SerialName("rate_count") val rateCount: Int = 0,
+    @SerialName("dl_count") val dlCount: Int = 0,
     val mainCoverUrl: String? = null,
     val thumbnailCoverUrl: String? = null,
     val samCoverUrl: String? = null,

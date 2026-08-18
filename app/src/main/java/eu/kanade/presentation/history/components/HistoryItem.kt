@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -87,7 +87,7 @@ fun HistoryItem(
         if (!history.coverData.isMangaFavorite) {
             IconButton(onClick = onClickFavorite) {
                 Icon(
-                    imageVector = Icons.Outlined.FavoriteBorder,
+                    imageVector = Icons.Outlined.CollectionsBookmark,
                     contentDescription = stringResource(MR.strings.add_to_library),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )

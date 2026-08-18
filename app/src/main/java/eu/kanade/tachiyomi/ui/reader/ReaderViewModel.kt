@@ -914,9 +914,8 @@ class ReaderViewModel @JvmOverloads constructor(
     fun getCurrentPageIndex(): Int = (state.value.currentPage - 1).coerceAtLeast(0)
 
     /**
-     * Picks from every eligible unread chapter in the current local-source reading filter.
-     * Each chapter is an independent pool entry, so manga with more eligible chapters have
-     * proportionally more entries instead of every manga receiving the same weight.
+     * Applies the current local-source reading filter, then selects manga uniformly and a chapter
+     * within that manga uniformly.
      */
     suspend fun getRandomInProgressTarget(): Pair<Long, Long>? {
         val target = findAndWarmRandomTarget(RandomJumpPool.IN_PROGRESS, allowCooldownReset = true) ?: return null
@@ -943,14 +942,11 @@ class ReaderViewModel @JvmOverloads constructor(
         val chaptersByMangaId = loadRandomPoolChapters(base.map { it.mangaId })
         if (chaptersByMangaId.isEmpty()) return null
         val currentChapterId = getCurrentChapterId()
-        val candidates = chaptersByMangaId.values
-            .asSequence()
-            .flatten()
-            .filter {
-                it.isEligibleForRandomPool &&
-                    it.id != currentChapterId
-            }
-            .toList()
+        val candidates = readingRandomPoolCandidates(
+            chapters = chaptersByMangaId.values.asSequence().flatten(),
+            filter = readingFilter,
+            currentChapterId = currentChapterId,
+        )
         val available = randomSelectionCooldown.eligibleChapters(
             candidates = candidates,
             releaseOnExhaustion = allowCooldownReset,
@@ -983,8 +979,9 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     /**
-     * Picks from every eligible unmarked chapter across the good-doujin manga. Chapters are
-     * flattened into one pool instead of first choosing a manga and then one of its chapters.
+     * Picks from every eligible unread chapter across the good-doujin manga. A chapter mark makes
+     * its manga part of this pool, but an unfinished marked chapter remains eligible itself.
+     * Manga are selected uniformly first, followed by a uniformly selected chapter within it.
      */
     suspend fun getRandomGoodDoujinTarget(): Pair<Long, Long>? {
         val target = findAndWarmRandomTarget(RandomJumpPool.GOOD_DOUJIN, allowCooldownReset = true) ?: return null
@@ -995,24 +992,17 @@ class ReaderViewModel @JvmOverloads constructor(
     private suspend fun findRandomGoodDoujinTarget(allowCooldownReset: Boolean): RandomJumpTarget? {
         if (manga == null) return null
         val marks = Injekt.get<GoodDoujinStore>().marks.value
-        val markedChapterIds = marks
-            .groupBy({ it.mangaId }, { it.chapterId })
-            .mapValues { (_, chapterIds) -> chapterIds.toSet() }
-        val mangaIds = markedChapterIds.keys.toList()
+        val mangaIds = marks.mapTo(linkedSetOf()) { it.mangaId }.toList()
         if (mangaIds.isEmpty()) return null
 
         val chaptersByMangaId = loadRandomPoolChapters(mangaIds)
         if (chaptersByMangaId.isEmpty()) return null
         val currentChapterId = getCurrentChapterId()
-        val candidates = chaptersByMangaId.values
-            .asSequence()
-            .flatten()
-            .filter {
-                    it.isEligibleForRandomPool &&
-                    it.id !in markedChapterIds[it.mangaId].orEmpty() &&
-                    it.id != currentChapterId
-            }
-            .toList()
+        val candidates = goodDoujinRandomPoolCandidates(
+            chapters = chaptersByMangaId.values.asSequence().flatten(),
+            marks = marks,
+            currentChapterId = currentChapterId,
+        )
         val available = randomSelectionCooldown.eligibleChapters(
             candidates = candidates,
             releaseOnExhaustion = allowCooldownReset,
@@ -1061,42 +1051,37 @@ class ReaderViewModel @JvmOverloads constructor(
         }.groupBy { it.mangaId }
     }
 
-    /** Resolves the first usable chapter from a shuffled flat pool. */
+    /** Selects manga uniformly, then chapters uniformly within each manga. */
     private suspend fun resolveRandomJumpTarget(
         candidates: List<Chapter>,
         chaptersByMangaId: Map<Long, List<Chapter>>,
     ): RandomJumpTarget? {
         if (candidates.isEmpty()) return null
 
-        val mangaCache = mutableMapOf<Long, Manga>()
-        val missingMangaIds = mutableSetOf<Long>()
-        for (chapter in candidates.shuffled()) {
-            if (!chapter.isEligibleForRandomPool) continue
-            if (chapter.mangaId in missingMangaIds) continue
-            val targetManga = mangaCache[chapter.mangaId] ?: withIOContext {
-                runCatching { mangaRepository.getMangaById(chapter.mangaId) }.getOrNull()
-            }
-            if (targetManga == null) {
-                missingMangaIds += chapter.mangaId
-                continue
-            }
-            mangaCache[chapter.mangaId] = targetManga
+        for (mangaChapters in randomPoolCandidateGroups(candidates)) {
+            val mangaId = mangaChapters.first().mangaId
+            val targetManga = withIOContext {
+                runCatching { mangaRepository.getMangaById(mangaId) }.getOrNull()
+            } ?: continue
             val source = sourceManager.getOrStub(targetManga.source)
-            val localArchive = if (source is LocalSource) {
-                when (val format = runCatching { source.getFormat(chapter.toSChapter()) }.getOrNull()) {
-                    is Format.Archive -> format
-                    is Format.Directory, is Format.Epub -> null
-                    null -> continue
+
+            for (chapter in mangaChapters) {
+                val localArchive = if (source is LocalSource) {
+                    when (val format = runCatching { source.getFormat(chapter.toSChapter()) }.getOrNull()) {
+                        is Format.Archive -> format
+                        is Format.Directory, is Format.Epub -> null
+                        null -> continue
+                    }
+                } else {
+                    null
                 }
-            } else {
-                null
+                return RandomJumpTarget(
+                    manga = targetManga,
+                    chapters = chaptersByMangaId[mangaId].orEmpty(),
+                    chapter = chapter,
+                    localArchive = localArchive,
+                )
             }
-            return RandomJumpTarget(
-                manga = targetManga,
-                chapters = chaptersByMangaId[chapter.mangaId].orEmpty(),
-                chapter = chapter,
-                localArchive = localArchive,
-            )
         }
         return null
     }
@@ -1531,5 +1516,44 @@ private object RandomJumpPreloadCache {
 
 private const val RANDOM_JUMP_PRELOAD_TTL_MILLIS = 30_000L
 
-internal val Chapter.isEligibleForRandomPool: Boolean
-    get() = !read
+internal fun readingRandomPoolCandidates(
+    chapters: Sequence<Chapter>,
+    filter: BrowseSourceViewModel.ReadingFilter,
+    currentChapterId: Long?,
+): List<Chapter> {
+    return chapters
+        .filter { chapter ->
+            chapter.id != currentChapterId &&
+                when (filter) {
+                    BrowseSourceViewModel.ReadingFilter.ALL -> true
+                    BrowseSourceViewModel.ReadingFilter.UNREAD,
+                    BrowseSourceViewModel.ReadingFilter.IN_PROGRESS,
+                    -> !chapter.read
+                    BrowseSourceViewModel.ReadingFilter.FINISHED -> chapter.read
+                }
+        }
+        .toList()
+}
+
+internal fun randomPoolCandidateGroups(candidates: List<Chapter>): List<List<Chapter>> {
+    return candidates
+        .groupBy(Chapter::mangaId)
+        .values
+        .shuffled()
+        .map { it.shuffled() }
+}
+
+internal fun goodDoujinRandomPoolCandidates(
+    chapters: Sequence<Chapter>,
+    marks: Collection<MangaMark>,
+    currentChapterId: Long?,
+): List<Chapter> {
+    val markedMangaIds = marks.mapTo(hashSetOf()) { it.mangaId }
+    return chapters
+        .filter {
+            it.mangaId in markedMangaIds &&
+                !it.read &&
+                it.id != currentChapterId
+        }
+        .toList()
+}

@@ -427,7 +427,8 @@ class ReaderActivity : BaseActivity() {
                         Intent(this@ReaderActivity, MainActivity::class.java).apply {
                             action = Constants.SHOW_AUDIO_DETAIL
                             putExtra(Constants.AUDIO_WORK_EXTRA, item)
-                            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            putExtra(Constants.AUDIO_RETURN_TO_READER_EXTRA, true)
+                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                         },
                     )
                 },

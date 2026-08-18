@@ -16,3 +16,10 @@ local.properties
 
 # macOS specific files
 .DS_Store
+
+# Local debug screenshots and icon previews (repo root only)
+/current-screen*.png
+/current-screen*.jpg
+/device-*.png
+/icon-preview*.png
+/icon-preview*.svg

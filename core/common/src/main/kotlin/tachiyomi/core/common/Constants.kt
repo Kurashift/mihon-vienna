@@ -9,6 +9,7 @@ object Constants {
 
     const val MANGA_EXTRA = "manga"
     const val AUDIO_WORK_EXTRA = "audio_work"
+    const val AUDIO_RETURN_TO_READER_EXTRA = "audio_return_to_reader"
 
     const val MAIN_ACTIVITY = "eu.kanade.tachiyomi.ui.main.MainActivity"
 

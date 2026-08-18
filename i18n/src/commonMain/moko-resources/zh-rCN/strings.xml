@@ -1015,9 +1015,11 @@
     <string name="action_play">播放</string>
     <string name="audio_vas">声优</string>
     <string name="audio_sort">排序</string>
+    <string name="audio_filters">筛选与分类</string>
     <string name="audio_sort_release_desc">发售日期 ↓</string>
     <string name="audio_sort_rating_desc">评分 ↓</string>
     <string name="audio_sort_dl_desc">下载量 ↓</string>
+    <string name="audio_sales">销量</string>
     <string name="audio_sort_create_desc">入库日期 ↓</string>
     <string name="audio_sort_random">随机</string>
     <string name="audio_filter_tags">标签</string>
@@ -1033,6 +1035,7 @@
     <string name="audio_playlist_play_all">播放全部</string>
     <string name="audio_playlist_clear">清空列表</string>
     <string name="audio_playlist_clear_confirm">移除待播列表里的所有音轨？此操作无法撤销。</string>
+    <string name="audio_add_work_to_playlist">整部加入待播列表</string>
     <string name="audio_add_to_playlist">加入待播列表</string>
     <string name="audio_remove_work_from_history">移除这部作品的历史</string>
     <string name="audio_history_work_tracks">听过 %1$d 首</string>

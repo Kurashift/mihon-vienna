@@ -177,7 +177,6 @@ fun AudioQuickPlaySheet(
                         item = tracks.first(),
                         trackCount = tracks.size,
                         selected = workKey == selectedWork,
-                        onOpenWork = onOpenWork,
                         onClick = {
                             selectedWork = workKey
                             val index = playlist.indexOfFirst { it.mediaStreamUrl == tracks.first().mediaStreamUrl }
@@ -359,7 +358,6 @@ private fun AudioWorkItem(
     item: AudioPlayItem,
     trackCount: Int,
     selected: Boolean,
-    onOpenWork: ((AudioPlayItem) -> Unit)?,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -377,14 +375,11 @@ private fun AudioWorkItem(
             modifier = Modifier.padding(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AudioCover(
-                coverUrl = item.coverUrl,
-                contentDescription = item.workTitle,
-                onClick = item.takeIf { it.workId > 0 }?.let { work ->
-                    onOpenWork?.let { open -> { open(work) } }
-                },
-                modifier = Modifier.size(48.dp),
-            )
+                AudioCover(
+                    coverUrl = item.coverUrl,
+                    contentDescription = item.workTitle,
+                    modifier = Modifier.size(48.dp),
+                )
             Column(
                 modifier = Modifier
                     .weight(1f)

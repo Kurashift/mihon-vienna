@@ -32,8 +32,8 @@ android {
     defaultConfig {
         applicationId = "app.mihon"
 
-        versionCode = 170
-        versionName = "1.9"
+        versionCode = 173
+        versionName = "1.9.6"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -142,7 +142,6 @@ android {
 
     sourceSets {
         getByName("preview").res.directories.add("src/debug/res")
-        getByName("personal").res.directories.add("src/debug/res")
         getByName("benchmark").res.directories.add("src/debug/res")
     }
 

@@ -71,14 +71,6 @@ class WebtoonPageHolder(
         get() = viewer.recycler.height
 
     /**
-     * Original (unzoomed) viewport height of the recycler view. The recycler's own
-     * height grows while the user zooms out, so it must not be used to size pages:
-     * doing so would undo the zoom whenever a page is (re)bound while scrolling.
-     */
-    private val viewportHeight
-        get() = viewer.recycler.originalHeight
-
-    /**
      * Page of a chapter.
      */
     private var page: ReaderPage? = null
@@ -113,14 +105,25 @@ class WebtoonPageHolder(
     }
 
     private fun refreshLayoutParams() {
-        frame.layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-            if (!viewer.isContinuous) {
-                bottomMargin = 15.dpToPx
-            }
+        val bottomMargin = if (!viewer.isContinuous) 15.dpToPx else 0
+        val sideMargin = (
+            Resources.getSystem().displayMetrics.widthPixels *
+                (viewer.config.sidePadding / 100f)
+            ).toInt()
+        val layoutParams = frame.layoutParams
 
-            val margin = Resources.getSystem().displayMetrics.widthPixels * (viewer.config.sidePadding / 100f)
-            marginEnd = margin.toInt()
-            marginStart = margin.toInt()
+        if (layoutParams is RecyclerView.LayoutParams) {
+            layoutParams.width = MATCH_PARENT
+            layoutParams.height = WRAP_CONTENT
+            layoutParams.bottomMargin = bottomMargin
+            layoutParams.marginStart = sideMargin
+            layoutParams.marginEnd = sideMargin
+        } else {
+            frame.layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                this.bottomMargin = bottomMargin
+                marginStart = sideMargin
+                marginEnd = sideMargin
+            }
         }
     }
 
@@ -205,39 +208,18 @@ class WebtoonPageHolder(
         val streamFn = page?.stream ?: return
 
         try {
-            val (source, isAnimated, fitHeight) = withIOContext {
+            val (source, isAnimated) = withIOContext {
                 val source = streamFn().use { process(Buffer().readFrom(it)) }
                 val isAnimated = ImageUtil.isAnimatedAndSupported(source)
-                Triple(source, isAnimated, !isAnimated && shouldFitHeight(source))
+                source to isAnimated
             }
             withUIContext {
-                if (fitHeight) {
-                    // The image is wider than the viewport ratio, so filling the width
-                    // would crop the top/bottom. Fill the height instead so the whole
-                    // image is visible (letterboxed on the sides).
-                    // The page view is a direct child of the RecyclerView, so its layout
-                    // params must stay a RecyclerView.LayoutParams; mutate it in place.
-                    val layoutParams = frame.layoutParams
-                    if (layoutParams is RecyclerView.LayoutParams && viewportHeight > 0) {
-                        layoutParams.height = viewportHeight
-                        if (!viewer.isContinuous) {
-                            layoutParams.bottomMargin = 15.dpToPx
-                        }
-                        val margin = Resources.getSystem().displayMetrics.widthPixels * (viewer.config.sidePadding / 100f)
-                        layoutParams.marginEnd = margin.toInt()
-                        layoutParams.marginStart = margin.toInt()
-                    }
-                }
                 frame.setImage(
                     source,
                     isAnimated,
                     ReaderPageImageView.Config(
                         zoomDuration = viewer.config.doubleTapAnimDuration,
-                        minimumScaleType = if (fitHeight) {
-                            SubsamplingScaleImageView.SCALE_TYPE_FIT_HEIGHT
-                        } else {
-                            SubsamplingScaleImageView.SCALE_TYPE_FIT_WIDTH
-                        },
+                        minimumScaleType = SubsamplingScaleImageView.SCALE_TYPE_FIT_WIDTH,
                         cropBorders = viewer.config.imageCropBorders,
                     ),
                 )
@@ -249,24 +231,6 @@ class WebtoonPageHolder(
                 setError(e)
             }
         }
-    }
-
-    /**
-     * Returns true when the page image should be fitted to the viewport height instead
-     * of the width. Only applies in landscape (viewport wider than tall) for images that
-     * are wider than tall but whose aspect ratio is smaller than the viewport's, where
-     * filling the width would crop the top/bottom and hide part of the image.
-     */
-    private fun shouldFitHeight(imageSource: BufferedSource): Boolean {
-        val size = ImageUtil.getImageSize(imageSource) ?: return false
-        val viewHeight = viewportHeight
-        if (viewHeight <= 0) return false
-        val sidePadding = Resources.getSystem().displayMetrics.widthPixels * (viewer.config.sidePadding / 100f)
-        val viewWidth = (viewer.recycler.width - sidePadding * 2).coerceAtLeast(1f)
-        if (viewWidth <= viewHeight) return false
-        val imageRatio = size.first.toFloat() / size.second
-        val viewRatio = viewWidth / viewHeight
-        return imageRatio < viewRatio
     }
 
     private fun process(imageSource: BufferedSource): BufferedSource {

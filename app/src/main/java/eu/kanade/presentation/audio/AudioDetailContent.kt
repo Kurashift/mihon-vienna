@@ -70,6 +70,7 @@ fun AudioDetailContent(
     onPlayAll: () -> Unit,
     onClickTrack: (Int) -> Unit,
     onTogglePlaylist: (AudioPlayItem) -> Unit,
+    onToggleWorkPlaylist: () -> Unit,
     onToggleFavorite: () -> Unit,
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
@@ -93,6 +94,8 @@ fun AudioDetailContent(
                 scrollBehavior = scrollBehavior,
                 actions = {
                     if (state.flatTracks.isNotEmpty()) {
+                        val queuedCount = state.flatTracks.count { it.mediaStreamUrl in playlistUrls }
+                        val allQueued = queuedCount == state.flatTracks.size
                         if (folderKeys.isNotEmpty()) {
                             IconButton(
                                 onClick = {
@@ -119,6 +122,27 @@ fun AudioDetailContent(
                             Icon(
                                 imageVector = Icons.Outlined.PlayArrow,
                                 contentDescription = stringResource(MR.strings.audio_playlist_play_all),
+                            )
+                        }
+                        IconButton(onClick = onToggleWorkPlaylist) {
+                            Icon(
+                                imageVector = if (allQueued) {
+                                    Icons.AutoMirrored.Outlined.PlaylistAddCheck
+                                } else {
+                                    Icons.AutoMirrored.Outlined.PlaylistAdd
+                                },
+                                contentDescription = stringResource(
+                                    if (allQueued) {
+                                        MR.strings.audio_playlist_remove_work
+                                    } else {
+                                        MR.strings.audio_add_work_to_playlist
+                                    },
+                                ),
+                                tint = if (queuedCount > 0) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             )
                         }
                         IconButton(onClick = onToggleFavorite) {

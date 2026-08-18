@@ -1155,9 +1155,11 @@
     <string name="action_play">Play</string>
     <string name="audio_vas">Voice actors</string>
     <string name="audio_sort">Sort</string>
+    <string name="audio_filters">Filters and categories</string>
     <string name="audio_sort_release_desc">Release ↓</string>
     <string name="audio_sort_rating_desc">Rating ↓</string>
     <string name="audio_sort_dl_desc">Downloads ↓</string>
+    <string name="audio_sales">Sales</string>
     <string name="audio_sort_create_desc">Date added ↓</string>
     <string name="audio_sort_random">Random</string>
     <string name="audio_filter_tags">Tags</string>
@@ -1173,6 +1175,7 @@
     <string name="audio_playlist_play_all">Play all</string>
     <string name="audio_playlist_clear">Clear playlist</string>
     <string name="audio_playlist_clear_confirm">Remove every track from the playlist? This cannot be undone.</string>
+    <string name="audio_add_work_to_playlist">Add entire work to playlist</string>
     <string name="audio_add_to_playlist">Add to playlist</string>
     <string name="audio_remove_work_from_history">Remove work from history</string>
     <string name="audio_history_work_tracks">%1$d played tracks</string>

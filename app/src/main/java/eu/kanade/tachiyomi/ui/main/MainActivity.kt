@@ -555,7 +555,12 @@ class MainActivity : BaseActivity() {
             Constants.SHOW_AUDIO_DETAIL -> {
                 val item = intent.getSerializableExtraCompat<AudioPlayItem>(Constants.AUDIO_WORK_EXTRA)
                     ?: return false
-                navigator.push(AudioDetailScreen(item.toWorkSnapshot()))
+                navigator.push(
+                    AudioDetailScreen(
+                        work = item.toWorkSnapshot(),
+                        finishActivityOnBack = intent.getBooleanExtra(Constants.AUDIO_RETURN_TO_READER_EXTRA, false),
+                    ),
+                )
                 null
             }
             Constants.SHORTCUT_UPDATES -> HomeScreen.Tab.Updates

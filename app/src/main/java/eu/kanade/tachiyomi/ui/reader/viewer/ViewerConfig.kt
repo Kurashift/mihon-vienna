@@ -19,7 +19,7 @@ abstract class ViewerConfig(readerPreferences: ReaderPreferences, private val sc
     var tappingInverted = ReaderPreferences.TappingInvertMode.NONE
     var longTapEnabled = true
     var usePageTransitions = false
-    var doubleTapAnimDuration = 500
+    var doubleTapAnimDuration = DEFAULT_DOUBLE_TAP_ANIM_DURATION
     var volumeKeysEnabled = false
     var volumeKeysInverted = false
     var alwaysShowChapterTransition = true
@@ -53,7 +53,7 @@ abstract class ViewerConfig(readerPreferences: ReaderPreferences, private val sc
             .register({ usePageTransitions = it })
 
         readerPreferences.doubleTapAnimSpeed
-            .register({ doubleTapAnimDuration = it })
+            .register({ doubleTapAnimDuration = (it * DOUBLE_TAP_DURATION_FACTOR).toInt() })
 
         readerPreferences.readWithVolumeKeys
             .register({ volumeKeysEnabled = it })
@@ -88,3 +88,6 @@ abstract class ViewerConfig(readerPreferences: ReaderPreferences, private val sc
             .launchIn(scope)
     }
 }
+
+private const val DEFAULT_DOUBLE_TAP_ANIM_DURATION = 400
+private const val DOUBLE_TAP_DURATION_FACTOR = 0.8f

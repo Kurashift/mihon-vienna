@@ -79,6 +79,7 @@ class AudioTrackCatalogTest {
         val catalog = nodes.buildAudioTrackCatalog(WORK)
 
         assertEquals("api-stream", catalog.tracks.single().subtitleUrl)
+        assertEquals("raw-download", catalog.tracks.single().subtitleFallbackUrl)
     }
 
     @Test

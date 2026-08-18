@@ -155,9 +155,9 @@ class KikoeruApi(
     }
 
     /** Downloads raw subtitle text (.lrc / .vtt / .srt / .ass) from a track download URL. */
-    suspend fun fetchSubtitle(url: String): String = withIOContext {
+    suspend fun fetchSubtitle(url: String, fallbackUrl: String? = null): String = withIOContext {
         var lastError: Exception? = null
-        subtitleUrls(url).forEach { candidate ->
+        subtitleUrls(url, fallbackUrl).forEach { candidate ->
             try {
                 return@withIOContext executeWithRetry {
                     val request = GET(candidate, cache = CacheControl.FORCE_NETWORK).let { request ->
@@ -215,9 +215,14 @@ class KikoeruApi(
     }
 }
 
-internal fun subtitleUrls(url: String): List<String> {
-    val streamingUrl = url.replace("/media/download/", "/media/stream/", ignoreCase = true)
-    return listOf(streamingUrl, url).distinct()
+internal fun subtitleUrls(url: String, fallbackUrl: String? = null): List<String> {
+    fun candidatesFor(value: String): List<String> {
+        val streamingUrl = value.replace("/media/download/", "/media/stream/", ignoreCase = true)
+        return listOf(streamingUrl, value).distinct()
+    }
+
+    return (candidatesFor(url) + fallbackUrl.orEmpty().takeIf { it.isNotBlank() }?.let(::candidatesFor).orEmpty())
+        .distinct()
 }
 
 internal fun buildAccountProgressBody(workId: Long, progress: AudioAccountProgress?): String {

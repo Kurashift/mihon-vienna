@@ -107,8 +107,7 @@ object SubtitleParser {
                 val fields = line.substringAfter(':').split(',', limit = fieldCount)
                 if (fields.size <= maxOf(startIndex, textIndex)) return@forEach
                 val timeMs = parseAssTimestamp(fields[startIndex].trim()) ?: return@forEach
-                val text = fields[textIndex]
-                    .replace(ASS_OVERRIDE_REGEX, "")
+                val text = stripAssOverrides(fields[textIndex])
                     .replace("\\N", "\n", ignoreCase = true)
                     .trim()
                 result += LyricLine(timeMs, text)
@@ -134,6 +133,23 @@ object SubtitleParser {
         }
     }
 
+    private fun stripAssOverrides(value: String): String = buildString(value.length) {
+        var offset = 0
+        while (offset < value.length) {
+            val start = value.indexOf('{', offset)
+            if (start < 0) {
+                append(value, offset, value.length)
+                break
+            }
+            append(value, offset, start)
+            val end = value.indexOf('}', start + 1)
+            if (end < 0) {
+                append(value, start, value.length)
+                break
+            }
+            offset = end + 1
+        }
+    }
+
     private val ASS_TIMESTAMP_REGEX = Regex("""(\d{1,2}):(\d{1,2}):(\d{1,2})[.](\d{1,3})""")
-    private val ASS_OVERRIDE_REGEX = Regex("""\{[^}]*}""")
 }

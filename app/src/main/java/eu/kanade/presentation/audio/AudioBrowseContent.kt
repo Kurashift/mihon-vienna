@@ -3,11 +3,9 @@ package eu.kanade.presentation.audio
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,22 +16,28 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,6 +66,7 @@ import eu.kanade.tachiyomi.data.search.SearchHistoryScope
 import eu.kanade.tachiyomi.ui.audio.AudioAuthState
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseState
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseTab
+import eu.kanade.tachiyomi.ui.audio.AudioCategoryType
 import eu.kanade.tachiyomi.ui.audio.AudioSort
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.PullRefresh
@@ -82,8 +87,7 @@ fun AudioBrowseContent(
     bottomBar: @Composable () -> Unit,
     onClickWork: (Work) -> Unit,
     onClickHistory: () -> Unit,
-    onClickCategories: () -> Unit,
-    onClickPlaylist: () -> Unit,
+    onClickCategory: (AudioCategoryType) -> Unit,
     navigateUp: () -> Unit,
     onSearch: (String) -> Unit,
     onExitSearch: () -> Unit,
@@ -96,7 +100,7 @@ fun AudioBrowseContent(
     onCycleAudioQuality: () -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf<String?>(null) }
-    var showSortDialog by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
     var showLoginDialog by remember { mutableStateOf(false) }
     val audioQualityAction = if (showTabs) {
         AppBar.OverflowAction(
@@ -137,29 +141,21 @@ fun AudioBrowseContent(
                     titleContent = { AppBarTitle(title) },
                     navigateUp = navigateUp,
                     actions = {
+                        IconButton(onClick = { showFilters = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Tune,
+                                contentDescription = stringResource(MR.strings.audio_filters),
+                            )
+                        }
                         IconButton(onClick = onClickHistory) {
                             Icon(
                                 imageVector = Icons.Outlined.History,
                                 contentDescription = stringResource(MR.strings.audio_history),
                             )
                         }
-                        IconButton(onClick = { showSortDialog = true }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.Sort,
-                                contentDescription = stringResource(MR.strings.audio_sort),
-                            )
-                        }
                         AppBarActions(
                             listOfNotNull(
                                 audioQualityAction,
-                                AppBar.OverflowAction(
-                                    title = stringResource(MR.strings.audio_playlist),
-                                    onClick = onClickPlaylist,
-                                ),
-                                AppBar.OverflowAction(
-                                    title = stringResource(MR.strings.audio_categories),
-                                    onClick = onClickCategories,
-                                ),
                                 AppBar.OverflowAction(
                                     title = if (auth.username != null) {
                                         stringResource(MR.strings.audio_logout)
@@ -232,7 +228,7 @@ fun AudioBrowseContent(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 104.dp),
+                        columns = GridCells.Fixed(1),
                         state = gridState,
                         modifier = Modifier
                             .fillMaxSize()
@@ -242,7 +238,10 @@ fun AudioBrowseContent(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(state.works, key = { it.id }) { work ->
-                            WorkGridItem(work = work, onClick = { onClickWork(work) })
+                            WorkGridItem(
+                                work = work,
+                                onClick = { onClickWork(work) },
+                            )
                         }
                         if (state.loadingMore) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -272,13 +271,17 @@ fun AudioBrowseContent(
         }
     }
 
-    if (showSortDialog) {
-        SortDialog(
+    if (showFilters) {
+        AudioFilterSheet(
             current = sort,
-            onDismiss = { showSortDialog = false },
+            onDismiss = { showFilters = false },
             onSelect = {
                 onSortChange(it)
-                showSortDialog = false
+                showFilters = false
+            },
+            onSelectCategory = {
+                showFilters = false
+                onClickCategory(it)
             },
         )
     }
@@ -299,82 +302,183 @@ internal fun WorkGridItem(
 ) {
     Card(
         onClick = onClick,
+        modifier = Modifier.height(168.dp),
         shape = RoundedCornerShape(6.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
     ) {
         Column {
-            AsyncImage(
-                model = work.thumbnailCoverUrl ?: work.samCoverUrl,
-                contentDescription = work.title,
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)),
-                contentScale = ContentScale.Crop,
-            )
-            Column(
-                modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+                    .height(124.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(
-                    text = work.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                AsyncImage(
+                    model = work.mainCoverUrl ?: work.thumbnailCoverUrl ?: work.samCoverUrl,
+                    contentDescription = work.title,
+                    modifier = Modifier
+                        .size(124.dp)
+                        .clip(RoundedCornerShape(topStart = 6.dp)),
+                    contentScale = ContentScale.Crop,
                 )
-                Spacer(Modifier.height(1.dp))
-                Text(
-                    text = workGridMeta(work),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text(
+                        text = work.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    WorkStats(work)
+                }
+            }
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items(work.tags.size) { index ->
+                    WorkTag(work.tags[index].name)
+                }
             }
         }
     }
 }
 
-internal fun workGridMeta(work: Work): String = buildString {
-    append(work.name)
-    work.rateAverage2dp?.let { rating ->
-        if (isNotEmpty()) append(" · ")
-        append("★ ").append(rating)
+@Composable
+private fun WorkStats(work: Work) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Star,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.size(3.dp))
+        Text(
+            text = buildString {
+                append(work.rateAverage2dp ?: "-")
+                if (work.rateCount > 0) append(" (").append(formatCompactCount(work.rateCount)).append(')')
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Spacer(Modifier.weight(1f))
+        Icon(
+            imageVector = Icons.Outlined.Download,
+            contentDescription = stringResource(MR.strings.audio_sales),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.size(3.dp))
+        Text(
+            text = formatCompactCount(work.dlCount),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 
 @Composable
-private fun SortDialog(
+private fun WorkTag(name: String) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Text(
+            text = name,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+internal fun formatCompactCount(value: Int): String {
+    if (value < 1_000) return value.toString()
+    val unit = if (value >= 1_000_000) 1_000_000 else 1_000
+    val suffix = if (unit == 1_000_000) "M" else "K"
+    val whole = value / unit
+    val decimal = value % unit / (unit / 10)
+    return if (decimal == 0 || whole >= 100) "$whole$suffix" else "$whole.$decimal$suffix"
+}
+
+@Composable
+private fun AudioFilterSheet(
     current: AudioSort,
     onDismiss: () -> Unit,
     onSelect: (AudioSort) -> Unit,
+    onSelectCategory: (AudioCategoryType) -> Unit,
 ) {
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(MR.strings.audio_sort)) },
-        text = {
-            Column {
-                AudioSort.entries.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(option) },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = option == current, onClick = null)
-                        Text(stringResource(option.label))
-                    }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+        ) {
+            Text(
+                text = stringResource(MR.strings.audio_filters),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+            Text(
+                text = stringResource(MR.strings.audio_sort),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+            )
+            AudioSort.entries.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(option) }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = option == current, onClick = null)
+                    Text(stringResource(option.label))
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(MR.strings.action_cancel))
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Text(
+                text = stringResource(MR.strings.audio_categories),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+            )
+            AudioCategoryType.entries.forEach { type ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectCategory(type) }
+                        .padding(horizontal = 24.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(type.label),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
             }
-        },
-    )
+        }
+    }
 }
 
 @Composable

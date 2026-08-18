@@ -14,6 +14,58 @@ class WebtoonPageSelectionTest {
     )
 
     @Test
+    fun `landscape double tap normalizes a newly visible page to full height`() {
+        assertEquals(
+            WebtoonLandscapeZoom.FULL_HEIGHT_FRACTION,
+            WebtoonLandscapeZoom.targetHeightFraction(displayedHeightFraction = 0.63f),
+        )
+    }
+
+    @Test
+    fun `landscape double tap shrinks a page already at full height`() {
+        assertEquals(
+            WebtoonLandscapeZoom.CONTINUOUS_HEIGHT_FRACTION,
+            WebtoonLandscapeZoom.targetHeightFraction(displayedHeightFraction = 1.01f),
+        )
+    }
+
+    @Test
+    fun `backward scrolling cannot advance progress during a layout refresh`() {
+        assertEquals(
+            8,
+            WebtoonPageSelection.resolveDirectionalPosition(
+                currentPosition = 8,
+                candidatePosition = 10,
+                scrollDelta = -1,
+            ),
+        )
+    }
+
+    @Test
+    fun `backward scrolling still accepts an earlier page`() {
+        assertEquals(
+            6,
+            WebtoonPageSelection.resolveDirectionalPosition(
+                currentPosition = 8,
+                candidatePosition = 6,
+                scrollDelta = -1,
+            ),
+        )
+    }
+
+    @Test
+    fun `forward scrolling cannot retreat progress during a layout refresh`() {
+        assertEquals(
+            8,
+            WebtoonPageSelection.resolveDirectionalPosition(
+                currentPosition = 8,
+                candidatePosition = 6,
+                scrollDelta = 1,
+            ),
+        )
+    }
+
+    @Test
     fun `first page aligns to viewport start`() {
         assertEquals(
             0,

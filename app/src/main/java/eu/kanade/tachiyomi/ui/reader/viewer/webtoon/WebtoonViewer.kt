@@ -118,6 +118,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
     init {
         recycler.setItemViewCacheSize(RECYCLER_VIEW_CACHE_SIZE)
+        recycler.doubleTapAnimDuration = config.doubleTapAnimDuration
         // Laid out but transparent and non-interactive until the resumed page is aligned to its
         // final height, so the page image can decode before anything shows and there is no jump.
         recycler.isVisible = true
@@ -134,6 +135,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     // Nothing may update progress until the initial frame is revealed.
                     if (positioning != InitialPositioning.Ready) return
+                    if (recycler.isZoomAnimating) return
 
                     if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
                         viewportAnchorGeneration++
@@ -156,11 +158,24 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     if (positioning != InitialPositioning.Ready) return
+                    if (recycler.isZoomAnimating) return
                     if (suppressInitialScrollCallbacks) return
                     if (restoringViewportAnchor) return
                     if (dy != 0) {
-                        lastScrollDirection = dy
-                        onScrolled(scrollDelta = dy)
+                        val direction = if (recycler.isLandscapeWebtoon()) {
+                            when {
+                                recycler.scrollGestureDirection != 0 -> recycler.scrollGestureDirection
+                                lastScrollDirection != 0 -> lastScrollDirection
+                                recyclerView.scrollState != RecyclerView.SCROLL_STATE_IDLE -> dy
+                                else -> 0
+                            }
+                        } else {
+                            dy
+                        }
+                        if (direction != 0) {
+                            lastScrollDirection = direction
+                            onScrolled(scrollDelta = direction)
+                        }
                     }
 
                     if ((dy > threshold || dy < -threshold) && activity.viewModel.state.value.menuVisible) {
@@ -512,6 +527,16 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 ?.let { recycler.findViewHolderForAdapterPosition(it) }
             val pageHeight = holder?.itemView?.height ?: 0
             val holderTop: Int? = holder?.itemView?.top
+
+            if (holder != null && recycler.ensureInitialLandscapeScale(holder.itemView)) {
+                previousInitialPageHeight = -1
+                stableInitialLayoutFrames = 0
+                recycler.postOnAnimation {
+                    alignInitialPagePass(page, initialPageRemainingPasses - 1)
+                }
+                return@doOnNextLayout
+            }
+
             val desiredTop = targetTop(page, pageHeight)
 
             val heightStable = pageHeight > 0 &&
@@ -719,11 +744,28 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     }
 
     fun onScrolled(pos: Int? = null, scrollDelta: Int = 0) {
-        val item = when {
+        val candidate = when {
             pos != null -> adapter.items.getOrNull(pos)
             else -> currentVisibleItem(scrollDelta)
         }
+        val item = if (pos == null && recycler.isLandscapeWebtoon()) {
+            constrainToScrollDirection(candidate, scrollDelta)
+        } else {
+            candidate
+        }
         selectCurrentItem(item)
+    }
+
+    private fun constrainToScrollDirection(candidate: Any?, scrollDelta: Int): Any? {
+        if (candidate == null || scrollDelta == 0) return candidate
+        val currentPosition = adapterPositionOf(currentPage)
+        val candidatePosition = adapterPositionOf(candidate)
+        val selectedPosition = WebtoonPageSelection.resolveDirectionalPosition(
+            currentPosition = currentPosition,
+            candidatePosition = candidatePosition,
+            scrollDelta = scrollDelta,
+        )
+        return if (selectedPosition == currentPosition) currentPage else candidate
     }
 
     private fun selectCurrentItem(item: Any?) {
@@ -926,10 +968,12 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      */
     private fun scrollUp() {
         releaseInitialPageAnchor()
+        lastScrollDirection = -1
         if (config.usePageTransitions) {
             recycler.smoothScrollBy(0, -scrollDistance)
         } else {
             recycler.scrollBy(0, -scrollDistance)
+            lastScrollDirection = 0
         }
     }
 
@@ -938,10 +982,12 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      */
     private fun scrollDown() {
         releaseInitialPageAnchor()
+        lastScrollDirection = 1
         if (config.usePageTransitions) {
             recycler.smoothScrollBy(0, scrollDistance)
         } else {
             recycler.scrollBy(0, scrollDistance)
+            lastScrollDirection = 0
         }
     }
 

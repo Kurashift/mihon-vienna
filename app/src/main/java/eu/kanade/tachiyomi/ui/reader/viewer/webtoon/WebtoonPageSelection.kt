@@ -99,6 +99,19 @@ internal object WebtoonPageSelection {
         }?.position ?: centerPosition
     }
 
+    fun resolveDirectionalPosition(
+        currentPosition: Int,
+        candidatePosition: Int,
+        scrollDelta: Int,
+    ): Int {
+        if (currentPosition < 0 || candidatePosition < 0 || scrollDelta == 0) return candidatePosition
+        return when {
+            scrollDelta < 0 && candidatePosition > currentPosition -> currentPosition
+            scrollDelta > 0 && candidatePosition < currentPosition -> currentPosition
+            else -> candidatePosition
+        }
+    }
+
     private fun visibleEnough(
         pageStart: Int,
         pageEnd: Int,
