@@ -77,6 +77,7 @@ class AudioDetailScreen(
             onClickTrack = { index -> navigator.push(AudioPlayerScreen(state.flatTracks, index)) },
             onTogglePlaylist = viewModel::toggleInPlaylist,
             onToggleWorkPlaylist = { viewModel.toggleWorkPlaylist(state.flatTracks) },
+            onToggleFolderPlaylist = viewModel::toggleFolderPlaylist,
             onToggleFavorite = { viewModel.toggleFavorite(work) },
             onClickCircle = { name ->
                 navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = "\$circle:$name\$"))
@@ -162,6 +163,18 @@ class AudioDetailViewModel(
         val queuedUrls = playlistStore.load().mapTo(hashSetOf()) { it.mediaStreamUrl }
         if (items.all { it.mediaStreamUrl in queuedUrls }) {
             playlistStore.removeWork(items.first().workId, items.first().workTitle)
+        } else {
+            playlistStore.addAll(items)
+        }
+        refreshPlaylistState()
+    }
+
+    fun toggleFolderPlaylist(folderPath: String) {
+        val items = _state.value.flatTracks.filter { it.folderPath == folderPath }
+        if (items.isEmpty()) return
+        val queuedUrls = playlistStore.load().mapTo(hashSetOf()) { it.mediaStreamUrl }
+        if (items.all { it.mediaStreamUrl in queuedUrls }) {
+            playlistStore.removeAll(items.map { it.mediaStreamUrl })
         } else {
             playlistStore.addAll(items)
         }

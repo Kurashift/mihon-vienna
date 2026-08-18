@@ -71,6 +71,7 @@ fun AudioDetailContent(
     onClickTrack: (Int) -> Unit,
     onTogglePlaylist: (AudioPlayItem) -> Unit,
     onToggleWorkPlaylist: () -> Unit,
+    onToggleFolderPlaylist: (String) -> Unit,
     onToggleFavorite: () -> Unit,
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
@@ -204,11 +205,18 @@ fun AudioDetailContent(
                 }
                 items(visibleRows, key = { it.key }) { row ->
                     if (row.isFolder) {
+                        val folderTracks = state.flatTracks.filter { it.folderPath == row.key }
+                        val allQueued = folderTracks.isNotEmpty() &&
+                            folderTracks.all { it.mediaStreamUrl in playlistUrls }
                         FolderRow(
                             row = row,
                             expanded = row.key in expanded,
+                            allInPlaylist = allQueued,
                             onClick = {
                                 expanded = if (row.key in expanded) expanded - row.key else expanded + row.key
+                            },
+                            onTogglePlaylist = {
+                                onToggleFolderPlaylist(row.key)
                             },
                         )
                     } else {
@@ -394,13 +402,15 @@ private fun TagChip(text: String, onClick: (() -> Unit)? = null) {
 private fun FolderRow(
     row: TreeRow,
     expanded: Boolean,
+    allInPlaylist: Boolean,
     onClick: () -> Unit,
+    onTogglePlaylist: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(start = (12 + row.depth * 16).dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = (12 + row.depth * 16).dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -420,10 +430,34 @@ private fun FolderRow(
         Text(
             text = row.title,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 8.dp),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        IconButton(onClick = onTogglePlaylist) {
+            Icon(
+                imageVector = if (allInPlaylist) {
+                    Icons.AutoMirrored.Outlined.PlaylistAddCheck
+                } else {
+                    Icons.AutoMirrored.Outlined.PlaylistAdd
+                },
+                contentDescription = stringResource(
+                    if (allInPlaylist) {
+                        MR.strings.audio_playlist_remove_work
+                    } else {
+                        MR.strings.audio_add_to_playlist
+                    },
+                ),
+                tint = if (allInPlaylist) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 

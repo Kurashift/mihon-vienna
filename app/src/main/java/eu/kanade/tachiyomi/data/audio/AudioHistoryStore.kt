@@ -19,6 +19,8 @@ data class AudioPlayItem(
     val subtitleUrl: String? = null,
     val subtitleFallbackUrl: String? = null,
     val durationMs: Long = 0,
+    /** Slash-separated folder path inside the work, e.g. "mp3" or "第1章/本篇". */
+    val folderPath: String = "",
 ) : JavaSerializable
 
 @Serializable

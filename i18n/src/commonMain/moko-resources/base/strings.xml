@@ -471,6 +471,14 @@
     <string name="black_background">Black</string>
     <string name="automatic_background">Auto</string>
     <string name="pref_viewer_type">Default reading mode</string>
+    <string name="reader_group_display">Display</string>
+    <string name="reader_group_navigation">Navigation</string>
+    <string name="reader_group_image">Image</string>
+    <string name="reader_group_dual_page">Dual page</string>
+    <string name="reader_group_reading">Reading behavior</string>
+    <string name="reader_group_flash">Page flash</string>
+    <string name="reader_group_other">Other</string>
+    <string name="webtoon_nav">Webtoon</string>
     <string name="l_nav">L shaped</string>
     <string name="kindlish_nav">Kindle-ish</string>
     <string name="edge_nav">Edge</string>

@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.navigation.EdgeNavigation
 import eu.kanade.tachiyomi.ui.reader.viewer.navigation.KindlishNavigation
 import eu.kanade.tachiyomi.ui.reader.viewer.navigation.LNavigation
 import eu.kanade.tachiyomi.ui.reader.viewer.navigation.RightAndLeftNavigation
+import eu.kanade.tachiyomi.ui.reader.viewer.navigation.WebtoonNavigation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -115,6 +116,7 @@ class WebtoonConfig(
             3 -> EdgeNavigation()
             4 -> RightAndLeftNavigation()
             5 -> DisabledNavigation()
+            6 -> WebtoonNavigation()
             else -> defaultNavigation()
         }
         navigationModeChangedListener?.invoke()

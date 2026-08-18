@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -211,20 +212,50 @@ fun AudioQuickPlaySheet(
                     .fillMaxWidth()
                     .weight(1f),
             ) {
-                itemsIndexed(
-                    items = selectedTracks,
-                    key = { _, item -> item.mediaStreamUrl },
-                ) { index, item ->
-                    val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
-                    val isCurrent = state.item?.mediaStreamUrl == item.mediaStreamUrl
-                    AudioTrackItem(
-                        number = index + 1,
-                        item = item,
-                        isCurrent = isCurrent,
-                        isPlaying = isCurrent && state.isPlaying,
-                        onClick = { playAudio(playlist, globalIndex, controller, context) },
-                    )
-                }
+                selectedTracks
+                    .groupBy { it.folderPath }
+                    .toList()
+                    .forEach { (folderPath, folderTracks) ->
+                        if (folderPath.isNotBlank()) {
+                            item(key = "folder:$folderPath") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Folder,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Text(
+                                        text = folderPath,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(start = 6.dp),
+                                    )
+                                }
+                            }
+                        }
+                        itemsIndexed(
+                            items = folderTracks,
+                            key = { _, item -> item.mediaStreamUrl },
+                        ) { index, item ->
+                            val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
+                            val isCurrent = state.item?.mediaStreamUrl == item.mediaStreamUrl
+                            AudioTrackItem(
+                                number = index + 1,
+                                item = item,
+                                isCurrent = isCurrent,
+                                isPlaying = isCurrent && state.isPlaying,
+                                onClick = { playAudio(playlist, globalIndex, controller, context) },
+                            )
+                        }
+                    }
             }
         }
     }
@@ -244,7 +275,7 @@ private fun CurrentAudioPanel(
             AudioCover(
                 coverUrl = item?.coverUrl,
                 contentDescription = item?.workTitle,
-                onClick = item?.takeIf { it.workId > 0 }?.let { current ->
+                onClick = item?.let { current ->
                     onOpenWork?.let { open -> { open(current) } }
                 },
                 modifier = Modifier.size(56.dp),

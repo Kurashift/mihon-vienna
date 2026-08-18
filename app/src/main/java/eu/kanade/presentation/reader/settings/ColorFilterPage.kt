@@ -15,6 +15,7 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
 import tachiyomi.core.common.preference.getAndSet
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.CheckboxItem
+import tachiyomi.presentation.core.components.HeadingItem
 import tachiyomi.presentation.core.components.SettingsChipRow
 import tachiyomi.presentation.core.components.SliderItem
 import tachiyomi.presentation.core.i18n.stringResource
@@ -22,6 +23,7 @@ import tachiyomi.presentation.core.util.collectAsState
 
 @Composable
 internal fun ColumnScope.ColorFilterPage(viewModel: ReaderSettingsViewModel) {
+    HeadingItem(MR.strings.reader_group_display)
     val customBrightness by viewModel.preferences.customBrightness.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_custom_brightness),
@@ -46,6 +48,7 @@ internal fun ColumnScope.ColorFilterPage(viewModel: ReaderSettingsViewModel) {
         )
     }
 
+    HeadingItem(MR.strings.reader_group_image)
     val colorFilter by viewModel.preferences.colorFilter.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_custom_color_filter),
@@ -114,6 +117,7 @@ internal fun ColumnScope.ColorFilterPage(viewModel: ReaderSettingsViewModel) {
         }
     }
 
+    HeadingItem(MR.strings.reader_group_other)
     CheckboxItem(
         label = stringResource(MR.strings.pref_grayscale),
         pref = viewModel.preferences.grayscale,

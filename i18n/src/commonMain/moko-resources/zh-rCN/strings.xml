@@ -137,6 +137,13 @@
     <string name="white_background">白色</string>
     <string name="black_background">黑色</string>
     <string name="pref_viewer_type">默认阅读模式</string>
+    <string name="reader_group_display">显示</string>
+    <string name="reader_group_navigation">导航</string>
+    <string name="reader_group_image">图片</string>
+    <string name="reader_group_dual_page">双页</string>
+    <string name="reader_group_reading">阅读行为</string>
+    <string name="reader_group_flash">翻页闪光</string>
+    <string name="reader_group_other">其它</string>
     <string name="left_to_right_viewer">单页式（从左到右）</string>
     <string name="right_to_left_viewer">单页式（从右到左）</string>
     <string name="vertical_viewer">单页式（从上到下）</string>
@@ -470,6 +477,7 @@
     <string name="pref_viewer_nav">点按区域</string>
     <string name="edge_nav">两侧</string>
     <string name="kindlish_nav">Kindle</string>
+    <string name="webtoon_nav">条漫</string>
     <string name="l_nav">L 形</string>
     <string name="track_finished_reading_date">阅读完毕日期</string>
     <string name="track_started_reading_date">开始阅读日期</string>

@@ -268,7 +268,10 @@ class ReaderActivity : BaseActivity() {
                 isEnabled = false
                 onBackPressedDispatcher.onBackPressed()
             } else {
-                navigateToRandomHistory(previous)
+                // Popping the last entry returns to the manga the reader originally opened,
+                // which should look like a normal entry (no random-jump details button).
+                val returnToRoot = RandomReaderHistory.size() == 0
+                navigateToRandomHistory(previous, swipeJump = !returnToRoot)
             }
         }
 
@@ -612,13 +615,13 @@ class ReaderActivity : BaseActivity() {
         }
     }
 
-    private fun navigateToRandomHistory(entry: RandomReaderHistory.Entry) {
+    private fun navigateToRandomHistory(entry: RandomReaderHistory.Entry, swipeJump: Boolean = true) {
         randomJumping = true
         val intent = ReaderActivity.newIntent(
             context = this,
             mangaId = entry.mangaId,
             chapterId = entry.chapterId,
-            swipeJump = true,
+            swipeJump = swipeJump,
             pageIndex = entry.pageIndex,
         ).apply {
             putExtra(SWIPE_DIRECTION_EXTRA, entry.returnDirection)

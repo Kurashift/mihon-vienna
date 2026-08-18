@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RemoveCircleOutline
@@ -115,15 +116,45 @@ fun AudioPlaylistContent(
                         )
                     }
                     if (group.key in expandedKeys) {
-                        group.tracks.forEachIndexed { index, item ->
-                            item(key = "track:${group.key}:${item.mediaStreamUrl}") {
-                                PlaylistTrackRow(
-                                    item = item,
-                                    onClick = { onClickTrack(group, index) },
-                                    onRemove = { onRemoveTrack(item) },
-                                )
+                        group.tracks
+                            .groupBy { it.folderPath }
+                            .toList()
+                            .forEach { (folderPath, folderTracks) ->
+                                if (folderPath.isNotBlank()) {
+                                    item(key = "folder:${group.key}:$folderPath") {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 28.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Folder,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                            Text(
+                                                text = folderPath,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(start = 6.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                                folderTracks.forEachIndexed { index, item ->
+                                    item(key = "track:${group.key}:${item.mediaStreamUrl}") {
+                                        PlaylistTrackRow(
+                                            item = item,
+                                            onClick = { onClickTrack(group, group.tracks.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }) },
+                                            onRemove = { onRemoveTrack(item) },
+                                        )
+                                    }
+                                }
                             }
-                        }
                     }
                     item(key = "divider:${group.key}") { HorizontalDivider() }
                 }

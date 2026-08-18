@@ -199,9 +199,8 @@ object SettingsReaderScreen : SearchableSettings {
             preferenceItems = listOf(
                 Preference.PreferenceItem.ListPreference(
                     preference = navModePref,
-                    entries = ReaderPreferences.TapZones
-                        .mapIndexed { index, it -> index to stringResource(it) }
-                        .toMap(),
+                    entries = ReaderPreferences.TapZoneValuesPager
+                        .associateWith { stringResource(ReaderPreferences.TapZones[it]) },
                     title = stringResource(MR.strings.pref_viewer_nav),
                 ),
                 Preference.PreferenceItem.ListPreference(
@@ -294,9 +293,8 @@ object SettingsReaderScreen : SearchableSettings {
             preferenceItems = listOf(
                 Preference.PreferenceItem.ListPreference(
                     preference = navModePref,
-                    entries = ReaderPreferences.TapZones
-                        .mapIndexed { index, it -> index to stringResource(it) }
-                        .toMap(),
+                    entries = ReaderPreferences.TapZoneValuesWebtoon
+                        .associateWith { stringResource(ReaderPreferences.TapZones[it]) },
                     title = stringResource(MR.strings.pref_viewer_nav),
                 ),
                 Preference.PreferenceItem.ListPreference(

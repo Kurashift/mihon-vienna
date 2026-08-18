@@ -77,6 +77,9 @@ class BasePreferences(
     /** Audio "待播列表" (play queue) for quick background playback, stored as a JSON list. */
     val audioPlaylist: Preference<String> = preferenceStore.getString("audio_favorite_list", "")
 
+    /** Schema version of [audioPlaylist]; bump to discard old playlist entries once. */
+    val audioPlaylistVersion: Preference<Int> = preferenceStore.getInt("audio_playlist_version", 0)
+
     /** Locally collected audio works, stored independently from the track play queue. */
     val audioFavorites: Preference<String> = preferenceStore.getString("audio_favorite_works", "")
 

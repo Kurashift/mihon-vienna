@@ -61,15 +61,18 @@ internal fun ColumnScope.ReadingModePage(viewModel: ReaderSettingsViewModel) {
 private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) {
     HeadingItem(MR.strings.pager_viewer)
 
+    HeadingItem(MR.strings.reader_group_navigation)
     val navigationModePager by viewModel.preferences.navigationModePager.collectAsState()
     val pagerNavInverted by viewModel.preferences.pagerNavInverted.collectAsState()
     TapZonesItems(
+        values = ReaderPreferences.TapZoneValuesPager,
         selected = navigationModePager,
         onSelect = viewModel.preferences.navigationModePager::set,
         invertMode = pagerNavInverted,
         onSelectInvertMode = viewModel.preferences.pagerNavInverted::set,
     )
 
+    HeadingItem(MR.strings.reader_group_image)
     val imageScaleType by viewModel.preferences.imageScaleType.collectAsState()
     SettingsChipRow(MR.strings.pref_image_scale_type) {
         ReaderPreferences.ImageScaleType.mapIndexed { index, it ->
@@ -107,6 +110,7 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
         pref = viewModel.preferences.navigateToPan,
     )
 
+    HeadingItem(MR.strings.reader_group_dual_page)
     val dualPageSplitPaged by viewModel.preferences.dualPageSplitPaged.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_dual_page_split),
@@ -140,15 +144,18 @@ private fun ColumnScope.WebtoonViewerSettings(viewModel: ReaderSettingsViewModel
 
     HeadingItem(MR.strings.webtoon_viewer)
 
+    HeadingItem(MR.strings.reader_group_navigation)
     val navigationModeWebtoon by viewModel.preferences.navigationModeWebtoon.collectAsState()
     val webtoonNavInverted by viewModel.preferences.webtoonNavInverted.collectAsState()
     TapZonesItems(
+        values = ReaderPreferences.TapZoneValuesWebtoon,
         selected = navigationModeWebtoon,
         onSelect = viewModel.preferences.navigationModeWebtoon::set,
         invertMode = webtoonNavInverted,
         onSelectInvertMode = viewModel.preferences.webtoonNavInverted::set,
     )
 
+    HeadingItem(MR.strings.reader_group_image)
     val webtoonSidePadding by viewModel.preferences.webtoonSidePadding.collectAsState()
     SliderItem(
         value = webtoonSidePadding,
@@ -166,6 +173,7 @@ private fun ColumnScope.WebtoonViewerSettings(viewModel: ReaderSettingsViewModel
         pref = viewModel.preferences.cropBordersWebtoon,
     )
 
+    HeadingItem(MR.strings.reader_group_dual_page)
     val dualPageSplitWebtoon by viewModel.preferences.dualPageSplitWebtoon.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_dual_page_split),
@@ -204,22 +212,23 @@ private fun ColumnScope.WebtoonViewerSettings(viewModel: ReaderSettingsViewModel
 
 @Composable
 private fun ColumnScope.TapZonesItems(
+    values: List<Int>,
     selected: Int,
     onSelect: (Int) -> Unit,
     invertMode: ReaderPreferences.TappingInvertMode,
     onSelectInvertMode: (ReaderPreferences.TappingInvertMode) -> Unit,
 ) {
     SettingsChipRow(MR.strings.pref_viewer_nav) {
-        ReaderPreferences.TapZones.mapIndexed { index, it ->
+        values.forEach { value ->
             FilterChip(
-                selected = selected == index,
-                onClick = { onSelect(index) },
-                label = { Text(stringResource(it)) },
+                selected = selected == value,
+                onClick = { onSelect(value) },
+                label = { Text(stringResource(ReaderPreferences.TapZones[value])) },
             )
         }
     }
 
-    if (selected != 5) {
+    if (selected != ReaderPreferences.DISABLED_NAV_MODE) {
         SettingsChipRow(MR.strings.pref_read_with_tapping_inverted) {
             ReaderPreferences.TappingInvertMode.entries.map {
                 FilterChip(

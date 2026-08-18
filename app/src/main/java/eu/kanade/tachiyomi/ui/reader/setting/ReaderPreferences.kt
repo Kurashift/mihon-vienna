@@ -163,7 +163,9 @@ class ReaderPreferences(
 
     val navigationModePager: Preference<Int> = preferenceStore.getInt("reader_navigation_mode_pager", 0)
 
-    val navigationModeWebtoon: Preference<Int> = preferenceStore.getInt("reader_navigation_mode_webtoon", 0)
+    // 6 is the webtoon-only "Webtoon" mode; it is appended last so existing saved values
+    // (0..5) keep their meaning, while settings screens insert it between "Default" and "L".
+    val navigationModeWebtoon: Preference<Int> = preferenceStore.getInt("reader_navigation_mode_webtoon", 6)
 
     val pagerNavInverted: Preference<TappingInvertMode> = preferenceStore.getEnum(
         "reader_tapping_inverted",
@@ -217,6 +219,14 @@ class ReaderPreferences(
 
         const val MILLI_CONVERSION = 100
 
+        const val DEFAULT_NAV_MODE = 0
+        const val L_NAV_MODE = 1
+        const val KINDLISH_NAV_MODE = 2
+        const val EDGE_NAV_MODE = 3
+        const val RIGHT_AND_LEFT_NAV_MODE = 4
+        const val DISABLED_NAV_MODE = 5
+        const val WEBTOON_NAV_MODE = 6
+
         val TapZones = listOf(
             MR.strings.label_default,
             MR.strings.l_nav,
@@ -224,6 +234,21 @@ class ReaderPreferences(
             MR.strings.edge_nav,
             MR.strings.right_and_left_nav,
             MR.strings.disabled_nav,
+            MR.strings.webtoon_nav,
+        )
+
+        /** Pager shows the original six modes; the webtoon-only mode (6) is hidden. */
+        val TapZoneValuesPager = (DEFAULT_NAV_MODE..DISABLED_NAV_MODE).toList()
+
+        /** Webtoon display order: "Default", "Webtoon", then the original modes 1..5. */
+        val TapZoneValuesWebtoon = listOf(
+            DEFAULT_NAV_MODE,
+            WEBTOON_NAV_MODE,
+            L_NAV_MODE,
+            KINDLISH_NAV_MODE,
+            EDGE_NAV_MODE,
+            RIGHT_AND_LEFT_NAV_MODE,
+            DISABLED_NAV_MODE,
         )
 
         val ImageScaleType = listOf(

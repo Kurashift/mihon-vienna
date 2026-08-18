@@ -46,6 +46,7 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
                             baseName = baseName.normalizedKey(),
                             trackNumber = baseName.trackNumber(),
                             extension = extension,
+                            folderPath = ancestors.joinToString("/"),
                         )
                     }
                 }
@@ -113,6 +114,7 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
             subtitleUrl = subtitle?.url,
             subtitleFallbackUrl = subtitle?.fallbackUrl,
             durationMs = ((node.duration ?: 0.0) * 1000).toLong(),
+            folderPath = selected.displayCandidate.folderPath,
         )
     }
 
@@ -158,6 +160,7 @@ private data class AudioCandidate(
     val baseName: String,
     val trackNumber: String?,
     val extension: String,
+    val folderPath: String,
 ) {
     fun preferredStreamUrl(quality: AudioQualityMode): String {
         return if (quality == AudioQualityMode.FLUENT_FIRST && extension in LOSSLESS_EXTENSIONS) {

@@ -23,8 +23,23 @@ class AudioPlaylistStore(
     @Synchronized
     fun load(): List<AudioPlayItem> {
         val raw = preferences.audioPlaylist.get()
-        if (raw.isBlank()) return emptyList()
+        if (raw.isBlank()) {
+            migrateIfNeeded()
+            return emptyList()
+        }
+        if (preferences.audioPlaylistVersion.get() < PLAYLIST_VERSION) {
+            // Old entries predate folderPath. Drop them once for a clean start.
+            preferences.audioPlaylist.set("")
+            preferences.audioPlaylistVersion.set(PLAYLIST_VERSION)
+            return emptyList()
+        }
         return runCatching { json.decodeFromString<List<AudioPlayItem>>(raw) }.getOrDefault(emptyList())
+    }
+
+    private fun migrateIfNeeded() {
+        if (preferences.audioPlaylistVersion.get() < PLAYLIST_VERSION) {
+            preferences.audioPlaylistVersion.set(PLAYLIST_VERSION)
+        }
     }
 
     @Synchronized
@@ -93,6 +108,17 @@ class AudioPlaylistStore(
         return toAdd.size
     }
 
+    /** Removes every track whose url is in [urls]; returns true when anything was removed. */
+    @Synchronized
+    fun removeAll(urls: Collection<String>): Boolean {
+        if (urls.isEmpty()) return false
+        val toRemove = urls.toHashSet()
+        val current = load().toMutableList()
+        val changed = current.removeAll { it.mediaStreamUrl in toRemove }
+        if (changed) save(current)
+        return changed
+    }
+
     @Synchronized
     fun clear() {
         preferences.audioPlaylist.set("")
@@ -100,6 +126,10 @@ class AudioPlaylistStore(
 
     private fun save(items: List<AudioPlayItem>) {
         preferences.audioPlaylist.set(json.encodeToString(items))
+    }
+
+    private companion object {
+        const val PLAYLIST_VERSION = 1
     }
 }
 

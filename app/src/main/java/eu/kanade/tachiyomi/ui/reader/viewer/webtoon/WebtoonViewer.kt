@@ -205,13 +205,13 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 activity.hideMenu()
                 return@tap
             }
-            val viewPosition = IntArray(2)
-            recycler.getLocationOnScreen(viewPosition)
-            val viewPositionRelativeToWindow = IntArray(2)
-            recycler.getLocationInWindow(viewPositionRelativeToWindow)
+            // Normalize by the view's layout size. In landscape webtoon the recycler is
+            // scaled and translated, so raw screen coordinates would fall outside the
+            // navigation zones. The event already carries local, unscaled content
+            // coordinates, which map to [0, 1] for both axes and every scale.
             val pos = PointF(
-                (event.rawX - viewPosition[0] + viewPositionRelativeToWindow[0]) / recycler.width,
-                (event.rawY - viewPosition[1] + viewPositionRelativeToWindow[1]) / recycler.originalHeight,
+                event.x / recycler.width,
+                event.y / recycler.height,
             )
             when (config.navigator.getAction(pos)) {
                 NavigationRegion.MENU -> activity.toggleMenu()
