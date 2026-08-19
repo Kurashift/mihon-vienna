@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Match the Personal icon's warm paper center while keeping the dark splash mark legible. -->
+    <!-- Match the Vienna icon's warm paper center while keeping the dark splash mark legible. -->
     <color name="splash">#E7DECB</color>
 </resources>
