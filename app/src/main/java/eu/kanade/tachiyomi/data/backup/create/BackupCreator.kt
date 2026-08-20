@@ -11,10 +11,10 @@ import eu.kanade.tachiyomi.data.backup.create.creators.MangaBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.PreferenceBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.SourcesBackupCreator
 import eu.kanade.tachiyomi.data.backup.models.Backup
-import eu.kanade.tachiyomi.data.backup.models.BackupMarks
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
+import eu.kanade.tachiyomi.data.backup.models.BackupMarks
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSource
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
@@ -29,9 +29,9 @@ import okio.sink
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.backup.service.BackupPreferences
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.model.Manga
-import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
@@ -133,7 +133,8 @@ class BackupCreator(
         val allMarks = mangaMarkStore.marks.value.map { it to 0 } + goodDoujinStore.marks.value.map { it to 1 }
         return allMarks.mapNotNull { (mark, listType) ->
             val manga = runCatching { mangaRepository.getMangaById(mark.mangaId) }.getOrNull() ?: return@mapNotNull null
-            val chapter = runCatching { chapterRepository.getChapterById(mark.chapterId) }.getOrNull() ?: return@mapNotNull null
+            val chapter =
+                runCatching { chapterRepository.getChapterById(mark.chapterId) }.getOrNull() ?: return@mapNotNull null
             BackupMarks(
                 sourceId = manga.source,
                 mangaUrl = manga.url,

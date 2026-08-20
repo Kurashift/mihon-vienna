@@ -15,8 +15,8 @@ import eu.kanade.tachiyomi.data.audio.CircleItem
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.TagItem
 import eu.kanade.tachiyomi.data.audio.VaItem
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -101,5 +101,4 @@ class AudioCategoryViewModel(
             }
         }
     }
-
 }

@@ -42,6 +42,7 @@ import androidx.core.net.toUri
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import com.hippo.unifile.UniFile
+import eu.kanade.presentation.manga.LocalLibraryChapterTitleTranslationDialog
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.data.CreateBackupScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
@@ -54,6 +55,7 @@ import eu.kanade.tachiyomi.data.backup.restore.BackupRestoreJob
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.export.LibraryExporter
 import eu.kanade.tachiyomi.data.export.LibraryExporter.ExportOptions
+import eu.kanade.tachiyomi.ui.manga.LocalLibraryChapterTitleTranslations
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.Dispatchers
@@ -106,8 +108,103 @@ object SettingsDataScreen : SearchableSettings {
             Preference.PreferenceItem.InfoPreference(stringResource(MR.strings.pref_storage_location_info)),
 
             getBackupAndRestoreGroup(backupPreferences = backupPreferences),
+            getChapterTitleTranslationsGroup(),
             getDataGroup(),
             getExportGroup(),
+        )
+    }
+
+    @Composable
+    private fun getChapterTitleTranslationsGroup(): Preference.PreferenceGroup {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val translations = remember { LocalLibraryChapterTitleTranslations(context = context) }
+        var showDialog by remember { mutableStateOf(false) }
+
+        val exportLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            scope.launch {
+                runCatching { translations.export(uri) }
+                    .onSuccess { (mangaCount, chapterCount) ->
+                        context.toast(
+                            context.stringResource(
+                                MR.strings.local_library_chapter_title_translations_exported,
+                                mangaCount,
+                                chapterCount,
+                            ),
+                        )
+                    }
+                    .onFailure { error ->
+                        logcat(LogPriority.ERROR, error)
+                        context.toast(MR.strings.chapter_title_translation_export_failed)
+                    }
+            }
+        }
+        val importLibraryLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            scope.launch {
+                runCatching { translations.importLibrary(uri) }
+                    .onSuccess { plan -> showTranslationImportResult(context, plan.updates.size, plan.ignoredCount) }
+                    .onFailure { error ->
+                        logcat(LogPriority.ERROR, error)
+                        context.toast(MR.strings.chapter_title_translation_import_failed)
+                    }
+            }
+        }
+        val importMangaFilesLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenMultipleDocuments(),
+        ) { uris ->
+            if (uris.isEmpty()) return@rememberLauncherForActivityResult
+            scope.launch {
+                runCatching { translations.importMangaFiles(uris) }
+                    .onSuccess { plan -> showTranslationImportResult(context, plan.updates.size, plan.ignoredCount) }
+                    .onFailure { error ->
+                        logcat(LogPriority.ERROR, error)
+                        context.toast(MR.strings.chapter_title_translation_import_failed)
+                    }
+            }
+        }
+
+        if (showDialog) {
+            LocalLibraryChapterTitleTranslationDialog(
+                onDismissRequest = { showDialog = false },
+                onExport = {
+                    showDialog = false
+                    exportLauncher.launch("mihon_local_library_chapter_translations.json")
+                },
+                onImport = {
+                    showDialog = false
+                    importLibraryLauncher.launch(arrayOf("application/json", "text/plain"))
+                },
+                onImportMangaFiles = {
+                    showDialog = false
+                    importMangaFilesLauncher.launch(arrayOf("application/json", "text/plain"))
+                },
+            )
+        }
+
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.chapter_title_translations),
+            preferenceItems = listOf(
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(MR.strings.local_library_chapter_title_translations),
+                    onClick = { showDialog = true },
+                ),
+            ),
+        )
+    }
+
+    private fun showTranslationImportResult(context: Context, imported: Int, ignored: Int) {
+        context.toast(
+            context.stringResource(
+                MR.strings.local_library_chapter_title_translations_imported,
+                imported,
+                ignored,
+            ),
         )
     }
 

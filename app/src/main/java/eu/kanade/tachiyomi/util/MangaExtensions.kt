@@ -5,8 +5,8 @@ import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdate
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
-import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalCoverManager

@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.ui.browse.source
 
-import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Headphones
@@ -20,6 +19,7 @@ import eu.kanade.presentation.components.TabContent
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseScreen
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR

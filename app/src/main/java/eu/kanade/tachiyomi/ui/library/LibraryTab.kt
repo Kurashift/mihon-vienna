@@ -1,7 +1,5 @@
 package eu.kanade.tachiyomi.ui.library
 
-import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
-import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
@@ -45,6 +43,7 @@ import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -56,6 +55,7 @@ import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
@@ -197,7 +197,9 @@ data object LibraryTab : Tab {
                                         ReaderActivity.newIntent(context, chapter.mangaId, chapter.id),
                                     )
                                 } else {
-                                    snackbarHostState.showSnackbarReplacing(context.stringResource(MR.strings.no_next_chapter))
+                                    snackbarHostState.showSnackbarReplacing(
+                                        context.stringResource(MR.strings.no_next_chapter),
+                                    )
                                 }
                             }
                             Unit

@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.browse.source.browse
 
+import android.content.Context
 import android.content.res.Configuration
 import android.os.SystemClock
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -101,6 +102,7 @@ import eu.kanade.tachiyomi.source.model.Filter as SourceModelFilter
 class BrowseSourceViewModel(
     private val sourceId: Long,
     listingQuery: String?,
+    private val context: Context = Injekt.get(),
     sourceManager: SourceManager = Injekt.get(),
     sourcePreferences: SourcePreferences = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
@@ -202,7 +204,6 @@ class BrowseSourceViewModel(
         if (!getIncognitoState.await(source.id)) {
             sourcePreferences.lastUsedSource.set(source.id)
         }
-
     }
 
     /**

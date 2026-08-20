@@ -232,7 +232,8 @@ private val SUBTITLE_FOLDER_MARKERS = listOf(
     "翻译",
 )
 private val SUBTITLE_SUFFIX_REGEX = Regex(
-    pattern = """(?:[\s._\-]*(?:\(|（|\[|【)?(?:subtitle|subtitles|sub|lyrics?|字幕|台词|歌词|中文|简中|简体|繁中|繁体|zh(?:-cn|-tw)?|ja|jp)(?:\)|）|\]|】)?)$""",
+    pattern = """(?:[\s._\-]*(?:\(|（|\[|【)?(?:subtitle|subtitles|sub|lyrics?|字幕|台词|歌词|中文|""" +
+        """简中|简体|繁中|繁体|zh(?:-cn|-tw)?|ja|jp)(?:\)|）|\]|】)?)$""",
     option = RegexOption.IGNORE_CASE,
 )
 private val TRACK_NUMBER_REGEX = Regex("""^(?:track\s*)?0*(\d+)""", RegexOption.IGNORE_CASE)

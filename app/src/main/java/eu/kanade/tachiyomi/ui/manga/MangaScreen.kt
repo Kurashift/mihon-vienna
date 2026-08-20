@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.ui.manga
 
-import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,7 +30,10 @@ import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
 import eu.kanade.presentation.components.NavigatorAdaptiveSheet
 import eu.kanade.presentation.manga.ChapterSettingsDialog
+import eu.kanade.presentation.manga.ChapterTitleTranslationDialog
+import eu.kanade.presentation.manga.ChapterTranslatedTitleActionsDialog
 import eu.kanade.presentation.manga.DuplicateMangaDialog
+import eu.kanade.presentation.manga.EditChapterTranslatedTitleDialog
 import eu.kanade.presentation.manga.EditCoverAction
 import eu.kanade.presentation.manga.MangaScreen
 import eu.kanade.presentation.manga.components.DeleteChaptersDialog
@@ -56,6 +58,7 @@ import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import eu.kanade.tachiyomi.util.system.copyToClipboard
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.delay
@@ -63,15 +66,15 @@ import kotlinx.coroutines.launch
 import logcat.LogPriority
 import mihon.feature.migration.config.MigrationConfigScreen
 import mihon.feature.migration.dialog.MigrateMangaDialog
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
-import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.isLocal
-import tachiyomi.presentation.core.screens.LoadingScreen
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -139,6 +142,9 @@ class MangaScreen(
 
         // Quick audio (moan track) sheet opened from the toolbar shortcut.
         var showAudioSheet by remember { mutableStateOf(false) }
+        var showChapterTitleTranslationDialog by remember { mutableStateOf(false) }
+        var translatedTitleActionChapter by remember { mutableStateOf<ChapterList.Item?>(null) }
+        var editTranslatedTitleChapter by remember { mutableStateOf<Chapter?>(null) }
 
         // Guards against double taps: while a random pick is in flight, further
         // clicks are ignored so the navigation transition only happens once.
@@ -263,6 +269,9 @@ class MangaScreen(
             onMigrateClicked = {
                 navigator.push(MigrationConfigScreen(successState.manga.id))
             }.takeIf { successState.manga.favorite },
+            onChapterTitleTranslationsClicked = {
+                showChapterTitleTranslationDialog = true
+            }.takeIf { successState.manga.isLocal() },
             onClearHistoryClicked = viewModel::showClearHistoryDialog,
             onEditNotesClicked = { navigator.push(MangaNotesScreen(manga = successState.manga)) },
             onMultiBookmarkClicked = viewModel::bookmarkChapters,
@@ -273,10 +282,60 @@ class MangaScreen(
             onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
             onChapterSwipe = viewModel::chapterSwipe,
             onReorderChapters = viewModel::reorderChapters,
+            onChapterTranslatedTitleLongClick = { translatedTitleActionChapter = it },
             onChapterSelected = viewModel::toggleSelection,
             onAllChapterSelected = viewModel::toggleAllSelection,
             onInvertSelection = viewModel::invertSelection,
         )
+
+        if (showChapterTitleTranslationDialog) {
+            ChapterTitleTranslationDialog(
+                onDismissRequest = { showChapterTitleTranslationDialog = false },
+                onExportCurrentManga = {
+                    showChapterTitleTranslationDialog = false
+                    val fileName = successState.manga.title
+                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                        .take(80)
+                        .ifBlank { "chapter_titles" }
+                    exportChapterTitles.launch("${fileName}_zh.json")
+                },
+                onImportCurrentManga = {
+                    showChapterTitleTranslationDialog = false
+                    importChapterTitles.launch(arrayOf("application/json", "text/plain"))
+                },
+            )
+        }
+
+        translatedTitleActionChapter?.let { item ->
+            ChapterTranslatedTitleActionsDialog(
+                chapter = item.chapter,
+                onDismissRequest = { translatedTitleActionChapter = null },
+                onEdit = {
+                    translatedTitleActionChapter = null
+                    editTranslatedTitleChapter = item.chapter
+                },
+                onCopyOriginalTitle = {
+                    context.copyToClipboard(item.chapter.name, item.chapter.name)
+                    translatedTitleActionChapter = null
+                },
+                onSelect = {
+                    viewModel.toggleSelection(item, !item.selected, true)
+                    translatedTitleActionChapter = null
+                },
+            )
+        }
+
+        editTranslatedTitleChapter?.let { chapter ->
+            EditChapterTranslatedTitleDialog(
+                chapter = chapter,
+                onDismissRequest = { editTranslatedTitleChapter = null },
+                onSave = { value ->
+                    viewModel.updateChapterTranslatedTitle(chapter, value)
+                    editTranslatedTitleChapter = null
+                    context.toast(MR.strings.chapter_translated_title_saved)
+                },
+            )
+        }
 
         if (showAudioSheet) {
             AudioQuickPlaySheet(
@@ -347,18 +406,6 @@ class MangaScreen(
                 onBookmarkedFilterChanged = viewModel::setBookmarkedFilter,
                 onSortModeChanged = viewModel::setSorting,
                 onDisplayModeChanged = viewModel::setDisplayMode,
-                onExportTranslatedTitles = {
-                    onDismissRequest()
-                    val fileName = successState.manga.title
-                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                        .take(80)
-                        .ifBlank { "chapter_titles" }
-                    exportChapterTitles.launch("${fileName}_zh.json")
-                }.takeIf { successState.manga.isLocal() },
-                onImportTranslatedTitles = {
-                    onDismissRequest()
-                    importChapterTitles.launch(arrayOf("application/json", "text/plain"))
-                }.takeIf { successState.manga.isLocal() },
                 onSetAsDefault = viewModel::setCurrentSettingsAsDefault,
                 onResetToDefault = viewModel::resetToDefaultSettings,
                 scanlatorFilterActive = successState.scanlatorFilterActive,

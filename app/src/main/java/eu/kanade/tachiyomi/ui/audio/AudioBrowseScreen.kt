@@ -21,8 +21,8 @@ import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.Work
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -322,24 +322,26 @@ class AudioBrowseViewModel(
         try {
             val response = if (effectiveKeyword.isNotBlank()) {
                 api.search(effectiveKeyword, page, PAGE_SIZE, currentSort.order, currentSort.sort)
-            } else when (currentTab) {
-                AudioBrowseTab.LATEST -> {
-                    api.fetchWorks(page, PAGE_SIZE, currentSort.order, currentSort.sort)
-                }
-                AudioBrowseTab.POPULAR -> api.fetchPopular(page, PAGE_SIZE)
-                AudioBrowseTab.FAVORITES -> return
-                AudioBrowseTab.RECOMMENDED -> {
-                    if (basePreferences.audioAuthToken.get().isNotBlank()) {
-                        // Logged-in users keep the backend's personalized recommender.
-                        api.fetchRecommended(recommenderUuid, page, PAGE_SIZE)
-                    } else {
-                        val personalKeyword = personalCircleKeyword()
-                        if (personalKeyword != null) {
-                            api.search(personalKeyword, page, PAGE_SIZE, "rating", "desc")
+            } else {
+                when (currentTab) {
+                    AudioBrowseTab.LATEST -> {
+                        api.fetchWorks(page, PAGE_SIZE, currentSort.order, currentSort.sort)
+                    }
+                    AudioBrowseTab.POPULAR -> api.fetchPopular(page, PAGE_SIZE)
+                    AudioBrowseTab.FAVORITES -> return
+                    AudioBrowseTab.RECOMMENDED -> {
+                        if (basePreferences.audioAuthToken.get().isNotBlank()) {
+                            // Logged-in users keep the backend's personalized recommender.
+                            api.fetchRecommended(recommenderUuid, page, PAGE_SIZE)
                         } else {
-                            // No taste signal yet: fall back to top-rated works so this tab differs
-                            // from "popular" (which is ranked by popularity) instead of duplicating it.
-                            api.fetchWorks(page, PAGE_SIZE, "rating", "desc")
+                            val personalKeyword = personalCircleKeyword()
+                            if (personalKeyword != null) {
+                                api.search(personalKeyword, page, PAGE_SIZE, "rating", "desc")
+                            } else {
+                                // No taste signal yet: fall back to top-rated works so this tab differs
+                                // from "popular" (which is ranked by popularity) instead of duplicating it.
+                                api.fetchWorks(page, PAGE_SIZE, "rating", "desc")
+                            }
                         }
                     }
                 }

@@ -715,7 +715,9 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         activity.onViewerContentReady()
         recycler.postOnAnimation {
             val activePage = findMatchingAdapterItem(page) as? ReaderPage
-            if (positioning == InitialPositioning.Ready && activePage != null && sameAdapterItem(currentPage, activePage)) {
+            if (positioning == InitialPositioning.Ready && activePage != null &&
+                sameAdapterItem(currentPage, activePage)
+            ) {
                 requestAdjacentPreload(activePage)
             }
         }

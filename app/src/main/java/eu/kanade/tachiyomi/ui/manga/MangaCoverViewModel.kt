@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.ui.manga
 
-import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import android.content.Context
 import android.net.Uri
 import androidx.compose.material3.SnackbarHostState
@@ -20,6 +19,7 @@ import eu.kanade.tachiyomi.data.saver.ImageSaver
 import eu.kanade.tachiyomi.data.saver.Location
 import eu.kanade.tachiyomi.util.editCover
 import eu.kanade.tachiyomi.util.system.getBitmapOrNull
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted

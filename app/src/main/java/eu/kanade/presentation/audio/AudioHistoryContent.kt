@@ -211,7 +211,11 @@ private fun HistoryWorkRow(
             )
         }
         Icon(
-            imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            imageVector = if (expanded) {
+                Icons.Outlined.KeyboardArrowDown
+            } else {
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight
+            },
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp),

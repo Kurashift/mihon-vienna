@@ -56,10 +56,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import eu.kanade.presentation.components.AppBar
-import eu.kanade.tachiyomi.data.audio.LyricLine
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
-import eu.kanade.tachiyomi.ui.audio.AudioPlayerState
+import eu.kanade.tachiyomi.data.audio.LyricLine
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
+import eu.kanade.tachiyomi.ui.audio.AudioPlayerState
 import eu.kanade.tachiyomi.ui.audio.AudioSubtitleState
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -101,7 +101,11 @@ fun AudioPlayerContent(
                     if (item != null) {
                         IconButton(onClick = onToggleFavorite) {
                             Icon(
-                                imageVector = if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                                imageVector = if (isFavorite) {
+                                    Icons.Outlined.Favorite
+                                } else {
+                                    Icons.Outlined.FavoriteBorder
+                                },
                                 contentDescription = stringResource(
                                     if (isFavorite) MR.strings.audio_favorite_remove else MR.strings.audio_favorite_add,
                                 ),

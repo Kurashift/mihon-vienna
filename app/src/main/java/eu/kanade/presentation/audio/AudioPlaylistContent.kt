@@ -168,7 +168,12 @@ fun AudioPlaylistContent(
                                             item(key = "track:${group.key}:${item.mediaStreamUrl}") {
                                                 PlaylistTrackRow(
                                                     item = item,
-                                                    onClick = { onClickTrack(group, group.tracks.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }) },
+                                                    onClick = {
+                                                        val trackIndex = group.tracks.indexOfFirst {
+                                                            it.mediaStreamUrl == item.mediaStreamUrl
+                                                        }
+                                                        onClickTrack(group, trackIndex)
+                                                    },
                                                     onRemove = { onRemoveTrack(item) },
                                                 )
                                             }
@@ -179,7 +184,12 @@ fun AudioPlaylistContent(
                                         item(key = "track:${group.key}:${item.mediaStreamUrl}") {
                                             PlaylistTrackRow(
                                                 item = item,
-                                                onClick = { onClickTrack(group, group.tracks.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }) },
+                                                onClick = {
+                                                    val trackIndex = group.tracks.indexOfFirst {
+                                                        it.mediaStreamUrl == item.mediaStreamUrl
+                                                    }
+                                                    onClickTrack(group, trackIndex)
+                                                },
                                                 onRemove = { onRemoveTrack(item) },
                                             )
                                         }
@@ -270,7 +280,11 @@ private fun PlaylistWorkRow(
             )
         }
         Icon(
-            imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            imageVector = if (expanded) {
+                Icons.Outlined.KeyboardArrowDown
+            } else {
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight
+            },
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp),

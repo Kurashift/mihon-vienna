@@ -16,6 +16,12 @@ internal data class ChapterTitleTranslationDocument(
 )
 
 @Serializable
+internal data class LocalLibraryChapterTitleTranslationDocument(
+    val formatVersion: Int = 1,
+    val mangas: List<ChapterTitleTranslationDocument>,
+)
+
+@Serializable
 internal data class ChapterTitleTranslationEntry(
     val chapterId: Long,
     val originalTitle: String,
@@ -28,6 +34,11 @@ internal data class ChapterTitleImportPlan(
     val ignoredCount: Int,
 )
 
+internal data class LocalLibraryChapterTitleImportPlan(
+    val updates: List<ChapterUpdate>,
+    val ignoredCount: Int,
+)
+
 internal object ChapterTitleTranslationCodec {
     private val json = Json {
         prettyPrint = true
@@ -36,25 +47,77 @@ internal object ChapterTitleTranslationCodec {
     }
 
     fun encode(manga: Manga, chapters: List<Chapter>): String {
+        return json.encodeToString(toDocument(manga, chapters))
+    }
+
+    fun encodeLocalLibrary(mangas: List<Pair<Manga, List<Chapter>>>): String {
         return json.encodeToString(
-            ChapterTitleTranslationDocument(
-                mangaId = manga.id,
-                mangaTitle = manga.title,
-                mangaUrl = manga.url,
-                chapters = chapters.map { chapter ->
-                    ChapterTitleTranslationEntry(
-                        chapterId = chapter.id,
-                        originalTitle = chapter.name,
-                        originalUrl = chapter.url,
-                        translatedTitle = chapter.translatedNameOrNull.orEmpty(),
-                    )
-                },
+            LocalLibraryChapterTitleTranslationDocument(
+                mangas = mangas
+                    .sortedBy { (manga, _) -> manga.title.lowercase() }
+                    .map { (manga, chapters) -> toDocument(manga, chapters) },
             ),
         )
     }
 
     fun decode(value: String): ChapterTitleTranslationDocument {
         return json.decodeFromString(value)
+    }
+
+    fun decodeLocalLibrary(value: String): LocalLibraryChapterTitleTranslationDocument {
+        return json.decodeFromString(value)
+    }
+
+    fun planLocalLibraryImport(
+        document: LocalLibraryChapterTitleTranslationDocument,
+        currentMangas: List<Pair<Manga, List<Chapter>>>,
+    ): LocalLibraryChapterTitleImportPlan {
+        require(document.formatVersion == 1) { "Unsupported local library title translation format" }
+
+        val byId = currentMangas.associateBy { (manga, _) -> manga.id }
+        val byUrl = currentMangas.groupBy { (manga, _) -> manga.url }
+        val allChapters = currentMangas.flatMap { (_, chapters) -> chapters }
+        val allChaptersById = allChapters.associateBy(Chapter::id)
+        val allChaptersByUrl = allChapters.groupBy(Chapter::url)
+        val claimedChapterIds = mutableSetOf<Long>()
+        var ignoredCount = 0
+
+        val updates = document.mangas.flatMap { mangaDocument ->
+            val idMatch = byId[mangaDocument.mangaId]
+                ?.takeIf { (manga, _) ->
+                    manga.url == mangaDocument.mangaUrl || manga.title == mangaDocument.mangaTitle
+                }
+            val urlMatch = byUrl[mangaDocument.mangaUrl]?.singleOrNull()
+            val current = idMatch ?: urlMatch
+            val currentChaptersById = current?.second.orEmpty().associateBy(Chapter::id)
+            val currentChaptersByUrl = current?.second.orEmpty().groupBy(Chapter::url)
+
+            mangaDocument.chapters.mapNotNull { entry ->
+                val translatedTitle = entry.translatedTitle.trim()
+                if (translatedTitle.isEmpty()) {
+                    ignoredCount++
+                    return@mapNotNull null
+                }
+
+                val localIdMatch = currentChaptersById[entry.chapterId]
+                    ?.takeIf { it.name == entry.originalTitle || it.url == entry.originalUrl }
+                val localUrlMatch = currentChaptersByUrl[entry.originalUrl]?.singleOrNull()
+                // A moved local chapter keeps its database id even when its parent manga changes.
+                val movedIdMatch = allChaptersById[entry.chapterId]
+                    ?.takeIf { it.name == entry.originalTitle || it.url == entry.originalUrl }
+                val globalUrlMatch = allChaptersByUrl[entry.originalUrl]?.singleOrNull()
+                val chapter = localIdMatch ?: localUrlMatch ?: movedIdMatch ?: globalUrlMatch
+
+                if (chapter == null || !claimedChapterIds.add(chapter.id)) {
+                    ignoredCount++
+                    null
+                } else {
+                    ChapterUpdate(id = chapter.id, translatedName = translatedTitle)
+                }
+            }
+        }
+
+        return LocalLibraryChapterTitleImportPlan(updates, ignoredCount)
     }
 
     fun planImport(
@@ -89,5 +152,21 @@ internal object ChapterTitleTranslationCodec {
         }
 
         return ChapterTitleImportPlan(updates, ignoredCount)
+    }
+
+    private fun toDocument(manga: Manga, chapters: List<Chapter>): ChapterTitleTranslationDocument {
+        return ChapterTitleTranslationDocument(
+            mangaId = manga.id,
+            mangaTitle = manga.title,
+            mangaUrl = manga.url,
+            chapters = chapters.map { chapter ->
+                ChapterTitleTranslationEntry(
+                    chapterId = chapter.id,
+                    originalTitle = chapter.name,
+                    originalUrl = chapter.url,
+                    translatedTitle = chapter.translatedNameOrNull.orEmpty(),
+                )
+            },
+        )
     }
 }

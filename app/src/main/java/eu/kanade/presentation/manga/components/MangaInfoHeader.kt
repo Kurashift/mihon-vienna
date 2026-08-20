@@ -1,6 +1,5 @@
 package eu.kanade.presentation.manga.components
 
-import android.graphics.Color as AndroidColor
 import android.util.TypedValue
 import android.view.ActionMode
 import android.view.Gravity
@@ -80,7 +79,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -90,6 +88,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -120,6 +119,7 @@ import uy.kohesive.injekt.api.get
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Instant
+import android.graphics.Color as AndroidColor
 
 @Composable
 fun MangaInfoBox(

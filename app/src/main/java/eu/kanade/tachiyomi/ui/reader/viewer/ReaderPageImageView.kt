@@ -314,20 +314,20 @@ open class ReaderPageImageView @JvmOverloads constructor(
         setMinimumScaleType(config.minimumScaleType)
         setMinimumDpi(1) // Just so that very small image will be fit for initial load
         setCropBorders(config.cropBorders)
-            setOnImageEventListener(
-                object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
-                    override fun onReady() {
-                        if (!isCurrentImage(generation)) return
-                        setupZoom(config)
-                        if (isVisibleOnScreen()) landscapeZoom(true)
-                        this@ReaderPageImageView.onImageLoaded()
-                    }
+        setOnImageEventListener(
+            object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                override fun onReady() {
+                    if (!isCurrentImage(generation)) return
+                    setupZoom(config)
+                    if (isVisibleOnScreen()) landscapeZoom(true)
+                    this@ReaderPageImageView.onImageLoaded()
+                }
 
-                    override fun onImageLoadError(e: Exception) {
-                        if (!isCurrentImage(generation)) return
-                        this@ReaderPageImageView.onImageLoadError(e)
-                    }
-                },
+                override fun onImageLoadError(e: Exception) {
+                    if (!isCurrentImage(generation)) return
+                    this@ReaderPageImageView.onImageLoadError(e)
+                }
+            },
         )
 
         when (data) {

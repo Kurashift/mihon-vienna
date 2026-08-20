@@ -2,12 +2,12 @@ package eu.kanade.tachiyomi.ui.audio
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.compose.BackHandler
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -20,8 +20,8 @@ import eu.kanade.tachiyomi.data.audio.AudioAccountProgress
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
-import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
+import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
@@ -144,7 +144,13 @@ class AudioDetailViewModel(
         val generation = loadGeneration
         viewModelScope.launchIO {
             _state.update {
-                it.copy(loading = true, error = false, errorMessage = null, rootNodes = emptyList(), flatTracks = emptyList())
+                it.copy(
+                    loading = true,
+                    error = false,
+                    errorMessage = null,
+                    rootNodes = emptyList(),
+                    flatTracks = emptyList(),
+                )
             }
             try {
                 val nodes = api.fetchTracks(work.id)
@@ -223,5 +229,4 @@ class AudioDetailViewModel(
             .map { it.mediaStreamUrl }
             .toSet()
     }
-
 }

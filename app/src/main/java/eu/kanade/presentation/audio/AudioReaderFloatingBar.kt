@@ -104,118 +104,118 @@ fun AudioReaderFloatingBar(
             tonalElevation = 2.dp,
             shadowElevation = 2.dp,
         ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
             ) {
-                FilledIconButton(
-                    onClick = controller::togglePlay,
-                    modifier = Modifier.size(38.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (state.isBuffering) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
+                    FilledIconButton(
+                        onClick = controller::togglePlay,
+                        modifier = Modifier.size(38.dp),
+                    ) {
+                        if (state.isBuffering) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                contentDescription = stringResource(
+                                    if (state.isPlaying) MR.strings.action_pause else MR.strings.action_play,
+                                ),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = controller::previous,
+                        enabled = state.hasPrevious || state.positionMs > 0,
+                        modifier = Modifier.size(34.dp),
+                    ) {
                         Icon(
-                            imageVector = if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = stringResource(
-                                if (state.isPlaying) MR.strings.action_pause else MR.strings.action_play,
-                            ),
-                            modifier = Modifier.size(22.dp),
+                            imageVector = Icons.Outlined.SkipPrevious,
+                            contentDescription = stringResource(MR.strings.audio_previous_track),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = controller::next,
+                        enabled = state.hasNext,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.SkipNext,
+                            contentDescription = stringResource(MR.strings.audio_next_track),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOpenPlaylist)
+                            .padding(horizontal = 6.dp),
+                    ) {
+                        Text(
+                            text = state.item.trackTitle,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = state.item.workTitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { volumeVisible = !volumeVisible },
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
+                            contentDescription = stringResource(MR.strings.audio_volume_up),
+                            tint = if (volumeVisible) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = onOpenPlaylist,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                            contentDescription = stringResource(MR.strings.audio_quick_open),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = stringResource(MR.strings.action_close),
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
-                IconButton(
-                    onClick = controller::previous,
-                    enabled = state.hasPrevious || state.positionMs > 0,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.SkipPrevious,
-                        contentDescription = stringResource(MR.strings.audio_previous_track),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                IconButton(
-                    onClick = controller::next,
-                    enabled = state.hasNext,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.SkipNext,
-                        contentDescription = stringResource(MR.strings.audio_next_track),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
 
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(onClick = onOpenPlaylist)
-                        .padding(horizontal = 6.dp),
-                ) {
-                    Text(
-                        text = state.item.trackTitle,
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = state.item.workTitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                IconButton(
-                    onClick = { volumeVisible = !volumeVisible },
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
-                        contentDescription = stringResource(MR.strings.audio_volume_up),
-                        tint = if (volumeVisible) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                IconButton(
-                    onClick = onOpenPlaylist,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
-                        contentDescription = stringResource(MR.strings.audio_quick_open),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = stringResource(MR.strings.action_close),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
+                AudioSeekBar(
+                    controller = controller,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
             }
-
-            AudioSeekBar(
-                controller = controller,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
-        }
         }
     }
 }

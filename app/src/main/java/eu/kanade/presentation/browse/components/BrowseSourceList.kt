@@ -166,7 +166,9 @@ fun BrowseSourceList(
             }
 
             item {
-                if (mangaList.loadState.refresh is LoadState.Loading || mangaList.loadState.append is LoadState.Loading) {
+                if (mangaList.loadState.refresh is LoadState.Loading ||
+                    mangaList.loadState.append is LoadState.Loading
+                ) {
                     BrowseSourceLoadingItem()
                 }
             }

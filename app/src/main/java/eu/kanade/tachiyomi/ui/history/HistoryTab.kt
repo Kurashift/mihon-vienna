@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.ui.history
 
-import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import android.content.Context
 import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
@@ -28,6 +27,7 @@ import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -139,7 +139,9 @@ data object HistoryTab : Tab {
                     HistoryViewModel.Event.InternalError ->
                         snackbarHostState.showSnackbarReplacing(context.stringResource(MR.strings.internal_error))
                     HistoryViewModel.Event.HistoryCleared ->
-                        snackbarHostState.showSnackbarReplacing(context.stringResource(MR.strings.clear_history_completed))
+                        snackbarHostState.showSnackbarReplacing(
+                            context.stringResource(MR.strings.clear_history_completed),
+                        )
                     is HistoryViewModel.Event.OpenChapter -> openChapter(context, e.chapter)
                 }
             }

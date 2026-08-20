@@ -24,9 +24,9 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 import tachiyomi.presentation.core.components.FastScrollLazyColumn
 import tachiyomi.presentation.core.components.FastScrollLazyVerticalGrid
+import kotlin.math.abs
 
 @Composable
 internal fun BrowseSourceLazyColumn(

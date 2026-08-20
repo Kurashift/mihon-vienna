@@ -41,6 +41,5 @@ fun ChapterHeader(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
-
     }
 }

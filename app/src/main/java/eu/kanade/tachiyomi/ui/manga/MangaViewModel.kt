@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.ui.manga
 
-import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import android.app.Application
 import android.content.Context
 import android.net.Uri
@@ -45,6 +44,7 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.util.chapter.getFirstChapter
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -98,8 +98,8 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.i18n.MR
-import tachiyomi.source.local.isLocal
 import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -205,7 +205,9 @@ class MangaViewModel(
     init {
         viewModelScope.launchIO {
             goodDoujinStore.marks
-                .map { marks -> marks.filterTo(mutableSetOf()) { it.mangaId == mangaId }.mapTo(mutableSetOf()) { it.chapterId } }
+                .map { marks ->
+                    marks.filterTo(mutableSetOf()) { it.mangaId == mangaId }.mapTo(mutableSetOf()) { it.chapterId }
+                }
                 .distinctUntilChanged()
                 .collectLatest { chapterIds ->
                     updateSuccessState { it.copy(goodDoujinChapterIds = chapterIds) }
@@ -1183,6 +1185,17 @@ class MangaViewModel(
         }
     }
 
+    fun updateChapterTranslatedTitle(chapter: Chapter, translatedTitle: String) {
+        viewModelScope.launchIO {
+            updateChapter.await(
+                ChapterUpdate(
+                    id = chapter.id,
+                    translatedName = translatedTitle.trim(),
+                ),
+            )
+        }
+    }
+
     fun bookmarkChapters(chapters: List<Chapter>, bookmarked: Boolean) {
         viewModelScope.launchIO {
             chapters
@@ -1200,7 +1213,9 @@ class MangaViewModel(
             if (applyToExisting) {
                 setMangaDefaultChapterFlags.awaitAll()
             }
-            snackbarHostState.showSnackbarReplacing(message = context.stringResource(MR.strings.chapter_settings_updated))
+            snackbarHostState.showSnackbarReplacing(
+                message = context.stringResource(MR.strings.chapter_settings_updated),
+            )
         }
     }
 
@@ -1366,7 +1381,9 @@ class MangaViewModel(
             removeHistory.await(mangaId)
             setReadStatus.await(mangaId, read = false)
             viewModelScope.launch {
-                snackbarHostState.showSnackbarReplacing(context.stringResource(MR.strings.clear_reading_history_completed))
+                snackbarHostState.showSnackbarReplacing(
+                    context.stringResource(MR.strings.clear_reading_history_completed),
+                )
             }
         }
     }

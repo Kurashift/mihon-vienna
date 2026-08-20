@@ -114,7 +114,9 @@ class KikoeruApi(
             put("pageSize", pageSize)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         with(json) {
-            executeWithRetry { client.newCall(authenticated(POST(url, body = body))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry {
+                client.newCall(authenticated(POST(url, body = body))).awaitSuccess().use { it.parseAs() }
+            }
         }
     }
 
@@ -128,7 +130,9 @@ class KikoeruApi(
             put("pageSize", pageSize)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         with(json) {
-            executeWithRetry { client.newCall(authenticated(POST(url, body = body))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry {
+                client.newCall(authenticated(POST(url, body = body))).awaitSuccess().use { it.parseAs() }
+            }
         }
     }
 

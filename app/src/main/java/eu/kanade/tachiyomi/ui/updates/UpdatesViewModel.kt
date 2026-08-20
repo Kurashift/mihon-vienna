@@ -86,7 +86,7 @@ class UpdatesViewModel(
                 // Preferences handled by the database query.
                 getUpdatesItemPreferenceFlow()
                     .distinctUntilChanged { old, new ->
-                            old.filterUnread == new.filterUnread &&
+                        old.filterUnread == new.filterUnread &&
                             old.filterStarted == new.filterStarted &&
                             old.filterBookmarked == new.filterBookmarked &&
                             old.filterExcludedScanlators == new.filterExcludedScanlators &&
