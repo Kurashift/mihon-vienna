@@ -67,8 +67,10 @@ class SetMangaDefaultChapterFlags(
 
                 val matches =
                     current and Manga.CHAPTER_UNREAD_MASK == unreadFilter and Manga.CHAPTER_UNREAD_MASK &&
-                        current and Manga.CHAPTER_DOWNLOADED_MASK == downloadedFilter and Manga.CHAPTER_DOWNLOADED_MASK &&
-                        current and Manga.CHAPTER_BOOKMARKED_MASK == bookmarkedFilter and Manga.CHAPTER_BOOKMARKED_MASK &&
+                        current and Manga.CHAPTER_DOWNLOADED_MASK == downloadedFilter and
+                        Manga.CHAPTER_DOWNLOADED_MASK &&
+                        current and Manga.CHAPTER_BOOKMARKED_MASK == bookmarkedFilter and
+                        Manga.CHAPTER_BOOKMARKED_MASK &&
                         current and Manga.CHAPTER_SORTING_MASK == sortingMode and Manga.CHAPTER_SORTING_MASK &&
                         current and Manga.CHAPTER_SORT_DIR_MASK == sortingDirection and Manga.CHAPTER_SORT_DIR_MASK &&
                         current and Manga.CHAPTER_DISPLAY_MASK == displayMode and Manga.CHAPTER_DISPLAY_MASK
