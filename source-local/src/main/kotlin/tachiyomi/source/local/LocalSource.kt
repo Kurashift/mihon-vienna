@@ -246,11 +246,21 @@ class LocalSource(
                 return@withLock lockedCached
             }
 
-            fileSystem.getBaseDirectorySnapshot().also {
+            readBaseDirectorySnapshot().also {
                 cachedBaseDirectorySnapshot = it
                 cachedBaseDirectorySnapshotTime = lockedNow
             }
         }
+    }
+
+    private suspend fun readBaseDirectorySnapshot(): LocalSourceFileSystem.DirectorySnapshot {
+        var snapshot = fileSystem.getBaseDirectorySnapshot()
+        for (retryDelay in EMPTY_DIRECTORY_RETRY_DELAYS) {
+            if (!snapshot.isAccessible || snapshot.files.isNotEmpty()) return snapshot
+            delay(retryDelay)
+            snapshot = fileSystem.getBaseDirectorySnapshot()
+        }
+        return snapshot
     }
 
     /**
@@ -335,6 +345,21 @@ class LocalSource(
         val dirs = baseFiles
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .distinctBy { it.name }
+
+        if (
+            shouldReuseListingAfterUnexpectedEmptyScan(
+                scannedDirectoryCount = dirs.size,
+                scannedBaseDirLastModified = baseDirLastModified,
+                persistedEntryCount = index?.entries?.size ?: 0,
+                persistedBaseDirLastModified = index?.baseDirLastModified ?: -1L,
+            )
+        ) {
+            val entries = index!!.toListingEntries()
+            cachedListing = entries
+            cachedListingTime = now
+            cachedBaseDirLastModified = baseDirLastModified
+            return entries
+        }
 
         val coverLookups = Semaphore(MAX_CONCURRENT_COVER_LOOKUPS)
         val results = coroutineScope {
@@ -1675,6 +1700,7 @@ class LocalSource(
         private val LISTING_CACHE_TTL = 10.minutes
         private val LISTING_MAX_AGE = 24.hours
         private val BASE_SNAPSHOT_CACHE_MILLIS = 2.seconds.inWholeMilliseconds
+        private val EMPTY_DIRECTORY_RETRY_DELAYS = listOf(150L, 350L, 750L)
         private const val MAX_CONCURRENT_COVER_LOOKUPS = 16
         private const val MAX_CONCURRENT_CHAPTER_NAME_LOOKUPS = 16
         private const val MAX_CONCURRENT_CHAPTER_INDEX_BUILDS = 16
@@ -1689,6 +1715,18 @@ class LocalSource(
         const val MATCHED_CHAPTER_KEY = "mihon.matchedChapter"
         const val LATEST_CHAPTER_TIME_KEY = "mihon.latestChapterTime"
     }
+}
+
+internal fun shouldReuseListingAfterUnexpectedEmptyScan(
+    scannedDirectoryCount: Int,
+    scannedBaseDirLastModified: Long,
+    persistedEntryCount: Int,
+    persistedBaseDirLastModified: Long,
+): Boolean {
+    return scannedDirectoryCount == 0 &&
+        persistedEntryCount > 0 &&
+        scannedBaseDirLastModified >= 0 &&
+        scannedBaseDirLastModified == persistedBaseDirLastModified
 }
 
 internal data class LocalPage<T>(
