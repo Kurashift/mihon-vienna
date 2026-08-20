@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.manga
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -1114,6 +1115,71 @@ class MangaViewModel(
 
         viewModelScope.launchNonCancellable {
             setMangaChapterFlags.awaitSetSortingModeOrFlipOrder(manga, sort)
+        }
+    }
+
+    fun exportChapterTitles(uri: Uri) {
+        val state = successState ?: return
+        val content = ChapterTitleTranslationCodec.encode(
+            manga = state.manga,
+            chapters = state.chapters.map { it.chapter },
+        )
+        viewModelScope.launchIO {
+            runCatching {
+                context.contentResolver.openOutputStream(uri, "wt")
+                    ?.bufferedWriter()
+                    ?.use { it.write(content) }
+                    ?: error("Unable to open translation export file")
+            }.onSuccess {
+                withUIContext {
+                    snackbarHostState.showSnackbarReplacing(
+                        context.stringResource(MR.strings.chapter_title_translation_exported),
+                    )
+                }
+            }.onFailure { error ->
+                logcat(LogPriority.ERROR, error)
+                withUIContext {
+                    snackbarHostState.showSnackbarReplacing(
+                        context.stringResource(MR.strings.chapter_title_translation_export_failed),
+                    )
+                }
+            }
+        }
+    }
+
+    fun importChapterTitles(uri: Uri) {
+        val chapters = successState?.chapters?.map { it.chapter } ?: return
+        viewModelScope.launchIO {
+            runCatching {
+                val content = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    ?: error("Unable to open translation import file")
+                ChapterTitleTranslationCodec.planImport(
+                    document = ChapterTitleTranslationCodec.decode(content),
+                    currentChapters = chapters,
+                )
+            }.onSuccess { plan ->
+                if (plan.updates.isNotEmpty()) {
+                    updateChapter.awaitAll(plan.updates)
+                }
+                withUIContext {
+                    snackbarHostState.showSnackbarReplacing(
+                        context.stringResource(
+                            MR.strings.chapter_title_translation_imported,
+                            plan.updates.size,
+                            plan.ignoredCount,
+                        ),
+                    )
+                }
+            }.onFailure { error ->
+                logcat(LogPriority.ERROR, error)
+                withUIContext {
+                    snackbarHostState.showSnackbarReplacing(
+                        context.stringResource(MR.strings.chapter_title_translation_import_failed),
+                    )
+                }
+            }
         }
     }
 

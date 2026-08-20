@@ -114,6 +114,16 @@ class MangaScreen(
 
         val successState = state as MangaViewModel.State.Success
         val isHttpSource = remember { successState.source is HttpSource }
+        val exportChapterTitles = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            uri?.let(viewModel::exportChapterTitles)
+        }
+        val importChapterTitles = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            uri?.let(viewModel::importChapterTitles)
+        }
 
         LaunchedEffect(successState.manga, viewModel.source) {
             if (isHttpSource) {
@@ -337,6 +347,18 @@ class MangaScreen(
                 onBookmarkedFilterChanged = viewModel::setBookmarkedFilter,
                 onSortModeChanged = viewModel::setSorting,
                 onDisplayModeChanged = viewModel::setDisplayMode,
+                onExportTranslatedTitles = {
+                    onDismissRequest()
+                    val fileName = successState.manga.title
+                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                        .take(80)
+                        .ifBlank { "chapter_titles" }
+                    exportChapterTitles.launch("${fileName}_zh.json")
+                }.takeIf { successState.manga.isLocal() },
+                onImportTranslatedTitles = {
+                    onDismissRequest()
+                    importChapterTitles.launch(arrayOf("application/json", "text/plain"))
+                }.takeIf { successState.manga.isLocal() },
                 onSetAsDefault = viewModel::setCurrentSettingsAsDefault,
                 onResetToDefault = viewModel::resetToDefaultSettings,
                 scanlatorFilterActive = successState.scanlatorFilterActive,

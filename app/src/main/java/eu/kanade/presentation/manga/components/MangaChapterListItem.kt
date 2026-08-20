@@ -61,6 +61,7 @@ import tachiyomi.presentation.core.util.selectedBackground
 @Composable
 fun MangaChapterListItem(
     title: String,
+    subtitle: String? = null,
     readProgress: String?,
     scanlator: String?,
     read: Boolean,
@@ -177,6 +178,13 @@ fun MangaChapterListItem(
                                 .copy(alpha = if (read) DISABLED_ALPHA else SECONDARY_ALPHA),
                         )
                     ProvideTextStyle(value = metadataStyle) {
+                        if (subtitle != null) {
+                            Text(
+                                text = subtitle,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         if (scanlator != null) {
                             Text(
                                 text = scanlator,

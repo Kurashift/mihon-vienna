@@ -4,6 +4,8 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
+import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.manga.model.Manga
 
 @Execution(ExecutionMode.CONCURRENT)
 class ChapterOrderTest {
@@ -30,5 +32,23 @@ class ChapterOrderTest {
             currentIds = listOf(1L, 2L, 3L),
             orderedVisibleIds = listOf(3L, 99L, 3L, 1L),
         ) shouldBe listOf(3L, 2L, 1L)
+    }
+
+    @Test
+    fun `translated sort uses translated title then original title`() {
+        val manga = Manga.create().copy(
+            chapterFlags = Manga.CHAPTER_SORTING_TRANSLATED or Manga.CHAPTER_SORT_ASC,
+        )
+        val chapters = listOf(
+            chapter(1, "Zulu", "同名"),
+            chapter(2, "Alpha", "同名"),
+            chapter(3, "Beta", null),
+        )
+
+        chapters.sortedWith(getChapterSort(manga)).map { it.id } shouldBe listOf(3L, 2L, 1L)
+    }
+
+    private fun chapter(id: Long, name: String, translatedName: String?): Chapter {
+        return Chapter.create().copy(id = id, name = name, translatedName = translatedName)
     }
 }

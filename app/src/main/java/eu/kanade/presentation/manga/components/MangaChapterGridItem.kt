@@ -37,6 +37,7 @@ import tachiyomi.presentation.core.util.selectedBackground
 @Composable
 fun MangaChapterGridItem(
     title: String,
+    subtitle: String? = null,
     cover: Any,
     readProgress: String?,
     readProgressFraction: Float?,
@@ -120,6 +121,16 @@ fun MangaChapterGridItem(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 2.dp, top = 5.dp, end = 2.dp),
         )
+        if (subtitle != null) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 2.dp),
+            )
+        }
         if (readProgress != null) {
             Text(
                 text = readProgress,

@@ -211,6 +211,7 @@ class MangaRestorer(
                     chapter.dateUpload,
                     chapter.version,
                     chapter.memo,
+                    chapter.translatedName,
                 )
             }
         }
@@ -237,6 +238,7 @@ class MangaRestorer(
                     version = chapter.version,
                     isSyncing = 0,
                     memo = chapter.memo.let(MemoColumnAdapter::encode),
+                    translatedName = chapter.translatedName,
                 )
             }
         }

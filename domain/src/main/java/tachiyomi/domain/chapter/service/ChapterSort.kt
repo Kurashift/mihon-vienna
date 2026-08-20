@@ -28,6 +28,10 @@ fun getChapterSort(
             true -> { c1, c2 -> c2.name.compareToCaseInsensitiveNaturalOrder(c1.name) }
             false -> { c1, c2 -> c1.name.compareToCaseInsensitiveNaturalOrder(c2.name) }
         }
+        Manga.CHAPTER_SORTING_TRANSLATED -> when (sortDescending) {
+            true -> { c1, c2 -> compareTranslatedNames(c2, c1) }
+            false -> { c1, c2 -> compareTranslatedNames(c1, c2) }
+        }
         // Custom manual order is always ascending; 0 means unpositioned and sorts at the end,
         // with the chapter name as a stable tie-breaker.
         Manga.CHAPTER_SORTING_CUSTOM -> { c1, c2 ->
@@ -53,6 +57,13 @@ fun getChapterSort(
     return { c1, c2 ->
         primary(c1, c2).takeIf { it != 0 } ?: c1.id.compareTo(c2.id)
     }
+}
+
+private fun compareTranslatedNames(first: Chapter, second: Chapter): Int {
+    val byDisplayedName = (first.translatedNameOrNull ?: first.name)
+        .compareToCaseInsensitiveNaturalOrder(second.translatedNameOrNull ?: second.name)
+    return byDisplayedName.takeIf { it != 0 }
+        ?: first.name.compareToCaseInsensitiveNaturalOrder(second.name)
 }
 
 /**

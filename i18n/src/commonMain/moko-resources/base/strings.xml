@@ -72,6 +72,7 @@
     <string name="action_filter_empty">Remove filter</string>
     <string name="action_sort_alpha">Alphabetically</string>
     <string name="sort_by_custom">Custom</string>
+    <string name="sort_by_translated_title">Translated title</string>
     <string name="action_sort_count">Total entries</string>
     <string name="action_sort_total">Total works</string>
     <string name="action_sort_last_read">Last read</string>
@@ -740,7 +741,7 @@
     <string name="browse">Browse</string>
     <string name="has_results">Has results</string>
     <string name="local_source_help_guide">Local source guide</string>
-    <string name="local_source_changed">Your manga shelf has something new. Pull down to sync</string>
+    <string name="local_source_changed">Your shelf has updates. Refresh it from the top-right menu</string>
     <string name="no_pinned_sources">You have no pinned sources</string>
     <string name="chapter_not_found">Work not found</string>
     <string name="local_invalid_format">Invalid work format</string>
@@ -792,6 +793,13 @@
     <string name="chapter_paused">Paused</string>
     <string name="show_title">Source title</string>
     <string name="show_chapter_number">Work number</string>
+    <string name="show_translated_title">Translated title</string>
+    <string name="export_chapter_title_translations">Export title translations</string>
+    <string name="import_chapter_title_translations">Import title translations</string>
+    <string name="chapter_title_translation_exported">Title translation template exported</string>
+    <string name="chapter_title_translation_export_failed">Couldn\'t export title translations</string>
+    <string name="chapter_title_translation_imported">Imported %1$d translated titles; ignored %2$d blank or unmatched entries</string>
+    <string name="chapter_title_translation_import_failed">Couldn\'t import title translations</string>
     <string name="sort_by_source">By source</string>
     <string name="sort_by_number">By work number</string>
     <string name="sort_by_upload_date">By upload date</string>

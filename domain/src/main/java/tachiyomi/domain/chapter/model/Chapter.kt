@@ -21,9 +21,13 @@ data class Chapter(
     val lastModifiedAt: Long,
     val version: Long,
     val memo: JsonObject,
+    val translatedName: String? = null,
 ) {
     val isRecognizedNumber: Boolean
         get() = chapterNumber >= 0f
+
+    val translatedNameOrNull: String?
+        get() = translatedName?.trim()?.takeIf { it.isNotEmpty() }
 
     fun copyFrom(other: Chapter): Chapter {
         return copy(
@@ -54,6 +58,7 @@ data class Chapter(
             lastModifiedAt = 0,
             version = 1,
             memo = JsonObject.EMPTY,
+            translatedName = null,
         )
     }
 }

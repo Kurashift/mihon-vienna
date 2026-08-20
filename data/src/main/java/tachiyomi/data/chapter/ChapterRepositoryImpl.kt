@@ -39,6 +39,7 @@ class ChapterRepositoryImpl(
                         chapter.dateUpload,
                         chapter.version,
                         chapter.memo,
+                        chapter.translatedName,
                     )
                         .awaitAsOne()
                     chapter.copy(id = chapterId)
@@ -115,6 +116,7 @@ class ChapterRepositoryImpl(
                     version = chapterUpdate.version,
                     isSyncing = 0,
                     memo = chapterUpdate.memo?.let(MemoColumnAdapter::encode),
+                    translatedName = chapterUpdate.translatedName,
                 )
             }
         }
@@ -217,6 +219,7 @@ class ChapterRepositoryImpl(
         memo: JsonObject,
         totalPages: Long,
         customOrder: Long,
+        translatedName: String?,
     ): Chapter = Chapter(
         id = id,
         mangaId = mangaId,
@@ -235,5 +238,6 @@ class ChapterRepositoryImpl(
         lastModifiedAt = lastModifiedAt,
         version = version,
         memo = memo,
+        translatedName = translatedName,
     )
 }

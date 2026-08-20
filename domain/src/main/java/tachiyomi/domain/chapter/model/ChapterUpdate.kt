@@ -19,6 +19,7 @@ data class ChapterUpdate(
     val scanlator: String? = null,
     val version: Long? = null,
     val memo: JsonObject? = null,
+    val translatedName: String? = null,
 )
 
 fun Chapter.toChapterUpdate(): ChapterUpdate {
@@ -39,5 +40,6 @@ fun Chapter.toChapterUpdate(): ChapterUpdate {
         scanlator,
         version,
         memo,
+        translatedName,
     )
 }

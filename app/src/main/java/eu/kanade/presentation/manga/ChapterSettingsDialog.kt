@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.PeopleAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -55,6 +57,8 @@ fun ChapterSettingsDialog(
     onScanlatorFilterClicked: (() -> Unit),
     onSortModeChanged: (Long) -> Unit,
     onDisplayModeChanged: (Long) -> Unit,
+    onExportTranslatedTitles: (() -> Unit)? = null,
+    onImportTranslatedTitles: (() -> Unit)? = null,
     onSetAsDefault: (applyToExistingManga: Boolean) -> Unit,
     onResetToDefault: () -> Unit,
 ) {
@@ -128,6 +132,7 @@ fun ChapterSettingsDialog(
                 2 -> {
                     DisplayPage(
                         displayMode = manga?.displayMode ?: 0,
+                        isLocal = manga?.isLocal() ?: false,
                         chapterLayoutAvailable = chapterLayoutAvailable,
                         chapterCoverGridEnabled = chapterCoverGridEnabled,
                         onChapterLayoutChanged = { grid ->
@@ -135,6 +140,8 @@ fun ChapterSettingsDialog(
                             basePreferences.localChapterCoverGridEnabled.set(grid)
                         },
                         onItemSelected = onDisplayModeChanged,
+                        onExportTranslatedTitles = onExportTranslatedTitles,
+                        onImportTranslatedTitles = onImportTranslatedTitles,
                     )
                 }
             }
@@ -218,7 +225,14 @@ private fun ColumnScope.SortPage(
     )
         .let { options ->
             // Custom manual order is only meaningful for the local library.
-            if (isLocal) options + (MR.strings.sort_by_custom to Manga.CHAPTER_SORTING_CUSTOM) else options
+            if (isLocal) {
+                options + listOf(
+                    MR.strings.sort_by_translated_title to Manga.CHAPTER_SORTING_TRANSLATED,
+                    MR.strings.sort_by_custom to Manga.CHAPTER_SORTING_CUSTOM,
+                )
+            } else {
+                options
+            }
         }
         .map { (titleRes, mode) ->
             SortItem(
@@ -233,15 +247,25 @@ private fun ColumnScope.SortPage(
 @Composable
 private fun ColumnScope.DisplayPage(
     displayMode: Long,
+    isLocal: Boolean,
     chapterLayoutAvailable: Boolean,
     chapterCoverGridEnabled: Boolean,
     onChapterLayoutChanged: (Boolean) -> Unit,
     onItemSelected: (Long) -> Unit,
+    onExportTranslatedTitles: (() -> Unit)?,
+    onImportTranslatedTitles: (() -> Unit)?,
 ) {
-    listOf(
+    val displayOptions = listOf(
         MR.strings.show_title to Manga.CHAPTER_DISPLAY_NAME,
         MR.strings.show_chapter_number to Manga.CHAPTER_DISPLAY_NUMBER,
-    ).map { (titleRes, mode) ->
+    ).let { options ->
+        if (isLocal) {
+            options + (MR.strings.show_translated_title to Manga.CHAPTER_DISPLAY_TRANSLATED)
+        } else {
+            options
+        }
+    }
+    displayOptions.map { (titleRes, mode) ->
         RadioItem(
             label = stringResource(titleRes),
             selected = displayMode == mode,
@@ -259,6 +283,37 @@ private fun ColumnScope.DisplayPage(
             selected = chapterCoverGridEnabled,
             onClick = { onChapterLayoutChanged(true) },
         )
+    }
+    if (isLocal && onExportTranslatedTitles != null && onImportTranslatedTitles != null) {
+        TranslationFileAction(
+            label = stringResource(MR.strings.export_chapter_title_translations),
+            icon = Icons.Outlined.FileDownload,
+            onClick = onExportTranslatedTitles,
+        )
+        TranslationFileAction(
+            label = stringResource(MR.strings.import_chapter_title_translations),
+            icon = Icons.Outlined.FileUpload,
+            onClick = onImportTranslatedTitles,
+        )
+    }
+}
+
+@Composable
+private fun TranslationFileAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = TabbedDialogPaddings.Horizontal, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        Icon(imageVector = icon, contentDescription = null)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

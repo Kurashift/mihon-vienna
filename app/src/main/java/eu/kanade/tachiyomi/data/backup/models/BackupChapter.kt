@@ -28,6 +28,7 @@ class BackupChapter(
     @ProtoNumber(13) var memo: ByteArray = JsonObjectEmptyBytes,
     @ProtoNumber(14) var totalPages: Long = 0,
     @ProtoNumber(15) var customOrder: Long = 0,
+    @ProtoNumber(16) var translatedName: String? = null,
 ) {
     fun toChapterImpl(): Chapter {
         val normalizedLastPageRead = normalizeRestoredLastPageRead(read, lastPageRead, totalPages)
@@ -47,6 +48,7 @@ class BackupChapter(
             memo = MemoColumnAdapter.decode(this@BackupChapter.memo),
             totalPages = this@BackupChapter.totalPages,
             customOrder = this@BackupChapter.customOrder,
+            translatedName = this@BackupChapter.translatedName,
         )
     }
 }
@@ -79,6 +81,7 @@ val backupChapterMapper = {
         memo: JsonObject,
         totalPages: Long,
         customOrder: Long,
+        translatedName: String?,
     ->
     BackupChapter(
         url = url,
@@ -96,5 +99,6 @@ val backupChapterMapper = {
         memo = MemoColumnAdapter.encode(memo),
         totalPages = totalPages,
         customOrder = customOrder,
+        translatedName = translatedName,
     )
 }

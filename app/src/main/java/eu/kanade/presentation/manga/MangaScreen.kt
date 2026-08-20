@@ -1045,15 +1045,18 @@ private fun LazyListScope.sharedChapterItems(
 
         val isRead = item.chapter.read
         val chapterProgress = item.chapter.toChapterProgressUi()
-        val chapterTitle = if (manga.displayMode == Manga.CHAPTER_DISPLAY_NUMBER) {
-            stringResource(
+        val chapterTitle = when (manga.displayMode) {
+            Manga.CHAPTER_DISPLAY_NUMBER -> stringResource(
                 MR.strings.display_mode_chapter,
                 formatChapterNumber(item.chapter.chapterNumber),
             )
-        } else {
-            item.chapter.name
+            Manga.CHAPTER_DISPLAY_TRANSLATED -> item.chapter.translatedNameOrNull ?: item.chapter.name
+            else -> item.chapter.name
         }
-        val copyTitle = { context.copyToClipboard(chapterTitle, chapterTitle) }
+        val originalTitle = item.chapter.name.takeIf {
+            manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED && chapterTitle != it
+        }
+        val copyTitle = { context.copyToClipboard(item.chapter.name, item.chapter.name) }
         ReorderableItem(reorderableState, "chapter-${item.id}") {
             var dragStartIndex by remember { mutableStateOf(-1) }
             var dragMoved by remember { mutableStateOf(false) }
@@ -1144,6 +1147,7 @@ private fun LazyListScope.sharedChapterItems(
                         },
                     ),
                 title = chapterTitle,
+                subtitle = originalTitle,
                 readProgress = chapterProgress
                     ?.let { progress ->
                         stringResource(
@@ -1228,18 +1232,22 @@ private fun LazyListScope.sharedChapterGridItems(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             row.forEach { item ->
-                val chapterTitle = if (manga.displayMode == Manga.CHAPTER_DISPLAY_NUMBER) {
-                    stringResource(
+                val chapterTitle = when (manga.displayMode) {
+                    Manga.CHAPTER_DISPLAY_NUMBER -> stringResource(
                         MR.strings.display_mode_chapter,
                         formatChapterNumber(item.chapter.chapterNumber),
                     )
-                } else {
-                    item.chapter.name
+                    Manga.CHAPTER_DISPLAY_TRANSLATED -> item.chapter.translatedNameOrNull ?: item.chapter.name
+                    else -> item.chapter.name
+                }
+                val originalTitle = item.chapter.name.takeIf {
+                    manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED && chapterTitle != it
                 }
                 val chapterProgress = item.chapter.toChapterProgressUi()
                 MangaChapterGridItem(
                     modifier = Modifier.weight(1f),
                     title = chapterTitle,
+                    subtitle = originalTitle,
                     cover = LocalChapterCover(
                         chapterId = item.chapter.id,
                         chapterUrl = item.chapter.url,
