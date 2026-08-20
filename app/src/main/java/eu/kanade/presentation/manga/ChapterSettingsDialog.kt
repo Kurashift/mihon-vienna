@@ -252,15 +252,17 @@ private fun ColumnScope.DisplayPage(
     onItemSelected: (Long) -> Unit,
 ) {
     ListGroupHeader(text = stringResource(MR.strings.chapter_display_title_section))
-    val displayOptions = listOf(
-        MR.strings.show_title to Manga.CHAPTER_DISPLAY_NAME,
-        MR.strings.show_chapter_number to Manga.CHAPTER_DISPLAY_NUMBER,
-    ).let { options ->
-        if (isLocal) {
-            options + (MR.strings.show_translated_title to Manga.CHAPTER_DISPLAY_TRANSLATED)
-        } else {
-            options
-        }
+    val displayOptions = if (isLocal) {
+        listOf(
+            MR.strings.show_title to Manga.CHAPTER_DISPLAY_NAME,
+            MR.strings.show_translated_title to Manga.CHAPTER_DISPLAY_TRANSLATED,
+            MR.strings.show_chapter_number to Manga.CHAPTER_DISPLAY_NUMBER,
+        )
+    } else {
+        listOf(
+            MR.strings.show_title to Manga.CHAPTER_DISPLAY_NAME,
+            MR.strings.show_chapter_number to Manga.CHAPTER_DISPLAY_NUMBER,
+        )
     }
     displayOptions.map { (titleRes, mode) ->
         RadioItem(
