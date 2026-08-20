@@ -23,6 +23,7 @@ import coil3.asDrawable
 import coil3.dispose
 import coil3.imageLoader
 import coil3.request.CachePolicy
+import coil3.request.Disposable
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.size.Precision
@@ -67,6 +68,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     private var pageView: View? = null
 
     private var config: Config? = null
+    private var imageRequest: Disposable? = null
+    private var imageGeneration = 0L
 
     var onImageLoaded: (() -> Unit)? = null
     var onImageLoadError: ((Throwable?) -> Unit)? = null
@@ -159,34 +162,52 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     fun setImage(drawable: Drawable, config: Config) {
+        val generation = beginImageLoad()
         this.config = config
         if (drawable is Animatable) {
             prepareAnimatedImageView()
-            setAnimatedImage(drawable, config)
+            setAnimatedImage(drawable, config, generation)
         } else {
             prepareNonAnimatedImageView()
-            setNonAnimatedImage(drawable, config)
+            setNonAnimatedImage(drawable, config, generation)
         }
     }
 
     fun setImage(source: BufferedSource, isAnimated: Boolean, config: Config) {
+        val generation = beginImageLoad()
         this.config = config
         if (isAnimated) {
             prepareAnimatedImageView()
-            setAnimatedImage(source, config)
+            setAnimatedImage(source, config, generation)
         } else {
             prepareNonAnimatedImageView()
-            setNonAnimatedImage(source, config)
+            setNonAnimatedImage(source, config, generation)
         }
     }
 
-    fun recycle() = pageView?.let {
-        when (it) {
-            is SubsamplingScaleImageView -> it.recycle()
-            is AppCompatImageView -> it.dispose()
+    fun recycle() {
+        imageGeneration++
+        imageRequest?.dispose()
+        imageRequest = null
+        pageView?.let {
+            when (it) {
+                is SubsamplingScaleImageView -> it.recycle()
+                is AppCompatImageView -> {
+                    it.dispose()
+                    it.setImageDrawable(null)
+                }
+            }
+            it.isVisible = false
         }
-        it.isVisible = false
     }
+
+    private fun beginImageLoad(): Long {
+        imageRequest?.dispose()
+        imageRequest = null
+        return ++imageGeneration
+    }
+
+    private fun isCurrentImage(generation: Long): Boolean = generation == imageGeneration
 
     /**
      * Check if the image can be panned to the left
@@ -287,23 +308,26 @@ open class ReaderPageImageView @JvmOverloads constructor(
     private fun setNonAnimatedImage(
         data: Any,
         config: Config,
+        generation: Long,
     ) = (pageView as? SubsamplingScaleImageView)?.apply {
         setDoubleTapZoomDuration(config.zoomDuration.getSystemScaledDuration())
         setMinimumScaleType(config.minimumScaleType)
         setMinimumDpi(1) // Just so that very small image will be fit for initial load
         setCropBorders(config.cropBorders)
-        setOnImageEventListener(
-            object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
-                override fun onReady() {
-                    setupZoom(config)
-                    if (isVisibleOnScreen()) landscapeZoom(true)
-                    this@ReaderPageImageView.onImageLoaded()
-                }
+            setOnImageEventListener(
+                object : SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                    override fun onReady() {
+                        if (!isCurrentImage(generation)) return
+                        setupZoom(config)
+                        if (isVisibleOnScreen()) landscapeZoom(true)
+                        this@ReaderPageImageView.onImageLoaded()
+                    }
 
-                override fun onImageLoadError(e: Exception) {
-                    this@ReaderPageImageView.onImageLoadError(e)
-                }
-            },
+                    override fun onImageLoadError(e: Exception) {
+                        if (!isCurrentImage(generation)) return
+                        this@ReaderPageImageView.onImageLoadError(e)
+                    }
+                },
         )
 
         when (data) {
@@ -325,6 +349,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     .diskCachePolicy(CachePolicy.DISABLED)
                     .target(
                         onSuccess = { result ->
+                            if (!isCurrentImage(generation)) return@target
                             val image = result as BitmapImage
                             setImage(ImageSource.bitmap(image.bitmap))
                             isVisible = true
@@ -332,6 +357,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     )
                     .listener(
                         onError = { _, result ->
+                            if (!isCurrentImage(generation)) return@listener
                             onImageLoadError(result.throwable)
                         },
                     )
@@ -342,6 +368,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     .crossfade(false)
                     .build()
                     .let(context.imageLoader::enqueue)
+                    .also { imageRequest = it }
             }
             else -> {
                 throw IllegalArgumentException("Not implemented for class ${data::class.simpleName}")
@@ -391,6 +418,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     private fun setAnimatedImage(
         data: Any,
         config: Config,
+        generation: Long,
     ) = (pageView as? AppCompatImageView)?.apply {
         if (this is PhotoView) {
             setZoomTransitionDuration(config.zoomDuration.getSystemScaledDuration())
@@ -402,6 +430,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
             .diskCachePolicy(CachePolicy.DISABLED)
             .target(
                 onSuccess = { result ->
+                    if (!isCurrentImage(generation)) return@target
                     val drawable = result.asDrawable(context.resources)
                     setImageDrawable(drawable)
                     (drawable as? Animatable)?.start()
@@ -411,12 +440,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
             )
             .listener(
                 onError = { _, result ->
+                    if (!isCurrentImage(generation)) return@listener
                     onImageLoadError(result.throwable)
                 },
             )
             .crossfade(false)
             .build()
-        context.imageLoader.enqueue(request)
+        imageRequest = context.imageLoader.enqueue(request)
     }
 
     private fun Int.getSystemScaledDuration(): Int {

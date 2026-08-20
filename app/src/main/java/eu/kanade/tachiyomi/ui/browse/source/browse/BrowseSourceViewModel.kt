@@ -73,11 +73,13 @@ import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.SetMangaDefaultChapterFlags
+import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.manga.interactor.GetMangaProgress
+import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaProgress
 import tachiyomi.domain.manga.model.MangaProgressByMangaId
@@ -88,6 +90,7 @@ import tachiyomi.domain.source.interactor.GetRemoteManga
 import tachiyomi.domain.source.repository.SourcePagingSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.concurrent.ConcurrentHashMap
@@ -108,12 +111,13 @@ class BrowseSourceViewModel(
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
     private val setMangaDefaultChapterFlags: SetMangaDefaultChapterFlags = Injekt.get(),
     private val getMangaProgress: GetMangaProgress = Injekt.get(),
+    private val networkToLocalManga: NetworkToLocalManga = Injekt.get(),
     private val historyRepository: HistoryRepository = Injekt.get(),
     private val chapterRepository: ChapterRepository = Injekt.get(),
     private val updateManga: UpdateManga = Injekt.get(),
     private val addTracks: AddTracks = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
-    mangaMarkStore: MangaMarkStore = Injekt.get(),
+    private val mangaMarkStore: MangaMarkStore = Injekt.get(),
     private val goodDoujinStore: GoodDoujinStore = Injekt.get(),
     getIncognitoState: GetIncognitoState = Injekt.get(),
     private val preferenceStore: PreferenceStore = Injekt.get(),
@@ -901,6 +905,7 @@ class BrowseSourceViewModel(
                     )
                     return@launchIO
                 }
+                relocateMovedLocalChapters(scan)
                 val unsynced = scan.changedMangaUrls
                 val total = unsynced.size
                 if (total > 0) {
@@ -966,6 +971,68 @@ class BrowseSourceViewModel(
                 isRefreshingChapters.value = null
                 refreshVisibleSnapshots(forceDirectoryCheck = true)
             }
+        }
+    }
+
+    private suspend fun relocateMovedLocalChapters(scan: tachiyomi.source.local.LocalChapterSyncScan) {
+        val relevantMangaUrls = scan.changedMangaUrls + scan.removedMangaUrls
+        if (relevantMangaUrls.isEmpty()) return
+
+        val mangaByUrl = relevantMangaUrls.mapNotNull { mangaUrl ->
+            mangaRepository.getMangaByUrlAndSourceId(mangaUrl, sourceId)?.let { mangaUrl to it }
+        }.toMap(mutableMapOf())
+        val storedChapters = mangaByUrl.flatMap { (mangaUrl, manga) ->
+            chapterRepository.getChapterByMangaId(manga.id).map { chapter ->
+                StoredLocalChapter(
+                    chapterId = chapter.id,
+                    mangaId = manga.id,
+                    mangaUrl = mangaUrl,
+                    fileName = chapter.url.substringAfter('/', chapter.url),
+                )
+            }
+        }
+        val currentChangedFiles = scan.chapterFileNamesByMangaUrl
+            .filterKeys(scan.changedMangaUrls::contains)
+        val candidates = detectLocalChapterMoves(
+            storedChapters = storedChapters,
+            previousFileNamesByMangaUrl = scan.previousChapterFileNamesByMangaUrl,
+            currentFileNamesByMangaUrl = currentChangedFiles,
+        )
+        if (candidates.isEmpty()) return
+
+        val coverManager = Injekt.get<LocalChapterCoverManager>()
+        val resolvedMoves = candidates.map { candidate ->
+            val targetManga = mangaByUrl[candidate.newMangaUrl] ?: networkToLocalManga(
+                Manga.create().copy(
+                    source = sourceId,
+                    url = candidate.newMangaUrl,
+                    title = candidate.newMangaUrl,
+                ),
+            ).also { mangaByUrl[candidate.newMangaUrl] = it }
+            val oldChapterUrl = "${candidate.oldMangaUrl}/${candidate.fileName}"
+            val newChapterUrl = "${candidate.newMangaUrl}/${candidate.fileName}"
+            coverManager.migrateLegacyCover(
+                chapterId = candidate.chapterId,
+                oldChapterUrl = oldChapterUrl,
+                newChapterUrl = newChapterUrl,
+            )
+            candidate to targetManga
+        }
+        chapterRepository.relocateAll(
+            resolvedMoves.map { (candidate, targetManga) ->
+                ChapterUpdate(
+                    id = candidate.chapterId,
+                    mangaId = targetManga.id,
+                    url = "${candidate.newMangaUrl}/${candidate.fileName}",
+                )
+            },
+        )
+        resolvedMoves.forEach { (candidate, targetManga) ->
+            mangaMarkStore.relocate(
+                chapterId = candidate.chapterId,
+                mangaId = targetManga.id,
+                mangaTitle = targetManga.title,
+            )
         }
     }
 

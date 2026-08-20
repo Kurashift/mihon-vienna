@@ -37,6 +37,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 data class LocalChapterCover(
+    val chapterId: Long,
     val chapterUrl: String,
     val version: Long,
 )
@@ -64,9 +65,11 @@ sealed interface LocalChapterCoverGenerationState {
 class LocalChapterCoverManager(
     private val context: Context,
     private val fileSystem: LocalSourceFileSystem,
+    private val chapterIdsByUrl: suspend () -> Map<String, Long> = { emptyMap() },
 ) {
 
     private val coverDirectory = File(context.filesDir, COVER_DIRECTORY_NAME)
+    private val customCoverDirectory = File(context.filesDir, CUSTOM_COVER_DIRECTORY_NAME)
     private val coverVersionFile = File(context.filesDir, "$COVER_DIRECTORY_NAME.version")
     private val coverVersionLock = Any()
     private var coverVersionChecked = false
@@ -103,20 +106,17 @@ class LocalChapterCoverManager(
     }
 
     suspend fun getOrCreate(data: LocalChapterCover): File? = withContext(Dispatchers.IO) {
+        customFile(data.chapterId).takeIf { it.isValidCover() }?.let { return@withContext it }
         val chapterFile = findChapterFile(data.chapterUrl) ?: return@withContext null
         getOrCreate(data.chapterUrl, chapterFile)
     }
 
-    /**
-     * Replaces the generated chapter cover with a user-selected page. The generated cache file
-     * keeps the same stable name, so the normal fetcher can serve it without changing how chapter
-     * covers are requested. The caller is expected to touch the chapter's database row so readers
-     * observe a new cache version.
-     */
-    suspend fun setCustom(chapterUrl: String, openStream: () -> InputStream): Boolean = withContext(Dispatchers.IO) {
-        val chapterFile = findChapterFile(chapterUrl) ?: return@withContext false
-        ensureCoverDirectoryVersion()
-        val target = targetFile(chapterUrl, chapterFile)
+    suspend fun setCustom(
+        chapterId: Long,
+        chapterUrl: String,
+        openStream: () -> InputStream,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val target = customFile(chapterId)
         val lock = keyLocks.getOrPut(target.name) { Mutex() }
         try {
             lock.withLock {
@@ -126,13 +126,39 @@ class LocalChapterCoverManager(
                 // same native archive handle and crashes with a SIGSEGV. The batch generation
                 // path already copies first; do the same here.
                 val bitmap = decodeCopiedThumbnail(openStream()) ?: return@withLock false
-                missingFile(target).delete()
-                writeCover(bitmap, target) != null
+                val written = writeCover(bitmap, target) != null
+                if (written) {
+                    deleteGenerated(chapterUrl)
+                }
+                written
             }
         } finally {
             keyLocks.remove(target.name, lock)
         }
     }
+
+    suspend fun migrateLegacyCover(chapterId: Long, oldChapterUrl: String, newChapterUrl: String) =
+        withContext(Dispatchers.IO) {
+            val custom = customFile(chapterId)
+            if (custom.isValidCover()) return@withContext
+            val chapterFile = findChapterFile(newChapterUrl) ?: return@withContext
+            ensureCoverDirectoryVersion()
+            val legacy = targetFile(oldChapterUrl, chapterFile)
+            if (!legacy.isValidCover()) return@withContext
+
+            val lock = keyLocks.getOrPut(custom.name) { Mutex() }
+            try {
+                lock.withLock {
+                    if (!custom.isValidCover()) {
+                        custom.parentFile?.mkdirs()
+                        custom.delete()
+                        legacy.copyTo(custom, overwrite = false)
+                    }
+                }
+            } finally {
+                keyLocks.remove(custom.name, lock)
+            }
+        }
 
     suspend fun generateAll(
         onProgress: suspend (completed: Int, total: Int) -> Unit = { _, _ -> },
@@ -161,13 +187,20 @@ class LocalChapterCoverManager(
         var skipped = 0
         var failed = 0
         val liveFiles = hashSetOf<String>()
+        val chapterIds = chapterIdsByUrl()
 
         chapters.forEachIndexed { index, (chapterUrl, chapterFile) ->
             coroutineContext.ensureActive()
             val target = targetFile(chapterUrl, chapterFile)
-            liveFiles += target.name
-            liveFiles += missingFile(target).name
+            val custom = chapterIds[chapterUrl]
+                ?.let(::customFile)
+                ?.takeIf { it.isValidCover() }
+            if (custom == null) {
+                liveFiles += target.name
+                liveFiles += missingFile(target).name
+            }
             when {
+                custom != null -> skipped++
                 target.isValidCover() -> skipped++
                 getOrCreate(chapterUrl, chapterFile, retryMissing = true) != null -> generated++
                 else -> failed++
@@ -246,8 +279,9 @@ class LocalChapterCoverManager(
     }
 
     private fun writeCover(bitmap: Bitmap, target: File): File? {
-        coverDirectory.mkdirs()
-        val temp = File(coverDirectory, "${target.name}.tmp")
+        val targetDirectory = target.parentFile ?: return null
+        targetDirectory.mkdirs()
+        val temp = File(targetDirectory, "${target.name}.tmp")
         return try {
             temp.outputStream().buffered().use { output ->
                 @Suppress("DEPRECATION")
@@ -378,6 +412,17 @@ class LocalChapterCoverManager(
         )
     }
 
+    private fun customFile(chapterId: Long): File {
+        return File(customCoverDirectory, localCustomChapterCoverFileName(chapterId))
+    }
+
+    private fun deleteGenerated(chapterUrl: String) {
+        val chapterFile = findChapterFile(chapterUrl) ?: return
+        val generated = targetFile(chapterUrl, chapterFile)
+        generated.delete()
+        missingFile(generated).delete()
+    }
+
     private fun missingFile(target: File): File {
         return File(target.parentFile, "${target.nameWithoutExtension}.$MISSING_EXTENSION")
     }
@@ -422,6 +467,7 @@ class LocalChapterCoverManager(
 
     companion object {
         private const val COVER_DIRECTORY_NAME = "local_chapter_covers"
+        private const val CUSTOM_COVER_DIRECTORY_NAME = "local_custom_chapter_covers"
         private const val COVER_EXTENSION = "webp"
         private const val MISSING_EXTENSION = "missing"
         private const val TARGET_WIDTH = 480
@@ -430,6 +476,8 @@ class LocalChapterCoverManager(
         private const val MAX_CONCURRENT_GENERATIONS = 2
     }
 }
+
+internal fun localCustomChapterCoverFileName(chapterId: Long): String = "chapter-$chapterId.webp"
 
 internal fun localChapterCoverCacheFileName(
     chapterUrl: String,

@@ -74,6 +74,9 @@ import tachiyomi.domain.source.model.Source as DomainSource
 
 class LocalChapterSyncScan internal constructor(
     val changedMangaUrls: Set<String>,
+    val removedMangaUrls: Set<String>,
+    val previousChapterFileNamesByMangaUrl: Map<String, Set<String>>,
+    val chapterFileNamesByMangaUrl: Map<String, Set<String>>,
     internal val folderStates: Map<String, LocalChapterFolderState>,
     internal val baseUri: String?,
     internal val baseDirectoryLastModified: Long,
@@ -83,6 +86,7 @@ class LocalChapterSyncScan internal constructor(
 internal data class LocalChapterFolderState(
     val directoryLastModified: Long,
     val fingerprint: String,
+    val chapterFileNames: Set<String>?,
 )
 
 class LocalSource(
@@ -1005,6 +1009,9 @@ class LocalSource(
         if (!snapshot.isAccessible) {
             return@withIOContext LocalChapterSyncScan(
                 changedMangaUrls = emptySet(),
+                removedMangaUrls = emptySet(),
+                previousChapterFileNamesByMangaUrl = emptyMap(),
+                chapterFileNamesByMangaUrl = emptyMap(),
                 folderStates = savedIndex?.folders.orEmpty(),
                 baseUri = baseUri,
                 baseDirectoryLastModified = -1L,
@@ -1019,7 +1026,7 @@ class LocalSource(
                 name to directory
             }
             .distinctBy { it.first }
-        val cachedFingerprints = chapterIndexMutex.withLock {
+        val cachedStates = chapterIndexMutex.withLock {
             ensureChapterIndexLoaded()
             val cached = cachedChapterIndex.orEmpty()
             val directoryNames = directories.mapTo(HashSet()) { it.first }
@@ -1029,11 +1036,21 @@ class LocalSource(
                 chapterIndexDirty = true
                 scheduleChapterIndexSave()
             }
-            pruned.mapValues { (_, index) ->
-                fingerprint(index.chapters.map(ChapterIndexEntry::fingerprintPart))
+            cached.mapValues { (_, index) ->
+                LocalChapterFolderState(
+                    directoryLastModified = -1L,
+                    fingerprint = fingerprint(index.chapters.map(ChapterIndexEntry::fingerprintPart)),
+                    chapterFileNames = index.chapters.mapTo(linkedSetOf(), ChapterIndexEntry::name),
+                )
             }
         }
         val previousStates = savedIndex?.folders.orEmpty()
+        val previousChapterFileNames = buildMap {
+            (previousStates.keys + cachedStates.keys).forEach { name ->
+                val fileNames = previousStates[name]?.chapterFileNames ?: cachedStates[name]?.chapterFileNames
+                if (fileNames != null) put(name, fileNames)
+            }
+        }
         val canPromoteLegacyIndex = savedIndex?.legacy == true &&
             baseDirectoryLastModified > 0 &&
             baseDirectoryLastModified == lastSuccessfulBaseDirectoryLastModified
@@ -1049,23 +1066,31 @@ class LocalSource(
                         semaphore.withPermit {
                             val directoryLastModified = directory.lastModified()
                             val previous = previousStates[name]
-                            val previousFingerprint = previous?.fingerprint ?: cachedFingerprints[name]
+                            val cached = cachedStates[name]
+                            val previousFingerprint = previous?.fingerprint ?: cached?.fingerprint
+                            val reusablePrevious = previous
+                                ?.takeIf { it.chapterFileNames != null }
+                                ?: cached?.takeIf {
+                                    canPromoteLegacyIndex && previous != null &&
+                                        it.fingerprint == previous.fingerprint
+                                }
                             val directoryUnchanged = previous != null &&
                                 previous.directoryLastModified > 0 &&
                                 directoryLastModified > 0 &&
                                 previous.directoryLastModified == directoryLastModified
-                            val fingerprint = when {
-                                directoryUnchanged -> previous.fingerprint
-                                canPromoteLegacyIndex && previous != null -> previous.fingerprint
-                                else -> fingerprint(directory)
+                            val state = when {
+                                directoryUnchanged && reusablePrevious != null -> reusablePrevious.copy(
+                                    directoryLastModified = directoryLastModified,
+                                )
+                                canPromoteLegacyIndex && reusablePrevious != null -> reusablePrevious.copy(
+                                    directoryLastModified = directoryLastModified,
+                                )
+                                else -> chapterFolderState(directory, directoryLastModified)
                             }
                             Triple(
                                 name,
-                                LocalChapterFolderState(
-                                    directoryLastModified = directoryLastModified,
-                                    fingerprint = fingerprint,
-                                ),
-                                previousFingerprint == null || previousFingerprint != fingerprint,
+                                state,
+                                previousFingerprint == null || previousFingerprint != state.fingerprint,
                             )
                         }
                     } finally {
@@ -1079,8 +1104,14 @@ class LocalSource(
         }
         val changed = scans.filter { it.third }.mapTo(mutableSetOf()) { it.first }
         val currentStates = scans.associate { it.first to it.second }
+        val removed = previousStates.keys - currentStates.keys
         LocalChapterSyncScan(
             changedMangaUrls = changed,
+            removedMangaUrls = removed,
+            previousChapterFileNamesByMangaUrl = previousChapterFileNames,
+            chapterFileNamesByMangaUrl = currentStates.mapValues { (_, state) ->
+                state.chapterFileNames.orEmpty()
+            },
             folderStates = currentStates,
             baseUri = baseUri,
             baseDirectoryLastModified = baseDirectoryLastModified,
@@ -1120,15 +1151,19 @@ class LocalSource(
      * Returns a stable content fingerprint per manga folder derived from its chapter files'
      * name + mtime + size, sorted. Adding, removing or replacing a cbz changes the fingerprint.
      */
-    private fun fingerprint(dir: UniFile): String {
-        val parts = dir.listFiles().orEmpty()
+    private fun chapterFolderState(dir: UniFile, directoryLastModified: Long): LocalChapterFolderState {
+        val chapterFiles = dir.listFiles().orEmpty()
             .filterNot { it.name.orEmpty().startsWith('.') }
             .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
-            .map { file ->
-                val size = if (file.isDirectory) 0L else file.length()
-                "${file.name.orEmpty()}|${file.lastModified()}|$size"
-            }
-        return fingerprint(parts)
+        val parts = chapterFiles.map { file ->
+            val size = if (file.isDirectory) 0L else file.length()
+            "${file.name.orEmpty()}|${file.lastModified()}|$size"
+        }
+        return LocalChapterFolderState(
+            directoryLastModified = directoryLastModified,
+            fingerprint = fingerprint(parts),
+            chapterFileNames = chapterFiles.mapTo(linkedSetOf()) { it.name.orEmpty() },
+        )
     }
 
     private fun fingerprint(parts: List<String>): String {
@@ -1148,7 +1183,8 @@ class LocalSource(
         return try {
             if (!syncIndexFile.exists()) return null
             val root = JSONObject(syncIndexFile.readText())
-            if (root.optInt("version", 1) >= 2) {
+            val version = root.optInt("version", 1)
+            if (version >= 2) {
                 val foldersObject = root.optJSONObject("folders") ?: JSONObject()
                 val folders = buildMap {
                     foldersObject.keys().forEach { name ->
@@ -1160,6 +1196,17 @@ class LocalSource(
                                 LocalChapterFolderState(
                                     directoryLastModified = item.optLong("directoryLastModified", -1L),
                                     fingerprint = fingerprint,
+                                    chapterFileNames = if (version >= 3) {
+                                        item.optJSONArray("chapterFileNames")?.let { array ->
+                                            buildSet {
+                                                for (i in 0 until array.length()) {
+                                                    array.optString(i).takeIf(String::isNotEmpty)?.let(::add)
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    },
                                 ),
                             )
                         }
@@ -1175,7 +1222,7 @@ class LocalSource(
                     root.keys().forEach { name ->
                         val fingerprint = root.optString(name)
                         if (fingerprint.isNotEmpty()) {
-                            put(name, LocalChapterFolderState(-1L, fingerprint))
+                            put(name, LocalChapterFolderState(-1L, fingerprint, null))
                         }
                     }
                 }
@@ -1200,11 +1247,12 @@ class LocalSource(
                     name,
                     JSONObject()
                         .put("directoryLastModified", state.directoryLastModified)
-                        .put("fingerprint", state.fingerprint),
+                        .put("fingerprint", state.fingerprint)
+                        .put("chapterFileNames", JSONArray(state.chapterFileNames.orEmpty().toList())),
                 )
             }
             val root = JSONObject()
-                .put("version", 2)
+                .put("version", 3)
                 .put("baseUri", index.baseUri.orEmpty())
                 .put("baseDirectoryLastModified", index.baseDirectoryLastModified)
                 .put("folders", folders)

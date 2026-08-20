@@ -1103,4 +1103,9 @@
     <string name="local_chapter_covers_clear">清空已生成封面</string>
     <string name="local_chapter_covers_clear_confirm">删除全部已生成的缩略图？不会改动 CBZ 文件、本地库数据和阅读进度。</string>
     <string name="local_chapter_covers_cleared">已清理 %1$d 张封面</string>
+    <string name="local_read_review_action">复查已读篇目</string>
+    <string name="local_read_review_summary">统一浏览全部已读完的本地篇目，可从第一页检查并撤销误标状态。</string>
+    <string name="local_read_review_title">误标已读复查</string>
+    <string name="local_read_review_count">共有 %1$d 个本地篇目被标为已读完</string>
+    <string name="local_read_review_empty">没有被标为已读完的本地篇目</string>
 </resources>

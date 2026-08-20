@@ -81,7 +81,8 @@ internal object WebtoonPageSelection {
         viewportStart: Int,
         viewportEnd: Int,
     ): Int {
-        if (currentPosition < 0 || centerPosition <= currentPosition) return centerPosition
+        if (currentPosition < 0) return centerPosition
+        if (centerPosition <= currentPosition) return currentPosition
 
         val currentPage = pages.firstOrNull { it.position == currentPosition }
         if (

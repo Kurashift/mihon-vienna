@@ -147,7 +147,8 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                         // Ignore programmatic and late layout settling until the user deliberately
                         // navigates away from the explicit initial target.
                         if (suppressInitialScrollCallbacks) return
-                        val item = currentVisibleItem(lastScrollDirection)
+                        val candidate = currentVisibleItem(lastScrollDirection)
+                        val item = constrainToScrollDirection(candidate, lastScrollDirection)
                         selectCurrentItem(item)
                         if (item is ReaderPage) {
                             activity.onScrollSettled(item)
@@ -162,15 +163,11 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                     if (suppressInitialScrollCallbacks) return
                     if (restoringViewportAnchor) return
                     if (dy != 0) {
-                        val direction = if (recycler.isLandscapeWebtoon()) {
-                            when {
-                                recycler.scrollGestureDirection != 0 -> recycler.scrollGestureDirection
-                                lastScrollDirection != 0 -> lastScrollDirection
-                                recyclerView.scrollState != RecyclerView.SCROLL_STATE_IDLE -> dy
-                                else -> 0
-                            }
-                        } else {
-                            dy
+                        val direction = when {
+                            recycler.scrollGestureDirection != 0 -> recycler.scrollGestureDirection
+                            lastScrollDirection != 0 -> lastScrollDirection
+                            recyclerView.scrollState != RecyclerView.SCROLL_STATE_IDLE -> dy
+                            else -> 0
                         }
                         if (direction != 0) {
                             lastScrollDirection = direction
@@ -748,7 +745,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             pos != null -> adapter.items.getOrNull(pos)
             else -> currentVisibleItem(scrollDelta)
         }
-        val item = if (pos == null && recycler.isLandscapeWebtoon()) {
+        val item = if (pos == null) {
             constrainToScrollDirection(candidate, scrollDelta)
         } else {
             candidate

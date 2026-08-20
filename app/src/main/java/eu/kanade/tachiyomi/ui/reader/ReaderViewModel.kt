@@ -1360,15 +1360,10 @@ class ReaderViewModel @JvmOverloads constructor(
         viewModelScope.launchNonCancellable {
             val result = try {
                 val coverManager = Injekt.get<LocalChapterCoverManager>()
-                if (!coverManager.setCustom(chapterUrl, stream)) {
+                if (!coverManager.setCustom(chapterId, chapterUrl, stream)) {
                     SetChapterCoverStatus.Error
                 } else {
-                    updateChapter.await(
-                        ChapterUpdate(
-                            id = chapterId,
-                            totalPages = chapter.total_pages.toLong(),
-                        ),
-                    )
+                    updateChapter.awaitBumpVersion(chapterId)
                     SetChapterCoverStatus.Success
                 }
             } catch (e: Exception) {

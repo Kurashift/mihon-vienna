@@ -98,7 +98,18 @@ abstract class PreferenceChapterFlagStore(
 
 class MangaMarkStore(
     preferences: eu.kanade.domain.base.BasePreferences,
-) : PreferenceChapterFlagStore(preferences.markedChapters)
+) : PreferenceChapterFlagStore(preferences.markedChapters) {
+
+    suspend fun relocate(chapterId: Long, mangaId: Long, mangaTitle: String) {
+        val existing = marks.value.firstOrNull { it.chapterId == chapterId } ?: return
+        add(
+            existing.copy(
+                mangaId = mangaId,
+                mangaTitle = mangaTitle,
+            ),
+        )
+    }
+}
 
 /** Database-backed good-doujin state. The old JSON preference is imported once on startup. */
 class GoodDoujinStore(

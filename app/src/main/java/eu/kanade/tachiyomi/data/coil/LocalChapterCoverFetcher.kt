@@ -49,6 +49,6 @@ class LocalChapterCoverFetcher(
 
 class LocalChapterCoverKeyer : Keyer<LocalChapterCover> {
     override fun key(data: LocalChapterCover, options: Options): String {
-        return "local-chapter-cover:${data.chapterUrl};${data.version}"
+        return "local-chapter-cover:${data.chapterId};${data.version}"
     }
 }

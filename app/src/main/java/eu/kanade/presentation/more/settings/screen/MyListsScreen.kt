@@ -8,9 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,12 +26,13 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.more.settings.screen.advanced.ChapterFlagListScreen
 import eu.kanade.presentation.more.settings.screen.advanced.ChapterFlagListType
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.ui.browse.source.browse.LocalReadReviewScreen
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 
 /**
- * Entry page for the two personal chapter lists (duplicate marks and good doujins).
+ * Entry page for personal chapter lists and review tools.
  */
 class MyListsScreen : Screen() {
 
@@ -67,6 +69,16 @@ class MyListsScreen : Screen() {
                         subtitle = stringResource(MR.strings.pref_good_doujin_list_summary),
                         onClick = {
                             navigator.push(ChapterFlagListScreen(ChapterFlagListType.GOOD_DOUJINS))
+                        },
+                    )
+                }
+                item {
+                    MyListRow(
+                        icon = Icons.Outlined.RemoveDone,
+                        title = stringResource(MR.strings.local_read_review_action),
+                        subtitle = stringResource(MR.strings.local_read_review_summary),
+                        onClick = {
+                            navigator.push(LocalReadReviewScreen())
                         },
                     )
                 }
@@ -110,7 +122,7 @@ private fun MyListRow(
             )
         }
         Icon(
-            imageVector = Icons.Default.KeyboardArrowRight,
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )

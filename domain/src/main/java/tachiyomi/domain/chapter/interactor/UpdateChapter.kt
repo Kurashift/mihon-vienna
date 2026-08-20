@@ -42,4 +42,12 @@ class UpdateChapter(
             logcat(LogPriority.ERROR, e)
         }
     }
+
+    suspend fun awaitBumpVersion(chapterId: Long) {
+        try {
+            chapterRepository.bumpVersion(chapterId)
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e)
+        }
+    }
 }

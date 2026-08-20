@@ -485,12 +485,14 @@ private fun MangaScreenSmallImpl(
         )
         val chapterItems = remember { chapters.toMutableStateList() }
         var pendingReorder by remember { mutableStateOf(false) }
+        var reorderChanged by remember { mutableStateOf(false) }
         val reorderableState = rememberReorderableLazyListState(chapterListState, chapterContentPadding) { from, to ->
             val fromIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == from.key }
             val toIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == to.key }
             if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {
                 val item = chapterItems.removeAt(fromIndex)
                 chapterItems.add(toIndex, item)
+                reorderChanged = true
             }
         }
         LaunchedEffect(chapters, state.manga, pendingReorder) {
@@ -594,8 +596,11 @@ private fun MangaScreenSmallImpl(
                         localChapterCoverGridEnabled = chapterLayoutGridEnabled,
                         reorderableState = reorderableState,
                         onReorder = {
+                            if (!reorderChanged) return@sharedChapterItems false
+                            reorderChanged = false
                             pendingReorder = true
                             onReorderChapters(chapterItems.fastMap { it.chapter.id })
+                            true
                         },
                         isAnyChapterSelected = chapters.fastAny { it.selected },
                         chapterSwipeStartAction = chapterSwipeStartAction,
@@ -833,6 +838,7 @@ fun MangaScreenLargeImpl(
                     )
                     val chapterItems = remember { chapters.toMutableStateList() }
                     var pendingReorder by remember { mutableStateOf(false) }
+                    var reorderChanged by remember { mutableStateOf(false) }
                     val reorderableState =
                         rememberReorderableLazyListState(chapterListState, chapterContentPadding) { from, to ->
                             val fromIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == from.key }
@@ -840,6 +846,7 @@ fun MangaScreenLargeImpl(
                             if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {
                                 val item = chapterItems.removeAt(fromIndex)
                                 chapterItems.add(toIndex, item)
+                                reorderChanged = true
                             }
                         }
                     LaunchedEffect(chapters, state.manga, pendingReorder) {
@@ -885,8 +892,11 @@ fun MangaScreenLargeImpl(
                                 localChapterCoverGridEnabled = chapterLayoutGridEnabled,
                                 reorderableState = reorderableState,
                                 onReorder = {
+                                    if (!reorderChanged) return@sharedChapterItems false
+                                    reorderChanged = false
                                     pendingReorder = true
                                     onReorderChapters(chapterItems.fastMap { it.chapter.id })
+                                    true
                                 },
                                 isAnyChapterSelected = chapters.fastAny { it.selected },
                                 chapterSwipeStartAction = chapterSwipeStartAction,
@@ -985,7 +995,7 @@ private fun LazyListScope.sharedChapterItems(
     localChapterCoversEnabled: Boolean,
     localChapterCoverGridEnabled: Boolean,
     reorderableState: ReorderableLazyListState,
-    onReorder: () -> Unit,
+    onReorder: () -> Boolean,
     isAnyChapterSelected: Boolean,
     chapterSwipeStartAction: LibraryPreferences.ChapterSwipeAction,
     chapterSwipeEndAction: LibraryPreferences.ChapterSwipeAction,
@@ -1117,13 +1127,7 @@ private fun LazyListScope.sharedChapterItems(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         },
                         onDragStopped = {
-                            if (dragMoved) {
-                                // A real drag gesture: reorder when the position changed and
-                                // never copy or select afterwards.
-                                if (dragStartIndex >= 0 && chapters.indexOf(item) != dragStartIndex) {
-                                    onReorder()
-                                }
-                            } else {
+                            if (!onReorder() && !dragMoved) {
                                 // Long-press without moving: on the title it copies, anywhere
                                 // else it selects.
                                 val down = downPosition
@@ -1161,8 +1165,9 @@ private fun LazyListScope.sharedChapterItems(
                 flagMarked = item.chapter.id in markedChapterIds,
                 cover = if (showLocalChapterCovers) {
                     LocalChapterCover(
+                        chapterId = item.chapter.id,
                         chapterUrl = item.chapter.url,
-                        version = item.chapter.dateUpload xor item.chapter.lastModifiedAt,
+                        version = item.chapter.version xor item.chapter.dateUpload xor item.chapter.lastModifiedAt,
                     )
                 } else {
                     null
@@ -1236,8 +1241,9 @@ private fun LazyListScope.sharedChapterGridItems(
                     modifier = Modifier.weight(1f),
                     title = chapterTitle,
                     cover = LocalChapterCover(
+                        chapterId = item.chapter.id,
                         chapterUrl = item.chapter.url,
-                        version = item.chapter.dateUpload xor item.chapter.lastModifiedAt,
+                        version = item.chapter.version xor item.chapter.dateUpload xor item.chapter.lastModifiedAt,
                     ),
                     readProgress = chapterProgress?.let { progress ->
                         stringResource(

@@ -1243,4 +1243,9 @@
     <string name="local_chapter_covers_clear">Clear generated covers</string>
     <string name="local_chapter_covers_clear_confirm">Delete all generated thumbnails? Your CBZ files, library data, and reading progress will not be changed.</string>
     <string name="local_chapter_covers_cleared">Cleared %1$d covers</string>
+    <string name="local_read_review_action">Review completed local chapters</string>
+    <string name="local_read_review_summary">Browse all completed local works together, review them from the first page, and undo incorrect read status.</string>
+    <string name="local_read_review_title">Incorrect read-status review</string>
+    <string name="local_read_review_count">%1$d local chapters are marked as read</string>
+    <string name="local_read_review_empty">No local chapters are marked as read</string>
 </resources>

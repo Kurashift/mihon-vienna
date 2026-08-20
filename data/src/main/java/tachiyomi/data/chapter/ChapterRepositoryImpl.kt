@@ -58,6 +58,28 @@ class ChapterRepositoryImpl(
         partialUpdate(*chapterUpdates.toTypedArray())
     }
 
+    override suspend fun relocateAll(chapterUpdates: List<ChapterUpdate>) {
+        database.transaction {
+            chapterUpdates.forEach { chapterUpdate ->
+                val mangaId = requireNotNull(chapterUpdate.mangaId)
+                val url = requireNotNull(chapterUpdate.url)
+                database.chaptersQueries.relocate(
+                    mangaId = mangaId,
+                    url = url,
+                    chapterId = chapterUpdate.id,
+                )
+                database.good_doujinsQueries.relocate(
+                    mangaId = mangaId,
+                    chapterId = chapterUpdate.id,
+                )
+            }
+        }
+    }
+
+    override suspend fun bumpVersion(chapterId: Long) {
+        database.chaptersQueries.bumpVersion(chapterId)
+    }
+
     override suspend fun updateReaderProgress(
         chapterId: Long,
         pageNumber: Long,

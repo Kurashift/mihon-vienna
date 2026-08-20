@@ -14,6 +14,7 @@ import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.UpdateChapter
+import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.toChapterUpdate
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaUpdate
@@ -47,35 +48,12 @@ class MigrateMangaUseCase(
         try {
             updateMangaFromRemote(target, fetchChapters = true).getOrThrow()
 
-            // Update chapters read, bookmark and dateFetch
+            // Transfer chapter state only when the source and target identify the exact same URL.
+            // Chapter numbers are display/sort metadata and are not reliable content identities.
             if (MigrationFlag.CHAPTER in flags) {
                 val prevMangaChapters = getChaptersByMangaId.await(current.id)
                 val mangaChapters = getChaptersByMangaId.await(target.id)
-
-                val maxChapterRead = prevMangaChapters
-                    .filter { it.read }
-                    .maxOfOrNull { it.chapterNumber }
-
-                val updatedMangaChapters = mangaChapters.map { mangaChapter ->
-                    var updatedChapter = mangaChapter
-                    if (updatedChapter.isRecognizedNumber) {
-                        val prevChapter = prevMangaChapters
-                            .find { it.isRecognizedNumber && it.chapterNumber == updatedChapter.chapterNumber }
-
-                        if (prevChapter != null) {
-                            updatedChapter = updatedChapter.copy(
-                                dateFetch = prevChapter.dateFetch,
-                                bookmark = prevChapter.bookmark,
-                            )
-                        }
-
-                        if (maxChapterRead != null && updatedChapter.chapterNumber <= maxChapterRead) {
-                            updatedChapter = updatedChapter.copy(read = true)
-                        }
-                    }
-
-                    updatedChapter
-                }
+                val updatedMangaChapters = mangaChapters.copyStateFromChaptersWithSameUrl(prevMangaChapters)
 
                 val chapterUpdates = updatedMangaChapters.map { it.toChapterUpdate() }
                 updateChapter.awaitAll(chapterUpdates)
@@ -134,5 +112,25 @@ class MigrateMangaUseCase(
                 throw e
             }
         }
+    }
+}
+
+internal fun List<Chapter>.copyStateFromChaptersWithSameUrl(
+    previousChapters: List<Chapter>,
+): List<Chapter> {
+    val previousByUrl = previousChapters.associateBy { it.url }
+    return map { chapter ->
+        val previous = previousByUrl[chapter.url] ?: return@map chapter
+        val lastPageRead = when {
+            previous.read && chapter.totalPages > 0L -> chapter.totalPages
+            chapter.totalPages > 0L -> previous.lastPageRead.coerceIn(0L, (chapter.totalPages - 1L).coerceAtLeast(0L))
+            else -> previous.lastPageRead.coerceAtLeast(0L)
+        }
+        chapter.copy(
+            read = previous.read,
+            bookmark = previous.bookmark,
+            lastPageRead = lastPageRead,
+            dateFetch = previous.dateFetch,
+        )
     }
 }

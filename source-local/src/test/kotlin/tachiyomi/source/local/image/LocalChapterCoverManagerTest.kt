@@ -8,6 +8,25 @@ import org.junit.jupiter.api.Test
 class LocalChapterCoverManagerTest {
 
     @Test
+    fun `custom cover name depends only on stable chapter id`() {
+        val first = localCustomChapterCoverFileName(123L)
+        val afterMove = localCustomChapterCoverFileName(123L)
+        val otherChapter = localCustomChapterCoverFileName(456L)
+
+        assertEquals(first, afterMove)
+        assertNotEquals(first, otherChapter)
+        assertEquals("chapter-123.webp", first)
+    }
+
+    @Test
+    fun `custom cover identity is independent from generated cache identity`() {
+        val custom = localCustomChapterCoverFileName(123L)
+        val generated = localChapterCoverCacheFileName("Author/Story.cbz", 1024L, 123L, 480, 672, 80)
+
+        assertNotEquals(custom, generated)
+    }
+
+    @Test
     fun `unchanged chapter keeps the same cache file`() {
         val first = localChapterCoverCacheFileName("Author/Story.cbz", 1024L, 123L, 480, 672, 80)
         val second = localChapterCoverCacheFileName("Author/Story.cbz", 1024L, 123L, 480, 672, 80)

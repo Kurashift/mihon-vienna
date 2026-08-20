@@ -62,6 +62,11 @@ removeMany:
 DELETE FROM good_doujins
 WHERE chapter_id IN :chapterIds;
 
+relocate:
+UPDATE good_doujins
+SET manga_id = :mangaId
+WHERE chapter_id = :chapterId;
+
 clearManga:
 DELETE FROM good_doujins
 WHERE manga_id = :mangaId;

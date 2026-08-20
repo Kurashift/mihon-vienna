@@ -319,4 +319,18 @@ class WebtoonPageSelectionTest {
             ),
         )
     }
+
+    @Test
+    fun `forward reading cannot retreat after chapter end was selected`() {
+        assertEquals(
+            10,
+            WebtoonPageSelection.resolveForwardPage(
+                currentPosition = 10,
+                centerPosition = 9,
+                pages = emptyList(),
+                viewportStart = 0,
+                viewportEnd = 2400,
+            ),
+        )
+    }
 }

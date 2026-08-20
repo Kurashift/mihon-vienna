@@ -22,11 +22,9 @@ import tachiyomi.domain.chapter.model.NoChaptersException
 import tachiyomi.domain.chapter.model.toChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.chapter.service.ChapterRecognition
-import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.source.local.isLocal
 import java.lang.Long.max
-import java.util.TreeSet
 import kotlin.time.Clock
 
 class SyncChaptersWithSource(
@@ -38,7 +36,6 @@ class SyncChaptersWithSource(
     private val updateChapter: UpdateChapter,
     private val getChaptersByMangaId: GetChaptersByMangaId,
     private val getExcludedScanlators: GetExcludedScanlators,
-    private val libraryPreferences: LibraryPreferences,
 ) {
 
     /**
@@ -163,56 +160,11 @@ class SyncChaptersWithSource(
             return emptyList()
         }
 
-        val changedOrDuplicateReadUrls = mutableSetOf<String>()
-
-        val deletedChapterNumbers = TreeSet<Double>()
-        val deletedReadChapterNumbers = TreeSet<Double>()
-        val deletedBookmarkedChapterNumbers = TreeSet<Double>()
-
-        val readChapterNumbers = dbChapters
-            .asSequence()
-            .filter { it.read && it.isRecognizedNumber }
-            .map { it.chapterNumber }
-            .toSet()
-
-        removedChapters.forEach { chapter ->
-            if (chapter.read) deletedReadChapterNumbers.add(chapter.chapterNumber)
-            if (chapter.bookmark) deletedBookmarkedChapterNumbers.add(chapter.chapterNumber)
-            deletedChapterNumbers.add(chapter.chapterNumber)
-        }
-
-        val deletedChapterNumberDateFetchMap = removedChapters.sortedByDescending { it.dateFetch }
-            .associate { it.chapterNumber to it.dateFetch }
-
-        val markDuplicateAsRead = libraryPreferences.markDuplicateReadChapterAsRead.get()
-            .contains(LibraryPreferences.MARK_DUPLICATE_CHAPTER_READ_NEW)
-
         // Date fetch is set in such a way that the upper ones will have bigger value than the lower ones
         // Sources MUST return the chapters from most to less recent, which is common.
         var itemCount = newChapters.size
-        var updatedToAdd = newChapters.map { toAddItem ->
-            var chapter = toAddItem.copy(dateFetch = nowMillis + itemCount--)
-
-            if (chapter.chapterNumber in readChapterNumbers && markDuplicateAsRead) {
-                changedOrDuplicateReadUrls.add(chapter.url)
-                chapter = chapter.copy(read = true)
-            }
-
-            if (!chapter.isRecognizedNumber || chapter.chapterNumber !in deletedChapterNumbers) return@map chapter
-
-            chapter = chapter.copy(
-                read = chapter.chapterNumber in deletedReadChapterNumbers,
-                bookmark = chapter.chapterNumber in deletedBookmarkedChapterNumbers,
-            )
-
-            // Try to to use the fetch date of the original entry to not pollute 'Updates' tab
-            deletedChapterNumberDateFetchMap[chapter.chapterNumber]?.let {
-                chapter = chapter.copy(dateFetch = it)
-            }
-
-            changedOrDuplicateReadUrls.add(chapter.url)
-
-            chapter
+        var updatedToAdd = newChapters.map { chapter ->
+            chapter.copy(dateFetch = nowMillis + itemCount--)
         }
 
         if (removedChapters.isNotEmpty()) {
@@ -236,6 +188,6 @@ class SyncChaptersWithSource(
 
         val excludedScanlators = getExcludedScanlators.await(manga.id).toHashSet()
 
-        return updatedToAdd.filterNot { it.url in changedOrDuplicateReadUrls || it.scanlator in excludedScanlators }
+        return updatedToAdd.filterNot { it.scanlator in excludedScanlators }
     }
 }

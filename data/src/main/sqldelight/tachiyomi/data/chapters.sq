@@ -114,6 +114,19 @@ UPDATE chapters
 SET is_syncing = 0
 WHERE is_syncing = 1;
 
+relocate:
+UPDATE chapters
+SET manga_id = :mangaId,
+    url = :url,
+    custom_order = 0,
+    version = version + 1
+WHERE _id = :chapterId;
+
+bumpVersion:
+UPDATE chapters
+SET version = version + 1
+WHERE _id = :chapterId;
+
 insert:
 INSERT INTO chapters(manga_id, url, name, scanlator, read, bookmark, last_page_read, total_pages, custom_order, chapter_number, source_order, date_fetch, date_upload, last_modified_at, version, is_syncing, memo)
 VALUES (
@@ -239,3 +252,25 @@ LEFT JOIN history
 ON chapters._id = history.chapter_id
 WHERE mangas.source = :sourceId
 GROUP BY mangas._id;
+
+getReadChaptersBySource:
+SELECT
+    chapters._id AS chapter_id,
+    chapters.manga_id AS manga_id,
+    mangas.title AS manga_title,
+    chapters.url AS chapter_url,
+    chapters.name AS chapter_name,
+    chapters.total_pages AS total_pages,
+    chapters.date_upload AS date_upload,
+    chapters.last_modified_at AS last_modified_at,
+    chapters.version AS version
+FROM chapters
+JOIN mangas
+ON mangas._id = chapters.manga_id
+WHERE mangas.source = :sourceId
+AND chapters.read = 1
+ORDER BY
+    mangas.title COLLATE NOCASE,
+    CASE WHEN chapters.custom_order = 0 THEN 1 ELSE 0 END,
+    chapters.custom_order,
+    chapters.source_order;

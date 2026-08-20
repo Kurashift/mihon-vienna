@@ -45,6 +45,8 @@ import tachiyomi.data.Mangas
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
+import tachiyomi.domain.chapter.repository.ChapterRepository
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.source.local.image.LocalChapterCoverManager
@@ -164,7 +166,17 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { AndroidStorageFolderProvider(app) }
         addSingletonFactory { LocalSourceFileSystem(get()) }
         addSingletonFactory { LocalCoverManager(app, get()) }
-        addSingletonFactory { LocalChapterCoverManager(app, get()) }
+        addSingletonFactory {
+            val mangaRepository = get<MangaRepository>()
+            val chapterRepository = get<ChapterRepository>()
+            LocalChapterCoverManager(app, get()) {
+                val mangaIds = mangaRepository.getLocalMangaIds()
+                mangaIds
+                    .chunked(500)
+                    .flatMap { chapterRepository.getChaptersByMangaIds(it) }
+                    .associate { chapter -> chapter.url to chapter.id }
+            }
+        }
         addSingletonFactory { StorageManager(app, get()) }
 
         // Asynchronously init expensive components for a faster cold start
