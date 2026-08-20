@@ -17,13 +17,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-if (Config.includeTelemetry) {
-    pluginManager.apply {
-        apply(libs.plugins.google.services.get().pluginId)
-        apply(libs.plugins.firebase.crashlytics.get().pluginId)
-    }
-}
-
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 
 android {
