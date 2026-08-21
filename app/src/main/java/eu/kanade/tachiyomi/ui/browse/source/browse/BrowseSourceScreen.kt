@@ -696,7 +696,7 @@ private fun LocalSourceControlBar(
             BrowseFilterMenuChip(
                 value = readingFilter,
                 options = ReadingFilter.entries,
-                selected = readingFilter != ReadingFilter.ALL,
+                selected = true,
                 imageVector = ReadingFilter::imageVector,
                 label = ReadingFilter::label,
                 onSelect = onReadingFilterSelected,

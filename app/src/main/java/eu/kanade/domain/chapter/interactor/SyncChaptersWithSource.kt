@@ -52,8 +52,13 @@ class SyncChaptersWithSource(
         source: Source,
         manualFetch: Boolean = false,
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
+        allowEmptyLocalSource: Boolean = false,
     ): List<Chapter> {
-        if (rawSourceChapters.isEmpty() && !source.isLocal()) {
+        val dbChapters = getChaptersByMangaId.await(manga.id)
+        if (
+            rawSourceChapters.isEmpty() &&
+            (!source.isLocal() || (dbChapters.isNotEmpty() && !allowEmptyLocalSource))
+        ) {
             throw NoChaptersException()
         }
 
@@ -69,8 +74,6 @@ class SyncChaptersWithSource(
                     .copy(name = with(ChapterSanitizer) { sChapter.name.sanitize(manga.title) })
                     .copy(mangaId = manga.id, sourceOrder = i.toLong())
             }
-
-        val dbChapters = getChaptersByMangaId.await(manga.id)
 
         val newChapters = mutableListOf<Chapter>()
         val updatedChapters = mutableListOf<Chapter>()

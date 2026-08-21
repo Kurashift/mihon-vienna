@@ -235,6 +235,9 @@
     <string name="show_title">原名</string>
     <string name="show_chapter_number">编号</string>
     <string name="show_translated_title">译名</string>
+    <string name="chapter_display_original_only">仅原名</string>
+    <string name="chapter_display_translated_only">仅译名</string>
+    <string name="chapter_display_translated_and_original">译名与原名</string>
     <string name="chapter_filter_status_section">阅读状态</string>
     <string name="chapter_filter_source_section">来源</string>
     <string name="chapter_sort_basis_section">排序依据</string>
@@ -248,6 +251,9 @@
     <string name="export_local_library_chapter_titles">导出整个本地库</string>
     <string name="import_local_library_chapter_titles">导入整个本地库</string>
     <string name="import_multiple_manga_chapter_titles">批量导入章节译名</string>
+    <string name="chapter_title_translation_export_format">选择导出格式</string>
+    <string name="chapter_title_translation_format_json">JSON 备份 / 模板</string>
+    <string name="chapter_title_translation_format_csv">CSV 表格（Excel / WPS）</string>
     <string name="chapter_title_translation_exported">已导出章节译名模板</string>
     <string name="local_library_chapter_title_translations_exported">已导出 %1$d 部漫画、%2$d 个章节</string>
     <string name="local_library_chapter_title_translations_imported">已导入 %1$d 个章节译名，忽略 %2$d 个空白或未匹配条目</string>
@@ -842,6 +848,9 @@
     <string name="onboarding_storage_help_info">如果你是从旧版更新而来，可以查看存储指南了解详情。</string>
     <string name="onboarding_storage_help_action">存储指南</string>
     <string name="pref_storage_location">存储位置</string>
+    <string name="pref_local_source_direct_access">本库文件访问</string>
+    <string name="pref_local_source_direct_access_summary">仅在本库刷新无法识别文件变化时开启</string>
+    <string name="pref_local_source_direct_access_granted">已开启，仅用于当前设置的本库目录</string>
     <string name="onboarding_storage_action_select">选择文件夹</string>
     <string name="onboarding_storage_info">选择一个文件夹供 %1$s 存放下载篇目、备份文件等。
 \n
@@ -973,6 +982,14 @@
     <string name="action_filter_excluded_scanlators">筛选排除翻译组</string>
     <string name="download_bookmarked">已添加书签</string>
     <string name="label_support_us">支持我们</string>
+    <string name="more_section_reading_mode">阅读模式</string>
+    <string name="more_section_library">书架与列表</string>
+    <string name="more_section_settings">设置</string>
+    <string name="more_section_about">支持与关于</string>
+    <string name="settings_section_interface_reader">界面与阅读</string>
+    <string name="settings_section_content_library">内容与书架</string>
+    <string name="settings_section_privacy">隐私与安全</string>
+    <string name="settings_section_system">系统</string>
     <string name="supportUsScreen.perks">赞助者可访问专属频道，更多福利即将推出。</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon（首选）</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>

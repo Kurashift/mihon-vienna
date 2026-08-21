@@ -1,7 +1,10 @@
 package eu.kanade.tachiyomi.util.lang
 
 import androidx.core.text.parseAsHtml
+import net.greypanther.natsort.CaseInsensitiveSimpleNaturalComparator
 import java.nio.charset.StandardCharsets
+import java.text.Collator
+import java.util.Locale
 import kotlin.math.floor
 
 /**
@@ -31,62 +34,94 @@ fun String.truncateCenter(count: Int, replacement: String = "..."): String {
 }
 
 /**
- * Case-insensitive natural comparator for strings. Punctuation and whitespace are
- * ignored, so titles that only differ by separators (commas, brackets, spaces) still
- * order by their text/number suffixes. Digits always sort after any letter or CJK
- * character, so "Tale 2" comes after "Tale" and "Tale extra"; numeric runs are
- * compared by value ("ch. 2" before "ch. 10").
+ * Case-insensitive, locale-aware natural comparator for titles. Punctuation and whitespace are
+ * ignored, so titles that only differ by separators (commas, brackets, spaces) still order by
+ * their text/number suffixes. Digits always sort after letters and CJK characters, so "Tale 2"
+ * comes after "Tale" and "Tale extra"; numeric runs are compared by value ("ch. 2" before
+ * "ch. 10"); text runs are compared with the given locale's collator (Chinese -> pinyin,
+ * Japanese -> gojūon).
  */
-fun String.compareToCaseInsensitiveNaturalOrder(other: String): Int {
+fun String.compareToCaseInsensitiveNaturalOrder(
+    other: String,
+    locale: Locale = Locale.getDefault(),
+): Int {
+    val collator = collatorFor(locale)
+    val thisRuns = sortRuns()
+    val otherRuns = other.sortRuns()
     var i = 0
     var j = 0
-    while (i < length && j < other.length) {
-        val thisChar = this[i]
-        val otherChar = other[j]
-        // Skip punctuation and whitespace entirely.
-        if (!thisChar.isLetterOrDigit()) {
-            i++
-            continue
-        }
-        if (!otherChar.isLetterOrDigit()) {
-            j++
-            continue
-        }
-        val thisIsDigit = thisChar.isDigit()
-        val otherIsDigit = otherChar.isDigit()
+    while (i < thisRuns.size && j < otherRuns.size) {
+        val thisRun = thisRuns[i]
+        val otherRun = otherRuns[j]
+        val thisIsDigit = thisRun.first().isDigit()
+        val otherIsDigit = otherRun.first().isDigit()
         if (thisIsDigit != otherIsDigit) {
             // Non-digits sort before digits, regardless of position.
             return if (thisIsDigit) 1 else -1
         }
-        if (thisIsDigit) {
-            var thisValue = 0L
-            var otherValue = 0L
-            while (i < length && this[i].isDigit()) {
-                thisValue = thisValue * 10 + this[i].digitToInt()
-                i++
-            }
-            while (j < other.length && other[j].isDigit()) {
-                otherValue = otherValue * 10 + other[j].digitToInt()
-                j++
-            }
-            if (thisValue != otherValue) {
-                return if (thisValue < otherValue) -1 else 1
-            }
+        val byRun = if (thisIsDigit) {
+            compareNumericRuns(thisRun, otherRun)
         } else {
-            val thisLower = thisChar.lowercaseChar()
-            val otherLower = otherChar.lowercaseChar()
-            if (thisLower != otherLower) {
-                return if (thisLower < otherLower) -1 else 1
-            }
-            i++
-            j++
+            collator.compare(thisRun, otherRun)
         }
+        if (byRun != 0) return byRun
+        i++
+        j++
     }
-    // Skip trailing punctuation before comparing leftovers, so a shorter meaningful
-    // name ("Tale") still sorts before "Tale 2".
-    while (i < length && !this[i].isLetterOrDigit()) i++
-    while (j < other.length && !other[j].isLetterOrDigit()) j++
-    return (length - i).compareTo(other.length - j)
+    // A shorter meaningful name ("Tale") still sorts before a longer one ("Tale 2").
+    return thisRuns.drop(i).sumOf(String::length).compareTo(otherRuns.drop(j).sumOf(String::length))
+}
+
+private fun String.sortRuns(): List<String> {
+    val runs = mutableListOf<String>()
+    var current = StringBuilder()
+    var currentIsDigit: Boolean? = null
+    for (char in this) {
+        if (!char.isLetterOrDigit()) continue
+        val isDigit = char.isDigit()
+        if (current.isNotEmpty() && isDigit != currentIsDigit) {
+            runs += current.toString()
+            current = StringBuilder()
+        }
+        current.append(char)
+        currentIsDigit = isDigit
+    }
+    if (current.isNotEmpty()) runs += current.toString()
+    return runs
+}
+
+private fun compareNumericRuns(first: String, second: String): Int {
+    val firstTrimmed = first.trimStart('0').ifEmpty { "0" }
+    val secondTrimmed = second.trimStart('0').ifEmpty { "0" }
+    if (firstTrimmed.length != secondTrimmed.length) {
+        return firstTrimmed.length.compareTo(secondTrimmed.length)
+    }
+    return firstTrimmed.compareTo(secondTrimmed)
+}
+
+private fun collatorFor(locale: Locale): Collator {
+    // Collator is not thread-safe; cache one per thread and locale.
+    val cached = collatorCache.get()
+    if (cached?.first == locale) return cached.second
+    return Collator.getInstance(locale).apply { strength = Collator.PRIMARY }
+        .also { collatorCache.set(locale to it) }
+}
+
+private val collatorCache = ThreadLocal<Pair<Locale, Collator>>()
+
+/**
+ * Natural order for image page names. Numeric page names must come before textual extras such as
+ * "zzz", while the title comparator intentionally applies the opposite rule.
+ */
+fun String.compareToCaseInsensitiveNaturalPageOrder(other: String): Int {
+    val thisStartsWithDigit = firstOrNull(Char::isLetterOrDigit)?.isDigit() == true
+    val otherStartsWithDigit = other.firstOrNull(Char::isLetterOrDigit)?.isDigit() == true
+    if (thisStartsWithDigit != otherStartsWithDigit) {
+        return if (thisStartsWithDigit) -1 else 1
+    }
+
+    val comparator = CaseInsensitiveSimpleNaturalComparator.getInstance<String>()
+    return comparator.compare(this, other)
 }
 
 /**

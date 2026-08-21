@@ -14,18 +14,33 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import eu.kanade.tachiyomi.ui.manga.ChapterTitleTranslationFormat
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun ChapterTitleTranslationDialog(
     onDismissRequest: () -> Unit,
-    onExportCurrentManga: () -> Unit,
+    onExportCurrentManga: (ChapterTitleTranslationFormat) -> Unit,
     onImportCurrentManga: () -> Unit,
 ) {
+    var showExportFormatDialog by remember { mutableStateOf(false) }
+    if (showExportFormatDialog) {
+        ChapterTitleTranslationExportFormatDialog(
+            onDismissRequest = { showExportFormatDialog = false },
+            onFormatSelected = {
+                showExportFormatDialog = false
+                onExportCurrentManga(it)
+            },
+        )
+    }
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(stringResource(MR.strings.current_manga_chapter_title_translations)) },
@@ -34,7 +49,7 @@ fun ChapterTitleTranslationDialog(
                 TranslationAction(
                     label = stringResource(MR.strings.export_current_manga_chapter_titles),
                     icon = Icons.Outlined.FileDownload,
-                    onClick = onExportCurrentManga,
+                    onClick = { showExportFormatDialog = true },
                 )
                 TranslationAction(
                     label = stringResource(MR.strings.import_current_manga_chapter_titles),
@@ -54,10 +69,20 @@ fun ChapterTitleTranslationDialog(
 @Composable
 fun LocalLibraryChapterTitleTranslationDialog(
     onDismissRequest: () -> Unit,
-    onExport: () -> Unit,
+    onExport: (ChapterTitleTranslationFormat) -> Unit,
     onImport: () -> Unit,
     onImportMangaFiles: () -> Unit,
 ) {
+    var showExportFormatDialog by remember { mutableStateOf(false) }
+    if (showExportFormatDialog) {
+        ChapterTitleTranslationExportFormatDialog(
+            onDismissRequest = { showExportFormatDialog = false },
+            onFormatSelected = {
+                showExportFormatDialog = false
+                onExport(it)
+            },
+        )
+    }
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(stringResource(MR.strings.local_library_chapter_title_translations)) },
@@ -66,7 +91,7 @@ fun LocalLibraryChapterTitleTranslationDialog(
                 TranslationAction(
                     label = stringResource(MR.strings.export_local_library_chapter_titles),
                     icon = Icons.Outlined.FileDownload,
-                    onClick = onExport,
+                    onClick = { showExportFormatDialog = true },
                 )
                 TranslationAction(
                     label = stringResource(MR.strings.import_local_library_chapter_titles),
@@ -83,6 +108,36 @@ fun LocalLibraryChapterTitleTranslationDialog(
         confirmButton = {
             TextButton(onClick = onDismissRequest) {
                 Text(stringResource(MR.strings.action_close))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ChapterTitleTranslationExportFormatDialog(
+    onDismissRequest: () -> Unit,
+    onFormatSelected: (ChapterTitleTranslationFormat) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(stringResource(MR.strings.chapter_title_translation_export_format)) },
+        text = {
+            Column {
+                TranslationAction(
+                    label = stringResource(MR.strings.chapter_title_translation_format_json),
+                    icon = Icons.Outlined.FileDownload,
+                    onClick = { onFormatSelected(ChapterTitleTranslationFormat.JSON) },
+                )
+                TranslationAction(
+                    label = stringResource(MR.strings.chapter_title_translation_format_csv),
+                    icon = Icons.Outlined.FileDownload,
+                    onClick = { onFormatSelected(ChapterTitleTranslationFormat.CSV) },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(stringResource(MR.strings.action_cancel))
             }
         },
     )

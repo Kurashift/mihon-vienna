@@ -14,6 +14,8 @@ interface ChapterRepository {
 
     suspend fun relocateAll(chapterUpdates: List<ChapterUpdate>)
 
+    suspend fun mergeRelocatedChapter(chapterUpdate: ChapterUpdate, duplicateChapterId: Long)
+
     suspend fun bumpVersion(chapterId: Long)
 
     suspend fun updateReaderProgress(

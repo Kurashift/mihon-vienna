@@ -77,6 +77,41 @@ class ChapterRepositoryImpl(
         }
     }
 
+    override suspend fun mergeRelocatedChapter(chapterUpdate: ChapterUpdate, duplicateChapterId: Long) {
+        database.transaction {
+            val mangaId = requireNotNull(chapterUpdate.mangaId)
+            val url = requireNotNull(chapterUpdate.url)
+            database.historyQueries.mergeForChapterMove(chapterUpdate.id, duplicateChapterId)
+            database.good_doujinsQueries.mergeForChapterMove(chapterUpdate.id, mangaId, duplicateChapterId)
+            database.chaptersQueries.removeChaptersWithIds(listOf(duplicateChapterId))
+            database.chaptersQueries.relocate(
+                mangaId = mangaId,
+                url = url,
+                chapterId = chapterUpdate.id,
+            )
+            database.chaptersQueries.update(
+                mangaId = mangaId,
+                url = url,
+                name = chapterUpdate.name,
+                scanlator = chapterUpdate.scanlator,
+                read = chapterUpdate.read,
+                bookmark = chapterUpdate.bookmark,
+                lastPageRead = chapterUpdate.lastPageRead,
+                totalPages = chapterUpdate.totalPages,
+                customOrder = chapterUpdate.customOrder,
+                chapterNumber = chapterUpdate.chapterNumber,
+                sourceOrder = chapterUpdate.sourceOrder,
+                dateFetch = chapterUpdate.dateFetch,
+                dateUpload = chapterUpdate.dateUpload,
+                chapterId = chapterUpdate.id,
+                version = chapterUpdate.version,
+                isSyncing = 0,
+                memo = chapterUpdate.memo?.let(MemoColumnAdapter::encode),
+                translatedName = chapterUpdate.translatedName,
+            )
+        }
+    }
+
     override suspend fun bumpVersion(chapterId: Long) {
         database.chaptersQueries.bumpVersion(chapterId)
     }

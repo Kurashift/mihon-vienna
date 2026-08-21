@@ -34,6 +34,7 @@ import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.injectLazy
 import java.io.File
 import java.io.IOException
+import java.net.URI
 
 /**
  * A [Fetcher] that fetches cover image for [Manga] object.
@@ -73,7 +74,7 @@ class MangaCoverFetcher(
         // diskCacheKey is thumbnail_url
         if (url == null) error("No cover specified")
         return when (getResourceType(url)) {
-            Type.File -> fileLoader(File(url.substringAfter("file://")))
+            Type.File -> fileLoader(localCoverFile(url))
             Type.URI -> fileUriLoader(url)
             Type.URL -> httpLoader()
             null -> error("Invalid image")
@@ -348,5 +349,13 @@ class MangaCoverFetcher(
         private val CACHE_CONTROL_NO_NETWORK_NO_CACHE = CacheControl.Builder().noCache().onlyIfCached().build()
 
         private const val HTTP_NOT_MODIFIED = 304
+    }
+}
+
+internal fun localCoverFile(url: String): File {
+    return if (url.startsWith("file://")) {
+        File(URI(url))
+    } else {
+        File(url)
     }
 }

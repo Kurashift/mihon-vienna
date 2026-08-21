@@ -67,6 +67,16 @@ UPDATE good_doujins
 SET manga_id = :mangaId
 WHERE chapter_id = :chapterId;
 
+mergeForChapterMove:
+INSERT INTO good_doujins(chapter_id, manga_id, marked_at)
+SELECT :chapterId, :mangaId, max(marked_at)
+FROM good_doujins
+WHERE chapter_id IN (:chapterId, :duplicateChapterId)
+HAVING count(*) > 0
+ON CONFLICT(chapter_id) DO UPDATE SET
+    manga_id = excluded.manga_id,
+    marked_at = excluded.marked_at;
+
 clearManga:
 DELETE FROM good_doujins
 WHERE manga_id = :mangaId;

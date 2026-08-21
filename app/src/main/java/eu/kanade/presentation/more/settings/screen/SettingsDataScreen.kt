@@ -4,6 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,6 +58,7 @@ import eu.kanade.tachiyomi.data.backup.restore.BackupRestoreJob
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.export.LibraryExporter
 import eu.kanade.tachiyomi.data.export.LibraryExporter.ExportOptions
+import eu.kanade.tachiyomi.ui.manga.ChapterTitleTranslationFormat
 import eu.kanade.tachiyomi.ui.manga.LocalLibraryChapterTitleTranslations
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.toast
@@ -103,14 +107,43 @@ object SettingsDataScreen : SearchableSettings {
         val backupPreferences = Injekt.get<BackupPreferences>()
         val storagePreferences = Injekt.get<StoragePreferences>()
 
-        return listOf(
+        return listOfNotNull(
             getStorageLocationPref(storagePreferences = storagePreferences),
             Preference.PreferenceItem.InfoPreference(stringResource(MR.strings.pref_storage_location_info)),
+            getLocalSourceDirectAccessPref(),
 
             getBackupAndRestoreGroup(backupPreferences = backupPreferences),
             getChapterTitleTranslationsGroup(),
             getDataGroup(),
             getExportGroup(),
+        )
+    }
+
+    @Composable
+    private fun getLocalSourceDirectAccessPref(): Preference.PreferenceItem.TextPreference? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val context = LocalContext.current
+        val granted = Environment.isExternalStorageManager()
+
+        return Preference.PreferenceItem.TextPreference(
+            title = stringResource(MR.strings.pref_local_source_direct_access),
+            subtitle = stringResource(
+                if (granted) {
+                    MR.strings.pref_local_source_direct_access_granted
+                } else {
+                    MR.strings.pref_local_source_direct_access_summary
+                },
+            ),
+            onClick = {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    "package:${context.packageName}".toUri(),
+                )
+                runCatching { context.startActivity(intent) }
+                    .recoverCatching {
+                        context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }
+            },
         )
     }
 
@@ -121,12 +154,33 @@ object SettingsDataScreen : SearchableSettings {
         val translations = remember { LocalLibraryChapterTitleTranslations(context = context) }
         var showDialog by remember { mutableStateOf(false) }
 
-        val exportLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/json"),
+        val exportJsonLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.JSON.mimeType),
         ) { uri ->
             uri ?: return@rememberLauncherForActivityResult
             scope.launch {
-                runCatching { translations.export(uri) }
+                runCatching { translations.export(uri, ChapterTitleTranslationFormat.JSON) }
+                    .onSuccess { (mangaCount, chapterCount) ->
+                        context.toast(
+                            context.stringResource(
+                                MR.strings.local_library_chapter_title_translations_exported,
+                                mangaCount,
+                                chapterCount,
+                            ),
+                        )
+                    }
+                    .onFailure { error ->
+                        logcat(LogPriority.ERROR, error)
+                        context.toast(MR.strings.chapter_title_translation_export_failed)
+                    }
+            }
+        }
+        val exportCsvLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.CSV.mimeType),
+        ) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            scope.launch {
+                runCatching { translations.export(uri, ChapterTitleTranslationFormat.CSV) }
                     .onSuccess { (mangaCount, chapterCount) ->
                         context.toast(
                             context.stringResource(
@@ -143,7 +197,7 @@ object SettingsDataScreen : SearchableSettings {
             }
         }
         val importLibraryLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
+            contract = ActivityResultContracts.GetContent(),
         ) { uri ->
             uri ?: return@rememberLauncherForActivityResult
             scope.launch {
@@ -156,7 +210,7 @@ object SettingsDataScreen : SearchableSettings {
             }
         }
         val importMangaFilesLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenMultipleDocuments(),
+            contract = ActivityResultContracts.GetMultipleContents(),
         ) { uris ->
             if (uris.isEmpty()) return@rememberLauncherForActivityResult
             scope.launch {
@@ -172,17 +226,28 @@ object SettingsDataScreen : SearchableSettings {
         if (showDialog) {
             LocalLibraryChapterTitleTranslationDialog(
                 onDismissRequest = { showDialog = false },
-                onExport = {
+                onExport = { format ->
                     showDialog = false
-                    exportLauncher.launch("mihon_local_library_chapter_translations.json")
+                    when (format) {
+                        ChapterTitleTranslationFormat.JSON -> {
+                            exportJsonLauncher.launch(
+                                "mihon_local_library_chapter_translations.${format.fileExtension}",
+                            )
+                        }
+                        ChapterTitleTranslationFormat.CSV -> {
+                            exportCsvLauncher.launch(
+                                "mihon_local_library_chapter_translations.${format.fileExtension}",
+                            )
+                        }
+                    }
                 },
                 onImport = {
                     showDialog = false
-                    importLibraryLauncher.launch(arrayOf("application/json", "text/plain"))
+                    importLibraryLauncher.launch("*/*")
                 },
                 onImportMangaFiles = {
                     showDialog = false
-                    importMangaFilesLauncher.launch(arrayOf("application/json", "text/plain"))
+                    importMangaFilesLauncher.launch("*/*")
                 },
             )
         }

@@ -31,7 +31,6 @@ import eu.kanade.presentation.components.ClearHistoryDialog
 import eu.kanade.presentation.components.NavigatorAdaptiveSheet
 import eu.kanade.presentation.manga.ChapterSettingsDialog
 import eu.kanade.presentation.manga.ChapterTitleTranslationDialog
-import eu.kanade.presentation.manga.ChapterTranslatedTitleActionsDialog
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.manga.EditChapterTranslatedTitleDialog
 import eu.kanade.presentation.manga.EditCoverAction
@@ -117,13 +116,18 @@ class MangaScreen(
 
         val successState = state as MangaViewModel.State.Success
         val isHttpSource = remember { successState.source is HttpSource }
-        val exportChapterTitles = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/json"),
+        val exportChapterTitlesJson = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.JSON.mimeType),
         ) { uri ->
-            uri?.let(viewModel::exportChapterTitles)
+            uri?.let { viewModel.exportChapterTitles(it, ChapterTitleTranslationFormat.JSON) }
+        }
+        val exportChapterTitlesCsv = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.CSV.mimeType),
+        ) { uri ->
+            uri?.let { viewModel.exportChapterTitles(it, ChapterTitleTranslationFormat.CSV) }
         }
         val importChapterTitles = rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenDocument(),
+            ActivityResultContracts.GetContent(),
         ) { uri ->
             uri?.let(viewModel::importChapterTitles)
         }
@@ -143,8 +147,7 @@ class MangaScreen(
         // Quick audio (moan track) sheet opened from the toolbar shortcut.
         var showAudioSheet by remember { mutableStateOf(false) }
         var showChapterTitleTranslationDialog by remember { mutableStateOf(false) }
-        var translatedTitleActionChapter by remember { mutableStateOf<ChapterList.Item?>(null) }
-        var editTranslatedTitleChapter by remember { mutableStateOf<Chapter?>(null) }
+        var editTranslatedTitleChapterId by remember { mutableStateOf<Long?>(null) }
 
         // Guards against double taps: while a random pick is in flight, further
         // clicks are ignored so the navigation transition only happens once.
@@ -282,7 +285,10 @@ class MangaScreen(
             onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
             onChapterSwipe = viewModel::chapterSwipe,
             onReorderChapters = viewModel::reorderChapters,
-            onChapterTranslatedTitleLongClick = { translatedTitleActionChapter = it },
+            onEditChapterTranslatedTitle = { item ->
+                viewModel.toggleSelection(item, false)
+                editTranslatedTitleChapterId = item.chapter.id
+            },
             onChapterSelected = viewModel::toggleSelection,
             onAllChapterSelected = viewModel::toggleAllSelection,
             onInvertSelection = viewModel::invertSelection,
@@ -291,47 +297,39 @@ class MangaScreen(
         if (showChapterTitleTranslationDialog) {
             ChapterTitleTranslationDialog(
                 onDismissRequest = { showChapterTitleTranslationDialog = false },
-                onExportCurrentManga = {
+                onExportCurrentManga = { format ->
                     showChapterTitleTranslationDialog = false
                     val fileName = successState.manga.title
                         .replace(Regex("[\\\\/:*?\"<>|]"), "_")
                         .take(80)
                         .ifBlank { "chapter_titles" }
-                    exportChapterTitles.launch("${fileName}_zh.json")
+                    when (format) {
+                        ChapterTitleTranslationFormat.JSON -> {
+                            exportChapterTitlesJson.launch("${fileName}_zh.${format.fileExtension}")
+                        }
+                        ChapterTitleTranslationFormat.CSV -> {
+                            exportChapterTitlesCsv.launch("${fileName}_zh.${format.fileExtension}")
+                        }
+                    }
                 },
                 onImportCurrentManga = {
                     showChapterTitleTranslationDialog = false
-                    importChapterTitles.launch(arrayOf("application/json", "text/plain"))
+                    // Some Android document providers expose JSON/CSV files as an unknown binary
+                    // MIME type. Keep the picker broad and let the importer validate the content.
+                    importChapterTitles.launch("*/*")
                 },
             )
         }
 
-        translatedTitleActionChapter?.let { item ->
-            ChapterTranslatedTitleActionsDialog(
-                chapter = item.chapter,
-                onDismissRequest = { translatedTitleActionChapter = null },
-                onEdit = {
-                    translatedTitleActionChapter = null
-                    editTranslatedTitleChapter = item.chapter
-                },
-                onCopyOriginalTitle = {
-                    context.copyToClipboard(item.chapter.name, item.chapter.name)
-                    translatedTitleActionChapter = null
-                },
-                onSelect = {
-                    viewModel.toggleSelection(item, !item.selected, true)
-                    translatedTitleActionChapter = null
-                },
-            )
-        }
-
-        editTranslatedTitleChapter?.let { chapter ->
+        editTranslatedTitleChapterId?.let { chapterId ->
+            val chapter = successState.chapters.firstOrNull { it.chapter.id == chapterId }?.chapter
+                ?: return@let
             EditChapterTranslatedTitleDialog(
                 chapter = chapter,
-                onDismissRequest = { editTranslatedTitleChapter = null },
+                onDismissRequest = { editTranslatedTitleChapterId = null },
                 onSave = { value ->
                     viewModel.updateChapterTranslatedTitle(chapter, value)
-                    editTranslatedTitleChapter = null
+                    editTranslatedTitleChapterId = null
                     context.toast(MR.strings.chapter_translated_title_saved)
                 },
             )

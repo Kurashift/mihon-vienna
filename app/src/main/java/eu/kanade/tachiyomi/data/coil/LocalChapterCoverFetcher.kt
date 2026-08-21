@@ -10,6 +10,7 @@ import coil3.key.Keyer
 import coil3.request.Options
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
+import tachiyomi.source.local.image.LOCAL_CHAPTER_COVER_CACHE_VERSION
 import tachiyomi.source.local.image.LocalChapterCover
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
@@ -29,7 +30,7 @@ class LocalChapterCoverFetcher(
                 // Include the DB-derived version so a freshly written custom cover is not
                 // shadowed by Coil's disk cache, which would otherwise serve the stale snapshot
                 // forever because the on-disk file name is stable.
-                diskCacheKey = "${file.name};${data.version}",
+                diskCacheKey = "${file.name};${data.version};$LOCAL_CHAPTER_COVER_CACHE_VERSION",
             ),
             mimeType = "image/webp",
             dataSource = DataSource.DISK,
@@ -49,6 +50,6 @@ class LocalChapterCoverFetcher(
 
 class LocalChapterCoverKeyer : Keyer<LocalChapterCover> {
     override fun key(data: LocalChapterCover, options: Options): String {
-        return "local-chapter-cover:${data.chapterId};${data.version}"
+        return "local-chapter-cover:${data.chapterId};${data.version};$LOCAL_CHAPTER_COVER_CACHE_VERSION"
     }
 }

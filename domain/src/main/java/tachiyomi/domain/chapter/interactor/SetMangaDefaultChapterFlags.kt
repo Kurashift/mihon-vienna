@@ -30,7 +30,11 @@ class SetMangaDefaultChapterFlags(
                     } else {
                         sortCloudChapterByAscendingOrDescending.get()
                     },
-                    displayMode = displayChapterByNameOrNumber.get(),
+                    displayMode = if (manga.source == 0L) {
+                        localChapterDisplayMode.get()
+                    } else {
+                        displayChapterByNameOrNumber.get()
+                    },
                 )
             }
         }
@@ -63,7 +67,11 @@ class SetMangaDefaultChapterFlags(
                 val unreadFilter = filterChapterByRead.get()
                 val downloadedFilter = filterChapterByDownloaded.get()
                 val bookmarkedFilter = filterChapterByBookmarked.get()
-                val displayMode = displayChapterByNameOrNumber.get()
+                val displayMode = if (isLocal) {
+                    localChapterDisplayMode.get()
+                } else {
+                    displayChapterByNameOrNumber.get()
+                }
 
                 val matches =
                     current and Manga.CHAPTER_UNREAD_MASK == unreadFilter and Manga.CHAPTER_UNREAD_MASK &&
@@ -89,6 +97,17 @@ class SetMangaDefaultChapterFlags(
                     )
                     true
                 }
+            }
+        }
+    }
+
+    suspend fun awaitDisplayModeIfChanged(manga: Manga): Boolean {
+        return withNonCancellableContext {
+            val displayMode = libraryPreferences.localChapterDisplayMode.get()
+            if (manga.displayMode == displayMode) {
+                false
+            } else {
+                setMangaChapterFlags.awaitSetDisplayMode(manga, displayMode)
             }
         }
     }

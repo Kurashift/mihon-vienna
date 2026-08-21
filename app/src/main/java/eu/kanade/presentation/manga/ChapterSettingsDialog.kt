@@ -78,9 +78,9 @@ fun ChapterSettingsDialog(
     TabbedDialog(
         onDismissRequest = onDismissRequest,
         tabTitles = listOf(
-            stringResource(MR.strings.action_filter),
-            stringResource(MR.strings.action_sort),
             stringResource(MR.strings.action_display),
+            stringResource(MR.strings.action_sort),
+            stringResource(MR.strings.action_filter),
         ),
         tabOverflowMenuContent = { closeMenu ->
             DropdownMenuItem(
@@ -106,16 +106,16 @@ fun ChapterSettingsDialog(
         ) {
             when (page) {
                 0 -> {
-                    FilterPage(
-                        downloadFilter = manga?.downloadedFilter ?: TriState.DISABLED,
-                        onDownloadFilterChanged = onDownloadFilterChanged
-                            .takeUnless { downloadedOnly },
-                        unreadFilter = manga?.unreadFilter ?: TriState.DISABLED,
-                        onUnreadFilterChanged = onUnreadFilterChanged,
-                        bookmarkedFilter = manga?.bookmarkedFilter ?: TriState.DISABLED,
-                        onBookmarkedFilterChanged = onBookmarkedFilterChanged,
-                        scanlatorFilterActive = scanlatorFilterActive,
-                        onScanlatorFilterClicked = onScanlatorFilterClicked,
+                    DisplayPage(
+                        displayMode = manga?.displayMode ?: 0,
+                        isLocal = manga?.isLocal() ?: false,
+                        chapterLayoutAvailable = chapterLayoutAvailable,
+                        chapterCoverGridEnabled = chapterCoverGridEnabled,
+                        onChapterLayoutChanged = { grid ->
+                            chapterCoverGridEnabled = grid
+                            basePreferences.localChapterCoverGridEnabled.set(grid)
+                        },
+                        onItemSelected = onDisplayModeChanged,
                     )
                 }
                 1 -> {
@@ -127,16 +127,16 @@ fun ChapterSettingsDialog(
                     )
                 }
                 2 -> {
-                    DisplayPage(
-                        displayMode = manga?.displayMode ?: 0,
-                        isLocal = manga?.isLocal() ?: false,
-                        chapterLayoutAvailable = chapterLayoutAvailable,
-                        chapterCoverGridEnabled = chapterCoverGridEnabled,
-                        onChapterLayoutChanged = { grid ->
-                            chapterCoverGridEnabled = grid
-                            basePreferences.localChapterCoverGridEnabled.set(grid)
-                        },
-                        onItemSelected = onDisplayModeChanged,
+                    FilterPage(
+                        downloadFilter = manga?.downloadedFilter ?: TriState.DISABLED,
+                        onDownloadFilterChanged = onDownloadFilterChanged
+                            .takeUnless { downloadedOnly },
+                        unreadFilter = manga?.unreadFilter ?: TriState.DISABLED,
+                        onUnreadFilterChanged = onUnreadFilterChanged,
+                        bookmarkedFilter = manga?.bookmarkedFilter ?: TriState.DISABLED,
+                        onBookmarkedFilterChanged = onBookmarkedFilterChanged,
+                        scanlatorFilterActive = scanlatorFilterActive,
+                        onScanlatorFilterClicked = onScanlatorFilterClicked,
                     )
                 }
             }
@@ -254,8 +254,9 @@ private fun ColumnScope.DisplayPage(
     ListGroupHeader(text = stringResource(MR.strings.chapter_display_title_section))
     val displayOptions = if (isLocal) {
         listOf(
-            MR.strings.show_title to Manga.CHAPTER_DISPLAY_NAME,
-            MR.strings.show_translated_title to Manga.CHAPTER_DISPLAY_TRANSLATED,
+            MR.strings.chapter_display_original_only to Manga.CHAPTER_DISPLAY_NAME,
+            MR.strings.chapter_display_translated_only to Manga.CHAPTER_DISPLAY_TRANSLATED_ONLY,
+            MR.strings.chapter_display_translated_and_original to Manga.CHAPTER_DISPLAY_TRANSLATED_AND_ORIGINAL,
             MR.strings.show_chapter_number to Manga.CHAPTER_DISPLAY_NUMBER,
         )
     } else {

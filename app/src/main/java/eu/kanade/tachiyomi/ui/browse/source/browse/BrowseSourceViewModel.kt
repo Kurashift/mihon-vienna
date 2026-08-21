@@ -50,9 +50,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -308,21 +307,42 @@ class BrowseSourceViewModel(
         }
         lastLocalDirectoryCheckAt = now
 
-        val signature = local.getMangaDirectorySignature() ?: return
+        var directorySnapshot = local.getMangaDirectorySnapshot() ?: return
+        var signature = directorySnapshot.signature
         val previous = observedLocalDirectorySignature
         if (previous == signature && localChapterCounts.value.isNotEmpty()) return
 
-        observedLocalDirectorySignature = signature
-        if (previous == null) {
-            val committed = basePreferences.localSourceDirectorySignature.get()
-            if (committed.isBlank()) {
-                basePreferences.localSourceDirectorySignature.set(signature)
-            } else if (signature != committed) {
-                localSourceChanged.value = true
+        val committed = basePreferences.localSourceDirectorySignature.get()
+        val listingUrls = local.listingSnapshot.value.allUrls.toSet()
+        val matchesListing = listingUrls.isNotEmpty() && directorySnapshot.urls == listingUrls
+        val differsFromBaseline = when {
+            matchesListing || directorySnapshot.fromListingFallback -> false
+            previous != null -> signature != previous
+            committed.isNotBlank() -> signature != committed
+            else -> false
+        }
+
+        if (differsFromBaseline) {
+            if (!localDirectoryChangeCanApplyImmediately(directorySnapshot.urls, listingUrls)) {
+                // A partial provider result can repeat identically. Confirm every missing folder
+                // before letting it invalidate the last known-good shelf snapshot.
+                directorySnapshot = local.getConfirmedMangaDirectorySnapshot() ?: return
+                signature = directorySnapshot.signature
             }
-        } else if (previous != signature) {
-            invalidatePagingSources()
-            localSourceChanged.value = true
+            val currentListingUrls = local.listingSnapshot.value.allUrls.toSet()
+            if (currentListingUrls.isEmpty() || directorySnapshot.urls != currentListingUrls) {
+                local.invalidateListing()
+                invalidatePagingSources()
+                localSourceChanged.value = true
+            } else {
+                basePreferences.localSourceDirectorySignature.set(signature)
+            }
+        } else if (committed.isBlank() || matchesListing) {
+            basePreferences.localSourceDirectorySignature.set(signature)
+        }
+
+        if (!differsFromBaseline || localSourceChanged.value) {
+            observedLocalDirectorySignature = signature
         }
         localChapterCounts.value = local.getChapterCounts()
     }
@@ -414,16 +434,25 @@ class BrowseSourceViewModel(
      * the source name in the toolbar so it stays in sync with the filter chips.
      */
     val currentViewMangaCount: StateFlow<Int> = if (source is LocalSource) {
-        combine(
+        val listingWithSnapshot = combine(
             state.map { it.listing }.distinctUntilChanged(),
+            source.listingSnapshot,
+        ) { listing, snapshot -> listing to snapshot }
+        combine(
+            listingWithSnapshot,
             progressContext,
             readingFilterInternal,
             markFilterInternal,
             screenVisible,
-        ) { listing, context, filter, markFilter, visible ->
+        ) { (listing, snapshot), context, filter, markFilter, visible ->
             if (visible) {
                 CountFilterArgs(
                     listing = listing,
+                    listingUrls = when (listing) {
+                        Listing.Popular -> snapshot.allUrls
+                        Listing.Latest -> snapshot.latestUrls
+                        is Listing.Search -> null
+                    },
                     readingFilter = filter,
                     context = context.toCountContext(filter, markFilter),
                 )
@@ -433,22 +462,14 @@ class BrowseSourceViewModel(
         }
             .filterNotNull()
             .distinctUntilChanged()
-            .flatMapLatest { (listing, filter, context) ->
-                flow {
-                    val local = source
-                    val urls = withIOContext {
-                        when (listing) {
-                            is Listing.Popular -> local.getPopularMangaUrls()
-                            is Listing.Latest -> local.getLatestMangaUrls()
-                            is Listing.Search -> local.getSearchMangaUrls(listing.query.orEmpty(), listing.filters)
-                        }
-                    }
-                    emit(
-                        urls.count { url ->
-                            context.matchesReadingFilter(filter, url) &&
-                                context.matchesMarkFilter(url)
-                        },
-                    )
+            .mapLatest { args ->
+                val urls = args.listingUrls ?: withIOContext {
+                    val listing = args.listing as Listing.Search
+                    source.getSearchMangaUrls(listing.query.orEmpty(), listing.filters)
+                }
+                urls.count { url ->
+                    args.context.matchesReadingFilter(args.readingFilter, url) &&
+                        args.context.matchesMarkFilter(url)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
@@ -954,18 +975,22 @@ class BrowseSourceViewModel(
                     }
                 }
                 local.markChaptersSynced(scan, successful)
-                local.refreshListingCovers()
-                invalidatePagingSources()
-                val hasFailures = successful.size < total
+                val listingRefreshed = local.refreshListing(scan)
+                if (listingRefreshed) {
+                    invalidatePagingSources()
+                }
+                val hasFailures = successful.size < total || !listingRefreshed
                 if (!hasFailures) {
                     basePreferences.localSourceSyncMtime.set(local.getBaseDirectoryLastModified())
                     local.getMangaDirectorySignature()?.let(basePreferences.localSourceDirectorySignature::set)
                 }
                 localSourceChanged.value = hasFailures
+                val changedDirectoryCount = (scan.changedMangaUrls + scan.removedMangaUrls).size
                 chapterRefreshEvents.send(
                     ChapterRefreshResult(
-                        changedManga = total,
+                        changedManga = changedDirectoryCount,
                         newChapters = totalNew,
+                        storageUnavailable = !listingRefreshed,
                     ),
                 )
             } finally {
@@ -976,64 +1001,109 @@ class BrowseSourceViewModel(
     }
 
     private suspend fun relocateMovedLocalChapters(scan: tachiyomi.source.local.LocalChapterSyncScan) {
-        val relevantMangaUrls = scan.changedMangaUrls + scan.removedMangaUrls
-        if (relevantMangaUrls.isEmpty()) return
+        if (scan.chapterFileNamesByMangaUrl.isEmpty()) return
 
-        val mangaByUrl = relevantMangaUrls.mapNotNull { mangaUrl ->
-            mangaRepository.getMangaByUrlAndSourceId(mangaUrl, sourceId)?.let { mangaUrl to it }
-        }.toMap(mutableMapOf())
-        val storedChapters = mangaByUrl.flatMap { (mangaUrl, manga) ->
-            chapterRepository.getChapterByMangaId(manga.id).map { chapter ->
+        val storedMangas = mangaRepository.getMangaProgressBySource(sourceId)
+        val mangaUrlById = storedMangas.associate { it.mangaId to it.url }
+        val mangaByUrl = mutableMapOf<String, Manga>()
+        val storedChapters = chapterRepository
+            .getChaptersByMangaIds(mangaUrlById.keys.toList())
+            .mapNotNull { chapter ->
+                val mangaUrl = mangaUrlById[chapter.mangaId] ?: return@mapNotNull null
                 StoredLocalChapter(
                     chapterId = chapter.id,
-                    mangaId = manga.id,
+                    mangaId = chapter.mangaId,
                     mangaUrl = mangaUrl,
                     fileName = chapter.url.substringAfter('/', chapter.url),
                 )
             }
-        }
         val currentChangedFiles = scan.chapterFileNamesByMangaUrl
             .filterKeys(scan.changedMangaUrls::contains)
-        val candidates = detectLocalChapterMoves(
-            storedChapters = storedChapters,
-            previousFileNamesByMangaUrl = scan.previousChapterFileNamesByMangaUrl,
-            currentFileNamesByMangaUrl = currentChangedFiles,
-        )
+        val candidates = (
+            detectLocalChapterMoves(
+                storedChapters = storedChapters,
+                previousFileNamesByMangaUrl = scan.previousChapterFileNamesByMangaUrl,
+                currentFileNamesByMangaUrl = currentChangedFiles,
+            ) + detectStaleLocalChapterMoves(
+                storedChapters = storedChapters,
+                currentFileNamesByMangaUrl = scan.chapterFileNamesByMangaUrl,
+            )
+            ).distinctBy(LocalChapterMoveCandidate::chapterId)
         if (candidates.isEmpty()) return
 
         val coverManager = Injekt.get<LocalChapterCoverManager>()
-        val resolvedMoves = candidates.map { candidate ->
-            val targetManga = mangaByUrl[candidate.newMangaUrl] ?: networkToLocalManga(
-                Manga.create().copy(
-                    source = sourceId,
-                    url = candidate.newMangaUrl,
-                    title = candidate.newMangaUrl,
-                ),
-            ).also { mangaByUrl[candidate.newMangaUrl] = it }
+        val historyByMangaId = mutableMapOf<Long, Map<Long, java.util.Date?>>()
+        suspend fun readAt(mangaId: Long, chapterId: Long): java.util.Date? {
+            val histories = historyByMangaId[mangaId] ?: historyRepository
+                .getHistoryByMangaId(mangaId)
+                .associate { it.chapterId to it.readAt }
+                .also { historyByMangaId[mangaId] = it }
+            return histories[chapterId]
+        }
+        candidates.forEach { candidate ->
+            val targetManga = mangaByUrl[candidate.newMangaUrl] ?: (
+                mangaRepository.getMangaByUrlAndSourceId(candidate.newMangaUrl, sourceId)
+                    ?: networkToLocalManga(
+                        Manga.create().copy(
+                            source = sourceId,
+                            url = candidate.newMangaUrl,
+                            title = candidate.newMangaUrl,
+                        ),
+                    )
+                ).also { mangaByUrl[candidate.newMangaUrl] = it }
             val oldChapterUrl = "${candidate.oldMangaUrl}/${candidate.fileName}"
             val newChapterUrl = "${candidate.newMangaUrl}/${candidate.fileName}"
+            val chapter = chapterRepository.getChapterById(candidate.chapterId) ?: return@forEach
+            val duplicate = candidate.duplicateChapterId
+                ?.let { chapterRepository.getChapterById(it) }
+                ?.takeIf { it.mangaId == targetManga.id && it.url == newChapterUrl }
+            if (duplicate != null) {
+                // Keep both files until the database transaction succeeds. A failed merge must
+                // not delete the duplicate chapter's only custom cover.
+                coverManager.copyCustomCover(chapter.id, duplicate.id)
+            }
             coverManager.migrateLegacyCover(
                 chapterId = candidate.chapterId,
                 oldChapterUrl = oldChapterUrl,
                 newChapterUrl = newChapterUrl,
             )
-            candidate to targetManga
-        }
-        chapterRepository.relocateAll(
-            resolvedMoves.map { (candidate, targetManga) ->
-                ChapterUpdate(
-                    id = candidate.chapterId,
-                    mangaId = targetManga.id,
-                    url = "${candidate.newMangaUrl}/${candidate.fileName}",
+            if (duplicate == null) {
+                chapterRepository.relocateAll(
+                    listOf(
+                        ChapterUpdate(
+                            id = candidate.chapterId,
+                            mangaId = targetManga.id,
+                            url = newChapterUrl,
+                        ),
+                    ),
                 )
-            },
-        )
-        resolvedMoves.forEach { (candidate, targetManga) ->
-            mangaMarkStore.relocate(
-                chapterId = candidate.chapterId,
-                mangaId = targetManga.id,
-                mangaTitle = targetManga.title,
-            )
+                mangaMarkStore.relocate(
+                    chapterId = candidate.chapterId,
+                    mangaId = targetManga.id,
+                    mangaTitle = targetManga.title,
+                )
+            } else {
+                val oldReadAt = readAt(chapter.mangaId, chapter.id)
+                val duplicateReadAt = readAt(duplicate.mangaId, duplicate.id)
+                chapterRepository.mergeRelocatedChapter(
+                    chapterUpdate = mergeMovedLocalChapter(
+                        chapter = chapter,
+                        duplicate = duplicate,
+                        targetMangaId = targetManga.id,
+                        targetUrl = newChapterUrl,
+                        preferDuplicateProgress = duplicateReadAt != null &&
+                            (oldReadAt == null || duplicateReadAt.after(oldReadAt)),
+                    ),
+                    duplicateChapterId = duplicate.id,
+                )
+                coverManager.deleteCustomCover(duplicate.id)
+                mangaMarkStore.merge(
+                    chapterId = candidate.chapterId,
+                    duplicateChapterId = duplicate.id,
+                    mangaId = targetManga.id,
+                    mangaTitle = targetManga.title,
+                )
+            }
         }
     }
 
@@ -1167,6 +1237,7 @@ class BrowseSourceViewModel(
     @Immutable
     private data class CountFilterArgs(
         val listing: Listing,
+        val listingUrls: List<String>?,
         val readingFilter: ReadingFilter,
         val context: CountContext,
     )
@@ -1207,3 +1278,8 @@ class BrowseSourceViewModel(
         val isUserQuery get() = listing is Listing.Search && !listing.query.isNullOrEmpty()
     }
 }
+
+internal fun localDirectoryChangeCanApplyImmediately(
+    observedUrls: Set<String>,
+    listingUrls: Set<String>,
+): Boolean = listingUrls.isNotEmpty() && observedUrls.containsAll(listingUrls)

@@ -1,13 +1,12 @@
 package eu.kanade.presentation.components
 
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
@@ -18,6 +17,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -205,27 +205,31 @@ fun AppBarActions(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    actions.filterIsInstance<AppBar.Action>().map {
-        TooltipBox(
-            positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-            tooltip = {
-                PlainTooltip {
-                    Text(it.title)
+    actions.filterNot { it is AppBar.OverflowAction }.forEach { action ->
+        when (action) {
+            is AppBar.Action -> AppBarActionButton(action)
+            is AppBar.MenuAction -> {
+                var expanded by remember(action.title) { mutableStateOf(false) }
+                Box {
+                    AppBarActionButton(
+                        action = AppBar.Action(
+                            title = action.title,
+                            icon = action.icon,
+                            iconTint = action.iconTint,
+                            onClick = { expanded = true },
+                            enabled = action.enabled,
+                        ),
+                    )
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                        offset = DpOffset(0.dp, 0.dp),
+                    ) {
+                        action.content.invoke(this, { expanded = false })
+                    }
                 }
-            },
-            state = rememberTooltipState(),
-            focusable = false,
-        ) {
-            IconButton(
-                onClick = it.onClick,
-                enabled = it.enabled,
-            ) {
-                Icon(
-                    imageVector = it.icon,
-                    tint = it.iconTint ?: LocalContentColor.current,
-                    contentDescription = it.title,
-                )
             }
+            is AppBar.OverflowAction -> Unit
         }
     }
 
@@ -259,23 +263,46 @@ fun AppBarActions(
                 minWidth = 0.dp,
             ) {
                 overflowActions.forEach { action ->
-                    Box(
-                        modifier = Modifier
-                            .clickable {
-                                action.onClick()
-                                showMenu = false
-                            }
-                            .defaultMinSize(minHeight = 48.dp)
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Text(
-                            text = action.title,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = action.title,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        },
+                        onClick = {
+                            action.onClick()
+                            showMenu = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AppBarActionButton(action: AppBar.Action) {
+    TooltipBox(
+        positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = {
+            PlainTooltip {
+                Text(action.title)
+            }
+        },
+        state = rememberTooltipState(),
+        focusable = false,
+    ) {
+        IconButton(
+            onClick = action.onClick,
+            enabled = action.enabled,
+        ) {
+            Icon(
+                imageVector = action.icon,
+                tint = action.iconTint ?: LocalContentColor.current,
+                contentDescription = action.title,
+            )
         }
     }
 }
@@ -470,6 +497,14 @@ sealed interface AppBar {
         val iconTint: Color? = null,
         val onClick: () -> Unit,
         val enabled: Boolean = true,
+    ) : AppBarAction
+
+    data class MenuAction(
+        val title: String,
+        val icon: ImageVector,
+        val iconTint: Color? = null,
+        val enabled: Boolean = true,
+        val content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
     ) : AppBarAction
 
     data class OverflowAction(

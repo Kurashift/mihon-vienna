@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.hippo.unifile.UniFile
-import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
+import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +28,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
 import tachiyomi.source.local.io.LocalSourceFileSystem
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
@@ -137,6 +138,26 @@ class LocalChapterCoverManager(
         }
     }
 
+    suspend fun exportCustom(chapterId: Long): ByteArray? = withContext(Dispatchers.IO) {
+        customFile(chapterId)
+            .takeIf { it.isValidCover() && it.length() <= MAX_CUSTOM_COVER_BACKUP_BYTES }
+            ?.readBytes()
+    }
+
+    suspend fun restoreCustom(chapterId: Long, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        if (data.isEmpty() || data.size > MAX_CUSTOM_COVER_BACKUP_BYTES) return@withContext false
+        val target = customFile(chapterId)
+        val lock = keyLocks.getOrPut(target.name) { Mutex() }
+        try {
+            lock.withLock {
+                val bitmap = decodeCopiedThumbnail(ByteArrayInputStream(data)) ?: return@withLock false
+                writeCover(bitmap, target) != null
+            }
+        } finally {
+            keyLocks.remove(target.name, lock)
+        }
+    }
+
     suspend fun migrateLegacyCover(chapterId: Long, oldChapterUrl: String, newChapterUrl: String) =
         withContext(Dispatchers.IO) {
             val custom = customFile(chapterId)
@@ -160,6 +181,27 @@ class LocalChapterCoverManager(
             }
         }
 
+    suspend fun copyCustomCover(chapterId: Long, duplicateChapterId: Long) = withContext(Dispatchers.IO) {
+        val target = customFile(chapterId)
+        val duplicate = customFile(duplicateChapterId)
+        if (!duplicate.isValidCover()) return@withContext
+        val lock = keyLocks.getOrPut(target.name) { Mutex() }
+        try {
+            lock.withLock {
+                if (!target.isValidCover()) {
+                    target.parentFile?.mkdirs()
+                    duplicate.copyTo(target, overwrite = false)
+                }
+            }
+        } finally {
+            keyLocks.remove(target.name, lock)
+        }
+    }
+
+    suspend fun deleteCustomCover(chapterId: Long) = withContext(Dispatchers.IO) {
+        customFile(chapterId).delete()
+    }
+
     suspend fun generateAll(
         onProgress: suspend (completed: Int, total: Int) -> Unit = { _, _ -> },
     ): LocalChapterCoverGenerationResult = withContext(Dispatchers.IO) {
@@ -173,8 +215,7 @@ class LocalChapterCoverManager(
             .asSequence()
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .flatMap { mangaDirectory ->
-                mangaDirectory.listFiles()
-                    .orEmpty()
+                fileSystem.getFilesInDirectory(mangaDirectory)
                     .asSequence()
                     .filter(::isSupportedChapter)
                     .map { chapterFile ->
@@ -301,11 +342,10 @@ class LocalChapterCoverManager(
     }
 
     private fun decodeDirectoryCover(directory: UniFile): Bitmap? {
-        val image = directory.listFiles()
-            .orEmpty()
+        val image = fileSystem.getFreshFilesInDirectory(directory)
             .filter { !it.isDirectory }
             .sortedWith { first, second ->
-                first.name.orEmpty().compareToCaseInsensitiveNaturalOrder(second.name.orEmpty())
+                first.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(second.name.orEmpty())
             }
             .firstOrNull { ImageUtil.isImage(it.name) { it.openInputStream() } }
             ?: return null
@@ -318,7 +358,7 @@ class LocalChapterCoverManager(
                 entries
                     .filter { it.isFile }
                     .sortedWith { first, second ->
-                        first.name.compareToCaseInsensitiveNaturalOrder(second.name)
+                        first.name.compareToCaseInsensitiveNaturalPageOrder(second.name)
                     }
                     .firstOrNull { ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
             } ?: return@use null
@@ -448,7 +488,7 @@ class LocalChapterCoverManager(
     private fun ensureCoverDirectoryVersion() {
         synchronized(coverVersionLock) {
             if (coverVersionChecked) return
-            val expectedVersion = "$TARGET_WIDTH-$TARGET_HEIGHT-$WEBP_QUALITY"
+            val expectedVersion = "$TARGET_WIDTH-$TARGET_HEIGHT-$WEBP_QUALITY-$LOCAL_CHAPTER_COVER_CACHE_VERSION"
             val currentVersion = if (coverVersionFile.isFile) {
                 runCatching { coverVersionFile.readText() }.getOrNull()
             } else {
@@ -474,8 +514,11 @@ class LocalChapterCoverManager(
         private const val TARGET_HEIGHT = 672
         private const val WEBP_QUALITY = 80
         private const val MAX_CONCURRENT_GENERATIONS = 2
+        private const val MAX_CUSTOM_COVER_BACKUP_BYTES = 10 * 1024 * 1024
     }
 }
+
+const val LOCAL_CHAPTER_COVER_CACHE_VERSION = 2
 
 internal fun localCustomChapterCoverFileName(chapterId: Long): String = "chapter-$chapterId.webp"
 

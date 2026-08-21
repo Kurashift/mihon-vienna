@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.backup.models
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.protobuf.ProtoNumber
 import mihon.core.common.extensions.JsonObjectEmptyBytes
@@ -29,7 +30,11 @@ class BackupChapter(
     @ProtoNumber(14) var totalPages: Long = 0,
     @ProtoNumber(15) var customOrder: Long = 0,
     @ProtoNumber(16) var translatedName: String? = null,
+    @ProtoNumber(17) var customCover: ByteArray? = null,
 ) {
+    @Transient
+    var chapterId: Long = 0
+
     fun toChapterImpl(): Chapter {
         val normalizedLastPageRead = normalizeRestoredLastPageRead(read, lastPageRead, totalPages)
         return Chapter.create().copy(
@@ -63,7 +68,7 @@ internal fun normalizeRestoredLastPageRead(read: Boolean, lastPageRead: Long, to
 }
 
 val backupChapterMapper = {
-        _: Long,
+        chapterId: Long,
         _: Long,
         url: String,
         name: String,
@@ -100,5 +105,7 @@ val backupChapterMapper = {
         totalPages = totalPages,
         customOrder = customOrder,
         translatedName = translatedName,
-    )
+    ).apply {
+        this.chapterId = chapterId
+    }
 }

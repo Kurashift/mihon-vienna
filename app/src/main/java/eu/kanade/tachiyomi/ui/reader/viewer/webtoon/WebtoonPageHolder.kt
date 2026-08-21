@@ -20,6 +20,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.dpToPx
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.collectLatest
@@ -84,6 +85,7 @@ class WebtoonPageHolder(
      * Job for loading the page.
      */
     private var loadJob: Job? = null
+    private val bindingGeneration = PageBindingGeneration()
 
     init {
         refreshLayoutParams()
@@ -97,11 +99,12 @@ class WebtoonPageHolder(
      * Binds the given [page] with this view holder, subscribing to its state.
      */
     fun bind(page: ReaderPage) {
+        val generation = bindingGeneration.next()
         frame.recycle()
         this.page = page
         isImageLayoutReady = false
         loadJob?.cancel()
-        loadJob = scope.launch { loadPageAndProcessStatus() }
+        loadJob = scope.launch { loadPageAndProcessStatus(page, generation) }
         refreshLayoutParams()
     }
 
@@ -132,8 +135,10 @@ class WebtoonPageHolder(
      * Called when the view is recycled and added to the view pool.
      */
     override fun recycle() {
+        bindingGeneration.invalidate()
         loadJob?.cancel()
         loadJob = null
+        page = null
 
         removeErrorLayout()
         frame.recycle()
@@ -149,25 +154,27 @@ class WebtoonPageHolder(
      * Otherwise, this function does not return. It will continue to process status changes until
      * the Job is cancelled.
      */
-    private suspend fun loadPageAndProcessStatus() {
-        val page = page ?: return
+    private suspend fun loadPageAndProcessStatus(page: ReaderPage, generation: Long) {
         val loader = page.chapter.pageLoader ?: return
         supervisorScope {
             launchIO {
                 loader.loadPage(page)
             }
             page.statusFlow.collectLatest { state ->
+                if (!isCurrentBinding(page, generation)) return@collectLatest
                 when (state) {
                     Page.State.Queue -> setQueued()
                     Page.State.LoadPage -> setLoading()
                     Page.State.DownloadImage -> {
                         setDownloading()
                         page.progressFlow.collectLatest { value ->
-                            progressIndicator.setProgress(value)
+                            if (isCurrentBinding(page, generation)) {
+                                progressIndicator.setProgress(value)
+                            }
                         }
                     }
-                    Page.State.Ready -> setImage()
-                    is Page.State.Error -> setError(state.error)
+                    Page.State.Ready -> setImage(page, generation)
+                    is Page.State.Error -> if (isCurrentBinding(page, generation)) setError(state.error)
                 }
             }
         }
@@ -203,10 +210,10 @@ class WebtoonPageHolder(
     /**
      * Called when the page is ready.
      */
-    private suspend fun setImage() {
+    private suspend fun setImage(page: ReaderPage, generation: Long) {
         progressIndicator.setProgress(0)
 
-        val streamFn = page?.stream ?: return
+        val streamFn = page.stream ?: return
 
         try {
             val (source, isAnimated) = withIOContext {
@@ -215,6 +222,10 @@ class WebtoonPageHolder(
                 source to isAnimated
             }
             withUIContext {
+                if (!isCurrentBinding(page, generation)) {
+                    source.close()
+                    return@withUIContext
+                }
                 frame.setImage(
                     source,
                     isAnimated,
@@ -227,11 +238,17 @@ class WebtoonPageHolder(
                 removeErrorLayout()
             }
         } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            if (!isCurrentBinding(page, generation)) return
             logcat(LogPriority.ERROR, e)
             withUIContext {
-                setError(e)
+                if (isCurrentBinding(page, generation)) setError(e)
             }
         }
+    }
+
+    private fun isCurrentBinding(page: ReaderPage, generation: Long): Boolean {
+        return bindingGeneration.isCurrent(generation) && this.page === page
     }
 
     private fun process(imageSource: BufferedSource): BufferedSource {

@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
+import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,6 +21,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
@@ -89,6 +92,44 @@ internal data class LocalChapterFolderState(
     val chapterFileNames: Set<String>?,
 )
 
+data class LocalListingSnapshot(
+    val allUrls: List<String> = emptyList(),
+    val latestUrls: List<String> = emptyList(),
+)
+
+data class LocalMangaDirectorySnapshot(
+    val urls: Set<String>,
+    val signature: String,
+    val fromListingFallback: Boolean,
+)
+
+internal fun chapterFileSetChanged(
+    existingChapterUrls: Collection<String>,
+    currentChapterUrls: Set<String>,
+    isAccessible: Boolean,
+    isConfirmedEmpty: Boolean,
+): Boolean {
+    if (!isAccessible) return false
+    if (currentChapterUrls.isEmpty() && existingChapterUrls.isNotEmpty() && !isConfirmedEmpty) return false
+    return currentChapterUrls != existingChapterUrls.toSet()
+}
+
+private const val MAX_CONCURRENT_DIRECTORY_REMOVAL_CHECKS = 16
+
+internal suspend fun confirmMissingLocalMangaDirectoriesGone(
+    missingNames: Set<String>,
+    directoryExists: suspend (String) -> Boolean,
+): Boolean = coroutineScope {
+    val semaphore = Semaphore(MAX_CONCURRENT_DIRECTORY_REMOVAL_CHECKS)
+    missingNames.map { name ->
+        async {
+            semaphore.withPermit {
+                runCatching { !directoryExists(name) }.getOrDefault(false)
+            }
+        }
+    }.awaitAll().all { it }
+}
+
 class LocalSource(
     private val context: Context,
     private val fileSystem: LocalSourceFileSystem,
@@ -101,11 +142,28 @@ class LocalSource(
     @Volatile
     private var cachedListing: List<LocalMangaEntry>? = null
 
+    private val listingSnapshotInternal = MutableStateFlow(LocalListingSnapshot())
+    val listingSnapshot: StateFlow<LocalListingSnapshot> = listingSnapshotInternal
+
     @Volatile
     private var cachedListingTime: Long = 0
 
     @Volatile
+    private var activeBaseUri: String? = fileSystem.getBaseDirectoryIdentityUri()
+
+    @Volatile
+    private var cachedListingBaseUri: String? = activeBaseUri
+
+    private val baseIdentityLock = Any()
+
+    @Volatile
     private var cachedBaseDirLastModified: Long = -1
+
+    @Volatile
+    private var listingInvalidated = false
+
+    @Volatile
+    private var lastListingRefreshAttempt = 0L
 
     private val listingMutex = Mutex()
 
@@ -137,6 +195,9 @@ class LocalSource(
     @Volatile
     private var cachedChapterNamesBaseDirLastModified: Long = -1
 
+    @Volatile
+    private var cachedChapterNamesBaseUri: String? = null
+
     private val chapterNamesMutex = Mutex()
 
     private val listingIndexFile: File by lazy {
@@ -162,6 +223,9 @@ class LocalSource(
     @Volatile
     private var cachedChapterIndex: Map<String, ChapterIndex>? = null
 
+    @Volatile
+    private var cachedChapterIndexBaseUri: String? = null
+
     private val chapterIndexMutex = Mutex()
     private val chapterIndexBuildMutexes = Array(MAX_CONCURRENT_CHAPTER_INDEX_BUILDS) { Mutex() }
     private val chapterIndexScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -180,11 +244,69 @@ class LocalSource(
         true,
     )
 
+    private fun ensureBaseDirectoryIdentity() {
+        val currentBaseUri = fileSystem.getBaseDirectoryIdentityUri()
+        if (activeBaseUri == currentBaseUri) return
+        synchronized(baseIdentityLock) {
+            if (activeBaseUri == currentBaseUri) return
+            activeBaseUri = currentBaseUri
+            cachedListing = null
+            cachedListingBaseUri = currentBaseUri
+            cachedListingTime = 0L
+            cachedBaseDirLastModified = -1L
+            cachedDerivedListing = null
+            listingInvalidated = false
+            lastListingRefreshAttempt = 0L
+            cachedBaseDirectorySnapshot = null
+            cachedBaseDirectorySnapshotTime = 0L
+            listingSnapshotInternal.value = LocalListingSnapshot()
+            cachedChapterNames = null
+            cachedChapterNamesTime = 0L
+            cachedChapterNamesBaseDirLastModified = -1L
+            cachedChapterNamesBaseUri = currentBaseUri
+            chapterIndexSaveJob?.cancel()
+            chapterIndexSaveJob = null
+            cachedChapterIndex = null
+            cachedChapterIndexBaseUri = currentBaseUri
+            chapterIndexDirty = false
+        }
+    }
+
     private suspend fun getListing(): List<LocalMangaEntry> = withIOContext {
+        ensureBaseDirectoryIdentity()
         val now = System.currentTimeMillis()
+
+        // The persisted listing is the local library's startup snapshot. Render it immediately;
+        // the browse screen checks the directory signature in the background and invalidates this
+        // cache only when manga folders were actually added, removed, or renamed.
+        cachedListing?.takeIf {
+            cachedListingBaseUri == activeBaseUri &&
+            !listingInvalidated && now - cachedListingTime < LISTING_MAX_AGE.inWholeMilliseconds
+        }
+            ?.let { return@withIOContext it }
+        if (cachedListing == null && !listingInvalidated) {
+            val baseUri = fileSystem.getBaseDirectoryIdentityUri()
+            val persisted = loadListingIndex(baseUri)
+                ?.takeIf { it.entries.isNotEmpty() && now - it.builtAt in 0 until LISTING_MAX_AGE.inWholeMilliseconds }
+                ?: recoverListingIndexFromChapterNames(baseUri, now)
+            persisted?.let {
+                val entries = it.toListingEntries()
+                cachedListing = entries
+                cachedListingBaseUri = baseUri
+                publishListingSnapshot(entries)
+                cachedListingTime = now
+                cachedBaseDirLastModified = it.baseDirLastModified
+                return@withIOContext entries
+            }
+        }
+
+        cachedListing?.takeIf {
+            listingInvalidated && now - lastListingRefreshAttempt < LISTING_RETRY_COOLDOWN.inWholeMilliseconds
+        }?.let { return@withIOContext it }
+        if (listingInvalidated) lastListingRefreshAttempt = now
+
         val snapshot = getBaseDirectorySnapshot()
-        val baseDirectory = snapshot.directory
-        val baseUri = baseDirectory?.uri?.toString()
+        val baseUri = fileSystem.getBaseDirectoryIdentityUri()
         val baseDirLastModified = snapshot.lastModified
 
         val cached = cachedListing
@@ -211,6 +333,8 @@ class LocalSource(
             if (persisted != null) {
                 val entries = persisted.toListingEntries()
                 cachedListing = entries
+                cachedListingBaseUri = baseUri
+                publishListingSnapshot(entries)
                 cachedListingTime = lockedNow
                 cachedBaseDirLastModified = baseDirLastModified
                 return@withLock entries
@@ -226,9 +350,19 @@ class LocalSource(
         }
     }
 
+    /** Forces the next pager load to rebuild the listing after a confirmed directory change. */
+    fun invalidateListing() {
+        listingInvalidated = true
+        cachedDerivedListing = null
+        lastListingRefreshAttempt = 0L
+        cachedBaseDirectorySnapshot = null
+        cachedBaseDirectorySnapshotTime = 0L
+    }
+
     private suspend fun getBaseDirectorySnapshot(
         forceRefresh: Boolean = false,
     ): LocalSourceFileSystem.DirectorySnapshot {
+        ensureBaseDirectoryIdentity()
         val now = System.currentTimeMillis()
         val cached = cachedBaseDirectorySnapshot
         if (!forceRefresh && cached != null && now - cachedBaseDirectorySnapshotTime < BASE_SNAPSHOT_CACHE_MILLIS) {
@@ -260,6 +394,7 @@ class LocalSource(
             delay(retryDelay)
             snapshot = fileSystem.getBaseDirectorySnapshot()
         }
+
         return snapshot
     }
 
@@ -279,22 +414,34 @@ class LocalSource(
     }
 
     /**
-     * Rebuilds the in-memory and persisted listing, forcing cover discovery for every manga but
-     * reusing cached chapter metadata where the manga directory is unchanged. Used by the manual
-     * pull-to-refresh path so local covers visibly refresh without rescanning every archive.
+     * Rebuilds the shelf from the same reliable chapter scan used by manual refresh. This keeps
+     * additions, deletions, empty folders, counts, and paging totals on one authoritative result
+     * without doing a second full-library cover pass.
      */
-    suspend fun refreshListingCovers() = withIOContext {
+    suspend fun refreshListing(scan: LocalChapterSyncScan): Boolean = withIOContext {
+        if (!scan.isReliable) return@withIOContext false
         listingMutex.withLock {
             val snapshot = getBaseDirectorySnapshot(forceRefresh = true)
-            if (!snapshot.isAccessible) return@withLock
-            val baseUri = snapshot.directory?.uri?.toString()
+            if (!snapshot.isAccessible) return@withLock false
+            val snapshotNames = snapshot.files
+                .asSequence()
+                .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
+                .mapNotNull { it.name }
+                .toSet()
+            if (!snapshotNames.containsAll(scan.chapterFileNamesByMangaUrl.keys)) {
+                return@withLock false
+            }
+            val baseUri = fileSystem.getBaseDirectoryIdentityUri()
             buildListing(
                 baseFiles = snapshot.files,
                 baseUri = baseUri,
                 now = System.currentTimeMillis(),
                 baseDirLastModified = snapshot.lastModified,
-                forceCoverRefresh = true,
+                scannedChapterFileNames = scan.chapterFileNamesByMangaUrl,
+                forceChapterRefreshUrls = scan.changedMangaUrls,
+                allowEmptyListing = true,
             )
+            true
         }
     }
 
@@ -338,26 +485,31 @@ class LocalSource(
         baseUri: String?,
         now: Long,
         baseDirLastModified: Long,
-        forceCoverRefresh: Boolean = false,
+        scannedChapterFileNames: Map<String, Set<String>>? = null,
+        forceChapterRefreshUrls: Set<String> = emptySet(),
+        allowEmptyListing: Boolean = false,
     ): List<LocalMangaEntry> {
         val index = if (baseUri != null) loadListingIndex(baseUri) else null
 
         val dirs = baseFiles
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
+            .filter { dir -> shouldIncludeLocalMangaDirectory(dir.name.orEmpty(), scannedChapterFileNames) }
             .distinctBy { it.name }
 
         if (
+            !allowEmptyListing &&
             shouldReuseListingAfterUnexpectedEmptyScan(
                 scannedDirectoryCount = dirs.size,
-                scannedBaseDirLastModified = baseDirLastModified,
                 persistedEntryCount = index?.entries?.size ?: 0,
-                persistedBaseDirLastModified = index?.baseDirLastModified ?: -1L,
             )
         ) {
             val entries = index!!.toListingEntries()
             cachedListing = entries
+            cachedListingBaseUri = baseUri
+            publishListingSnapshot(entries)
             cachedListingTime = now
             cachedBaseDirLastModified = baseDirLastModified
+            listingInvalidated = false
             return entries
         }
 
@@ -369,14 +521,15 @@ class LocalSource(
                         val name = dir.name.orEmpty()
                         val dirLastModified = dir.lastModified()
                         val indexed = index?.entries?.get(name)
-                        val dirUnchanged = indexed != null && indexed.dirLastModified == dirLastModified
-                        val coverUri = if (dirUnchanged && !forceCoverRefresh) {
+                        val directoryMetadataUnchanged = indexed != null && indexed.dirLastModified == dirLastModified
+                        val coverUri = if (directoryMetadataUnchanged) {
                             indexed.coverUri
                         } else {
                             coverManager.find(name)?.uri?.toString()
                         }
-                        val chapterStats = if (
-                            dirUnchanged &&
+                        val measuredChapterStats = if (
+                            directoryMetadataUnchanged &&
+                            name !in forceChapterRefreshUrls &&
                             indexed.chapterCount >= 0 &&
                             indexed.latestChapterModified > 0
                         ) {
@@ -384,6 +537,12 @@ class LocalSource(
                         } else {
                             getChapterListingStats(dir)
                         }
+                        val chapterStats = measuredChapterStats.copy(
+                            count = resolvedLocalChapterCount(
+                                scannedChapterFiles = scannedChapterFileNames?.get(name),
+                                measuredChapterCount = measuredChapterStats.count,
+                            ),
+                        )
                         name to ListingIndexEntry(
                             dirLastModified = dirLastModified,
                             coverUri = coverUri,
@@ -395,7 +554,9 @@ class LocalSource(
             }.awaitAll()
         }
 
-        val entries = results.map { (name, indexed) ->
+        val nonEmptyResults = results.filter { (_, indexed) -> indexed.chapterCount > 0 }
+
+        val entries = nonEmptyResults.map { (name, indexed) ->
             LocalMangaEntry(
                 title = name,
                 url = name,
@@ -410,7 +571,7 @@ class LocalSource(
             saveListingIndex(
                 ListingIndex(
                     baseUri = baseUri,
-                    entries = results.toMap(),
+                    entries = nonEmptyResults.toMap(),
                     baseDirLastModified = baseDirLastModified,
                     builtAt = now,
                 ),
@@ -418,9 +579,21 @@ class LocalSource(
         }
 
         cachedListing = entries
+        cachedListingBaseUri = baseUri
+        cachedDerivedListing = null
+        publishListingSnapshot(entries)
         cachedListingTime = now
         cachedBaseDirLastModified = baseDirLastModified
+        listingInvalidated = false
         return entries
+    }
+
+    private fun publishListingSnapshot(entries: List<LocalMangaEntry>) {
+        val latestLimit = System.currentTimeMillis() - LATEST_THRESHOLD
+        listingSnapshotInternal.value = LocalListingSnapshot(
+            allUrls = entries.map(LocalMangaEntry::url),
+            latestUrls = entries.filter { it.latestChapterModified >= latestLimit }.map(LocalMangaEntry::url),
+        )
     }
 
     private fun updatePersistedListingCover(mangaUrl: String, coverUri: String?) {
@@ -474,6 +647,47 @@ class LocalSource(
             )
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Failed to load local source listing index" }
+            null
+        }
+    }
+
+    /**
+     * Repairs an empty listing index from the older chapter-name index. This path is intentionally
+     * metadata-only: it avoids touching thousands of SAF directories and keeps existing database
+     * covers intact until a later healthy directory scan refreshes the full listing.
+     */
+    private fun recoverListingIndexFromChapterNames(baseUri: String?, now: Long): ListingIndex? {
+        if (baseUri == null || !chapterNamesIndexFile.exists()) return null
+        return try {
+            val root = JSONObject(chapterNamesIndexFile.readText())
+            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return null
+            if (root.optString("baseUri") != baseUri) return null
+            val mangaObject = root.optJSONObject("manga") ?: return null
+            val entries = buildMap {
+                mangaObject.keys().forEach { url ->
+                    val chapterCount = mangaObject.optJSONArray(url)?.length() ?: 0
+                    if (url.isNotEmpty() && chapterCount > 0) {
+                        put(
+                            url,
+                            ListingIndexEntry(
+                                dirLastModified = 0L,
+                                coverUri = null,
+                                chapterCount = chapterCount,
+                                latestChapterModified = 0L,
+                            ),
+                        )
+                    }
+                }
+            }
+            if (entries.isEmpty()) return null
+            ListingIndex(
+                baseUri = baseUri,
+                entries = entries,
+                baseDirLastModified = root.optLong("baseDirLastModified", -1L),
+                builtAt = now,
+            ).also(::saveListingIndex)
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) { "Failed to recover local listing from chapter names" }
             null
         }
     }
@@ -604,6 +818,7 @@ class LocalSource(
      * listing so repeated paging loads don't rescan directories.
      */
     private suspend fun getChapterNamesIndex(): Map<String, List<String>> = withIOContext {
+        ensureBaseDirectoryIdentity()
         val now = System.currentTimeMillis()
         val cached = cachedChapterNames
         if (cached != null && chapterNamesIndexFresh(now)) {
@@ -619,14 +834,16 @@ class LocalSource(
             // Cold start: reuse the persisted index when the base directory hasn't changed, so
             // the first search after launching the app doesn't rescan every manga directory.
             val baseDirectory = fileSystem.getBaseDirectory()
+            val baseUri = fileSystem.getBaseDirectoryIdentityUri()
             val baseDirLastModified = baseDirectory?.lastModified() ?: -1L
             // Even when the in-memory copy went stale, the persisted index is cheap to read
             // back, so only rescan directories when the base directory actually changed.
-            val persisted = loadChapterNamesIndex(baseDirLastModified, lockedNow)
+            val persisted = loadChapterNamesIndex(baseUri, baseDirLastModified, lockedNow)
             if (persisted != null) {
                 cachedChapterNames = persisted
                 cachedChapterNamesTime = lockedNow
                 cachedChapterNamesBaseDirLastModified = baseDirLastModified
+                cachedChapterNamesBaseUri = baseUri
                 return@withLock persisted
             }
 
@@ -670,7 +887,8 @@ class LocalSource(
             cachedChapterNames = index
             cachedChapterNamesTime = lockedNow
             cachedChapterNamesBaseDirLastModified = baseDirLastModified
-            saveChapterNamesIndex(index, baseDirLastModified, lockedNow)
+            cachedChapterNamesBaseUri = baseUri
+            saveChapterNamesIndex(index, baseUri, baseDirLastModified, lockedNow)
             index
         }
     }
@@ -682,6 +900,7 @@ class LocalSource(
      * chapter-name search without a manual refresh.
      */
     private fun chapterNamesIndexFresh(now: Long): Boolean {
+        if (cachedChapterNamesBaseUri != fileSystem.getBaseDirectoryIdentityUri()) return false
         val baseDirLastModified = fileSystem.getBaseDirectory()?.lastModified() ?: -1L
         if (baseDirLastModified < 0) {
             return now - cachedChapterNamesTime < LISTING_CACHE_TTL.inWholeMilliseconds
@@ -691,11 +910,16 @@ class LocalSource(
             now - cachedChapterNamesTime < LISTING_MAX_AGE.inWholeMilliseconds
     }
 
-    private fun loadChapterNamesIndex(baseDirLastModified: Long, now: Long): Map<String, List<String>>? {
+    private fun loadChapterNamesIndex(
+        baseUri: String?,
+        baseDirLastModified: Long,
+        now: Long,
+    ): Map<String, List<String>>? {
         if (baseDirLastModified < 0 || !chapterNamesIndexFile.exists()) return null
         return try {
             val root = JSONObject(chapterNamesIndexFile.readText())
-            if (root.optInt("version", -1) != 1) return null
+            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return null
+            if (root.optString("baseUri").takeIf(String::isNotEmpty) != baseUri) return null
             if (root.optLong("baseDirLastModified", -1L) != baseDirLastModified) return null
             val builtAt = root.optLong("builtAt", 0L)
             if (now - builtAt !in 0 until LISTING_MAX_AGE.inWholeMilliseconds) return null
@@ -717,14 +941,20 @@ class LocalSource(
         }
     }
 
-    private fun saveChapterNamesIndex(index: Map<String, List<String>>, baseDirLastModified: Long, now: Long) {
+    private fun saveChapterNamesIndex(
+        index: Map<String, List<String>>,
+        baseUri: String?,
+        baseDirLastModified: Long,
+        now: Long,
+    ) {
         try {
             val mangaObject = JSONObject()
             index.forEach { (url, names) ->
                 mangaObject.put(url, JSONArray(names))
             }
             val root = JSONObject()
-                .put("version", 1)
+                .put("version", CHAPTER_NAMES_INDEX_VERSION)
+                .put("baseUri", baseUri.orEmpty())
                 .put("baseDirLastModified", baseDirLastModified)
                 .put("builtAt", now)
                 .put("manga", mangaObject)
@@ -861,21 +1091,39 @@ class LocalSource(
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate = supervisorScope {
-        val asyncManga = if (fetchDetails) async { getMangaDetails(manga) } else null
-        val asyncChapters = if (fetchChapters) async { getChapterList(manga) } else null
+        val directorySnapshot = if (fetchDetails || fetchChapters) {
+            getMangaDirectorySnapshot(
+                mangaUrl = manga.url,
+                confirmEmptyChapters = fetchChapters,
+                existingChapterUrls = chapters.map(SChapter::url),
+            )
+        } else {
+            null
+        }
+        val asyncManga = if (fetchDetails) async { getMangaDetails(manga, directorySnapshot) } else null
+        val asyncChapters = if (fetchChapters) {
+            async { getChapterList(manga, chapters, directorySnapshot) }
+        } else {
+            null
+        }
         SMangaUpdate(asyncManga?.await() ?: manga, asyncChapters?.await() ?: chapters)
     }
 
     // Manga details related
-    private suspend fun getMangaDetails(manga: SManga): SManga = withIOContext {
+    private suspend fun getMangaDetails(
+        manga: SManga,
+        directorySnapshot: LocalSourceFileSystem.DirectorySnapshot? = null,
+    ): SManga = withIOContext {
         coverManager.find(manga.url)?.let {
             manga.thumbnail_url = it.uri.toString()
         }
 
         // Augment manga details based on metadata files
         try {
-            val mangaDir = fileSystem.getMangaDirectory(manga.url) ?: error("${manga.url} is not a valid directory")
-            val mangaDirFiles = mangaDir.listFiles().orEmpty()
+            val snapshot = directorySnapshot ?: getMangaDirectorySnapshot(manga.url)
+            if (!snapshot.isAccessible || snapshot.files.isEmpty()) return@withIOContext manga
+            val mangaDir = snapshot.directory ?: return@withIOContext manga
+            val mangaDirFiles = snapshot.files
 
             val comicInfoFile = mangaDirFiles
                 .firstOrNull { it.name == COMIC_INFO_FILE }
@@ -921,6 +1169,7 @@ class LocalSource(
                     val chapterFiles = mangaDirFiles.filter {
                         it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true)
                     }
+                    if (chapterFiles.isEmpty()) return@withIOContext manga
                     val entries = getChapterIndex(manga, chapterFiles)
                     val archiveWithComicInfo = entries.firstOrNull { entry ->
                         entry.hasComicInfo && chapterFiles.any {
@@ -1000,7 +1249,7 @@ class LocalSource(
      * Directory-provider mtimes are intentionally excluded because some providers change them on
      * every query, which would make an unchanged library look perpetually dirty.
      */
-    suspend fun getMangaDirectorySignature(): String? = withIOContext {
+    suspend fun getMangaDirectorySnapshot(): LocalMangaDirectorySnapshot? = withIOContext {
         val snapshot = getBaseDirectorySnapshot(forceRefresh = true)
         if (!snapshot.isAccessible) return@withIOContext null
         val names = snapshot.files
@@ -1008,9 +1257,62 @@ class LocalSource(
             .filter { it.isDirectory }
             .mapNotNull { it.name?.takeIf(String::isNotEmpty) }
             .filterNot { it.startsWith('.') }
+            .sorted()
             .toList()
-        fingerprint(names)
+        if (names.isNotEmpty()) {
+            LocalMangaDirectorySnapshot(
+                urls = names.toSet(),
+                signature = fingerprint(names),
+                fromListingFallback = false,
+            )
+        } else {
+            val baseUri = fileSystem.getBaseDirectoryIdentityUri()
+            (
+                loadListingIndex(baseUri)?.takeIf { it.entries.isNotEmpty() }
+                    ?: recoverListingIndexFromChapterNames(baseUri, System.currentTimeMillis())
+                )
+                ?.entries
+                ?.keys
+                ?.takeIf { it.isNotEmpty() }
+                ?.sorted()
+                ?.let { fallbackNames ->
+                    LocalMangaDirectorySnapshot(
+                        urls = fallbackNames.toSet(),
+                        signature = fingerprint(fallbackNames),
+                        fromListingFallback = true,
+                    )
+                }
+        }
     }
+
+    suspend fun getMangaDirectorySignature(): String? = getMangaDirectorySnapshot()?.signature
+
+    /**
+     * Returns the current manga folders after applying the same transient-partial-read protection
+     * as a chapter refresh, without scanning every manga's children.
+     */
+    suspend fun getConfirmedMangaDirectorySnapshot(): LocalMangaDirectorySnapshot? = withIOContext {
+        val initialSnapshot = getBaseDirectorySnapshot(forceRefresh = true)
+        val baseUri = fileSystem.getBaseDirectoryIdentityUri()
+        val knownDirectoryNames = buildSet {
+            addAll(loadSyncIndex()?.takeIf { it.baseUri == null || baseUri == null || it.baseUri == baseUri }
+                ?.folders.orEmpty().keys)
+            addAll(loadListingIndex(baseUri)?.entries.orEmpty().keys)
+            addAll(loadPersistedChapterNamesIndex().keys)
+            cachedListing?.mapTo(this, LocalMangaEntry::url)
+        }
+        val names = confirmBaseDirectorySnapshot(initialSnapshot, knownDirectoryNames)
+            ?.directoryNames()
+            ?.sorted()
+            ?: return@withIOContext null
+        LocalMangaDirectorySnapshot(
+            urls = names.toSet(),
+            signature = fingerprint(names),
+            fromListingFallback = false,
+        )
+    }
+
+    suspend fun getConfirmedMangaUrls(): Set<String>? = getConfirmedMangaDirectorySnapshot()?.urls
 
     suspend fun getChapterCounts(): Map<String, Long> = withIOContext {
         getListing().associate { it.url to it.chapterCount.toLong() }
@@ -1025,17 +1327,30 @@ class LocalSource(
         lastSuccessfulBaseDirectoryLastModified: Long = -1L,
         onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> },
     ): LocalChapterSyncScan = withIOContext {
-        val snapshot = getBaseDirectorySnapshot(forceRefresh = true)
-        val baseDirectory = snapshot.directory
-        val baseUri = baseDirectory?.uri?.toString()
-        val baseDirectoryLastModified = snapshot.lastModified
+        val initialSnapshot = getBaseDirectorySnapshot(forceRefresh = true)
+        val baseUri = fileSystem.getBaseDirectoryIdentityUri()
         val savedIndex = loadSyncIndex()
             ?.takeIf { it.baseUri == null || baseUri == null || it.baseUri == baseUri }
-        if (!snapshot.isAccessible) {
+        val persistedChapterNames = loadPersistedChapterNamesIndex()
+        val previousNames = buildMap {
+            (savedIndex?.folders.orEmpty().keys + persistedChapterNames.keys).forEach { name ->
+                val fileNames = savedIndex?.folders?.get(name)?.chapterFileNames
+                    ?: persistedChapterNames[name]
+                if (fileNames != null) put(name, fileNames)
+            }
+        }
+        val knownDirectoryNames = buildSet {
+            addAll(savedIndex?.folders.orEmpty().keys)
+            addAll(loadListingIndex(baseUri)?.entries.orEmpty().keys)
+            addAll(persistedChapterNames.keys)
+            cachedListing?.mapTo(this, LocalMangaEntry::url)
+        }
+        val snapshot = confirmBaseDirectorySnapshot(initialSnapshot, knownDirectoryNames)
+        if (snapshot == null) {
             return@withIOContext LocalChapterSyncScan(
                 changedMangaUrls = emptySet(),
                 removedMangaUrls = emptySet(),
-                previousChapterFileNamesByMangaUrl = emptyMap(),
+                previousChapterFileNamesByMangaUrl = previousNames,
                 chapterFileNamesByMangaUrl = emptyMap(),
                 folderStates = savedIndex?.folders.orEmpty(),
                 baseUri = baseUri,
@@ -1043,6 +1358,7 @@ class LocalSource(
                 isReliable = false,
             )
         }
+        val baseDirectoryLastModified = snapshot.lastModified
 
         val directories = snapshot.files
             .mapNotNull { directory ->
@@ -1071,8 +1387,10 @@ class LocalSource(
         }
         val previousStates = savedIndex?.folders.orEmpty()
         val previousChapterFileNames = buildMap {
-            (previousStates.keys + cachedStates.keys).forEach { name ->
-                val fileNames = previousStates[name]?.chapterFileNames ?: cachedStates[name]?.chapterFileNames
+            (previousStates.keys + cachedStates.keys + persistedChapterNames.keys).forEach { name ->
+                val fileNames = previousStates[name]?.chapterFileNames
+                    ?: cachedStates[name]?.chapterFileNames
+                    ?: persistedChapterNames[name]
                 if (fileNames != null) put(name, fileNames)
             }
         }
@@ -1099,23 +1417,27 @@ class LocalSource(
                                     canPromoteLegacyIndex && previous != null &&
                                         it.fingerprint == previous.fingerprint
                                 }
-                            val directoryUnchanged = previous != null &&
-                                previous.directoryLastModified > 0 &&
-                                directoryLastModified > 0 &&
-                                previous.directoryLastModified == directoryLastModified
                             val state = when {
-                                directoryUnchanged && reusablePrevious != null -> reusablePrevious.copy(
-                                    directoryLastModified = directoryLastModified,
-                                )
                                 canPromoteLegacyIndex && reusablePrevious != null -> reusablePrevious.copy(
                                     directoryLastModified = directoryLastModified,
                                 )
-                                else -> chapterFolderState(directory, directoryLastModified)
+                                else -> chapterFolderState(
+                                    dir = directory,
+                                    directoryLastModified = directoryLastModified,
+                                    knownChapterFileNames = reusablePrevious?.chapterFileNames.orEmpty(),
+                                )
                             }
                             Triple(
                                 name,
                                 state,
-                                previousFingerprint == null || previousFingerprint != state.fingerprint,
+                                when {
+                                    previousFingerprint != null -> previousFingerprint != state.fingerprint
+                                    persistedChapterNames[name] != null -> {
+                                        state.chapterFileNames.orEmpty()
+                                            .mapTo(hashSetOf(), ::chapterBaseName) != persistedChapterNames[name]
+                                    }
+                                    else -> true
+                                },
                             )
                         }
                     } finally {
@@ -1129,7 +1451,7 @@ class LocalSource(
         }
         val changed = scans.filter { it.third }.mapTo(mutableSetOf()) { it.first }
         val currentStates = scans.associate { it.first to it.second }
-        val removed = previousStates.keys - currentStates.keys
+        val removed = previousChapterFileNames.keys - currentStates.keys
         LocalChapterSyncScan(
             changedMangaUrls = changed,
             removedMangaUrls = removed,
@@ -1159,7 +1481,7 @@ class LocalSource(
             chapterIndexSaveJob?.cancel()
             chapterIndexSaveJob = null
             if (chapterIndexDirty) {
-                cachedChapterIndex?.let(::saveChapterIndex)
+                cachedChapterIndex?.let { saveChapterIndex(it, cachedChapterIndexBaseUri) }
                 chapterIndexDirty = false
             }
         }
@@ -1170,16 +1492,86 @@ class LocalSource(
                 folders = scan.folderStates.filterKeys { it !in failed },
             ),
         )
+        val chapterNames = scan.chapterFileNamesByMangaUrl
+            .mapValues { (_, names) -> names.mapTo(linkedSetOf(), ::chapterBaseName) }
+            .filterValues(Set<String>::isNotEmpty)
+        chapterNamesMutex.withLock {
+            cachedChapterNames = chapterNames.mapValues { (_, names) -> names.toList() }
+            cachedChapterNamesTime = System.currentTimeMillis()
+            cachedChapterNamesBaseDirLastModified = scan.baseDirectoryLastModified
+            saveChapterNamesIndex(
+                index = cachedChapterNames.orEmpty(),
+                baseUri = scan.baseUri,
+                baseDirLastModified = scan.baseDirectoryLastModified,
+                now = cachedChapterNamesTime,
+            )
+            cachedChapterNamesBaseUri = scan.baseUri
+        }
+    }
+
+    private suspend fun confirmBaseDirectorySnapshot(
+        initial: LocalSourceFileSystem.DirectorySnapshot,
+        knownDirectoryNames: Set<String>,
+    ): LocalSourceFileSystem.DirectorySnapshot? {
+        if (!initial.isAccessible) return null
+        if (knownDirectoryNames.isEmpty()) return initial
+
+        val snapshots = mutableListOf(initial)
+        for (retryDelay in EMPTY_DIRECTORY_RETRY_DELAYS) {
+            val observedNames = snapshots.maxBy(::directoryCount).directoryNames()
+            if (observedNames.containsAll(knownDirectoryNames)) {
+                return snapshots.maxBy(::directoryCount)
+            }
+            delay(retryDelay)
+            val retry = getBaseDirectorySnapshot(forceRefresh = true)
+            if (!retry.isAccessible) return null
+            snapshots += retry
+        }
+
+        val best = snapshots.maxBy(::directoryCount)
+        val observedNames = best.directoryNames()
+        val missingNames = knownDirectoryNames - observedNames
+        if (missingNames.isEmpty()) return best
+        val directory = best.directory ?: return null
+        val everyMissingDirectoryIsGone = confirmMissingLocalMangaDirectoriesGone(missingNames) { name ->
+            directory.findFile(name)?.let { it.exists() && it.isDirectory } == true
+        }
+        return best.takeIf { everyMissingDirectoryIsGone }
+    }
+
+    private fun LocalSourceFileSystem.DirectorySnapshot.directoryNames(): Set<String> {
+        return files
+            .asSequence()
+            .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
+            .mapNotNull { it.name }
+            .toSet()
+    }
+
+    private fun directoryCount(snapshot: LocalSourceFileSystem.DirectorySnapshot): Int {
+        return snapshot.files.count { it.isDirectory && !it.name.orEmpty().startsWith('.') }
     }
 
     /**
      * Returns a stable content fingerprint per manga folder derived from its chapter files'
      * name + mtime + size, sorted. Adding, removing or replacing a cbz changes the fingerprint.
      */
-    private fun chapterFolderState(dir: UniFile, directoryLastModified: Long): LocalChapterFolderState {
-        val chapterFiles = dir.listFiles().orEmpty()
-            .filterNot { it.name.orEmpty().startsWith('.') }
-            .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
+    private suspend fun chapterFolderState(
+        dir: UniFile,
+        directoryLastModified: Long,
+        knownChapterFileNames: Set<String>,
+    ): LocalChapterFolderState {
+        var chapterFiles = readChapterFiles(dir)
+        if (chapterFiles.isEmpty()) {
+            chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
+        }
+        for (retryDelay in EMPTY_DIRECTORY_RETRY_DELAYS) {
+            if (chapterFiles.isNotEmpty()) break
+            delay(retryDelay)
+            chapterFiles = readChapterFiles(dir)
+            if (chapterFiles.isEmpty()) {
+                chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
+            }
+        }
         val parts = chapterFiles.map { file ->
             val size = if (file.isDirectory) 0L else file.length()
             "${file.name.orEmpty()}|${file.lastModified()}|$size"
@@ -1189,6 +1581,11 @@ class LocalSource(
             fingerprint = fingerprint(parts),
             chapterFileNames = chapterFiles.mapTo(linkedSetOf()) { it.name.orEmpty() },
         )
+    }
+
+    private fun readChapterFiles(dir: UniFile): List<UniFile> {
+        return fileSystem.getFilesInDirectory(dir)
+            .filter(::isChapterFile)
     }
 
     private fun fingerprint(parts: List<String>): String {
@@ -1288,7 +1685,7 @@ class LocalSource(
     }
 
     private fun getChapterListingStats(dir: UniFile): ChapterListingStats {
-        val chapterFiles = dir.listFiles().orEmpty()
+        val chapterFiles = fileSystem.getFilesInDirectory(dir)
             .filterNot { it.name.orEmpty().startsWith('.') }
             .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
         return ChapterListingStats(
@@ -1311,6 +1708,7 @@ class LocalSource(
      * metadata (ComicInfo.xml / epub metadata).
      */
     private suspend fun getChapterIndex(manga: SManga, chapterFiles: List<UniFile>): List<ChapterIndexEntry> {
+        ensureBaseDirectoryIdentity()
         val cached = chapterIndexMutex.withLock {
             ensureChapterIndexLoaded()
             cachedChapterIndex?.get(manga.url)
@@ -1349,7 +1747,7 @@ class LocalSource(
             delay(CHAPTER_INDEX_SAVE_DEBOUNCE_MILLIS)
             chapterIndexMutex.withLock {
                 if (chapterIndexDirty) {
-                    cachedChapterIndex?.let(::saveChapterIndex)
+                    cachedChapterIndex?.let { saveChapterIndex(it, cachedChapterIndexBaseUri) }
                     chapterIndexDirty = false
                 }
                 chapterIndexSaveJob = null
@@ -1422,9 +1820,8 @@ class LocalSource(
                 scanlator = chapter.scanlator
             }
             pageCount = when (format) {
-                is Format.Directory -> chapterFile.listFiles()
-                    ?.count { !it.isDirectory && ImageUtil.isImage(it.name) }
-                    ?: 0
+                is Format.Directory -> fileSystem.getFilesInDirectory(chapterFile)
+                    .count { !it.isDirectory && ImageUtil.isImage(it.name) }
                 is Format.Archive -> chapterFile.archiveReader(context).use { reader ->
                     reader.useEntries { entries ->
                         entries.count { it.isFile && ImageUtil.isImage(it.name) }
@@ -1479,13 +1876,17 @@ class LocalSource(
     }
 
     private fun ensureChapterIndexLoaded() {
-        if (cachedChapterIndex != null) return
+        val baseUri = fileSystem.getBaseDirectoryIdentityUri()
+        if (cachedChapterIndex != null && cachedChapterIndexBaseUri == baseUri) return
         cachedChapterIndex = try {
             if (!chapterIndexFile.exists()) {
                 emptyMap()
             } else {
                 val root = JSONObject(chapterIndexFile.readText())
-                if (root.optInt("version", -1) != 3) {
+                if (
+                    root.optInt("version", -1) != CHAPTER_INDEX_VERSION ||
+                    root.optString("baseUri").takeIf(String::isNotEmpty) != baseUri
+                ) {
                     emptyMap()
                 } else {
                     val mangaObject = root.optJSONObject("manga")
@@ -1525,9 +1926,10 @@ class LocalSource(
             logcat(LogPriority.ERROR, e) { "Failed to load local source chapter index" }
             emptyMap()
         }
+        cachedChapterIndexBaseUri = baseUri
     }
 
-    private fun saveChapterIndex(index: Map<String, ChapterIndex>) {
+    private fun saveChapterIndex(index: Map<String, ChapterIndex>, baseUri: String?) {
         try {
             val mangaObject = JSONObject()
             index.forEach { (url, mangaIndex) ->
@@ -1549,7 +1951,8 @@ class LocalSource(
                 mangaObject.put(url, JSONObject().put("chapters", array))
             }
             val root = JSONObject()
-                .put("version", 3)
+                .put("version", CHAPTER_INDEX_VERSION)
+                .put("baseUri", baseUri.orEmpty())
                 .put("manga", mangaObject)
 
             writeIndexAtomically(chapterIndexFile, root.toString())
@@ -1587,7 +1990,9 @@ class LocalSource(
      * and without rewriting source order.
      */
     suspend fun getChapterPageCounts(manga: SManga): Map<String, Long> = withIOContext {
-        val chapterFiles = fileSystem.getFilesInMangaDirectory(manga.url)
+        val snapshot = getMangaDirectorySnapshot(manga.url, confirmEmptyChapters = true)
+        if (!snapshot.isAccessible || snapshot.files.isEmpty()) return@withIOContext emptyMap()
+        val chapterFiles = snapshot.files
             // Only keep supported formats
             .filterNot { it.name.orEmpty().startsWith('.') }
             .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
@@ -1596,11 +2001,55 @@ class LocalSource(
             .associate { entry -> "${manga.url}/${entry.name}" to entry.pageCount.toLong() }
     }
 
-    private suspend fun getChapterList(manga: SManga): List<SChapter> = withIOContext {
-        val chapterFiles = fileSystem.getFilesInMangaDirectory(manga.url)
+    /**
+     * Cheap detail-screen change check. This only lists direct children and never opens archives.
+     * Unavailable or unexpectedly empty reads are treated as unchanged so entering a manga cannot
+     * trigger a slow scan, or remove chapters, because of a transient document-provider failure.
+     */
+    suspend fun hasChapterFileChanges(
+        mangaUrl: String,
+        existingChapterUrls: Collection<String>,
+    ): Boolean = withIOContext {
+        val snapshot = getMangaDirectorySnapshot(
+            mangaUrl = mangaUrl,
+            confirmEmptyChapters = true,
+            existingChapterUrls = existingChapterUrls,
+        )
+
+        val currentChapterUrls = snapshot.files
+            .asSequence()
+            .filterNot { it.name.orEmpty().startsWith('.') }
+            .filter(::isChapterFile)
+            .mapTo(linkedSetOf()) { "$mangaUrl/${it.name.orEmpty()}" }
+
+        chapterFileSetChanged(
+            existingChapterUrls = existingChapterUrls,
+            currentChapterUrls = currentChapterUrls,
+            isAccessible = snapshot.isAccessible,
+            isConfirmedEmpty = snapshot.isConfirmedEmpty,
+        )
+    }
+
+    private suspend fun getChapterList(
+        manga: SManga,
+        existingChapters: List<SChapter>,
+        directorySnapshot: LocalSourceFileSystem.DirectorySnapshot? = null,
+    ): List<SChapter> = withIOContext {
+        val snapshot = directorySnapshot ?: getMangaDirectorySnapshot(manga.url)
+        if (!snapshot.isAccessible) {
+            error("Unable to read local manga directory: ${manga.url}")
+        }
+        val chapterFiles = snapshot.files
             // Only keep supported formats
             .filterNot { it.name.orEmpty().startsWith('.') }
-            .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
+            .filter(::isChapterFile)
+
+        if (chapterFiles.isEmpty() && existingChapters.isNotEmpty() && !snapshot.isConfirmedEmpty) {
+            logcat(LogPriority.WARN) {
+                "Ignoring an unexpected empty local chapter scan for ${manga.url}; keeping existing chapters"
+            }
+            return@withIOContext existingChapters
+        }
 
         val entries = getChapterIndex(manga, chapterFiles)
         val chapters = entries.map { entry ->
@@ -1624,6 +2073,127 @@ class LocalSource(
         }
 
         chapters
+    }
+
+    private suspend fun getMangaDirectorySnapshot(
+        mangaUrl: String,
+        confirmEmptyChapters: Boolean = false,
+        existingChapterUrls: Collection<String> = emptyList(),
+    ): LocalSourceFileSystem.DirectorySnapshot {
+        ensureBaseDirectoryIdentity()
+        var snapshot = fileSystem.getMangaDirectorySnapshot(mangaUrl)
+        if (!snapshot.isAccessible || snapshot.hasExpectedFiles(confirmEmptyChapters)) return snapshot
+
+        val knownNames = knownChapterNames(mangaUrl, existingChapterUrls)
+        recoverChapterFiles(snapshot.directory, knownNames).takeIf(List<UniFile>::isNotEmpty)?.let { recovered ->
+            return snapshot.copy(files = recovered, isConfirmedEmpty = false)
+        }
+
+        var allReadsAccessibleAndEmpty = true
+        for (retryDelay in EMPTY_DIRECTORY_RETRY_DELAYS) {
+            delay(retryDelay)
+            snapshot = fileSystem.getMangaDirectorySnapshot(mangaUrl)
+            if (!snapshot.isAccessible) return snapshot
+            if (snapshot.hasExpectedFiles(confirmEmptyChapters)) return snapshot
+
+            recoverChapterFiles(snapshot.directory, knownNames).takeIf(List<UniFile>::isNotEmpty)?.let { recovered ->
+                return snapshot.copy(files = recovered, isConfirmedEmpty = false)
+            }
+            allReadsAccessibleAndEmpty = allReadsAccessibleAndEmpty && snapshot.isAccessible &&
+                (if (confirmEmptyChapters) snapshot.files.none(::isChapterFile) else snapshot.files.isEmpty())
+        }
+        return snapshot.copy(
+            // Exact child lookups are repeated along with the empty directory query. Only then is
+            // an all-chapters deletion considered real; ordinary false-empty reads recover above.
+            isConfirmedEmpty = allReadsAccessibleAndEmpty,
+        )
+    }
+
+    private fun LocalSourceFileSystem.DirectorySnapshot.hasExpectedFiles(confirmEmptyChapters: Boolean): Boolean {
+        return if (confirmEmptyChapters) files.any(::isChapterFile) else files.isNotEmpty()
+    }
+
+    /**
+     * Some external-storage document providers intermittently return an empty children query for
+     * a directory URI while exact child document URIs remain readable. The persisted name index
+     * gives us enough information to resolve those children without scanning or opening archives.
+     */
+    private fun recoverChapterFiles(
+        directory: UniFile?,
+        knownNames: Collection<String>,
+    ): List<UniFile> {
+        directory ?: return emptyList()
+        return knownNames.mapNotNull { knownName ->
+            chapterFileNameCandidates(knownName)
+                .asSequence()
+                .mapNotNull { candidate -> runCatching { directory.findFile(candidate) }.getOrNull() }
+                .firstOrNull { candidate ->
+                    runCatching { candidate.exists() && isChapterFile(candidate) }.getOrDefault(false)
+                }
+        }.distinctBy { it.name }
+    }
+
+    private fun knownChapterNames(
+        mangaUrl: String,
+        existingChapterUrls: Collection<String>,
+    ): Set<String> {
+        val exactFileNames = existingChapterUrls
+            .mapNotNull { url -> url.removePrefix("$mangaUrl/").takeIf(String::isNotEmpty) }
+            .toSet()
+        val exactBaseNames = exactFileNames.mapTo(HashSet(), ::chapterBaseName)
+        val indexedBaseNames = loadPersistedChapterNames(mangaUrl)
+            .filterNot { it in exactBaseNames }
+        return exactFileNames + indexedBaseNames
+    }
+
+    private fun loadPersistedChapterNames(mangaUrl: String): List<String> {
+        return try {
+            if (!chapterNamesIndexFile.exists()) return emptyList()
+            val root = JSONObject(chapterNamesIndexFile.readText())
+            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return emptyList()
+            val baseUri = fileSystem.getBaseDirectoryIdentityUri()
+            if (root.optString("baseUri").takeIf(String::isNotEmpty) != baseUri) return emptyList()
+            val array = root.optJSONObject("manga")?.optJSONArray(mangaUrl) ?: return emptyList()
+            buildList {
+                for (i in 0 until array.length()) {
+                    array.optString(i).takeIf(String::isNotEmpty)?.let(::add)
+                }
+            }
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) { "Failed to recover local chapter names for $mangaUrl" }
+            emptyList()
+        }
+    }
+
+    private fun loadPersistedChapterNamesIndex(): Map<String, Set<String>> {
+        return try {
+            if (!chapterNamesIndexFile.exists()) return emptyMap()
+            val root = JSONObject(chapterNamesIndexFile.readText())
+            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return emptyMap()
+            val baseUri = fileSystem.getBaseDirectoryIdentityUri()
+            if (root.optString("baseUri").takeIf(String::isNotEmpty) != baseUri) return emptyMap()
+            val mangaObject = root.optJSONObject("manga") ?: return emptyMap()
+            buildMap {
+                mangaObject.keys().forEach { mangaUrl ->
+                    val names = mangaObject.optJSONArray(mangaUrl)?.let { array ->
+                        buildSet {
+                            for (i in 0 until array.length()) {
+                                array.optString(i).takeIf(String::isNotEmpty)?.let(::add)
+                            }
+                        }
+                    }.orEmpty()
+                    if (names.isNotEmpty()) put(mangaUrl, names)
+                }
+            }
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) { "Failed to load persisted local chapter names" }
+            emptyMap()
+        }
+    }
+
+    private fun isChapterFile(file: UniFile): Boolean {
+        return !file.name.orEmpty().startsWith('.') &&
+            (file.isDirectory || Archive.isSupported(file) || file.extension.equals("epub", true))
     }
 
     // Filters
@@ -1651,13 +2221,13 @@ class LocalSource(
         return try {
             when (val format = getFormat(chapter)) {
                 is Format.Directory -> {
-                    val entry = format.file.listFiles()
-                        ?.sortedWith { f1, f2 ->
-                            f1.name.orEmpty().compareToCaseInsensitiveNaturalOrder(
+                    val entry = fileSystem.getFilesInDirectory(format.file)
+                        .sortedWith { f1, f2 ->
+                            f1.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(
                                 f2.name.orEmpty(),
                             )
                         }
-                        ?.find {
+                        .find {
                             !it.isDirectory && ImageUtil.isImage(it.name) { it.openInputStream() }
                         }
 
@@ -1667,7 +2237,9 @@ class LocalSource(
                     format.file.archiveReader(context).use { reader ->
                         val entry = reader.useEntries { entries ->
                             entries
-                                .sortedWith { f1, f2 -> f1.name.compareToCaseInsensitiveNaturalOrder(f2.name) }
+                                .sortedWith { f1, f2 ->
+                                    f1.name.compareToCaseInsensitiveNaturalPageOrder(f2.name)
+                                }
                                 .find { it.isFile && ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
                         }
 
@@ -1699,6 +2271,7 @@ class LocalSource(
 
         private val LISTING_CACHE_TTL = 10.minutes
         private val LISTING_MAX_AGE = 24.hours
+        private val LISTING_RETRY_COOLDOWN = 2.seconds
         private val BASE_SNAPSHOT_CACHE_MILLIS = 2.seconds.inWholeMilliseconds
         private val EMPTY_DIRECTORY_RETRY_DELAYS = listOf(150L, 350L, 750L)
         private const val MAX_CONCURRENT_COVER_LOOKUPS = 16
@@ -1707,6 +2280,8 @@ class LocalSource(
         private const val MAX_CONCURRENT_CHAPTER_CHANGE_SCANS = 16
         private const val CHAPTER_INDEX_SAVE_DEBOUNCE_MILLIS = 750L
         private const val LISTING_INDEX_VERSION = 4
+        private const val CHAPTER_INDEX_VERSION = 4
+        private const val CHAPTER_NAMES_INDEX_VERSION = 2
 
         /**
          * Memo key used to carry the chapter name that matched a search query
@@ -1719,15 +2294,52 @@ class LocalSource(
 
 internal fun shouldReuseListingAfterUnexpectedEmptyScan(
     scannedDirectoryCount: Int,
-    scannedBaseDirLastModified: Long,
     persistedEntryCount: Int,
-    persistedBaseDirLastModified: Long,
 ): Boolean {
     return scannedDirectoryCount == 0 &&
-        persistedEntryCount > 0 &&
-        scannedBaseDirLastModified >= 0 &&
-        scannedBaseDirLastModified == persistedBaseDirLastModified
+        persistedEntryCount > 0
 }
+
+internal fun resolvedLocalChapterCount(
+    scannedChapterFiles: Set<String>?,
+    measuredChapterCount: Int,
+): Int = scannedChapterFiles?.size ?: measuredChapterCount
+
+internal fun shouldIncludeLocalMangaDirectory(
+    mangaUrl: String,
+    scannedChapterFileNames: Map<String, Set<String>>?,
+): Boolean = scannedChapterFileNames?.let { scanned ->
+    scanned[mangaUrl]?.isNotEmpty() == true
+} ?: true
+
+internal fun chapterFileNameCandidates(knownName: String): List<String> {
+    if (chapterBaseName(knownName) != knownName) return listOf(knownName)
+    return buildList {
+        add(knownName)
+        LOCAL_CHAPTER_FILE_EXTENSIONS.forEach { extension -> add("$knownName.$extension") }
+    }
+}
+
+internal fun chapterBaseName(fileName: String): String {
+    val extension = fileName.substringAfterLast('.', missingDelimiterValue = "")
+    return if (extension.lowercase() in LOCAL_CHAPTER_FILE_EXTENSIONS) {
+        fileName.removeSuffix(".$extension")
+    } else {
+        fileName
+    }
+}
+
+private val LOCAL_CHAPTER_FILE_EXTENSIONS = listOf(
+    "cbz",
+    "zip",
+    "cbr",
+    "rar",
+    "cb7",
+    "7z",
+    "cbt",
+    "tar",
+    "epub",
+)
 
 internal data class LocalPage<T>(
     val items: List<T>,

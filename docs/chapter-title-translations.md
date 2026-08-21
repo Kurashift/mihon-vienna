@@ -1,42 +1,40 @@
-# Local chapter title translations
+# 本地篇目中文译名
 
-Local chapters keep their original source title. An optional translated title is stored on the
-same chapter database row, so an in-app chapter move also carries the translation, reading
-progress, and custom cover together.
+本地篇目始终保留来源中的原始名称。中文译名只是保存在同一篇目数据库记录上的可选显示壳，不修改文件名或原始名称。应用识别出篇目移动时，译名会和阅读进度、已读状态及自定义篇目封面一起跟随稳定的篇目 ID。
 
-## Display and sorting
+## 显示与排序
 
-- `Source title` always shows the original chapter name.
-- `Translated title` shows the translated title and falls back to the original when empty.
-- The original title remains visible below a translated title and is the value copied by the
-  existing title-copy gesture.
-- In translated-title mode, long-pressing a local chapter opens actions for editing its translated
-  title, copying the original title, or selecting the chapter. Saving a blank translated title
-  restores the original-title fallback.
-- `Translated title` sorting uses the displayed translated title, then the original title, then
-  the chapter database ID for deterministic ordering.
+- “原名”始终显示篇目的原始名称。
+- “中文名”优先显示中文译名；没有译名时自动回退原名。
+- 显示中文译名时，原名仍可作为次级文字保留。
+- 长按篇目标题直接复制当前显示名称；长按条目其他区域进入原有选择模式。
+- 本地漫画单选一个篇目后，底部操作栏提供“编辑译名”。保存空白内容会清除译名并恢复原名回退。
+- 中文名排序依次比较显示译名、原名和篇目数据库 ID，确保顺序稳定。
 
-## Import and export
+## 导入与导出
 
-The manga detail overflow menu opens a dialog for exporting or importing the current manga.
-`More > Data and storage > Local library chapter translations` manages the entire local library.
-It can export or import one whole-library JSON file, or batch-import multiple JSON files exported
-from individual manga detail pages. Each chapter entry contains:
+漫画详情页右上角菜单可管理当前漫画的译名；“更多 > 数据与存储 > 本地库篇目译名”可管理整个本地库。单本和全库均支持 JSON 与 UTF-8 CSV；批量导入可同时选择多个从漫画详情页导出的 JSON 或 CSV 文件。
 
-- `chapterId`: the primary in-app identity;
-- `originalTitle`: the untouched source title;
-- `originalUrl`: the exact local folder/file URL used as a recovery key;
-- `translatedTitle`: the editable translated title.
+每个 JSON 篇目条目包含：
 
-Import first matches the chapter ID while checking its original title or URL. If database IDs
-changed, it accepts an exact URL match. It deliberately does not match by title alone because
-different author folders can contain works with the same filename. Blank and unmatched entries
-are ignored, so a partial translation file does not erase existing titles or affect new works.
-An untranslated chapter displays its original title automatically.
+- `chapterId`：同一应用数据库内的篇目身份线索；
+- `originalTitle`：未修改的原始名称；
+- `originalUrl`：原作者目录和文件路径组成的精确恢复键；
+- `translatedTitle`：可编辑的中文译名。
 
-Whole-library operations enumerate the current local-source filesystem snapshot. Historical
-database manga rows, removed chapter rows, cover images, and other unsupported files are not
-included in export counts.
+CSV 可直接用 Excel 或 WPS 编辑，字段包括：
 
-The database migration adds a nullable `translated_name` column to `chapters`. Existing rows
-remain unchanged, and translated titles are included in normal app backups.
+- `stable_key`、`漫画原名`、`漫画路径`、`篇目原名`、`篇目路径` 和 `中文名`：用于身份核对和译名导入；
+- `中文排序名`、`备注` 和 `人工锁定`：预留给外部编辑，目前应用不会使用这些列。
+
+CSV 导入也接受 `manga_title`、`manga_path`、`original_title`、`chapter_path` 和 `translated_title` 等英文表头。逗号、引号和单元格内换行遵循标准 CSV 引号规则。
+
+`stable_key` 实际是导出设备当前数据库中的篇目 ID，并不是跨设备永久唯一键。导入时优先接受完整篇目路径；数据库 ID 仅在原文件名和原始名称也一致时用于识别同设备内移动后的篇目。应用不会只凭同名匹配，因为不同作者目录可能存在同名作品。空译名和无法可靠匹配的条目会被忽略，不会清除现有译名或影响新篇目。
+
+全库导出只统计当前磁盘中确认存在的本地漫画和篇目。历史数据库残留、已删除篇目、封面图片及其他不支持的文件不会计入导出数量。
+
+## 备份与身份
+
+数据库迁移为 `chapters` 增加可空的 `translated_name` 字段，已有记录不受影响。常规一键备份会包含当前磁盘上的本地漫画、译名、阅读和读完进度、总页数、自定义顺序以及用户选择的篇目封面。自动生成的封面缩略图属于可重建缓存，不写入备份。
+
+本地目录索引、页数缓存和自动封面缓存只保存可重建数据。篇目移动或重复数据库行合并时，必须保留旧的稳定篇目 ID，并在同一事务中迁移历史、进度、已读、书签、译名和标记；自定义封面文件必须在数据库事务成功后再清理旧副本。

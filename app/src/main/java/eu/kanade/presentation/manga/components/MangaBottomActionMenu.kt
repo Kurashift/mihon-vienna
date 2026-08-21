@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.MoreVert
@@ -85,6 +86,7 @@ fun MangaBottomActionMenu(
     onMarkFollowingAsReadClicked: (() -> Unit)? = null,
     onDownloadClicked: (() -> Unit)? = null,
     onDeleteClicked: (() -> Unit)? = null,
+    onEditTranslatedTitleClicked: (() -> Unit)? = null,
     onToggleMarkClicked: (() -> Unit)? = null,
     marksSelected: Boolean = false,
 ) {
@@ -101,7 +103,7 @@ fun MangaBottomActionMenu(
         ) {
             val haptic = LocalHapticFeedback.current
             val confirm = remember {
-                mutableStateListOf(false, false, false, false, false, false, false, false, false, false)
+                mutableStateListOf(false, false, false, false, false, false, false, false, false, false, false)
             }
             var resetJob by remember { mutableStateOf<Job?>(null) }
             val onLongClickItem: (Int) -> Unit = { toConfirmIndex ->
@@ -239,6 +241,15 @@ fun MangaBottomActionMenu(
                         toConfirm = confirm[8],
                         onLongClick = { onLongClickItem(8) },
                         onClick = onDeleteClicked,
+                    )
+                }
+                if (onEditTranslatedTitleClicked != null) {
+                    Button(
+                        title = stringResource(MR.strings.edit_chapter_translated_title),
+                        icon = Icons.Outlined.Edit,
+                        toConfirm = confirm[10],
+                        onLongClick = { onLongClickItem(10) },
+                        onClick = onEditTranslatedTitleClicked,
                     )
                 }
                 if (onToggleMarkClicked != null) {

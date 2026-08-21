@@ -100,6 +100,61 @@ class ChapterTitleTranslationTest {
     }
 
     @Test
+    fun `csv export uses spreadsheet columns and preserves quoted values`() {
+        val manga = Manga.create().copy(id = 7, title = "Author, Circle", url = "Author, Circle")
+        val chapter = chapter(10, "Author, Circle/Story \"A\".cbz", "Story \"A\"")
+            .copy(translatedName = "故事, A")
+
+        val csv = ChapterTitleTranslationCodec.encode(
+            manga = manga,
+            chapters = listOf(chapter),
+            format = ChapterTitleTranslationFormat.CSV,
+        )
+        val decoded = ChapterTitleTranslationCodec.decode(csv)
+
+        csv.startsWith("\uFEFFstable_key,漫画原名,漫画路径,篇目原名,篇目路径,中文名") shouldBe true
+        decoded.mangaTitle shouldBe "Author, Circle"
+        decoded.chapters.single() shouldBe ChapterTitleTranslationEntry(
+            chapterId = 10,
+            originalTitle = "Story \"A\"",
+            originalUrl = "Author, Circle/Story \"A\".cbz",
+            translatedTitle = "故事, A",
+        )
+    }
+
+    @Test
+    fun `csv import accepts english headers and excel line breaks`() {
+        val csv = """
+            stable_key,manga_title,manga_path,original_title,chapter_path,translated_title
+            10,Author,Author,"Story
+            Part 2",Author/Story.cbz,故事
+        """.trimIndent()
+
+        val document = ChapterTitleTranslationCodec.decode(csv)
+
+        document.chapters.single().originalTitle shouldBe "Story\nPart 2"
+        document.chapters.single().translatedTitle shouldBe "故事"
+    }
+
+    @Test
+    fun `full library csv round trip keeps separate manga groups`() {
+        val firstManga = Manga.create().copy(id = 7, title = "Author A", url = "Author A")
+        val secondManga = Manga.create().copy(id = 8, title = "Author B", url = "Author B")
+
+        val csv = ChapterTitleTranslationCodec.encodeLocalLibrary(
+            mangas = listOf(
+                firstManga to listOf(chapter(10, "Author A/Story.cbz", "Story")),
+                secondManga to listOf(chapter(20, "Author B/Other.cbz", "Other")),
+            ),
+            format = ChapterTitleTranslationFormat.CSV,
+        )
+        val decoded = ChapterTitleTranslationCodec.decodeLocalLibrary(csv)
+
+        decoded.mangas.map { it.mangaTitle } shouldBe listOf("Author A", "Author B")
+        decoded.mangas.map { it.chapters.single().chapterId } shouldBe listOf(10L, 20L)
+    }
+
+    @Test
     fun `local library import matches each manga before matching its chapters`() {
         val firstManga = Manga.create().copy(id = 7, title = "Author A", url = "Author A")
         val secondManga = Manga.create().copy(id = 8, title = "Author B", url = "Author B")
@@ -185,6 +240,32 @@ class ChapterTitleTranslationTest {
         plan.updates.single().id shouldBe 10L
         plan.updates.single().translatedName shouldBe "故事"
         plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `database id collision does not import a translation across devices`() {
+        val exported = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = 10,
+                        originalTitle = "Story",
+                        originalUrl = "Author A/Story.cbz",
+                        translatedTitle = "旧译名",
+                    ),
+                ).copy(mangaId = 7, mangaTitle = "Author A", mangaUrl = "Author A"),
+            ),
+        )
+        val unrelatedManga = Manga.create().copy(id = 7, title = "Author A", url = "Other Author")
+        val unrelatedChapter = chapter(10, "Other Author/Different.cbz", "Story").copy(mangaId = 7)
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = exported,
+            currentMangas = listOf(unrelatedManga to listOf(unrelatedChapter)),
+        )
+
+        plan.updates shouldBe emptyList()
+        plan.ignoredCount shouldBe 1
     }
 
     private fun document(vararg entries: ChapterTitleTranslationEntry) = ChapterTitleTranslationDocument(

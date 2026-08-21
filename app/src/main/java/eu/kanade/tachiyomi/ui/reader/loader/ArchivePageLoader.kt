@@ -3,7 +3,7 @@ package eu.kanade.tachiyomi.ui.reader.loader
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
-import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
+import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
 import mihon.core.archive.ArchiveReader
 import tachiyomi.core.common.util.system.ImageUtil
 
@@ -28,7 +28,7 @@ internal class ArchivePageLoader(
                 entries
                     .filter { it.isFile && ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
                     .map { it.name }
-                    .sortedWith { a, b -> a.compareToCaseInsensitiveNaturalOrder(b) }
+                    .sortedWith { a, b -> a.compareToCaseInsensitiveNaturalPageOrder(b) }
                     .toList()
             }
         }

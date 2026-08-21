@@ -33,7 +33,9 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
+import tachiyomi.source.local.LocalSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.FileOutputStream
@@ -50,6 +52,7 @@ class BackupCreator(
     private val getFavorites: GetFavorites = Injekt.get(),
     private val backupPreferences: BackupPreferences = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
+    private val sourceManager: SourceManager = Injekt.get(),
 
     private val categoriesBackupCreator: CategoriesBackupCreator = CategoriesBackupCreator(),
     private val mangaBackupCreator: MangaBackupCreator = MangaBackupCreator(),
@@ -83,7 +86,9 @@ class BackupCreator(
             }
 
             val nonFavoriteManga = if (options.readEntries) mangaRepository.getReadMangaNotInLibrary() else emptyList()
-            val backupManga = backupMangas(getFavorites.await() + nonFavoriteManga, options)
+            val localManga = if (options.libraryEntries) getCurrentLocalManga() else emptyList()
+            val manga = (getFavorites.await() + nonFavoriteManga + localManga).distinctBy(Manga::id)
+            val backupManga = backupMangas(manga, options)
 
             val backup = Backup(
                 backupManga = backupManga,
@@ -157,6 +162,16 @@ class BackupCreator(
         if (!options.libraryEntries) return emptyList()
 
         return mangaBackupCreator(mangas, options)
+    }
+
+    private suspend fun getCurrentLocalManga(): List<Manga> {
+        val source = sourceManager.get(LocalSource.ID) as? LocalSource ?: return emptyList()
+        val currentMangaUrls = checkNotNull(source.getConfirmedMangaUrls()) {
+            "Local library storage is unavailable"
+        }
+        return currentMangaUrls.mapNotNull { url ->
+            mangaRepository.getMangaByUrlAndSourceId(url, LocalSource.ID)
+        }
     }
 
     private fun backupSources(mangas: List<BackupManga>): List<BackupSource> {

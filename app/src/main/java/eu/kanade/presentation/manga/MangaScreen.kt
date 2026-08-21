@@ -161,7 +161,7 @@ fun MangaScreen(
     // For chapter swipe
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
     onReorderChapters: (List<Long>) -> Unit,
-    onChapterTranslatedTitleLongClick: (ChapterList.Item) -> Unit,
+    onEditChapterTranslatedTitle: (ChapterList.Item) -> Unit,
 
     // Chapter selection
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
@@ -257,7 +257,7 @@ fun MangaScreen(
             onMultiDeleteClicked = onMultiDeleteClicked,
             onChapterSwipe = onChapterSwipe,
             onReorderChapters = onReorderChapters,
-            onChapterTranslatedTitleLongClick = onChapterTranslatedTitleLongClick,
+            onEditChapterTranslatedTitle = onEditChapterTranslatedTitle,
             onChapterSelected = onChapterSelected,
             onAllChapterSelected = onAllChapterSelected,
             onInvertSelection = onInvertSelection,
@@ -310,7 +310,7 @@ fun MangaScreen(
             onMultiDeleteClicked = onMultiDeleteClicked,
             onChapterSwipe = onChapterSwipe,
             onReorderChapters = onReorderChapters,
-            onChapterTranslatedTitleLongClick = onChapterTranslatedTitleLongClick,
+            onEditChapterTranslatedTitle = onEditChapterTranslatedTitle,
             onChapterSelected = onChapterSelected,
             onAllChapterSelected = onAllChapterSelected,
             onInvertSelection = onInvertSelection,
@@ -379,7 +379,7 @@ private fun MangaScreenSmallImpl(
     // For chapter swipe
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
     onReorderChapters: (List<Long>) -> Unit,
-    onChapterTranslatedTitleLongClick: (ChapterList.Item) -> Unit,
+    onEditChapterTranslatedTitle: (ChapterList.Item) -> Unit,
 
     // Chapter selection
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
@@ -467,6 +467,7 @@ private fun MangaScreenSmallImpl(
                 markedChapterIds = markedChapterIds,
                 goodDoujinChapterIds = goodDoujinChapterIds,
                 onToggleMarkClicked = onToggleMarkClicked,
+                onEditChapterTranslatedTitle = onEditChapterTranslatedTitle,
                 fillFraction = 1f,
             )
         },
@@ -620,7 +621,6 @@ private fun MangaScreenSmallImpl(
                         onDownloadChapter = onDownloadChapter,
                         onChapterSelected = onChapterSelected,
                         onChapterSwipe = onChapterSwipe,
-                        onChapterTranslatedTitleLongClick = onChapterTranslatedTitleLongClick,
                     )
                 }
             }
@@ -686,7 +686,7 @@ fun MangaScreenLargeImpl(
     // For swipe actions
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
     onReorderChapters: (List<Long>) -> Unit,
-    onChapterTranslatedTitleLongClick: (ChapterList.Item) -> Unit,
+    onEditChapterTranslatedTitle: (ChapterList.Item) -> Unit,
 
     // Chapter selection
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
@@ -770,6 +770,7 @@ fun MangaScreenLargeImpl(
                     markedChapterIds = markedChapterIds,
                     goodDoujinChapterIds = goodDoujinChapterIds,
                     onToggleMarkClicked = onToggleMarkClicked,
+                    onEditChapterTranslatedTitle = onEditChapterTranslatedTitle,
                     fillFraction = 0.5f,
                 )
             }
@@ -920,7 +921,6 @@ fun MangaScreenLargeImpl(
                                 onDownloadChapter = onDownloadChapter,
                                 onChapterSelected = onChapterSelected,
                                 onChapterSwipe = onChapterSwipe,
-                                onChapterTranslatedTitleLongClick = onChapterTranslatedTitleLongClick,
                             )
                         }
                     }
@@ -944,6 +944,7 @@ private fun SharedMangaBottomActionMenu(
     markedChapterIds: Set<Long>,
     goodDoujinChapterIds: Set<Long>,
     onToggleMarkClicked: ((List<Chapter>) -> Unit)?,
+    onEditChapterTranslatedTitle: (ChapterList.Item) -> Unit,
     fillFraction: Float,
     modifier: Modifier = Modifier,
 ) {
@@ -984,6 +985,9 @@ private fun SharedMangaBottomActionMenu(
         }.takeIf {
             selected.fastAny { it.downloadState == Download.State.DOWNLOADED }
         },
+        onEditTranslatedTitleClicked = {
+            onEditChapterTranslatedTitle(selected.single())
+        }.takeIf { goodDoujinEnabled && selected.size == 1 },
         onToggleMarkClicked = onToggleMarkClicked?.let { toggle ->
             { toggle(selected.fastMap { it.chapter }) }
         }.takeIf { selected.isNotEmpty() },
@@ -1017,7 +1021,6 @@ private fun LazyListScope.sharedChapterItems(
     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
-    onChapterTranslatedTitleLongClick: (ChapterList.Item) -> Unit,
     markedChapterIds: Set<Long>,
     goodDoujinChapterIds: Set<Long>,
 ) {
@@ -1030,7 +1033,6 @@ private fun LazyListScope.sharedChapterItems(
             isAnyChapterSelected = isAnyChapterSelected,
             onChapterClicked = onChapterClicked,
             onChapterSelected = onChapterSelected,
-            onChapterTranslatedTitleLongClick = onChapterTranslatedTitleLongClick,
             markedChapterIds = markedChapterIds,
             goodDoujinChapterIds = goodDoujinChapterIds,
         )
@@ -1068,11 +1070,13 @@ private fun LazyListScope.sharedChapterItems(
                 MR.strings.display_mode_chapter,
                 formatChapterNumber(item.chapter.chapterNumber),
             )
-            Manga.CHAPTER_DISPLAY_TRANSLATED -> item.chapter.translatedNameOrNull ?: item.chapter.name
+            Manga.CHAPTER_DISPLAY_TRANSLATED_AND_ORIGINAL,
+            Manga.CHAPTER_DISPLAY_TRANSLATED_ONLY,
+            -> item.chapter.translatedNameOrNull ?: item.chapter.name
             else -> item.chapter.name
         }
         val originalTitle = item.chapter.name.takeIf {
-            manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED && chapterTitle != it
+            manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED_AND_ORIGINAL && chapterTitle != it
         }
         val copyTitle = { context.copyToClipboard(item.chapter.name, item.chapter.name) }
         ReorderableItem(reorderableState, "chapter-${item.id}") {
@@ -1149,20 +1153,13 @@ private fun LazyListScope.sharedChapterItems(
                         },
                         onDragStopped = {
                             if (!onReorder() && !dragMoved) {
-                                if (manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED) {
-                                    onChapterTranslatedTitleLongClick(item)
-                                    return@longPressDraggableHandle
-                                }
                                 // Long-press without moving: on the title it copies, anywhere
-                                // else it selects.
+                                // else it selects and exposes the existing bottom action bar.
                                 val down = downPosition
                                 val bounds = titleBounds
                                 if (down != null && bounds != null && bounds.contains(rowRootOffset + down)) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     copyTitle()
                                 } else {
-                                    // No second buzz here: the long-press already vibrated
-                                    // when the gesture started.
                                     onChapterSelected(item, !item.selected, true)
                                 }
                             }
@@ -1238,7 +1235,6 @@ private fun LazyListScope.sharedChapterGridItems(
     isAnyChapterSelected: Boolean,
     onChapterClicked: (Chapter) -> Unit,
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
-    onChapterTranslatedTitleLongClick: (ChapterList.Item) -> Unit,
     markedChapterIds: Set<Long>,
     goodDoujinChapterIds: Set<Long>,
 ) {
@@ -1260,11 +1256,13 @@ private fun LazyListScope.sharedChapterGridItems(
                         MR.strings.display_mode_chapter,
                         formatChapterNumber(item.chapter.chapterNumber),
                     )
-                    Manga.CHAPTER_DISPLAY_TRANSLATED -> item.chapter.translatedNameOrNull ?: item.chapter.name
+                    Manga.CHAPTER_DISPLAY_TRANSLATED_AND_ORIGINAL,
+                    Manga.CHAPTER_DISPLAY_TRANSLATED_ONLY,
+                    -> item.chapter.translatedNameOrNull ?: item.chapter.name
                     else -> item.chapter.name
                 }
                 val originalTitle = item.chapter.name.takeIf {
-                    manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED && chapterTitle != it
+                    manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED_AND_ORIGINAL && chapterTitle != it
                 }
                 val chapterProgress = item.chapter.toChapterProgressUi()
                 MangaChapterGridItem(
@@ -1290,11 +1288,7 @@ private fun LazyListScope.sharedChapterGridItems(
                     goodDoujinMarked = item.chapter.id in goodDoujinChapterIds,
                     flagMarked = item.chapter.id in markedChapterIds,
                     onLongClick = {
-                        if (manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED && !isAnyChapterSelected) {
-                            onChapterTranslatedTitleLongClick(item)
-                        } else {
-                            onChapterSelected(item, !item.selected, true)
-                        }
+                        onChapterSelected(item, !item.selected, true)
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     },
                     onClick = {

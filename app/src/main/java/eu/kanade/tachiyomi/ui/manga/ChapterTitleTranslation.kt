@@ -39,33 +39,74 @@ internal data class LocalLibraryChapterTitleImportPlan(
     val ignoredCount: Int,
 )
 
+enum class ChapterTitleTranslationFormat(
+    val mimeType: String,
+    val fileExtension: String,
+) {
+    JSON("application/json", "json"),
+    CSV("text/csv", "csv"),
+}
+
 internal object ChapterTitleTranslationCodec {
+    private const val CSV_BOM = '\uFEFF'
+    private val csvHeader = listOf(
+        "stable_key",
+        "漫画原名",
+        "漫画路径",
+        "篇目原名",
+        "篇目路径",
+        "中文名",
+        "中文排序名",
+        "备注",
+        "人工锁定",
+    )
     private val json = Json {
         prettyPrint = true
         encodeDefaults = true
         ignoreUnknownKeys = true
     }
 
-    fun encode(manga: Manga, chapters: List<Chapter>): String {
-        return json.encodeToString(toDocument(manga, chapters))
+    fun encode(
+        manga: Manga,
+        chapters: List<Chapter>,
+        format: ChapterTitleTranslationFormat = ChapterTitleTranslationFormat.JSON,
+    ): String {
+        val document = toDocument(manga, chapters)
+        return when (format) {
+            ChapterTitleTranslationFormat.JSON -> json.encodeToString(document)
+            ChapterTitleTranslationFormat.CSV -> encodeCsv(listOf(document))
+        }
     }
 
-    fun encodeLocalLibrary(mangas: List<Pair<Manga, List<Chapter>>>): String {
-        return json.encodeToString(
-            LocalLibraryChapterTitleTranslationDocument(
-                mangas = mangas
-                    .sortedBy { (manga, _) -> manga.title.lowercase() }
-                    .map { (manga, chapters) -> toDocument(manga, chapters) },
-            ),
+    fun encodeLocalLibrary(
+        mangas: List<Pair<Manga, List<Chapter>>>,
+        format: ChapterTitleTranslationFormat = ChapterTitleTranslationFormat.JSON,
+    ): String {
+        val document = LocalLibraryChapterTitleTranslationDocument(
+            mangas = mangas
+                .sortedBy { (manga, _) -> manga.title.lowercase() }
+                .map { (manga, chapters) -> toDocument(manga, chapters) },
         )
+        return when (format) {
+            ChapterTitleTranslationFormat.JSON -> json.encodeToString(document)
+            ChapterTitleTranslationFormat.CSV -> encodeCsv(document.mangas)
+        }
     }
 
     fun decode(value: String): ChapterTitleTranslationDocument {
-        return json.decodeFromString(value)
+        return if (value.isCsv()) {
+            decodeCsv(value).mangas.single()
+        } else {
+            json.decodeFromString(value)
+        }
     }
 
     fun decodeLocalLibrary(value: String): LocalLibraryChapterTitleTranslationDocument {
-        return json.decodeFromString(value)
+        return if (value.isCsv()) {
+            decodeCsv(value)
+        } else {
+            json.decodeFromString(value)
+        }
     }
 
     fun planLocalLibraryImport(
@@ -84,9 +125,7 @@ internal object ChapterTitleTranslationCodec {
 
         val updates = document.mangas.flatMap { mangaDocument ->
             val idMatch = byId[mangaDocument.mangaId]
-                ?.takeIf { (manga, _) ->
-                    manga.url == mangaDocument.mangaUrl || manga.title == mangaDocument.mangaTitle
-                }
+                ?.takeIf { (manga, _) -> manga.url == mangaDocument.mangaUrl }
             val urlMatch = byUrl[mangaDocument.mangaUrl]?.singleOrNull()
             val current = idMatch ?: urlMatch
             val currentChaptersById = current?.second.orEmpty().associateBy(Chapter::id)
@@ -100,11 +139,11 @@ internal object ChapterTitleTranslationCodec {
                 }
 
                 val localIdMatch = currentChaptersById[entry.chapterId]
-                    ?.takeIf { it.name == entry.originalTitle || it.url == entry.originalUrl }
+                    ?.takeIf { it.matchesExportedIdentity(entry) }
                 val localUrlMatch = currentChaptersByUrl[entry.originalUrl]?.singleOrNull()
                 // A moved local chapter keeps its database id even when its parent manga changes.
                 val movedIdMatch = allChaptersById[entry.chapterId]
-                    ?.takeIf { it.name == entry.originalTitle || it.url == entry.originalUrl }
+                    ?.takeIf { it.matchesExportedIdentity(entry) }
                 val globalUrlMatch = allChaptersByUrl[entry.originalUrl]?.singleOrNull()
                 val chapter = localIdMatch ?: localUrlMatch ?: movedIdMatch ?: globalUrlMatch
 
@@ -139,7 +178,7 @@ internal object ChapterTitleTranslationCodec {
             }
 
             val idMatch = byId[entry.chapterId]
-                ?.takeIf { it.name == entry.originalTitle || it.url == entry.originalUrl }
+                ?.takeIf { it.matchesExportedIdentity(entry) }
             val urlMatch = byUrl[entry.originalUrl]?.singleOrNull()
             val chapter = idMatch ?: urlMatch
 
@@ -169,4 +208,189 @@ internal object ChapterTitleTranslationCodec {
             },
         )
     }
+
+    private fun Chapter.matchesExportedIdentity(entry: ChapterTitleTranslationEntry): Boolean {
+        if (url == entry.originalUrl) return true
+        return name == entry.originalTitle &&
+            url.substringAfterLast('/') == entry.originalUrl.substringAfterLast('/')
+    }
+
+    private fun encodeCsv(documents: List<ChapterTitleTranslationDocument>): String {
+        val rows = buildList {
+            add(csvHeader)
+            documents.forEach { manga ->
+                manga.chapters.forEach { chapter ->
+                    add(
+                        listOf(
+                            chapter.chapterId.toString(),
+                            manga.mangaTitle,
+                            manga.mangaUrl,
+                            chapter.originalTitle,
+                            chapter.originalUrl,
+                            chapter.translatedTitle,
+                            "",
+                            "",
+                            "",
+                        ),
+                    )
+                }
+            }
+        }
+        return buildString {
+            append(CSV_BOM)
+            rows.joinTo(this, separator = "\r\n") { row ->
+                row.joinToString(",", transform = ::escapeCsvCell)
+            }
+        }
+    }
+
+    private fun decodeCsv(value: String): LocalLibraryChapterTitleTranslationDocument {
+        val rows = parseCsv(value)
+        require(rows.isNotEmpty()) { "Chapter title translation table is empty" }
+
+        val headers = rows.first().map(::normalizeCsvHeader)
+        val formatVersionIndex = headers.findColumn("formatversion", "版本")
+        val mangaIdIndex = headers.findColumn("mangaid", "漫画id")
+        val mangaTitleIndex = headers.requireColumn("mangatitle", "漫画原名", "漫画名")
+        val mangaPathIndex = headers.requireColumn("mangapath", "mangaurl", "漫画路径")
+        val chapterIdIndex = headers.requireColumn("stablekey", "chapterid", "篇目id", "章节id")
+        val originalTitleIndex = headers.requireColumn(
+            "originaltitle",
+            "chaptertitle",
+            "篇目原名",
+            "章节原名",
+            "原名",
+        )
+        val chapterPathIndex = headers.requireColumn(
+            "chapterpath",
+            "originalurl",
+            "chapterurl",
+            "篇目路径",
+            "章节路径",
+        )
+        val translatedTitleIndex = headers.requireColumn("translatedtitle", "中文名", "译名")
+
+        data class MangaKey(val id: Long, val title: String, val path: String)
+
+        val chaptersByManga = linkedMapOf<MangaKey, MutableList<ChapterTitleTranslationEntry>>()
+        rows.drop(1).forEachIndexed { index, row ->
+            if (row.all(String::isBlank)) return@forEachIndexed
+
+            val rowNumber = index + 2
+            val formatVersion = formatVersionIndex
+                ?.let { row.cell(it).trim().ifEmpty { "1" }.toIntOrNull() }
+                ?: 1
+            require(formatVersion == 1) { "Unsupported table format on row $rowNumber" }
+
+            val mangaTitle = row.cell(mangaTitleIndex)
+            val mangaPath = row.cell(mangaPathIndex)
+            val mangaId = mangaIdIndex?.let { row.cell(it).trim().toLongOrNull() } ?: 0L
+            val chapterId = row.cell(chapterIdIndex).trim().toLongOrNull()
+                ?: error("Invalid stable_key on row $rowNumber")
+            require(mangaPath.isNotBlank()) { "Missing manga_path on row $rowNumber" }
+
+            chaptersByManga.getOrPut(MangaKey(mangaId, mangaTitle, mangaPath), ::mutableListOf)
+                .add(
+                    ChapterTitleTranslationEntry(
+                        chapterId = chapterId,
+                        originalTitle = row.cell(originalTitleIndex),
+                        originalUrl = row.cell(chapterPathIndex),
+                        translatedTitle = row.cell(translatedTitleIndex),
+                    ),
+                )
+        }
+
+        return LocalLibraryChapterTitleTranslationDocument(
+            mangas = chaptersByManga.map { (manga, chapters) ->
+                ChapterTitleTranslationDocument(
+                    mangaId = manga.id,
+                    mangaTitle = manga.title,
+                    mangaUrl = manga.path,
+                    chapters = chapters,
+                )
+            },
+        )
+    }
+
+    private fun String.isCsv(): Boolean {
+        return trimStart(CSV_BOM, ' ', '\t', '\r', '\n').firstOrNull() != '{'
+    }
+
+    private fun escapeCsvCell(value: String): String {
+        return if (value.any { it == ',' || it == '"' || it == '\r' || it == '\n' }) {
+            "\"${value.replace("\"", "\"\"")}\""
+        } else {
+            value
+        }
+    }
+
+    private fun parseCsv(value: String): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        var row = mutableListOf<String>()
+        val field = StringBuilder()
+        var inQuotes = false
+        var index = 0
+        val input = value.removePrefix(CSV_BOM.toString())
+
+        fun finishField() {
+            row.add(field.toString())
+            field.clear()
+        }
+
+        fun finishRow() {
+            finishField()
+            if (row.any { it.isNotEmpty() }) rows.add(row)
+            row = mutableListOf()
+        }
+
+        while (index < input.length) {
+            val character = input[index]
+            if (inQuotes) {
+                if (character == '"') {
+                    if (input.getOrNull(index + 1) == '"') {
+                        field.append('"')
+                        index++
+                    } else {
+                        inQuotes = false
+                    }
+                } else {
+                    field.append(character)
+                }
+            } else {
+                when (character) {
+                    '"' -> if (field.isEmpty()) inQuotes = true else field.append(character)
+                    ',' -> finishField()
+                    '\r' -> {
+                        finishRow()
+                        if (input.getOrNull(index + 1) == '\n') index++
+                    }
+                    '\n' -> finishRow()
+                    else -> field.append(character)
+                }
+            }
+            index++
+        }
+
+        require(!inQuotes) { "Unterminated quoted field in chapter title translation table" }
+        if (field.isNotEmpty() || row.isNotEmpty()) finishRow()
+        return rows
+    }
+
+    private fun normalizeCsvHeader(value: String): String {
+        return value
+            .trim()
+            .lowercase()
+            .filterNot { it == '_' || it == '-' || it.isWhitespace() }
+    }
+
+    private fun List<String>.findColumn(vararg names: String): Int? {
+        val accepted = names.toSet()
+        return indexOfFirst { it in accepted }.takeIf { it >= 0 }
+    }
+
+    private fun List<String>.requireColumn(vararg names: String): Int {
+        return findColumn(*names) ?: error("Missing table column: ${names.first()}")
+    }
+
+    private fun List<String>.cell(index: Int): String = getOrElse(index) { "" }
 }

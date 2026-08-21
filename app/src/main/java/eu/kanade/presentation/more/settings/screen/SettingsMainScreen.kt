@@ -17,7 +17,6 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +40,7 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.more.settings.screen.about.AboutScreen
+import eu.kanade.presentation.more.settings.widget.PreferenceGroupHeader
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
@@ -103,7 +103,7 @@ object SettingsMainScreen : Screen() {
             content = { contentPadding ->
                 val state = rememberLazyListState()
                 val indexSelected = if (twoPane) {
-                    items.indexOfFirst { it.screen::class == navigator.items.first()::class }
+                    rows.indexOfFirst { it.item?.screen?.let { screen -> screen::class } == navigator.items.first()::class }
                         .also {
                             LaunchedEffect(Unit) {
                                 state.animateScrollToItem(it)
@@ -122,35 +122,41 @@ object SettingsMainScreen : Screen() {
                     contentPadding = contentPadding,
                 ) {
                     itemsIndexed(
-                        items = items,
-                        key = { _, item -> item.hashCode() },
-                    ) { index, item ->
-                        val selected = indexSelected == index
-                        var modifier: Modifier = Modifier
-                        var contentColor = LocalContentColor.current
-                        if (twoPane) {
-                            modifier = Modifier
-                                .padding(horizontal = 8.dp)
-                                .clip(RoundedCornerShape(24.dp))
-                                .then(
-                                    if (selected) {
-                                        Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                            if (selected) {
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        items = rows,
+                        key = { _, row -> row.hashCode() },
+                    ) { index, row ->
+                        val headerRes = row.headerRes
+                        val item = row.item
+                        if (headerRes != null) {
+                            PreferenceGroupHeader(title = stringResource(headerRes))
+                        } else if (item != null) {
+                            val selected = indexSelected == index
+                            var modifier: Modifier = Modifier
+                            var contentColor = LocalContentColor.current
+                            if (twoPane) {
+                                modifier = Modifier
+                                    .padding(horizontal = 8.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .then(
+                                        if (selected) {
+                                            Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
+                                if (selected) {
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             }
-                        }
-                        CompositionLocalProvider(LocalContentColor provides contentColor) {
-                            TextPreferenceWidget(
-                                modifier = modifier,
-                                title = stringResource(item.titleRes),
-                                subtitle = item.formatSubtitle(),
-                                icon = item.icon,
-                                onPreferenceClick = { navigator.navigate(item.screen, twoPane) },
-                            )
+                            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                                TextPreferenceWidget(
+                                    modifier = modifier,
+                                    title = stringResource(item.titleRes),
+                                    subtitle = item.formatSubtitle(),
+                                    icon = item.icon,
+                                    onPreferenceClick = { navigator.navigate(item.screen, twoPane) },
+                                )
+                            }
                         }
                     }
                 }
@@ -170,68 +176,99 @@ object SettingsMainScreen : Screen() {
         val screen: VoyagerScreen,
     )
 
-    private val items = listOf(
-        Item(
-            titleRes = MR.strings.pref_category_appearance,
-            subtitleRes = MR.strings.pref_appearance_summary,
-            icon = Icons.Outlined.Palette,
-            screen = SettingsAppearanceScreen,
+    private data class Section(
+        val titleRes: StringResource?,
+        val items: List<Item>,
+    )
+
+    private data class Row(
+        val headerRes: StringResource? = null,
+        val item: Item? = null,
+    )
+
+    private val sections = listOf(
+        Section(
+            titleRes = MR.strings.settings_section_interface_reader,
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.pref_category_appearance,
+                    subtitleRes = MR.strings.pref_appearance_summary,
+                    icon = Icons.Outlined.Palette,
+                    screen = SettingsAppearanceScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_reader,
+                    subtitleRes = MR.strings.pref_reader_summary,
+                    icon = Icons.AutoMirrored.Outlined.ChromeReaderMode,
+                    screen = SettingsReaderScreen,
+                ),
+            ),
         ),
-        Item(
-            titleRes = MR.strings.pref_category_library,
-            subtitleRes = MR.strings.pref_library_summary,
-            icon = Icons.Outlined.CollectionsBookmark,
-            screen = SettingsLibraryScreen,
+        Section(
+            titleRes = MR.strings.settings_section_content_library,
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.pref_category_library,
+                    subtitleRes = MR.strings.pref_library_summary,
+                    icon = Icons.Outlined.CollectionsBookmark,
+                    screen = SettingsLibraryScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_downloads,
+                    subtitleRes = MR.strings.pref_downloads_summary,
+                    icon = Icons.Outlined.GetApp,
+                    screen = SettingsDownloadScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.browse,
+                    subtitleRes = MR.strings.pref_browse_summary,
+                    icon = Icons.Outlined.Explore,
+                    screen = SettingsBrowseScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_tracking,
+                    subtitleRes = MR.strings.pref_tracking_summary,
+                    icon = Icons.Outlined.Sync,
+                    screen = SettingsTrackingScreen,
+                ),
+            ),
         ),
-        Item(
-            titleRes = MR.strings.pref_category_reader,
-            subtitleRes = MR.strings.pref_reader_summary,
-            icon = Icons.AutoMirrored.Outlined.ChromeReaderMode,
-            screen = SettingsReaderScreen,
+        Section(
+            titleRes = MR.strings.settings_section_privacy,
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.pref_category_security,
+                    subtitleRes = MR.strings.pref_security_summary,
+                    icon = Icons.Outlined.Security,
+                    screen = SettingsSecurityScreen,
+                ),
+            ),
         ),
-        Item(
-            titleRes = MR.strings.pref_category_downloads,
-            subtitleRes = MR.strings.pref_downloads_summary,
-            icon = Icons.Outlined.GetApp,
-            screen = SettingsDownloadScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_tracking,
-            subtitleRes = MR.strings.pref_tracking_summary,
-            icon = Icons.Outlined.Sync,
-            screen = SettingsTrackingScreen,
-        ),
-        Item(
-            titleRes = MR.strings.browse,
-            subtitleRes = MR.strings.pref_browse_summary,
-            icon = Icons.Outlined.Explore,
-            screen = SettingsBrowseScreen,
-        ),
-        Item(
-            titleRes = MR.strings.label_data_storage,
-            subtitleRes = MR.strings.pref_backup_summary,
-            icon = Icons.Outlined.Storage,
-            screen = SettingsDataScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_security,
-            subtitleRes = MR.strings.pref_security_summary,
-            icon = Icons.Outlined.Security,
-            screen = SettingsSecurityScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_advanced,
-            subtitleRes = MR.strings.pref_advanced_summary,
-            icon = Icons.Outlined.Code,
-            screen = SettingsAdvancedScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_about,
-            formatSubtitle = {
-                "${stringResource(MR.strings.app_name)} ${AboutScreen.getVersionName(withBuildDate = false)}"
-            },
-            icon = Icons.Outlined.Info,
-            screen = AboutScreen,
+        Section(
+            titleRes = MR.strings.settings_section_system,
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.pref_category_advanced,
+                    subtitleRes = MR.strings.pref_advanced_summary,
+                    icon = Icons.Outlined.Code,
+                    screen = SettingsAdvancedScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_about,
+                    formatSubtitle = {
+                        "${stringResource(MR.strings.app_name)} ${AboutScreen.getVersionName(withBuildDate = false)}"
+                    },
+                    icon = Icons.Outlined.Info,
+                    screen = AboutScreen,
+                ),
+            ),
         ),
     )
+
+    private val rows: List<Row> = sections.flatMap { section ->
+        buildList {
+            section.titleRes?.let { add(Row(headerRes = it)) }
+            section.items.forEach { add(Row(item = it)) }
+        }
+    }
 }

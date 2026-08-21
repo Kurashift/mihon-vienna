@@ -14,6 +14,8 @@ import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -21,6 +23,7 @@ class MangaBackupCreator(
     private val database: Database = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
     private val getHistory: GetHistory = Injekt.get(),
+    private val localChapterCoverManager: LocalChapterCoverManager = Injekt.get(),
 ) {
 
     suspend operator fun invoke(mangas: List<Manga>, options: BackupOptions): List<BackupManga> {
@@ -39,15 +42,19 @@ class MangaBackupCreator(
 
         if (options.chapters) {
             // Backup all the chapters
-            database.chaptersQueries
+            val chapters = database.chaptersQueries
                 .getChaptersByMangaId(
                     mangaId = manga.id,
                     applyScanlatorFilter = 0, // false
                     mapper = backupChapterMapper,
                 )
                 .awaitAsList()
-                .takeUnless(List<BackupChapter>::isEmpty)
-                ?.let { mangaObject.chapters = it }
+            if (manga.source == LocalSource.ID) {
+                chapters.forEach { chapter ->
+                    chapter.customCover = localChapterCoverManager.exportCustom(chapter.chapterId)
+                }
+            }
+            chapters.takeUnless(List<BackupChapter>::isEmpty)?.let { mangaObject.chapters = it }
         }
 
         if (options.categories) {

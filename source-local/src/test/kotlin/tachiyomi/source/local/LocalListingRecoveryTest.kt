@@ -1,8 +1,10 @@
 package tachiyomi.source.local
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import kotlinx.coroutines.runBlocking
 
 class LocalListingRecoveryTest {
 
@@ -11,21 +13,17 @@ class LocalListingRecoveryTest {
         assertTrue(
             shouldReuseListingAfterUnexpectedEmptyScan(
                 scannedDirectoryCount = 0,
-                scannedBaseDirLastModified = 123L,
                 persistedEntryCount = 539,
-                persistedBaseDirLastModified = 123L,
             ),
         )
     }
 
     @Test
-    fun `changed directory can become an intentionally empty library`() {
-        assertFalse(
+    fun `changed directory does not let a transient empty scan erase a populated index`() {
+        assertTrue(
             shouldReuseListingAfterUnexpectedEmptyScan(
                 scannedDirectoryCount = 0,
-                scannedBaseDirLastModified = 456L,
                 persistedEntryCount = 539,
-                persistedBaseDirLastModified = 123L,
             ),
         )
     }
@@ -35,10 +33,45 @@ class LocalListingRecoveryTest {
         assertFalse(
             shouldReuseListingAfterUnexpectedEmptyScan(
                 scannedDirectoryCount = 0,
-                scannedBaseDirLastModified = 123L,
                 persistedEntryCount = 0,
-                persistedBaseDirLastModified = 123L,
             ),
         )
+    }
+
+    @Test
+    fun `reliable refresh removes a folder whose last chapter was deleted`() {
+        assertEquals(0, resolvedLocalChapterCount(emptySet(), measuredChapterCount = 4))
+    }
+
+    @Test
+    fun `reliable scan wins over a transient empty metadata read`() {
+        assertEquals(
+            2,
+            resolvedLocalChapterCount(setOf("Story 1.cbz", "Story 2.cbz"), measuredChapterCount = 0),
+        )
+    }
+
+    @Test
+    fun `reliable refresh does not revive a directory missing from its scan`() {
+        assertFalse(
+            shouldIncludeLocalMangaDirectory(
+                mangaUrl = "Deleted author",
+                scannedChapterFileNames = mapOf("Existing author" to setOf("Story.cbz")),
+            ),
+        )
+    }
+
+    @Test
+    fun `more than 64 real directory removals can be confirmed`() = runBlocking {
+        val missing = (1..65).mapTo(linkedSetOf()) { "Author $it" }
+
+        assertTrue(confirmMissingLocalMangaDirectoriesGone(missing) { false })
+    }
+
+    @Test
+    fun `one existing directory rejects a bulk removal snapshot`() = runBlocking {
+        val missing = (1..65).mapTo(linkedSetOf()) { "Author $it" }
+
+        assertFalse(confirmMissingLocalMangaDirectoriesGone(missing) { it == "Author 37" })
     }
 }

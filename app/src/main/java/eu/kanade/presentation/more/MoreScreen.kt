@@ -12,12 +12,12 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.more.settings.widget.PreferenceGroupHeader
 import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.R
@@ -51,8 +51,13 @@ fun MoreScreen(
         ScrollbarLazyColumn(contentPadding = contentPadding) {
             item {
                 LogoHeader(
-                    iconPadding = PaddingValues(vertical = 32.dp),
+                    iconPadding = PaddingValues(vertical = 16.dp),
+                    iconSize = 40.dp,
                 )
+            }
+
+            item {
+                PreferenceGroupHeader(title = stringResource(MR.strings.more_section_reading_mode))
             }
             item {
                 SwitchPreferenceWidget(
@@ -73,14 +78,22 @@ fun MoreScreen(
                 )
             }
 
-            item { HorizontalDivider() }
-
+            item {
+                PreferenceGroupHeader(title = stringResource(MR.strings.more_section_library))
+            }
             item {
                 TextPreferenceWidget(
                     title = stringResource(MR.strings.my_lists_title),
                     subtitle = stringResource(MR.strings.my_lists_summary),
                     icon = Icons.Outlined.Flag,
                     onPreferenceClick = onClickMyLists,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.categories),
+                    icon = Icons.AutoMirrored.Outlined.Label,
+                    onPreferenceClick = onClickCategories,
                 )
             }
             item {
@@ -114,16 +127,20 @@ fun MoreScreen(
             }
             item {
                 TextPreferenceWidget(
-                    title = stringResource(MR.strings.categories),
-                    icon = Icons.AutoMirrored.Outlined.Label,
-                    onPreferenceClick = onClickCategories,
-                )
-            }
-            item {
-                TextPreferenceWidget(
                     title = stringResource(MR.strings.label_stats),
                     icon = Icons.Outlined.QueryStats,
                     onPreferenceClick = onClickStats,
+                )
+            }
+
+            item {
+                PreferenceGroupHeader(title = stringResource(MR.strings.more_section_settings))
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_settings),
+                    icon = Icons.Outlined.Settings,
+                    onPreferenceClick = onClickSettings,
                 )
             }
             item {
@@ -134,14 +151,8 @@ fun MoreScreen(
                 )
             }
 
-            item { HorizontalDivider() }
-
             item {
-                TextPreferenceWidget(
-                    title = stringResource(MR.strings.label_settings),
-                    icon = Icons.Outlined.Settings,
-                    onPreferenceClick = onClickSettings,
-                )
+                PreferenceGroupHeader(title = stringResource(MR.strings.more_section_about))
             }
             item {
                 TextPreferenceWidget(

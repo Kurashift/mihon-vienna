@@ -74,6 +74,7 @@ class UpdateMangaFromRemote(
                 source = source,
                 manualFetch = manualFetch,
                 fetchWindow = fetchWindow,
+                allowEmptyLocalSource = source is tachiyomi.source.local.LocalSource && fetchChapters,
             )
             val updatedManga = mangaRepository.getMangaById(manga.id)
 

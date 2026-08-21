@@ -172,6 +172,11 @@ class LibraryPreferences(
         Manga.CHAPTER_DISPLAY_NAME,
     )
 
+    val localChapterDisplayMode: Preference<Long> = preferenceStore.getLong(
+        "default_local_chapter_display_mode",
+        Manga.CHAPTER_DISPLAY_NAME,
+    )
+
     val sortChapterByAscendingOrDescending: Preference<Long> = preferenceStore.getLong(
         "default_chapter_sort_by_ascending_or_descending",
         Manga.CHAPTER_SORT_DESC,
@@ -206,7 +211,11 @@ class LibraryPreferences(
             sortCloudChapterBySourceOrNumber.set(sorting)
             sortCloudChapterByAscendingOrDescending.set(direction)
         }
-        displayChapterByNameOrNumber.set(manga.displayMode)
+        if (manga.source == 0L) {
+            localChapterDisplayMode.set(manga.displayMode)
+        } else {
+            displayChapterByNameOrNumber.set(manga.displayMode)
+        }
     }
 
     val autoClearChapterCache: Preference<Boolean> = preferenceStore.getBoolean("auto_clear_chapter_cache", false)

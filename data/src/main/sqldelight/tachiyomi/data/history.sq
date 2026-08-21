@@ -109,3 +109,13 @@ WHERE chapter_id = :chapterId;
 getReadDuration:
 SELECT coalesce(sum(time_read), 0)
 FROM history;
+
+mergeForChapterMove:
+INSERT INTO history(chapter_id, last_read, time_read)
+SELECT :chapterId, max(last_read), sum(time_read)
+FROM history
+WHERE chapter_id IN (:chapterId, :duplicateChapterId)
+HAVING count(*) > 0
+ON CONFLICT(chapter_id) DO UPDATE SET
+    last_read = excluded.last_read,
+    time_read = excluded.time_read;

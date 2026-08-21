@@ -11,6 +11,8 @@ import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupTracking
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
@@ -23,6 +25,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.domain.track.interactor.InsertTrack
 import tachiyomi.domain.track.model.Track
+import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.Date
@@ -37,6 +40,7 @@ class MangaRestorer(
     private val updateManga: UpdateManga = Injekt.get(),
     private val getTracks: GetTracks = Injekt.get(),
     private val insertTrack: InsertTrack = Injekt.get(),
+    private val localChapterCoverManager: LocalChapterCoverManager = Injekt.get(),
     fetchInterval: FetchInterval = Injekt.get(),
 ) {
 
@@ -61,7 +65,7 @@ class MangaRestorer(
         backupManga: BackupManga,
         backupCategories: List<BackupCategory>,
     ) {
-        database.transaction {
+        val restoredMangaId = database.transactionWithResult {
             val dbManga = findExistingManga(backupManga)
             val manga = backupManga.getMangaImpl()
             val restoredManga = if (dbManga == null) {
@@ -79,6 +83,20 @@ class MangaRestorer(
                 tracks = backupManga.tracking,
                 excludedScanlators = backupManga.excludedScanlators,
             )
+            restoredManga.id
+        }
+        restoreCustomChapterCovers(restoredMangaId, backupManga.chapters)
+    }
+
+    private suspend fun restoreCustomChapterCovers(mangaId: Long, backupChapters: List<BackupChapter>) {
+        val chaptersByUrl = getChaptersByMangaId.await(mangaId).associateBy(Chapter::url)
+        backupChapters.forEach { backupChapter ->
+            val data = backupChapter.customCover ?: return@forEach
+            val chapter = chaptersByUrl[backupChapter.url] ?: return@forEach
+            runCatching { localChapterCoverManager.restoreCustom(chapter.id, data) }
+                .onFailure { error ->
+                    logcat(LogPriority.ERROR, error) { "Failed to restore a local chapter custom cover" }
+                }
         }
     }
 

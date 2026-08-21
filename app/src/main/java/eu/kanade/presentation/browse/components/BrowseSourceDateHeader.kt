@@ -37,5 +37,13 @@ internal fun BrowseSourceDateHeader(
 }
 
 internal fun LazyPagingItems<BrowseSourceUiModel>.mangaNumberAt(index: Int): Int {
-    return (0..index).count { itemSnapshotList[it] is BrowseSourceUiModel.Item }
+    return absoluteMangaNumberAt(index) { itemSnapshotList[it] }
+}
+
+internal fun absoluteMangaNumberAt(
+    index: Int,
+    itemAt: (Int) -> BrowseSourceUiModel?,
+): Int {
+    val headersBeforeOrAt = (0..index).count { itemAt(it) is BrowseSourceUiModel.Header }
+    return index + 1 - headersBeforeOrAt
 }

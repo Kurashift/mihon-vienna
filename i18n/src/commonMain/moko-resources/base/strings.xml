@@ -38,6 +38,14 @@
     <string name="label_extension_info">Extension info</string>
     <string name="label_help">Help</string>
     <string name="label_support_us">Support Us</string>
+    <string name="more_section_reading_mode">Reading mode</string>
+    <string name="more_section_library">Library &amp; lists</string>
+    <string name="more_section_settings">Settings</string>
+    <string name="more_section_about">Support &amp; about</string>
+    <string name="settings_section_interface_reader">Interface &amp; reader</string>
+    <string name="settings_section_content_library">Content &amp; library</string>
+    <string name="settings_section_privacy">Privacy &amp; security</string>
+    <string name="settings_section_system">System</string>
     <string name="label_default">Default</string>
     <string name="label_warning">Warning</string>
     <string name="label_auto">Auto</string>
@@ -586,6 +594,9 @@
       <!-- Data and storage section -->
     <string name="pref_storage_location">Storage location</string>
     <string name="pref_storage_location_info">Used for automatic backups, work downloads, and local source.</string>
+    <string name="pref_local_source_direct_access">Local library file access</string>
+    <string name="pref_local_source_direct_access_summary">Enable only when local library refresh cannot detect file changes</string>
+    <string name="pref_local_source_direct_access_granted">Enabled; used only for the configured local library folder</string>
     <string name="pref_create_backup">Create backup</string>
     <string name="pref_create_backup_summ">Can be used to restore current library</string>
     <string name="pref_restore_backup">Restore backup</string>
@@ -794,6 +805,9 @@
     <string name="show_title">Original title</string>
     <string name="show_chapter_number">Number</string>
     <string name="show_translated_title">Translated title</string>
+    <string name="chapter_display_original_only">Original only</string>
+    <string name="chapter_display_translated_only">Translated only</string>
+    <string name="chapter_display_translated_and_original">Translated + original</string>
     <string name="chapter_filter_status_section">Status</string>
     <string name="chapter_filter_source_section">Source</string>
     <string name="chapter_sort_basis_section">Sort by</string>
@@ -807,6 +821,9 @@
     <string name="export_local_library_chapter_titles">Export entire local library</string>
     <string name="import_local_library_chapter_titles">Import entire local library</string>
     <string name="import_multiple_manga_chapter_titles">Import translations for multiple manga</string>
+    <string name="chapter_title_translation_export_format">Export format</string>
+    <string name="chapter_title_translation_format_json">JSON backup/template</string>
+    <string name="chapter_title_translation_format_csv">CSV spreadsheet (Excel/WPS)</string>
     <string name="chapter_title_translation_exported">Chapter title translation template exported</string>
     <string name="local_library_chapter_title_translations_exported">Exported %1$d manga and %2$d chapters</string>
     <string name="local_library_chapter_title_translations_imported">Imported %1$d translated titles; ignored %2$d blank or unmatched entries</string>

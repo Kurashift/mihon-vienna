@@ -22,7 +22,6 @@ import eu.kanade.domain.manga.interactor.SetExcludedScanlators
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.manga.model.chaptersFiltered
 import eu.kanade.domain.manga.model.downloadedFilter
-import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.domain.track.interactor.RefreshTracks
 import eu.kanade.domain.track.interactor.TrackChapter
@@ -177,7 +176,6 @@ class MangaViewModel(
         get() = successState?.processedChapters
 
     private val chapterReorderMutex = Mutex()
-
     val chapterSwipeStartAction = libraryPreferences.swipeToEndAction.get()
     val chapterSwipeEndAction = libraryPreferences.swipeToStartAction.get()
     var autoTrackState = trackPreferences.autoUpdateTrackOnMarkRead.get()
@@ -254,7 +252,8 @@ class MangaViewModel(
 
         viewModelScope.launchIO {
             var manga = getMangaAndChapters.awaitManga(mangaId)
-            val needRefreshInfo = !manga.initialized
+            val isLocalManga = manga.isLocal()
+            val needRefreshInfo = !manga.initialized && !isLocalManga
 
             val flagsChanged = if (!manga.favorite && !manga.initialized && manga.chapterFlags == 0L) {
                 // A newly-created browse entry has no saved chapter settings yet. Existing
@@ -276,18 +275,18 @@ class MangaViewModel(
                 manga = getMangaAndChapters.awaitManga(mangaId)
             }
 
-            val chapters = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = true)
-                .toChapterListItems(manga)
-            val localChaptersMissingPageCounts = if (manga.isLocal()) {
-                chapters.filter { it.chapter.totalPages <= 0L }
-            } else {
-                emptyList()
+            // The translated-title shell is a local-library display preference, not per-manga
+            // content. Keep every local detail page on the same mode without eagerly rewriting
+            // the whole library when the user changes it.
+            if (isLocalManga && setMangaDefaultChapterFlags.awaitDisplayModeIfChanged(manga)) {
+                manga = getMangaAndChapters.awaitManga(mangaId)
             }
 
-            // Do not rescan a local manga merely to prefill page counts. On a cold start that
-            // opens every archive, updates source order, and re-emits the entire list after it
-            // is already visible. The reader persists page counts lazily when a chapter opens.
-            val needRefreshChapter = chapters.isEmpty()
+            val chapters = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = true)
+                .toChapterListItems(manga)
+            // Cloud manga retain their existing first-load behavior. Local manga use a cheap
+            // filename-only check below and run a full sync only when that folder actually changed.
+            val needRefreshChapter = chapters.isEmpty() && !isLocalManga
 
             // Show what we have earlier
             mutableState.update {
@@ -306,28 +305,26 @@ class MangaViewModel(
                 )
             }
 
-            if (localChaptersMissingPageCounts.isNotEmpty()) {
-                viewModelScope.launchIO {
-                    val localSource = Injekt.get<SourceManager>().getOrStub(manga.source) as? LocalSource
-                        ?: return@launchIO
-                    val pageCounts = localSource.getChapterPageCounts(manga.toSManga())
-                    if (pageCounts.isEmpty()) return@launchIO
-                    val updates = localChaptersMissingPageCounts.mapNotNull { item ->
-                        pageCounts[item.chapter.url]
-                            ?.takeIf { it > 0L }
-                            ?.let { ChapterUpdate(id = item.chapter.id, totalPages = it) }
-                    }
-                    if (updates.isNotEmpty()) {
-                        updateChapter.awaitAll(updates)
-                    }
-                }
-            }
-
             // Start observe tracking since it only needs mangaId
             observeTrackers()
 
-            // Fetch info-chapters when needed
-            if ((needRefreshInfo || needRefreshChapter) && viewModelScope.isActive) {
+            if (isLocalManga && viewModelScope.isActive) {
+                val localSource = Injekt.get<SourceManager>().getOrStub(manga.source) as? LocalSource
+                val allChapterUrls = getMangaAndChapters
+                    .awaitChapters(mangaId, applyScanlatorFilter = false)
+                    .map(Chapter::url)
+                val localChapterFilesChanged = localSource?.hasChapterFileChanges(
+                    mangaUrl = manga.url,
+                    existingChapterUrls = allChapterUrls,
+                ) == true
+                if (localChapterFilesChanged) {
+                    fetchAllFromSource(
+                        manualFetch = false,
+                        fetchDetails = false,
+                        fetchChapters = true,
+                    )
+                }
+            } else if ((needRefreshInfo || needRefreshChapter) && viewModelScope.isActive) {
                 fetchAllFromSource(
                     manualFetch = false,
                     fetchDetails = needRefreshInfo,
@@ -343,12 +340,15 @@ class MangaViewModel(
     fun fetchAllFromSource(manualFetch: Boolean = true) {
         viewModelScope.launch {
             updateSuccessState { it.copy(isRefreshingData = true) }
-            fetchAllFromSource(
-                manualFetch = manualFetch,
-                fetchDetails = true,
-                fetchChapters = true,
-            )
-            updateSuccessState { it.copy(isRefreshingData = false) }
+            try {
+                fetchAllFromSource(
+                    manualFetch = manualFetch,
+                    fetchDetails = true,
+                    fetchChapters = true,
+                )
+            } finally {
+                updateSuccessState { it.copy(isRefreshingData = false) }
+            }
         }
     }
 
@@ -1104,6 +1104,9 @@ class MangaViewModel(
         val manga = successState?.manga ?: return
 
         viewModelScope.launchNonCancellable {
+            if (manga.isLocal()) {
+                libraryPreferences.localChapterDisplayMode.set(mode)
+            }
             setMangaChapterFlags.awaitSetDisplayMode(manga, mode)
         }
     }
@@ -1120,16 +1123,17 @@ class MangaViewModel(
         }
     }
 
-    fun exportChapterTitles(uri: Uri) {
+    fun exportChapterTitles(uri: Uri, format: ChapterTitleTranslationFormat) {
         val state = successState ?: return
         val content = ChapterTitleTranslationCodec.encode(
             manga = state.manga,
             chapters = state.chapters.map { it.chapter },
+            format = format,
         )
         viewModelScope.launchIO {
             runCatching {
                 context.contentResolver.openOutputStream(uri, "wt")
-                    ?.bufferedWriter()
+                    ?.bufferedWriter(Charsets.UTF_8)
                     ?.use { it.write(content) }
                     ?: error("Unable to open translation export file")
             }.onSuccess {
@@ -1154,7 +1158,7 @@ class MangaViewModel(
         viewModelScope.launchIO {
             runCatching {
                 val content = context.contentResolver.openInputStream(uri)
-                    ?.bufferedReader()
+                    ?.bufferedReader(Charsets.UTF_8)
                     ?.use { it.readText() }
                     ?: error("Unable to open translation import file")
                 ChapterTitleTranslationCodec.planImport(

@@ -47,13 +47,15 @@ class AndroidSourceManager(
         scope.launch {
             extensionManager.installedExtensionsFlow
                 .collectLatest { extensions ->
+                    val localSource = sourcesMapFlow.value[LocalSource.ID] as? LocalSource
+                        ?: LocalSource(
+                            context,
+                            Injekt.get(),
+                            Injekt.get(),
+                        )
                     val mutableMap = ConcurrentHashMap<Long, Source>(
                         mapOf(
-                            LocalSource.ID to LocalSource(
-                                context,
-                                Injekt.get(),
-                                Injekt.get(),
-                            ),
+                            LocalSource.ID to localSource,
                         ),
                     )
                     extensions.forEach { extension ->

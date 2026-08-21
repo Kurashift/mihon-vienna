@@ -17,11 +17,14 @@ internal class LocalLibraryChapterTitleTranslations(
     private val chapterRepository: ChapterRepository = Injekt.get(),
 ) {
 
-    suspend fun export(uri: Uri): Pair<Int, Int> = withIOContext {
+    suspend fun export(
+        uri: Uri,
+        format: ChapterTitleTranslationFormat,
+    ): Pair<Int, Int> = withIOContext {
         val mangas = getCurrentMangasWithChapters()
-        val content = ChapterTitleTranslationCodec.encodeLocalLibrary(mangas)
+        val content = ChapterTitleTranslationCodec.encodeLocalLibrary(mangas, format)
         context.contentResolver.openOutputStream(uri, "wt")
-            ?.bufferedWriter()
+            ?.bufferedWriter(Charsets.UTF_8)
             ?.use { it.write(content) }
             ?: error("Unable to open local library translation export file")
         mangas.size to mangas.sumOf { (_, chapters) -> chapters.size }
@@ -78,7 +81,7 @@ internal class LocalLibraryChapterTitleTranslations(
 
     private fun readText(uri: Uri): String {
         return context.contentResolver.openInputStream(uri)
-            ?.bufferedReader()
+            ?.bufferedReader(Charsets.UTF_8)
             ?.use { it.readText() }
             ?: error("Unable to open local library translation import file")
     }

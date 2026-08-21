@@ -60,9 +60,12 @@ fun getChapterSort(
 }
 
 private fun compareTranslatedNames(first: Chapter, second: Chapter): Int {
-    val byDisplayedName = (first.translatedNameOrNull ?: first.name)
-        .compareToCaseInsensitiveNaturalOrder(second.translatedNameOrNull ?: second.name)
+    val firstDisplayedName = first.translatedNameOrNull ?: first.name
+    val secondDisplayedName = second.translatedNameOrNull ?: second.name
+    val byDisplayedName = ChapterTitleSortRules.sortKey(firstDisplayedName)
+        .compareToCaseInsensitiveNaturalOrder(ChapterTitleSortRules.sortKey(secondDisplayedName))
     return byDisplayedName.takeIf { it != 0 }
+        ?: firstDisplayedName.compareToCaseInsensitiveNaturalOrder(secondDisplayedName).takeIf { it != 0 }
         ?: first.name.compareToCaseInsensitiveNaturalOrder(second.name)
 }
 

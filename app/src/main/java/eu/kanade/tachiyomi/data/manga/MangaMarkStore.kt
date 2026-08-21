@@ -109,6 +109,25 @@ class MangaMarkStore(
             ),
         )
     }
+
+    suspend fun merge(
+        chapterId: Long,
+        duplicateChapterId: Long,
+        mangaId: Long,
+        mangaTitle: String,
+    ) {
+        val existing = marks.value.firstOrNull { it.chapterId == chapterId }
+            ?: marks.value.firstOrNull { it.chapterId == duplicateChapterId }
+            ?: return
+        remove(existing.copy(chapterId = duplicateChapterId))
+        add(
+            existing.copy(
+                chapterId = chapterId,
+                mangaId = mangaId,
+                mangaTitle = mangaTitle,
+            ),
+        )
+    }
 }
 
 /** Database-backed good-doujin state. The old JSON preference is imported once on startup. */
