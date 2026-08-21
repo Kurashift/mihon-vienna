@@ -281,7 +281,7 @@ class LocalSource(
         // cache only when manga folders were actually added, removed, or renamed.
         cachedListing?.takeIf {
             cachedListingBaseUri == activeBaseUri &&
-            !listingInvalidated && now - cachedListingTime < LISTING_MAX_AGE.inWholeMilliseconds
+                !listingInvalidated && now - cachedListingTime < LISTING_MAX_AGE.inWholeMilliseconds
         }
             ?.let { return@withIOContext it }
         if (cachedListing == null && !listingInvalidated) {
@@ -1295,8 +1295,10 @@ class LocalSource(
         val initialSnapshot = getBaseDirectorySnapshot(forceRefresh = true)
         val baseUri = fileSystem.getBaseDirectoryIdentityUri()
         val knownDirectoryNames = buildSet {
-            addAll(loadSyncIndex()?.takeIf { it.baseUri == null || baseUri == null || it.baseUri == baseUri }
-                ?.folders.orEmpty().keys)
+            addAll(
+                loadSyncIndex()?.takeIf { it.baseUri == null || baseUri == null || it.baseUri == baseUri }
+                    ?.folders.orEmpty().keys,
+            )
             addAll(loadListingIndex(baseUri)?.entries.orEmpty().keys)
             addAll(loadPersistedChapterNamesIndex().keys)
             cachedListing?.mapTo(this, LocalMangaEntry::url)

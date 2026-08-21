@@ -1,10 +1,10 @@
 package tachiyomi.source.local
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import kotlinx.coroutines.runBlocking
 
 class LocalListingRecoveryTest {
 

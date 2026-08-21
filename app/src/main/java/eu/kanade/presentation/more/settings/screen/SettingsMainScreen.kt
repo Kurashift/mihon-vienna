@@ -103,7 +103,10 @@ object SettingsMainScreen : Screen() {
             content = { contentPadding ->
                 val state = rememberLazyListState()
                 val indexSelected = if (twoPane) {
-                    rows.indexOfFirst { it.item?.screen?.let { screen -> screen::class } == navigator.items.first()::class }
+                    rows.indexOfFirst {
+                        it.item?.screen?.let { screen -> screen::class } ==
+                            navigator.items.first()::class
+                    }
                         .also {
                             LaunchedEffect(Unit) {
                                 state.animateScrollToItem(it)
