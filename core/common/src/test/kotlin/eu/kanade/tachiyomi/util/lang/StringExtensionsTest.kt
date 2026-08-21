@@ -53,6 +53,17 @@ class StringExtensionsTest {
     }
 
     @Test
+    fun `title order groups latin then chinese then digits`() {
+        val titles = listOf("86", "秘密花园", "Another", "12", "春物", "One Piece")
+
+        val sorted = titles.sortedWith { first, second ->
+            first.compareToCaseInsensitiveNaturalOrder(second, Locale.CHINA)
+        }
+
+        assertEquals(listOf("Another", "One Piece", "春物", "秘密花园", "12", "86"), sorted)
+    }
+
+    @Test
     fun `title order ignores punctuation and whitespace`() {
         assertEquals(0, "A-B".compareToCaseInsensitiveNaturalOrder("A B"))
         assertEquals(0, "A.B".compareToCaseInsensitiveNaturalOrder("AB"))

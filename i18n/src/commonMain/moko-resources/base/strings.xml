@@ -32,6 +32,13 @@
     <string name="label_sources">Sources</string>
     <string name="label_backup">Backup and restore</string>
     <string name="label_data_storage">Data and storage</string>
+    <string name="settings_data_management">Data management</string>
+    <string name="settings_backup_restore">Backup &amp; restore</string>
+    <string name="settings_backup_restore_summary">Create, restore &amp; automatic backups</string>
+    <string name="settings_storage">Storage</string>
+    <string name="settings_storage_summary">Storage location, usage &amp; cache</string>
+    <string name="settings_import_export">Import &amp; export</string>
+    <string name="settings_import_export_summary">Library list &amp; chapter translations</string>
     <string name="label_stats">Statistics</string>
     <string name="label_migration">Migrate</string>
     <string name="label_extensions">Extensions</string>
@@ -80,7 +87,6 @@
     <string name="action_filter_empty">Remove filter</string>
     <string name="action_sort_alpha">By title</string>
     <string name="sort_by_custom">Custom</string>
-    <string name="sort_by_translated_title">Translated title</string>
     <string name="action_sort_count">Total entries</string>
     <string name="action_sort_total">Total works</string>
     <string name="action_sort_last_read">Last read</string>
@@ -824,6 +830,7 @@
     <string name="chapter_title_translation_export_format">Export format</string>
     <string name="chapter_title_translation_format_json">JSON backup/template</string>
     <string name="chapter_title_translation_format_csv">CSV spreadsheet (Excel/WPS)</string>
+    <string name="chapter_title_translation_export_only_empty">Only manga with untranslated chapters</string>
     <string name="chapter_title_translation_exported">Chapter title translation template exported</string>
     <string name="local_library_chapter_title_translations_exported">Exported %1$d manga and %2$d chapters</string>
     <string name="local_library_chapter_title_translations_imported">Imported %1$d translated titles; ignored %2$d blank or unmatched entries</string>
@@ -839,6 +846,7 @@
     <string name="sort_by_source">Source order</string>
     <string name="sort_by_number">By work number</string>
     <string name="sort_by_upload_date">By upload date</string>
+    <string name="sort_by_name">By name</string>
     <string name="manga_download">Download</string>
     <string name="download_unread">Unread</string>
     <string name="download_bookmarked">Bookmarked</string>

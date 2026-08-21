@@ -53,7 +53,8 @@ class SetMangaChapterFlags(
                 } else {
                     Manga.CHAPTER_SORT_DESC
                 }
-                it.setFlag(orderFlag, Manga.CHAPTER_SORT_DIR_MASK)
+                it.setFlag(flag, Manga.CHAPTER_SORTING_MASK)
+                    .setFlag(orderFlag, Manga.CHAPTER_SORT_DIR_MASK)
             } else {
                 // Set new flag with ascending order
                 it

@@ -1123,12 +1123,13 @@ class MangaViewModel(
         }
     }
 
-    fun exportChapterTitles(uri: Uri, format: ChapterTitleTranslationFormat) {
+    fun exportChapterTitles(uri: Uri, format: ChapterTitleTranslationFormat, onlyUntranslated: Boolean) {
         val state = successState ?: return
         val content = ChapterTitleTranslationCodec.encode(
             manga = state.manga,
             chapters = state.chapters.map { it.chapter },
             format = format,
+            onlyUntranslated = onlyUntranslated,
         )
         viewModelScope.launchIO {
             runCatching {

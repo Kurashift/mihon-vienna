@@ -36,15 +36,18 @@ fun String.truncateCenter(count: Int, replacement: String = "..."): String {
 /**
  * Case-insensitive, locale-aware natural comparator for titles. Punctuation and whitespace are
  * ignored, so titles that only differ by separators (commas, brackets, spaces) still order by
- * their text/number suffixes. Digits always sort after letters and CJK characters, so "Tale 2"
- * comes after "Tale" and "Tale extra"; numeric runs are compared by value ("ch. 2" before
- * "ch. 10"); text runs are compared with the given locale's collator (Chinese -> pinyin,
- * Japanese -> gojūon).
+ * their text/number suffixes. Leading title groups sort Latin, then CJK/other scripts, then digits.
+ * Digits within a title sort after text, so "Tale 2" comes after "Tale" and "Tale extra";
+ * numeric runs are compared by value ("ch. 2" before "ch. 10"); text runs are compared with the
+ * given locale's collator (Chinese -> pinyin, Japanese -> gojūon).
  */
 fun String.compareToCaseInsensitiveNaturalOrder(
     other: String,
     locale: Locale = Locale.getDefault(),
 ): Int {
+    val byLeadingClass = leadingTitleClass().compareTo(other.leadingTitleClass())
+    if (byLeadingClass != 0) return byLeadingClass
+
     val collator = collatorFor(locale)
     val thisRuns = sortRuns()
     val otherRuns = other.sortRuns()
@@ -70,6 +73,16 @@ fun String.compareToCaseInsensitiveNaturalOrder(
     }
     // A shorter meaningful name ("Tale") still sorts before a longer one ("Tale 2").
     return thisRuns.drop(i).sumOf(String::length).compareTo(otherRuns.drop(j).sumOf(String::length))
+}
+
+private fun String.leadingTitleClass(): Int {
+    val firstMeaningful = firstOrNull(Char::isLetterOrDigit) ?: return TITLE_CLASS_OTHER
+    if (firstMeaningful.isDigit()) return TITLE_CLASS_DIGIT
+    return if (Character.UnicodeScript.of(firstMeaningful.code) == Character.UnicodeScript.LATIN) {
+        TITLE_CLASS_LATIN
+    } else {
+        TITLE_CLASS_OTHER
+    }
 }
 
 private fun String.sortRuns(): List<String> {
@@ -108,6 +121,9 @@ private fun collatorFor(locale: Locale): Collator {
 }
 
 private val collatorCache = ThreadLocal<Pair<Locale, Collator>>()
+private const val TITLE_CLASS_LATIN = 0
+private const val TITLE_CLASS_OTHER = 1
+private const val TITLE_CLASS_DIGIT = 2
 
 /**
  * Natural order for image page names. Numeric page names must come before textual extras such as

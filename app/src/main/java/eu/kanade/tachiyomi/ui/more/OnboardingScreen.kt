@@ -9,7 +9,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.more.onboarding.OnboardingScreen
 import eu.kanade.presentation.more.settings.screen.SearchableSettings
-import eu.kanade.presentation.more.settings.screen.SettingsDataScreen
+import eu.kanade.presentation.more.settings.screen.SettingsBackupScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import tachiyomi.presentation.core.i18n.stringResource
@@ -31,7 +31,7 @@ class OnboardingScreen : Screen() {
             navigator.pop()
         }
 
-        val restoreSettingKey = stringResource(SettingsDataScreen.restorePreferenceKeyString)
+        val restoreSettingKey = stringResource(SettingsBackupScreen.restorePreferenceKeyString)
 
         BackHandler(enabled = !shownOnboardingFlow) {
             // Prevent exiting if onboarding hasn't been completed

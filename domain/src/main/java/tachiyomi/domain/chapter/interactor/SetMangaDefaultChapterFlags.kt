@@ -20,11 +20,13 @@ class SetMangaDefaultChapterFlags(
                     unreadFilter = filterChapterByRead.get(),
                     downloadedFilter = filterChapterByDownloaded.get(),
                     bookmarkedFilter = filterChapterByBookmarked.get(),
-                    sortingMode = if (manga.source == 0L) {
-                        sortChapterBySourceOrNumber.get()
-                    } else {
-                        sortCloudChapterBySourceOrNumber.get()
-                    },
+                    sortingMode = Manga.normalizeChapterSorting(
+                        if (manga.source == 0L) {
+                            sortChapterBySourceOrNumber.get()
+                        } else {
+                            sortCloudChapterBySourceOrNumber.get()
+                        },
+                    ),
                     sortingDirection = if (manga.source == 0L) {
                         sortChapterByAscendingOrDescending.get()
                     } else {
@@ -52,11 +54,9 @@ class SetMangaDefaultChapterFlags(
         return withNonCancellableContext {
             with(libraryPreferences) {
                 val isLocal = manga.source == 0L
-                val sortingMode = if (isLocal) {
-                    sortChapterBySourceOrNumber.get()
-                } else {
-                    sortCloudChapterBySourceOrNumber.get()
-                }
+                val sortingMode = Manga.normalizeChapterSorting(
+                    if (isLocal) sortChapterBySourceOrNumber.get() else sortCloudChapterBySourceOrNumber.get(),
+                )
                 val sortingDirection = if (isLocal) {
                     sortChapterByAscendingOrDescending.get()
                 } else {

@@ -27,6 +27,7 @@ internal data class ChapterTitleTranslationEntry(
     val originalTitle: String,
     val originalUrl: String,
     val translatedTitle: String = "",
+    val referenceOnly: Boolean = false,
 )
 
 internal data class ChapterTitleImportPlan(
@@ -38,6 +39,13 @@ internal data class LocalLibraryChapterTitleImportPlan(
     val updates: List<ChapterUpdate>,
     val ignoredCount: Int,
 )
+
+/**
+ * Shared predicate between export filtering and import planning: a translation counts as
+ * missing when it is null, empty, or whitespace only. Export keeps exactly the rows import
+ * would skip, so a blank-name checklist round-trips without surprises.
+ */
+internal fun Chapter.isUntranslated(): Boolean = translatedNameOrNull.isNullOrBlank()
 
 enum class ChapterTitleTranslationFormat(
     val mimeType: String,
@@ -59,6 +67,7 @@ internal object ChapterTitleTranslationCodec {
         "中文排序名",
         "备注",
         "人工锁定",
+        "仅供参考",
     )
     private val json = Json {
         prettyPrint = true
@@ -70,8 +79,9 @@ internal object ChapterTitleTranslationCodec {
         manga: Manga,
         chapters: List<Chapter>,
         format: ChapterTitleTranslationFormat = ChapterTitleTranslationFormat.JSON,
+        onlyUntranslated: Boolean = false,
     ): String {
-        val document = toDocument(manga, chapters)
+        val document = toDocument(manga, chapters, onlyUntranslated)
         return when (format) {
             ChapterTitleTranslationFormat.JSON -> json.encodeToString(document)
             ChapterTitleTranslationFormat.CSV -> encodeCsv(listOf(document))
@@ -81,11 +91,14 @@ internal object ChapterTitleTranslationCodec {
     fun encodeLocalLibrary(
         mangas: List<Pair<Manga, List<Chapter>>>,
         format: ChapterTitleTranslationFormat = ChapterTitleTranslationFormat.JSON,
+        onlyUntranslated: Boolean = false,
     ): String {
         val document = LocalLibraryChapterTitleTranslationDocument(
             mangas = mangas
                 .sortedBy { (manga, _) -> manga.title.lowercase() }
-                .map { (manga, chapters) -> toDocument(manga, chapters) },
+                .map { (manga, chapters) -> toDocument(manga, chapters, onlyUntranslated) }
+                // Fully translated manga are omitted from the untranslated checklist.
+                .filter { it.chapters.isNotEmpty() },
         )
         return when (format) {
             ChapterTitleTranslationFormat.JSON -> json.encodeToString(document)
@@ -95,7 +108,14 @@ internal object ChapterTitleTranslationCodec {
 
     fun decode(value: String): ChapterTitleTranslationDocument {
         return if (value.isCsv()) {
-            decodeCsv(value).mangas.single()
+            val mangas = decodeCsv(value).mangas
+            require(mangas.size <= 1) { "Chapter title translation table contains multiple manga" }
+            mangas.singleOrNull() ?: ChapterTitleTranslationDocument(
+                mangaId = 0,
+                mangaTitle = "",
+                mangaUrl = "",
+                chapters = emptyList(),
+            )
         } else {
             json.decodeFromString(value)
         }
@@ -132,6 +152,8 @@ internal object ChapterTitleTranslationCodec {
             val currentChaptersByUrl = current?.second.orEmpty().groupBy(Chapter::url)
 
             mangaDocument.chapters.mapNotNull { entry ->
+                if (entry.referenceOnly) return@mapNotNull null
+
                 val translatedTitle = entry.translatedTitle.trim()
                 if (translatedTitle.isEmpty()) {
                     ignoredCount++
@@ -171,6 +193,8 @@ internal object ChapterTitleTranslationCodec {
         var ignoredCount = 0
 
         val updates = document.chapters.mapNotNull { entry ->
+            if (entry.referenceOnly) return@mapNotNull null
+
             val translatedTitle = entry.translatedTitle.trim()
             if (translatedTitle.isEmpty()) {
                 ignoredCount++
@@ -193,17 +217,27 @@ internal object ChapterTitleTranslationCodec {
         return ChapterTitleImportPlan(updates, ignoredCount)
     }
 
-    private fun toDocument(manga: Manga, chapters: List<Chapter>): ChapterTitleTranslationDocument {
+    private fun toDocument(
+        manga: Manga,
+        chapters: List<Chapter>,
+        onlyUntranslated: Boolean,
+    ): ChapterTitleTranslationDocument {
+        val exportedChapters = if (onlyUntranslated && chapters.none { it.isUntranslated() }) {
+            emptyList()
+        } else {
+            chapters
+        }
         return ChapterTitleTranslationDocument(
             mangaId = manga.id,
             mangaTitle = manga.title,
             mangaUrl = manga.url,
-            chapters = chapters.map { chapter ->
+            chapters = exportedChapters.map { chapter ->
                 ChapterTitleTranslationEntry(
                     chapterId = chapter.id,
                     originalTitle = chapter.name,
                     originalUrl = chapter.url,
                     translatedTitle = chapter.translatedNameOrNull.orEmpty(),
+                    referenceOnly = onlyUntranslated && !chapter.isUntranslated(),
                 )
             },
         )
@@ -231,6 +265,7 @@ internal object ChapterTitleTranslationCodec {
                             "",
                             "",
                             "",
+                            chapter.referenceOnly.toString(),
                         ),
                     )
                 }
@@ -269,6 +304,7 @@ internal object ChapterTitleTranslationCodec {
             "章节路径",
         )
         val translatedTitleIndex = headers.requireColumn("translatedtitle", "中文名", "译名")
+        val referenceOnlyIndex = headers.findColumn("referenceonly", "仅供参考")
 
         data class MangaKey(val id: Long, val title: String, val path: String)
 
@@ -296,6 +332,9 @@ internal object ChapterTitleTranslationCodec {
                         originalTitle = row.cell(originalTitleIndex),
                         originalUrl = row.cell(chapterPathIndex),
                         translatedTitle = row.cell(translatedTitleIndex),
+                        referenceOnly = referenceOnlyIndex
+                            ?.let { row.cell(it).trim().lowercase() in setOf("true", "1", "yes", "是") }
+                            ?: false,
                     ),
                 )
         }

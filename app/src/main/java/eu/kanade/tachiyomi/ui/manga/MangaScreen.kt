@@ -116,15 +116,30 @@ class MangaScreen(
 
         val successState = state as MangaViewModel.State.Success
         val isHttpSource = remember { successState.source is HttpSource }
+        // Remembered between the format dialog and the document picker result so the launcher
+        // callbacks can forward the "only untranslated" choice to the exporter.
+        var pendingExportOnlyUntranslated by remember { mutableStateOf(false) }
         val exportChapterTitlesJson = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.JSON.mimeType),
         ) { uri ->
-            uri?.let { viewModel.exportChapterTitles(it, ChapterTitleTranslationFormat.JSON) }
+            uri?.let {
+                viewModel.exportChapterTitles(
+                    it,
+                    ChapterTitleTranslationFormat.JSON,
+                    pendingExportOnlyUntranslated,
+                )
+            }
         }
         val exportChapterTitlesCsv = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.CSV.mimeType),
         ) { uri ->
-            uri?.let { viewModel.exportChapterTitles(it, ChapterTitleTranslationFormat.CSV) }
+            uri?.let {
+                viewModel.exportChapterTitles(
+                    it,
+                    ChapterTitleTranslationFormat.CSV,
+                    pendingExportOnlyUntranslated,
+                )
+            }
         }
         val importChapterTitles = rememberLauncherForActivityResult(
             ActivityResultContracts.GetContent(),
@@ -297,18 +312,20 @@ class MangaScreen(
         if (showChapterTitleTranslationDialog) {
             ChapterTitleTranslationDialog(
                 onDismissRequest = { showChapterTitleTranslationDialog = false },
-                onExportCurrentManga = { format ->
+                onExportCurrentManga = { format, onlyUntranslated ->
                     showChapterTitleTranslationDialog = false
+                    pendingExportOnlyUntranslated = onlyUntranslated
                     val fileName = successState.manga.title
                         .replace(Regex("[\\\\/:*?\"<>|]"), "_")
                         .take(80)
                         .ifBlank { "chapter_titles" }
+                    val scopeSuffix = if (onlyUntranslated) "_未译名" else ""
                     when (format) {
                         ChapterTitleTranslationFormat.JSON -> {
-                            exportChapterTitlesJson.launch("${fileName}_zh.${format.fileExtension}")
+                            exportChapterTitlesJson.launch("${fileName}_zh$scopeSuffix.${format.fileExtension}")
                         }
                         ChapterTitleTranslationFormat.CSV -> {
-                            exportChapterTitlesCsv.launch("${fileName}_zh.${format.fileExtension}")
+                            exportChapterTitlesCsv.launch("${fileName}_zh$scopeSuffix.${format.fileExtension}")
                         }
                     }
                 },

@@ -20,14 +20,25 @@ internal class LocalLibraryChapterTitleTranslations(
     suspend fun export(
         uri: Uri,
         format: ChapterTitleTranslationFormat,
+        onlyUntranslated: Boolean,
     ): Pair<Int, Int> = withIOContext {
         val mangas = getCurrentMangasWithChapters()
-        val content = ChapterTitleTranslationCodec.encodeLocalLibrary(mangas, format)
+        val content = ChapterTitleTranslationCodec.encodeLocalLibrary(mangas, format, onlyUntranslated)
         context.contentResolver.openOutputStream(uri, "wt")
             ?.bufferedWriter(Charsets.UTF_8)
             ?.use { it.write(content) }
             ?: error("Unable to open local library translation export file")
-        mangas.size to mangas.sumOf { (_, chapters) -> chapters.size }
+        // Report what the file actually contains. A manga with any missing title includes all of
+        // its chapters so existing translations can serve as naming context outside the app.
+        val count = if (onlyUntranslated) {
+            val mangasWithUntranslated = mangas.filter { (_, chapters) ->
+                chapters.any { it.isUntranslated() }
+            }
+            mangasWithUntranslated.size to mangasWithUntranslated.sumOf { (_, chapters) -> chapters.size }
+        } else {
+            mangas.size to mangas.sumOf { (_, chapters) -> chapters.size }
+        }
+        count
     }
 
     suspend fun importLibrary(uri: Uri): LocalLibraryChapterTitleImportPlan = withIOContext {

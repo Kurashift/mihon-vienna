@@ -50,7 +50,7 @@ data class Manga(
             ?.let { Instant.fromEpochMilliseconds(it) }
 
     val sorting: Long
-        get() = chapterFlags and CHAPTER_SORTING_MASK
+        get() = normalizeChapterSorting(chapterFlags and CHAPTER_SORTING_MASK)
 
     val displayMode: Long
         get() = chapterFlags and CHAPTER_DISPLAY_MASK
@@ -107,8 +107,16 @@ data class Manga(
         const val CHAPTER_SORTING_UPLOAD_DATE = 0x00000200L
         const val CHAPTER_SORTING_ALPHABET = 0x00000300L
         const val CHAPTER_SORTING_CUSTOM = 0x00000400L
-        const val CHAPTER_SORTING_TRANSLATED = 0x00000500L
+        internal const val CHAPTER_SORTING_TRANSLATED_LEGACY = 0x00000500L
         const val CHAPTER_SORTING_MASK = 0x00000700L
+
+        fun normalizeChapterSorting(sorting: Long): Long {
+            return if (sorting == CHAPTER_SORTING_TRANSLATED_LEGACY) {
+                CHAPTER_SORTING_ALPHABET
+            } else {
+                sorting
+            }
+        }
 
         const val CHAPTER_DISPLAY_NAME = 0x00000000L
         const val CHAPTER_DISPLAY_NUMBER = 0x00100000L

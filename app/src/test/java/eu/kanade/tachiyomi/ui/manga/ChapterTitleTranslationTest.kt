@@ -268,6 +268,277 @@ class ChapterTitleTranslationTest {
         plan.ignoredCount shouldBe 1
     }
 
+    @Test
+    fun `json untranslated checklist includes translated siblings as naming context`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val translated = chapter(10, "Author/Story.cbz", "Story").copy(translatedName = "故事")
+        val untranslated = chapter(11, "Author/Other.cbz", "Other")
+
+        val decoded = ChapterTitleTranslationCodec.decode(
+            ChapterTitleTranslationCodec.encode(
+                manga = manga,
+                chapters = listOf(translated, untranslated),
+                onlyUntranslated = true,
+            ),
+        )
+
+        decoded.chapters shouldBe listOf(
+            ChapterTitleTranslationEntry(
+                chapterId = 10,
+                originalTitle = "Story",
+                originalUrl = "Author/Story.cbz",
+                translatedTitle = "故事",
+                referenceOnly = true,
+            ),
+            ChapterTitleTranslationEntry(
+                chapterId = 11,
+                originalTitle = "Other",
+                originalUrl = "Author/Other.cbz",
+                translatedTitle = "",
+            ),
+        )
+    }
+
+    @Test
+    fun `csv untranslated checklist includes translated siblings and blank chinese cells`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val translated = chapter(10, "Author/Story.cbz", "Story").copy(translatedName = "故事")
+        val untranslated = chapter(11, "Author/Other.cbz", "Other")
+
+        val csv = ChapterTitleTranslationCodec.encode(
+            manga = manga,
+            chapters = listOf(translated, untranslated),
+            format = ChapterTitleTranslationFormat.CSV,
+            onlyUntranslated = true,
+        )
+        val decoded = ChapterTitleTranslationCodec.decode(csv)
+
+        csv.lineSequence().count() shouldBe 3
+        decoded.chapters.map { it.chapterId to it.translatedTitle } shouldBe listOf(
+            10L to "故事",
+            11L to "",
+        )
+        decoded.chapters.map { it.referenceOnly } shouldBe listOf(true, false)
+    }
+
+    @Test
+    fun `local library export with only untranslated drops fully translated mangas`() {
+        val translatedManga = Manga.create().copy(id = 7, title = "Author A", url = "Author A")
+        val mixedManga = Manga.create().copy(id = 8, title = "Author B", url = "Author B")
+        val translated = chapter(10, "Author A/Story.cbz", "Story").copy(translatedName = "故事")
+        val untranslated = chapter(11, "Author B/Other.cbz", "Other")
+
+        val decoded = ChapterTitleTranslationCodec.decodeLocalLibrary(
+            ChapterTitleTranslationCodec.encodeLocalLibrary(
+                mangas = listOf(
+                    translatedManga to listOf(translated),
+                    mixedManga to listOf(untranslated),
+                ),
+                onlyUntranslated = true,
+            ),
+        )
+
+        decoded.mangas.map { it.mangaTitle } shouldBe listOf("Author B")
+        decoded.mangas.single().chapters.single().chapterId shouldBe 11L
+    }
+
+    @Test
+    fun `local library untranslated checklist includes all chapters from a matching manga`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val translated = chapter(10, "Author/Story.cbz", "Story").copy(translatedName = "故事")
+        val untranslated = chapter(11, "Author/Other.cbz", "Other")
+
+        val decoded = ChapterTitleTranslationCodec.decodeLocalLibrary(
+            ChapterTitleTranslationCodec.encodeLocalLibrary(
+                mangas = listOf(manga to listOf(translated, untranslated)),
+                onlyUntranslated = true,
+            ),
+        )
+
+        decoded.mangas.single().chapters.map { it.chapterId to it.translatedTitle } shouldBe listOf(
+            10L to "故事",
+            11L to "",
+        )
+        decoded.mangas.single().chapters.map { it.referenceOnly } shouldBe listOf(true, false)
+    }
+
+    @Test
+    fun `moved untranslated chapter imports by stable id while old context is ignored`() {
+        val oldManga = Manga.create().copy(id = 7, title = "Author A", url = "Author A")
+        val context = chapter(10, "Author A/Context.cbz", "Context").copy(translatedName = "旧参考译名")
+        val untranslated = chapter(11, "Author A/Story.cbz", "Story")
+        val exported = ChapterTitleTranslationCodec.decodeLocalLibrary(
+            ChapterTitleTranslationCodec.encodeLocalLibrary(
+                mangas = listOf(oldManga to listOf(context, untranslated)),
+                onlyUntranslated = true,
+            ),
+        )
+        val filled = exported.copy(
+            mangas = exported.mangas.map { manga ->
+                manga.copy(
+                    chapters = manga.chapters.map { entry ->
+                        if (entry.chapterId == 11L) entry.copy(translatedTitle = "新位置译名") else entry
+                    },
+                )
+            },
+        )
+
+        val newManga = Manga.create().copy(id = 8, title = "Author B", url = "Author B")
+        val moved = chapter(11, "Author B/Story.cbz", "Story").copy(mangaId = 8)
+        val changedContext = context.copy(translatedName = "软件内后来修改的译名")
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = filled,
+            currentMangas = listOf(
+                oldManga to listOf(changedContext),
+                newManga to listOf(moved),
+            ),
+        )
+
+        plan.updates.map { it.id to it.translatedName } shouldBe listOf(11L to "新位置译名")
+        plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `fully translated single manga produces an empty untranslated checklist`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val translated = chapter(10, "Author/Story.cbz", "Story").copy(translatedName = "故事")
+
+        val decoded = ChapterTitleTranslationCodec.decode(
+            ChapterTitleTranslationCodec.encode(
+                manga = manga,
+                chapters = listOf(translated),
+                onlyUntranslated = true,
+            ),
+        )
+
+        decoded.chapters shouldBe emptyList()
+    }
+
+    @Test
+    fun `whitespace only translation is untranslated on export and skipped on import`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val blank = chapter(10, "Author/Story.cbz", "Story").copy(translatedName = "  ")
+
+        val decoded = ChapterTitleTranslationCodec.decode(
+            ChapterTitleTranslationCodec.encode(
+                manga = manga,
+                chapters = listOf(blank),
+                onlyUntranslated = true,
+            ),
+        )
+        decoded.chapters.single().chapterId shouldBe 10L
+
+        val plan = ChapterTitleTranslationCodec.planImport(decoded, listOf(blank))
+        plan.updates shouldBe emptyList()
+        plan.ignoredCount shouldBe 1
+    }
+
+    @Test
+    fun `import skips blank rows so a partially filled checklist only writes filled rows`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val first = chapter(10, "Author/A.cbz", "A")
+        val second = chapter(11, "Author/B.cbz", "B")
+        val document = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = 10,
+                        originalTitle = "A",
+                        originalUrl = "Author/A.cbz",
+                        translatedTitle = "",
+                    ),
+                    ChapterTitleTranslationEntry(
+                        chapterId = 11,
+                        originalTitle = "B",
+                        originalUrl = "Author/B.cbz",
+                        translatedTitle = "B 名",
+                    ),
+                ).copy(mangaId = 7, mangaTitle = "Author", mangaUrl = "Author"),
+            ),
+        )
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = document,
+            currentMangas = listOf(manga to listOf(first, second)),
+        )
+
+        plan.updates.single().id shouldBe 11L
+        plan.updates.single().translatedName shouldBe "B 名"
+        plan.ignoredCount shouldBe 1
+    }
+
+    @Test
+    fun `single manga json checklist can be partially filled without clearing existing titles`() {
+        val first = chapter(10, "Author/A.cbz", "A").copy(translatedName = "已有译名")
+        val second = chapter(11, "Author/B.cbz", "B")
+        val json = ChapterTitleTranslationCodec.encode(
+            manga = Manga.create().copy(id = 7, title = "Author", url = "Author"),
+            chapters = listOf(first, second),
+        ).replace(
+            "\"translatedTitle\": \"已有译名\"",
+            "\"translatedTitle\": \"   \"",
+        ).replace(
+            "\"translatedTitle\": \"\"",
+            "\"translatedTitle\": \"新译名\"",
+        )
+
+        val plan = ChapterTitleTranslationCodec.planImport(
+            document = ChapterTitleTranslationCodec.decode(json),
+            currentChapters = listOf(first, second),
+        )
+
+        plan.updates.map { it.id to it.translatedName } shouldBe listOf(11L to "新译名")
+        plan.ignoredCount shouldBe 1
+    }
+
+    @Test
+    fun `single manga csv checklist can be partially filled without clearing existing titles`() {
+        val first = chapter(10, "Author/A.cbz", "A").copy(translatedName = "已有译名")
+        val second = chapter(11, "Author/B.cbz", "B")
+        val csv = """
+            stable_key,漫画原名,漫画路径,篇目原名,篇目路径,中文名
+            10,Author,Author,A,Author/A.cbz,
+            11,Author,Author,B,Author/B.cbz,新译名
+        """.trimIndent()
+
+        val plan = ChapterTitleTranslationCodec.planImport(
+            document = ChapterTitleTranslationCodec.decode(csv),
+            currentChapters = listOf(first, second),
+        )
+
+        plan.updates.map { it.id to it.translatedName } shouldBe listOf(11L to "新译名")
+        plan.ignoredCount shouldBe 1
+    }
+
+    @Test
+    fun `single manga header only checklist import is a no-op`() {
+        val csv = "stable_key,漫画原名,漫画路径,篇目原名,篇目路径,中文名"
+
+        val plan = ChapterTitleTranslationCodec.planImport(
+            document = ChapterTitleTranslationCodec.decode(csv),
+            currentChapters = listOf(chapter(10, "Author/A.cbz", "A")),
+        )
+
+        plan.updates shouldBe emptyList()
+        plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `header only checklist import is a no-op instead of an error`() {
+        val csv = "stable_key,漫画原名,漫画路径,篇目原名,篇目路径,中文名"
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = ChapterTitleTranslationCodec.decodeLocalLibrary(csv),
+            currentMangas = listOf(
+                Manga.create().copy(id = 7, title = "Author", url = "Author") to
+                    listOf(chapter(10, "Author/A.cbz", "A")),
+            ),
+        )
+
+        plan.updates shouldBe emptyList()
+        plan.ignoredCount shouldBe 0
+    }
+
     private fun document(vararg entries: ChapterTitleTranslationEntry) = ChapterTitleTranslationDocument(
         mangaId = 1,
         mangaTitle = "Author",

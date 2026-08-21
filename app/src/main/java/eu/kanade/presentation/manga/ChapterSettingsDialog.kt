@@ -216,16 +216,15 @@ private fun ColumnScope.SortPage(
 ) {
     ListGroupHeader(text = stringResource(MR.strings.chapter_sort_basis_section))
     listOf(
+        MR.strings.sort_by_name to Manga.CHAPTER_SORTING_ALPHABET,
         MR.strings.sort_by_source to Manga.CHAPTER_SORTING_SOURCE,
         MR.strings.sort_by_number to Manga.CHAPTER_SORTING_NUMBER,
         MR.strings.sort_by_upload_date to Manga.CHAPTER_SORTING_UPLOAD_DATE,
-        MR.strings.action_sort_alpha to Manga.CHAPTER_SORTING_ALPHABET,
     )
         .let { options ->
             // Custom manual order is only meaningful for the local library.
             if (isLocal) {
                 options + listOf(
-                    MR.strings.sort_by_translated_title to Manga.CHAPTER_SORTING_TRANSLATED,
                     MR.strings.sort_by_custom to Manga.CHAPTER_SORTING_CUSTOM,
                 )
             } else {

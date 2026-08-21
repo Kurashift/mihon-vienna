@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,16 +29,16 @@ import tachiyomi.presentation.core.i18n.stringResource
 @Composable
 fun ChapterTitleTranslationDialog(
     onDismissRequest: () -> Unit,
-    onExportCurrentManga: (ChapterTitleTranslationFormat) -> Unit,
+    onExportCurrentManga: (ChapterTitleTranslationFormat, Boolean) -> Unit,
     onImportCurrentManga: () -> Unit,
 ) {
     var showExportFormatDialog by remember { mutableStateOf(false) }
     if (showExportFormatDialog) {
         ChapterTitleTranslationExportFormatDialog(
             onDismissRequest = { showExportFormatDialog = false },
-            onFormatSelected = {
+            onFormatSelected = { format, onlyUntranslated ->
                 showExportFormatDialog = false
-                onExportCurrentManga(it)
+                onExportCurrentManga(format, onlyUntranslated)
             },
         )
     }
@@ -69,7 +70,7 @@ fun ChapterTitleTranslationDialog(
 @Composable
 fun LocalLibraryChapterTitleTranslationDialog(
     onDismissRequest: () -> Unit,
-    onExport: (ChapterTitleTranslationFormat) -> Unit,
+    onExport: (ChapterTitleTranslationFormat, Boolean) -> Unit,
     onImport: () -> Unit,
     onImportMangaFiles: () -> Unit,
 ) {
@@ -77,9 +78,9 @@ fun LocalLibraryChapterTitleTranslationDialog(
     if (showExportFormatDialog) {
         ChapterTitleTranslationExportFormatDialog(
             onDismissRequest = { showExportFormatDialog = false },
-            onFormatSelected = {
+            onFormatSelected = { format, onlyUntranslated ->
                 showExportFormatDialog = false
-                onExport(it)
+                onExport(format, onlyUntranslated)
             },
         )
     }
@@ -116,8 +117,9 @@ fun LocalLibraryChapterTitleTranslationDialog(
 @Composable
 private fun ChapterTitleTranslationExportFormatDialog(
     onDismissRequest: () -> Unit,
-    onFormatSelected: (ChapterTitleTranslationFormat) -> Unit,
+    onFormatSelected: (ChapterTitleTranslationFormat, Boolean) -> Unit,
 ) {
+    var onlyUntranslated by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(stringResource(MR.strings.chapter_title_translation_export_format)) },
@@ -126,13 +128,27 @@ private fun ChapterTitleTranslationExportFormatDialog(
                 TranslationAction(
                     label = stringResource(MR.strings.chapter_title_translation_format_json),
                     icon = Icons.Outlined.FileDownload,
-                    onClick = { onFormatSelected(ChapterTitleTranslationFormat.JSON) },
+                    onClick = { onFormatSelected(ChapterTitleTranslationFormat.JSON, onlyUntranslated) },
                 )
                 TranslationAction(
                     label = stringResource(MR.strings.chapter_title_translation_format_csv),
                     icon = Icons.Outlined.FileDownload,
-                    onClick = { onFormatSelected(ChapterTitleTranslationFormat.CSV) },
+                    onClick = { onFormatSelected(ChapterTitleTranslationFormat.CSV, onlyUntranslated) },
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onlyUntranslated = !onlyUntranslated }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    Checkbox(
+                        checked = onlyUntranslated,
+                        onCheckedChange = { onlyUntranslated = it },
+                    )
+                    Text(text = stringResource(MR.strings.chapter_title_translation_export_only_empty))
+                }
             }
         },
         confirmButton = {

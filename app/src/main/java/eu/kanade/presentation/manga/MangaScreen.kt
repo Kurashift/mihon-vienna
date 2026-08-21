@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -51,6 +52,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -534,7 +536,9 @@ private fun MangaScreenSmallImpl(
                 endContentPadding = contentPadding.calculateEndPadding(layoutDirection),
             ) {
                 LazyColumn(
-                    modifier = Modifier.fillMaxHeight(),
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .twoFingerScrollDuringReorder(reorderableState, chapterListState),
                     state = chapterListState,
                     contentPadding = chapterContentPadding,
                 ) {
@@ -884,7 +888,9 @@ fun MangaScreenLargeImpl(
                         topContentPadding = contentPadding.calculateTopPadding(),
                     ) {
                         LazyColumn(
-                            modifier = Modifier.fillMaxHeight(),
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .twoFingerScrollDuringReorder(reorderableState, chapterListState),
                             state = chapterListState,
                             contentPadding = chapterContentPadding,
                         ) {
@@ -1303,6 +1309,48 @@ private fun LazyListScope.sharedChapterGridItems(
             }
             repeat(LOCAL_CHAPTER_GRID_COLUMNS - row.size) {
                 Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+private fun Modifier.twoFingerScrollDuringReorder(
+    reorderableState: ReorderableLazyListState,
+    listState: LazyListState,
+): Modifier = pointerInput(reorderableState, listState) {
+    awaitEachGesture {
+        val dragPointerId = awaitFirstDown(
+            requireUnconsumed = false,
+            pass = PointerEventPass.Initial,
+        ).id
+        var secondPointerId: PointerId? = null
+
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val pressedChanges = event.changes.filter { it.pressed }
+            if (pressedChanges.isEmpty()) break
+
+            if (!reorderableState.isAnyItemDragging) {
+                secondPointerId = null
+                continue
+            }
+
+            val second = secondPointerId
+                ?.let { id -> pressedChanges.firstOrNull { it.id == id } }
+                ?: pressedChanges.firstOrNull { it.id != dragPointerId }
+                    ?.also { secondPointerId = it.id }
+
+            if (second == null) {
+                secondPointerId = null
+                continue
+            }
+
+            val deltaY = second.position.y - second.previousPosition.y
+            if (deltaY != 0f) {
+                // Keep the original drag pointer owned by the reorderable item. The second
+                // pointer only moves the list, synchronously, so scroll jobs cannot pile up.
+                listState.dispatchRawDelta(-deltaY)
+                second.consume()
             }
         }
     }

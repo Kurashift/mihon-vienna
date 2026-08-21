@@ -17,16 +17,26 @@ internal object ChapterTitleSortRules {
                     .toList()
             }
             .distinctBy(SequenceMarker::range)
-        if (candidates.size != 1) return title
+        if (candidates.size != 1) return unnumberedTitleKey(title)
 
         val marker = candidates.single()
-        if (!metadataTail.matches(title.substring(marker.range.last + 1))) return title
+        if (!metadataTail.matches(title.substring(marker.range.last + 1))) return unnumberedTitleKey(title)
 
         var prefix = title.substring(0, marker.range.first)
         if (prefix.lastOrNull() in openingParentheses && title.getOrNull(marker.range.last + 1) in closingParentheses) {
             prefix = prefix.dropLast(1)
         }
         return prefix + marker.sortToken
+    }
+
+    private fun unnumberedTitleKey(title: String): String {
+        val suffix = trailingMetadata.find(title) ?: return title
+        if (suffix.range.first == 0) return title
+        val titleBody = title.substring(0, suffix.range.first).trimEnd()
+        // A trailing all-Roman ASCII word can be an English title fragment (for example "MIX").
+        // Keep it untouched unless the strict suffix matcher above accepted it as a numeral.
+        if (romanLetterWordAtEnd.containsMatchIn(titleBody)) return title
+        return titleBody + "0" + suffix.value
     }
 
     private fun markerIsOutsideMetadata(title: String, markerStart: Int, marker: String): Boolean {
@@ -113,11 +123,16 @@ internal object ChapterTitleSortRules {
         ),
         MarkerPattern(
             regex = Regex(
-                "(?:^|(?<=[\\s_\\-~～—·・]))((?=[MDCLXVI])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3}))(?=$|[\\s（(\\[【_\\-~～—·・])",
+                "(?:(?:^|(?<=[\\s_\\-~～—·・]))" +
+                    "((?=[MDCLXVI])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3}))|" +
+                    "(?<=[㐀-䶿一-鿿豈-﫿ぁ-ヿ가-힯])(XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I))" +
+                    "(?=$|[\\s（(\\[【_\\-~～—·・])",
             ),
             toMarker = { match ->
-                romanOrder(match.groupValues[1])?.let { order ->
-                    SequenceMarker(match.range, "roman$order")
+                val roman = match.groupValues[1].ifEmpty { match.groupValues[2] }
+                romanOrder(roman)?.let { order ->
+                    // A numeric token keeps "秘密花园X" and "秘密花园12" in one sequence.
+                    SequenceMarker(match.range, order.toString())
                 }
             },
         ),
@@ -126,6 +141,10 @@ internal object ChapterTitleSortRules {
     private val metadataTail = Regex(
         "^[\\s）)_\\-~～—·・!！?？,，.。：:;；]*(?:(?:\\[[^]\\r\\n]*]|【[^】\\r\\n]*】|\\([^()\\r\\n]*\\)|（[^（）\\r\\n]*）)[\\s_\\-~～—·・!！?？,，.。：:;；]*)*$",
     )
+    private val trailingMetadata = Regex(
+        "(?:\\s*(?:\\[[^]\\r\\n]*]|【[^】\\r\\n]*】|\\([^()\\r\\n]*\\)|（[^（）\\r\\n]*）))+\\s*$",
+    )
+    private val romanLetterWordAtEnd = Regex("[MDCLXVI]+$")
 
     private fun parseNumber(value: String): BigInteger? {
         return value.toBigIntegerOrNull() ?: parseChineseNumber(value)?.toBigInteger()

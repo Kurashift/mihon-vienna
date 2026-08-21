@@ -11,6 +11,8 @@ fun getChapterSort(
     Chapter,
     Chapter,
 ) -> Int {
+    val useTranslatedTitle = manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED_ONLY ||
+        manga.displayMode == Manga.CHAPTER_DISPLAY_TRANSLATED_AND_ORIGINAL
     val primary: (Chapter, Chapter) -> Int = when (manga.sorting) {
         Manga.CHAPTER_SORTING_SOURCE -> when (sortDescending) {
             true -> { c1, c2 -> c1.sourceOrder.compareTo(c2.sourceOrder) }
@@ -25,12 +27,8 @@ fun getChapterSort(
             false -> { c1, c2 -> c1.dateUpload.compareTo(c2.dateUpload) }
         }
         Manga.CHAPTER_SORTING_ALPHABET -> when (sortDescending) {
-            true -> { c1, c2 -> c2.name.compareToCaseInsensitiveNaturalOrder(c1.name) }
-            false -> { c1, c2 -> c1.name.compareToCaseInsensitiveNaturalOrder(c2.name) }
-        }
-        Manga.CHAPTER_SORTING_TRANSLATED -> when (sortDescending) {
-            true -> { c1, c2 -> compareTranslatedNames(c2, c1) }
-            false -> { c1, c2 -> compareTranslatedNames(c1, c2) }
+            true -> { c1, c2 -> compareChapterTitles(c2, c1, useTranslatedTitle) }
+            false -> { c1, c2 -> compareChapterTitles(c1, c2, useTranslatedTitle) }
         }
         // Custom manual order is always ascending; 0 means unpositioned and sorts at the end,
         // with the chapter name as a stable tie-breaker.
@@ -59,13 +57,13 @@ fun getChapterSort(
     }
 }
 
-private fun compareTranslatedNames(first: Chapter, second: Chapter): Int {
-    val firstDisplayedName = first.translatedNameOrNull ?: first.name
-    val secondDisplayedName = second.translatedNameOrNull ?: second.name
-    val byDisplayedName = ChapterTitleSortRules.sortKey(firstDisplayedName)
-        .compareToCaseInsensitiveNaturalOrder(ChapterTitleSortRules.sortKey(secondDisplayedName))
-    return byDisplayedName.takeIf { it != 0 }
-        ?: firstDisplayedName.compareToCaseInsensitiveNaturalOrder(secondDisplayedName).takeIf { it != 0 }
+private fun compareChapterTitles(first: Chapter, second: Chapter, useTranslatedTitle: Boolean): Int {
+    val firstTitle = first.translatedNameOrNull.takeIf { useTranslatedTitle } ?: first.name
+    val secondTitle = second.translatedNameOrNull.takeIf { useTranslatedTitle } ?: second.name
+    val byTitle = ChapterTitleSortRules.sortKey(firstTitle)
+        .compareToCaseInsensitiveNaturalOrder(ChapterTitleSortRules.sortKey(secondTitle))
+    return byTitle.takeIf { it != 0 }
+        ?: firstTitle.compareToCaseInsensitiveNaturalOrder(secondTitle).takeIf { it != 0 }
         ?: first.name.compareToCaseInsensitiveNaturalOrder(second.name)
 }
 
