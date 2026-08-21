@@ -799,7 +799,7 @@
     <string name="chapter_sort_basis_section">Sort by</string>
     <string name="chapter_display_title_section">Chapter title</string>
     <string name="chapter_display_layout_section">Layout</string>
-    <string name="chapter_title_translations">Chapter title translations</string>
+    <string name="chapter_title_translations">Import/export chapter title translations</string>
     <string name="current_manga_chapter_title_translations">Chapter title translations for this manga</string>
     <string name="local_library_chapter_title_translations">Local library chapter title translations</string>
     <string name="export_current_manga_chapter_titles">Export current manga</string>
