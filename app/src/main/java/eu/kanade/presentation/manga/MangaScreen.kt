@@ -495,10 +495,16 @@ private fun MangaScreenSmallImpl(
             end = contentPadding.calculateEndPadding(layoutDirection),
             bottom = contentPadding.calculateBottomPadding(),
         )
+        val reorderScrollPadding = PaddingValues(
+            start = contentPadding.calculateStartPadding(layoutDirection),
+            top = topPadding,
+            end = contentPadding.calculateEndPadding(layoutDirection),
+            bottom = contentPadding.calculateBottomPadding(),
+        )
         val chapterItems = remember { chapters.toMutableStateList() }
         var pendingReorder by remember { mutableStateOf(false) }
         var reorderChanged by remember { mutableStateOf(false) }
-        val reorderableState = rememberReorderableLazyListState(chapterListState, chapterContentPadding) { from, to ->
+        val reorderableState = rememberReorderableLazyListState(chapterListState, reorderScrollPadding) { from, to ->
             val fromIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == from.key }
             val toIndex = chapterItems.indexOfFirst { "chapter-${it.id}" == to.key }
             if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {

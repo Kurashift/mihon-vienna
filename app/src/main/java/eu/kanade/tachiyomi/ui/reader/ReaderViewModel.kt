@@ -8,7 +8,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.domain.chapter.model.toDbChapter
 import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.domain.source.interactor.GetIncognitoState
 import eu.kanade.domain.track.interactor.TrackChapter
@@ -285,7 +284,6 @@ class ReaderViewModel @JvmOverloads constructor(
                     (this + selectedChapter).sortedWith(getChapterSort(manga, sortDescending = false))
                 }
             }
-            .map { it.toDbChapter() }
             .map(::ReaderChapter)
     }
 

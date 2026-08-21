@@ -123,6 +123,7 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.util.collectAsState
 import tachiyomi.source.local.isLocal
@@ -847,12 +848,23 @@ class ReaderActivity : BaseActivity() {
         val verticalNavigatorOnLeft by readerPreferences.verticalNavigatorOnLeft.collectAsState()
         val verticalNavigatorHeight by readerPreferences.verticalNavigatorHeight.collectAsState()
 
+        // The top bar chapter name follows the same display mode as the chapter list: translated
+        // title modes show the translation and only fall back to the original name when missing.
+        val chapterTitle = state.currentChapter?.let { readerChapter ->
+            when (state.manga?.displayMode) {
+                Manga.CHAPTER_DISPLAY_TRANSLATED_ONLY,
+                Manga.CHAPTER_DISPLAY_TRANSLATED_AND_ORIGINAL,
+                -> readerChapter.translatedNameOrNull ?: readerChapter.chapter.name
+                else -> readerChapter.chapter.name
+            }
+        }
+
         ReaderAppBars(
             visible = state.menuVisible,
             audioControls = audioControls,
 
             mangaTitle = state.manga?.title,
-            chapterTitle = state.currentChapter?.chapter?.name,
+            chapterTitle = chapterTitle,
             navigateUp = onBackPressedDispatcher::onBackPressed,
             goodDoujinMarked = state.goodDoujinMarked,
             onToggleGoodDoujin = viewModel::toggleCurrentChapterGoodDoujin.takeIf { state.manga?.isLocal() == true },
