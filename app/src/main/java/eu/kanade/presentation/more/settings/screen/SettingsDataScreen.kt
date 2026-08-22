@@ -21,6 +21,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import com.hippo.unifile.UniFile
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.tachiyomi.ui.local.LocalImportScreen
 import eu.kanade.tachiyomi.util.system.toast
 import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
@@ -71,6 +72,11 @@ object SettingsDataScreen : SearchableSettings {
                         title = stringResource(MR.strings.settings_import_export),
                         subtitle = stringResource(MR.strings.settings_import_export_summary),
                         onClick = { navigator.push(SettingsImportExportScreen) },
+                    ),
+                    Preference.PreferenceItem.TextPreference(
+                        title = stringResource(MR.strings.action_import_local_chapters),
+                        subtitle = "从本地文件夹或压缩包导入本子",
+                        onClick = { navigator.push(LocalImportScreen()) },
                     ),
                 ),
             ),

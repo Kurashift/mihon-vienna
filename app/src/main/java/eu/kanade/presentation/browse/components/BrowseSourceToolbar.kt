@@ -5,8 +5,8 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import eu.kanade.presentation.components.AppBar
@@ -111,27 +111,41 @@ fun BrowseSourceToolbar(
                             content = { dismiss ->
                                 val actions = buildList {
                                     if (isLocalSource) {
-                                        onImportLocalChapters?.let { add(stringResource(MR.strings.action_import_local_chapters) to it) }
+                                        onImportLocalChapters?.let {
+                                            add(stringResource(MR.strings.action_import_local_chapters) to it)
+                                        }
                                         add(stringResource(MR.strings.audio_title) to onOpenAudio)
                                         onFilterClick?.let { add(stringResource(MR.strings.action_sort) to it) }
-                                        onRefreshChapters?.let { add(stringResource(MR.strings.action_refresh_all_chapters) to it) }
+                                        onRefreshChapters?.let {
+                                            add(stringResource(MR.strings.action_refresh_all_chapters) to it)
+                                        }
                                     } else {
                                         add(stringResource(MR.strings.action_open_in_web_view) to onWebViewClick)
                                     }
                                     add(stringResource(MR.strings.action_open_random_manga) to onOpenRandomManga)
-                                    onOpenRandomGoodDoujin?.let { add(stringResource(MR.strings.action_open_random_good_doujin) to it) }
+                                    onOpenRandomGoodDoujin?.let {
+                                        add(stringResource(MR.strings.action_open_random_good_doujin) to it)
+                                    }
                                     add(
                                         stringResource(
-                                            if (isLocalSource) MR.strings.action_clear_current_list_history
-                                            else MR.strings.action_clear_reading_history,
+                                            if (isLocalSource) {
+                                                MR.strings.action_clear_current_list_history
+                                            } else {
+                                                MR.strings.action_clear_reading_history
+                                            },
                                         ) to onClearHistoryClick,
                                     )
-                                    if (isConfigurableSource) add(stringResource(MR.strings.action_settings) to onSettingsClick)
+                                    if (isConfigurableSource) {
+                                        add(stringResource(MR.strings.action_settings) to onSettingsClick)
+                                    }
                                 }
                                 actions.forEach { (label, action) ->
                                     DropdownMenuItem(
                                         text = { Text(label) },
-                                        onClick = { dismiss(); action() },
+                                        onClick = {
+                                            dismiss()
+                                            action()
+                                        },
                                     )
                                 }
                             },

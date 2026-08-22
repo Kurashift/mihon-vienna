@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
-import eu.kanade.presentation.library.components.MangaComfortableGridItem
+import eu.kanade.presentation.library.components.MangaCompactGridItem
 import eu.kanade.presentation.util.Screen
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
@@ -49,19 +49,19 @@ class LocalMangaPickerScreen(
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(128.dp),
+                    columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 12.dp,
+                        start = 8.dp,
                         top = padding.calculateTopPadding() + 12.dp,
-                        end = 12.dp,
+                        end = 8.dp,
                         bottom = padding.calculateBottomPadding() + 12.dp,
                     ),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(mangas, key = { it.id }) { manga ->
-                        MangaComfortableGridItem(
+                        MangaCompactGridItem(
                             coverData = MangaCover(
                                 mangaId = manga.id,
                                 sourceId = manga.source,

@@ -22,11 +22,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
@@ -105,7 +105,9 @@ data class LocalChapterMoveScreen(
                                 status.copiedBytes.toFloat() / status.totalBytes
                             } else if (status.total > 0) {
                                 status.completed.toFloat() / status.total
-                            } else 0f
+                            } else {
+                                0f
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )

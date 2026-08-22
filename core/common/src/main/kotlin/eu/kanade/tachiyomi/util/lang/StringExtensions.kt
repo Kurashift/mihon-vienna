@@ -91,7 +91,9 @@ private fun String.sortRuns(): List<String> {
     var currentIsDigit: Boolean? = null
     for (index in indices) {
         val char = this[index]
-        if (char == '.' && currentIsDigit == true && getOrNull(index - 1)?.isDigit() == true && getOrNull(index + 1)?.isDigit() == true) {
+        if (char == '.' && currentIsDigit == true && getOrNull(index - 1)?.isDigit() == true &&
+            getOrNull(index + 1)?.isDigit() == true
+        ) {
             current.append(char)
             continue
         }

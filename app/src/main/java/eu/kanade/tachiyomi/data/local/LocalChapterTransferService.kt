@@ -4,9 +4,10 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.hippo.unifile.UniFile
+import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import mihon.core.archive.ZipWriter
 import tachiyomi.core.common.storage.extension
@@ -17,10 +18,9 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.image.LocalChapterCoverManager
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.LocalSourceFileSystem
-import tachiyomi.source.local.image.LocalChapterCoverManager
-import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
@@ -114,7 +114,8 @@ class LocalChapterTransferService(
             val normalized = normalizeName(fileName.substringBeforeLast('.'))
             if (targetDir.listFiles().orEmpty().any {
                     normalizeName(it.name.orEmpty().substringBeforeLast('.')) == normalized
-                }) {
+                }
+            ) {
                 skipped++
                 onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
                 return@forEachIndexed
@@ -315,7 +316,11 @@ class LocalChapterTransferService(
             coroutineContext.ensureActive()
             val destinationName = candidate.name.trim().ifBlank { "Chapter" }
             if (targetDir.findFile(destinationName) != null ||
-                targetDir.listFiles()?.any { normalizeName(it.name.orEmpty().substringBeforeLast('.')) == normalizeName(destinationName.substringBeforeLast('.')) } == true
+                targetDir.listFiles()?.any {
+                    normalizeName(it.name.orEmpty().substringBeforeLast('.')) ==
+                        normalizeName(destinationName.substringBeforeLast('.'))
+                } ==
+                true
             ) {
                 skipped++
                 onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
@@ -333,9 +338,11 @@ class LocalChapterTransferService(
                 if (candidate.file.isDirectory && options.folderOutput == FolderOutput.CBZ) {
                     val files = candidate.file.listFiles().orEmpty()
                         .filter { !it.isDirectory && isImportableFile(it) }
-                        .sortedWith(Comparator { a, b ->
-                            a.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(b.name.orEmpty())
-                        })
+                        .sortedWith(
+                            Comparator { a, b ->
+                                a.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(b.name.orEmpty())
+                            },
+                        )
                     ZipWriter(context, staged).use { writer ->
                         files.forEach { file ->
                             coroutineContext.ensureActive()
@@ -351,13 +358,21 @@ class LocalChapterTransferService(
                         onProgress(Progress(index, candidates.size, candidate.name, copiedBytes, totalBytes))
                     }
                 }
-                val committed = if (staged.isDirectory) staged.renameTo(destinationName) else {
+                val committed = if (staged.isDirectory) {
+                    staged.renameTo(destinationName)
+                } else {
                     val extension = candidate.file.extension?.takeIf { it.isNotBlank() } ?: "cbz"
                     staged.renameTo("$destinationName.$extension")
                 }
                 if (!committed) error("Cannot commit imported chapter")
                 val chapterUrl = "${target.url}/$destinationName" +
-                    if (candidate.file.isDirectory && options.folderOutput == FolderOutput.CBZ) ".cbz" else candidate.file.extension?.let { ".${it}" }.orEmpty()
+                    if (candidate.file.isDirectory &&
+                        options.folderOutput == FolderOutput.CBZ
+                    ) {
+                        ".cbz"
+                    } else {
+                        candidate.file.extension?.let { ".$it" }.orEmpty()
+                    }
                 val added = chapterRepository.addAll(
                     listOf(
                         Chapter.create().copy(
@@ -388,12 +403,19 @@ class LocalChapterTransferService(
     }
 
     private fun expand(file: UniFile): List<Candidate> {
-        if (!file.isDirectory) return if (Archive.isSupported(file) || file.extension.equals("epub", true)) {
-            listOf(Candidate(file, file.name.orEmpty().substringBeforeLast('.')))
-        } else emptyList()
+        if (!file.isDirectory) {
+            return if (Archive.isSupported(file) || file.extension.equals("epub", true)) {
+                listOf(Candidate(file, file.name.orEmpty().substringBeforeLast('.')))
+            } else {
+                emptyList()
+            }
+        }
         val children = file.listFiles().orEmpty()
         val directImages = children.filter { !it.isDirectory && isImportableFile(it) }
-        val directArchives = children.filter { !it.isDirectory && (Archive.isSupported(it) || it.extension.equals("epub", true)) }
+        val directArchives = children.filter {
+            !it.isDirectory &&
+                (Archive.isSupported(it) || it.extension.equals("epub", true))
+        }
         val childFolders = children.filter { it.isDirectory && it.listFiles().orEmpty().any(::isImportableFile) }
         return if (directImages.isNotEmpty() && childFolders.isEmpty() && directArchives.isEmpty()) {
             listOf(Candidate(file, file.name.orEmpty()))
@@ -433,7 +455,9 @@ class LocalChapterTransferService(
 
     private fun sizeOf(file: UniFile): Long = if (file.isDirectory) {
         file.listFiles().orEmpty().sumOf(::sizeOf)
-    } else file.length().coerceAtLeast(0L)
+    } else {
+        file.length().coerceAtLeast(0L)
+    }
 
     private fun sizeOfForTransfer(file: UniFile, options: Options): Long {
         if (!file.isDirectory || options.folderOutput == FolderOutput.DIRECTORY) return sizeOf(file)

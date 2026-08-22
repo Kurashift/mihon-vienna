@@ -10,8 +10,8 @@ import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notificationBuilder
 import eu.kanade.tachiyomi.util.system.notify
-import tachiyomi.i18n.MR
 import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -69,8 +69,11 @@ class LocalChapterTransferNotifier(
             setAutoCancel(true)
             setContentText(
                 context.stringResource(
-                    if (isMove) MR.strings.notification_local_move_complete
-                    else MR.strings.notification_local_transfer_complete,
+                    if (isMove) {
+                        MR.strings.notification_local_move_complete
+                    } else {
+                        MR.strings.notification_local_transfer_complete
+                    },
                     imported,
                     skipped,
                     failed,

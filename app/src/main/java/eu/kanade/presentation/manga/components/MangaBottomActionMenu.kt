@@ -31,11 +31,11 @@ import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.outlined.SwapCalls
 import androidx.compose.material.icons.outlined.UnfoldMore
@@ -184,7 +184,11 @@ fun MangaBottomActionMenu(
                                     text = {
                                         Text(
                                             stringResource(
-                                                if (marksSelected) MR.strings.action_unmark_duplicate else MR.strings.action_mark_duplicate,
+                                                if (marksSelected) {
+                                                    MR.strings.action_unmark_duplicate
+                                                } else {
+                                                    MR.strings.action_mark_duplicate
+                                                },
                                             ),
                                         )
                                     },
@@ -248,7 +252,9 @@ fun MangaBottomActionMenu(
                         onClick = onMoveClicked,
                     )
                 }
-                if (onDeleteClicked != null || onMarkPreviousAsReadClicked != null || onMarkFollowingAsReadClicked != null) {
+                if (onDeleteClicked != null || onMarkPreviousAsReadClicked != null ||
+                    onMarkFollowingAsReadClicked != null
+                ) {
                     var moreExpanded by remember { mutableStateOf(false) }
                     Button(
                         title = stringResource(MR.strings.label_more),

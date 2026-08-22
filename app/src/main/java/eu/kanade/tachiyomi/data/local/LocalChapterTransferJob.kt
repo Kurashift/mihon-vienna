@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
+import androidx.lifecycle.asFlow
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
@@ -12,7 +13,6 @@ import androidx.work.WorkInfo
 import androidx.work.WorkQuery
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import androidx.lifecycle.asFlow
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.util.system.setForegroundSafely
 import eu.kanade.tachiyomi.util.system.workManager
@@ -47,7 +47,11 @@ class LocalChapterTransferJob(
         val isMove = inputData.getBoolean(KEY_IS_MOVE, false)
         val uris = inputData.getStringArray(KEY_URIS)?.map(Uri::parse).orEmpty()
         val chapterIds = inputData.getLongArray(KEY_CHAPTER_IDS)?.toList().orEmpty()
-        if (targetMangaId < 0L || (!isMove && uris.isEmpty()) || (isMove && chapterIds.isEmpty())) return Result.failure()
+        if (targetMangaId < 0L || (!isMove && uris.isEmpty()) ||
+            (isMove && chapterIds.isEmpty())
+        ) {
+            return Result.failure()
+        }
         val output = runCatching {
             LocalChapterTransferService.FolderOutput.valueOf(
                 inputData.getString(KEY_FOLDER_OUTPUT)

@@ -161,20 +161,34 @@ fun MangaToolbar(
                             icon = Icons.Outlined.MoreVert,
                             content = { dismiss ->
                                 listOfNotNull(
-                                    onClickRandomGoodDoujin?.let { stringResource(MR.strings.action_open_random_good_doujin) to it },
+                                    onClickRandomGoodDoujin?.let {
+                                        stringResource(MR.strings.action_open_random_good_doujin) to
+                                            it
+                                    },
                                     onClickRandom?.let { stringResource(MR.strings.action_open_random_manga) to it },
-                                    onClickEditCategory?.let { stringResource(MR.strings.action_edit_categories) to it },
+                                    onClickEditCategory?.let {
+                                        stringResource(MR.strings.action_edit_categories) to it
+                                    },
                                     onClickMigrate?.let { stringResource(MR.strings.action_migrate) to it },
                                     onClickShare?.let { stringResource(MR.strings.action_share) to it },
-                                    onClickChapterTitleTranslations?.let { stringResource(MR.strings.chapter_title_translations) to it },
-                                    onClickImportLocalChapters?.let { stringResource(MR.strings.action_import_local_chapters) to it },
+                                    onClickChapterTitleTranslations?.let {
+                                        stringResource(MR.strings.chapter_title_translations) to
+                                            it
+                                    },
+                                    onClickImportLocalChapters?.let {
+                                        stringResource(MR.strings.action_import_local_chapters) to
+                                            it
+                                    },
                                     (stringResource(MR.strings.action_notes) to onClickEditNotes),
                                     (stringResource(MR.strings.action_clear_reading_history) to onClickClearHistory),
                                     (stringResource(MR.strings.action_webview_refresh) to onClickRefresh),
                                 ).forEach { (title, action) ->
                                     androidx.compose.material3.DropdownMenuItem(
                                         text = { androidx.compose.material3.Text(title) },
-                                        onClick = { dismiss(); action() },
+                                        onClick = {
+                                            dismiss()
+                                            action()
+                                        },
                                     )
                                 }
                             },

@@ -11,21 +11,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,15 +38,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
@@ -58,7 +59,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.LocalSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import androidx.compose.ui.graphics.vector.ImageVector
+import eu.kanade.presentation.manga.components.MangaCover as MangaCoverView
 
 private enum class ImportTargetMode {
     EXISTING,
@@ -211,7 +212,9 @@ data class LocalImportScreen(
                             )
                         } else {
                             Text(
-                                text = "已添加 ${sourcePreviews.size} 个来源，共 ${sourcePreviews.sumOf { it.candidateNames.size }} 个本子",
+                                text = "已添加 ${sourcePreviews.size} 个来源，共 ${sourcePreviews.sumOf {
+                                    it.candidateNames.size
+                                }} 个本子",
                                 style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
@@ -223,7 +226,9 @@ data class LocalImportScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(preview.displayName, maxLines = 1)
                                         Text(
-                                            "包含 ${preview.candidateNames.size} 个本子：${preview.candidateNames.take(3).joinToString("、")}",
+                                            "包含 ${preview.candidateNames.size} 个本子：${preview.candidateNames.take(
+                                                3,
+                                            ).joinToString("、")}",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 2,
@@ -268,7 +273,10 @@ data class LocalImportScreen(
                                             LocalMangaPickerScreen(
                                                 mangas = mangas,
                                                 selectedMangaId = targetId,
-                                                onSelected = { targetId = it },
+                                                onSelected = {
+                                                    targetId = it
+                                                    targetMode = ImportTargetMode.EXISTING
+                                                },
                                             ),
                                         )
                                     },
@@ -281,14 +289,40 @@ data class LocalImportScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(
-                                        text = selectedManga?.title ?: "尚未选择合集",
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                    )
+                                    if (selectedManga != null) {
+                                        MangaCoverView.Book(
+                                            modifier = Modifier
+                                                .padding(end = 10.dp)
+                                                .fillMaxWidth(0.16f),
+                                            data = tachiyomi.domain.manga.model.MangaCover(
+                                                mangaId = selectedManga.id,
+                                                sourceId = selectedManga.source,
+                                                isMangaFavorite = selectedManga.favorite,
+                                                url = selectedManga.thumbnailUrl,
+                                                lastModified = selectedManga.coverLastModified,
+                                            ),
+                                        )
+                                        Text(
+                                            text = selectedManga.title,
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            maxLines = 2,
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "尚未选择合集",
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                    }
                                     TextButton(
                                         onClick = {
-                                            navigator.push(LocalMangaPickerScreen(mangas) { targetId = it })
+                                            navigator.push(
+                                                LocalMangaPickerScreen(mangas) {
+                                                    targetId = it
+                                                    targetMode = ImportTargetMode.EXISTING
+                                                },
+                                            )
                                         },
                                     ) { Text("选择") }
                                 }
@@ -342,8 +376,13 @@ data class LocalImportScreen(
                         ImportSection(title = "导入进度") {
                             LinearProgressIndicator(
                                 progress = {
-                                    if (status.totalBytes > 0) status.copiedBytes.toFloat() / status.totalBytes
-                                    else if (status.total > 0) status.completed.toFloat() / status.total else 0f
+                                    if (status.totalBytes > 0) {
+                                        status.copiedBytes.toFloat() / status.totalBytes
+                                    } else if (status.total > 0) {
+                                        status.completed.toFloat() / status.total
+                                    } else {
+                                        0f
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -361,50 +400,60 @@ data class LocalImportScreen(
                         Button(
                             modifier = Modifier.weight(1f),
                             onClick = {
-                            scope.launch {
-                                importing = true
-                                val resolvedTarget = if (fixedTargetMangaId != null) fixedTargetMangaId else if (targetMode == ImportTargetMode.EXISTING && targetId >= 0) {
-                                    targetId
-                                } else if (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank()) {
-                                    val safeTitle = newTitle.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                    networkToLocal(
-                                        Manga.create().copy(
-                                            source = LocalSource.ID,
-                                            url = safeTitle,
-                                            title = safeTitle,
-                                        ),
-                                    ).id
-                                } else -1L
-                                if (resolvedTarget >= 0 && selectedUris.isNotEmpty()) {
-                                    val preview = runCatching {
-                                        transferService.previewImport(selectedUris, resolvedTarget)
-                                    }.getOrNull()
-                                    if (preview == null) {
-                                        importing = false
-                                    } else if (preview.conflicts.isNotEmpty()) {
-                                        pendingTargetId = resolvedTarget
-                                        conflictPreview = preview
-                                    } else if (LocalChapterTransferJob.start(
-                                            context = context,
-                                            uris = selectedUris,
-                                            targetMangaId = resolvedTarget,
-                                            options = LocalChapterTransferService.Options(output, deleteSource),
-                                        )
+                                scope.launch {
+                                    importing = true
+                                    val resolvedTarget = if (fixedTargetMangaId !=
+                                        null
                                     ) {
-                                        importing = false
-                                        navigator.pop()
+                                        fixedTargetMangaId
+                                    } else if (targetMode == ImportTargetMode.EXISTING &&
+                                        targetId >= 0
+                                    ) {
+                                        targetId
+                                    } else if (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank()) {
+                                        val safeTitle = newTitle.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                        networkToLocal(
+                                            Manga.create().copy(
+                                                source = LocalSource.ID,
+                                                url = safeTitle,
+                                                title = safeTitle,
+                                            ),
+                                        ).id
+                                    } else {
+                                        -1L
+                                    }
+                                    if (resolvedTarget >= 0 && selectedUris.isNotEmpty()) {
+                                        val preview = runCatching {
+                                            transferService.previewImport(selectedUris, resolvedTarget)
+                                        }.getOrNull()
+                                        if (preview == null) {
+                                            importing = false
+                                        } else if (preview.conflicts.isNotEmpty()) {
+                                            pendingTargetId = resolvedTarget
+                                            conflictPreview = preview
+                                        } else if (LocalChapterTransferJob.start(
+                                                context = context,
+                                                uris = selectedUris,
+                                                targetMangaId = resolvedTarget,
+                                                options = LocalChapterTransferService.Options(output, deleteSource),
+                                            )
+                                        ) {
+                                            importing = false
+                                            navigator.pop()
+                                        } else {
+                                            importing = false
+                                        }
                                     } else {
                                         importing = false
                                     }
-                                } else {
-                                    importing = false
                                 }
-                            }
                             },
                             enabled = !importing && selectedUris.isNotEmpty() &&
-                                (fixedTargetMangaId != null ||
-                                    (targetMode == ImportTargetMode.EXISTING && targetId >= 0) ||
-                                    (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank())),
+                                (
+                                    fixedTargetMangaId != null ||
+                                        (targetMode == ImportTargetMode.EXISTING && targetId >= 0) ||
+                                        (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank())
+                                    ),
                         ) { Text("开始导入") }
                     }
                 }
