@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
@@ -69,6 +70,15 @@ fun BrowseSourceToolbar(
                             ),
                         )
                     }
+                    if (isLocalSource) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.audio_title),
+                                icon = Icons.Outlined.Headphones,
+                                onClick = onOpenAudio,
+                            ),
+                        )
+                    }
                     add(
                         AppBar.MenuAction(
                             title = stringResource(MR.strings.action_display_mode),
@@ -114,7 +124,6 @@ fun BrowseSourceToolbar(
                                         onImportLocalChapters?.let {
                                             add(stringResource(MR.strings.action_import_local_chapters) to it)
                                         }
-                                        add(stringResource(MR.strings.audio_title) to onOpenAudio)
                                         onFilterClick?.let { add(stringResource(MR.strings.action_sort) to it) }
                                         onRefreshChapters?.let {
                                             add(stringResource(MR.strings.action_refresh_all_chapters) to it)

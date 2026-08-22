@@ -2,6 +2,7 @@ package eu.kanade.presentation.manga.components
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.Headphones
@@ -21,13 +22,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.DownloadDropdownMenu
 import eu.kanade.presentation.manga.DownloadAction
+import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -138,6 +142,24 @@ fun MangaToolbar(
                             ),
                         )
                     }
+                    if (onClickRandomGoodDoujin != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_open_random_good_doujin),
+                                icon = ImageVector.vectorResource(R.drawable.ic_dice_heart_24dp),
+                                onClick = onClickRandomGoodDoujin,
+                            ),
+                        )
+                    }
+                    if (onClickRandom != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_open_random_manga),
+                                icon = Icons.Outlined.Casino,
+                                onClick = onClickRandom,
+                            ),
+                        )
+                    }
                     if (onClickAudio != null) {
                         add(
                             AppBar.Action(
@@ -161,11 +183,6 @@ fun MangaToolbar(
                             icon = Icons.Outlined.MoreVert,
                             content = { dismiss ->
                                 listOfNotNull(
-                                    onClickRandomGoodDoujin?.let {
-                                        stringResource(MR.strings.action_open_random_good_doujin) to
-                                            it
-                                    },
-                                    onClickRandom?.let { stringResource(MR.strings.action_open_random_manga) to it },
                                     onClickEditCategory?.let {
                                         stringResource(MR.strings.action_edit_categories) to it
                                     },
