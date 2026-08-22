@@ -364,7 +364,7 @@ data class LocalImportScreen(
                                 selected = output == LocalChapterTransferService.FolderOutput.CBZ,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.CBZ },
                             )
-                            Text("CBZ（压缩包形式导入）")
+                            Text("CBZ（压缩后再导入）")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Switch(checked = deleteSource, onCheckedChange = { deleteSource = it })
