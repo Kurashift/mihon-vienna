@@ -311,10 +311,9 @@ data class LocalImportScreen(
                     }
                 }
                 item {
-                    ImportSection(title = "导入形式与行为") {
-                        Text("文件夹来源的导入形式", style = MaterialTheme.typography.labelLarge)
+                    ImportSection(title = "导入设置") {
                         Text(
-                            "单独选择的压缩包会保留原格式；以下选项只影响图片目录来源。",
+                            "单本压缩包保持原格式；目录来源可选文件夹或 CBZ。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -323,22 +322,17 @@ data class LocalImportScreen(
                                 selected = output == LocalChapterTransferService.FolderOutput.DIRECTORY,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.DIRECTORY },
                             )
-                            Text("保留为文件夹")
+                            Text("文件夹")
                             RadioButton(
                                 selected = output == LocalChapterTransferService.FolderOutput.CBZ,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.CBZ },
                             )
-                            Text("打包为 CBZ")
+                            Text("CBZ")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Switch(checked = deleteSource, onCheckedChange = { deleteSource = it })
                             Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text("导入成功后删除源文件")
-                                Text(
-                                    "默认关闭；逐项完成后才会删除对应源文件",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Text("成功后删除源文件")
                             }
                         }
                     }

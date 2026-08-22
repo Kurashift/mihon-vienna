@@ -4,6 +4,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FlipToBack
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.SelectAll
@@ -137,6 +138,15 @@ fun MangaToolbar(
                             ),
                         )
                     }
+                    if (onClickAudio != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.audio_title),
+                                icon = Icons.Outlined.Headphones,
+                                onClick = onClickAudio,
+                            ),
+                        )
+                    }
                     add(
                         AppBar.Action(
                             title = stringResource(MR.strings.chapter_settings),
@@ -153,7 +163,6 @@ fun MangaToolbar(
                                 listOfNotNull(
                                     onClickRandomGoodDoujin?.let { stringResource(MR.strings.action_open_random_good_doujin) to it },
                                     onClickRandom?.let { stringResource(MR.strings.action_open_random_manga) to it },
-                                    onClickAudio?.let { stringResource(MR.strings.audio_title) to it },
                                     onClickEditCategory?.let { stringResource(MR.strings.action_edit_categories) to it },
                                     onClickMigrate?.let { stringResource(MR.strings.action_migrate) to it },
                                     onClickShare?.let { stringResource(MR.strings.action_share) to it },
