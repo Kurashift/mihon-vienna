@@ -468,6 +468,7 @@ private fun MangaScreenSmallImpl(
             SharedMangaBottomActionMenu(
                 selected = selectedChapters,
                 goodDoujinEnabled = state.manga.isLocal(),
+                isLocalManga = state.manga.isLocal(),
                 onMultiBookmarkClicked = onMultiBookmarkClicked,
                 onMultiGoodDoujinClicked = onMultiGoodDoujinClicked,
                 onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
@@ -783,6 +784,7 @@ fun MangaScreenLargeImpl(
                 SharedMangaBottomActionMenu(
                     selected = selectedChapters,
                     goodDoujinEnabled = state.manga.isLocal(),
+                    isLocalManga = state.manga.isLocal(),
                     onMultiBookmarkClicked = onMultiBookmarkClicked,
                     onMultiGoodDoujinClicked = onMultiGoodDoujinClicked,
                     onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
@@ -960,6 +962,7 @@ fun MangaScreenLargeImpl(
 private fun SharedMangaBottomActionMenu(
     selected: List<ChapterList.Item>,
     goodDoujinEnabled: Boolean,
+    isLocalManga: Boolean,
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
     onMultiGoodDoujinClicked: (List<Chapter>, marked: Boolean) -> Unit,
     onMultiMarkAsReadClicked: (List<Chapter>, markAsRead: Boolean) -> Unit,
@@ -1010,7 +1013,10 @@ private fun SharedMangaBottomActionMenu(
         onDeleteClicked = {
             onMultiDeleteClicked(selected.fastMap { it.chapter })
         }.takeIf {
-            selected.fastAny { it.downloadState == Download.State.DOWNLOADED }
+            // Local manga chapters are all reported as "downloaded", but they are not
+            // managed by the download manager, so deleting them would do nothing. Hide
+            // the delete action for local manga instead of showing an ineffective button.
+            !isLocalManga && selected.fastAny { it.downloadState == Download.State.DOWNLOADED }
         },
         onMoveClicked = {
             onMoveChaptersClicked(selected.fastMap { it.chapter })
