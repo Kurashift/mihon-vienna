@@ -4,8 +4,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.Text
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import eu.kanade.presentation.components.AppBar
@@ -38,6 +39,7 @@ fun BrowseSourceToolbar(
     onOpenSources: (() -> Unit)? = null,
     onFilterClick: (() -> Unit)? = null,
     onRefreshChapters: (() -> Unit)? = null,
+    onImportLocalChapters: (() -> Unit)? = null,
     onClearHistoryClick: () -> Unit,
     onSearch: (String) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior? = null,
@@ -66,31 +68,6 @@ fun BrowseSourceToolbar(
                                 onClick = onOpenSources,
                             ),
                         )
-                    }
-                    if (isLocalSource) {
-                        add(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.audio_title),
-                                icon = Icons.Outlined.Headphones,
-                                onClick = onOpenAudio,
-                            ),
-                        )
-                        if (onFilterClick != null) {
-                            add(
-                                AppBar.OverflowAction(
-                                    title = stringResource(MR.strings.action_sort),
-                                    onClick = onFilterClick,
-                                ),
-                            )
-                        }
-                        if (onRefreshChapters != null) {
-                            add(
-                                AppBar.OverflowAction(
-                                    title = stringResource(MR.strings.action_refresh_all_chapters),
-                                    onClick = onRefreshChapters,
-                                ),
-                            )
-                        }
                     }
                     add(
                         AppBar.MenuAction(
@@ -127,48 +104,39 @@ fun BrowseSourceToolbar(
                             },
                         ),
                     )
-                    if (!isLocalSource) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(MR.strings.action_open_in_web_view),
-                                onClick = onWebViewClick,
-                            ),
-                        )
-                    }
                     add(
-                        AppBar.OverflowAction(
-                            title = stringResource(MR.strings.action_open_random_manga),
-                            onClick = onOpenRandomManga,
+                        AppBar.MenuAction(
+                            title = stringResource(MR.strings.label_more),
+                            icon = Icons.Outlined.MoreVert,
+                            content = { dismiss ->
+                                val actions = buildList {
+                                    if (isLocalSource) {
+                                        onImportLocalChapters?.let { add(stringResource(MR.strings.action_import_local_chapters) to it) }
+                                        add(stringResource(MR.strings.audio_title) to onOpenAudio)
+                                        onFilterClick?.let { add(stringResource(MR.strings.action_sort) to it) }
+                                        onRefreshChapters?.let { add(stringResource(MR.strings.action_refresh_all_chapters) to it) }
+                                    } else {
+                                        add(stringResource(MR.strings.action_open_in_web_view) to onWebViewClick)
+                                    }
+                                    add(stringResource(MR.strings.action_open_random_manga) to onOpenRandomManga)
+                                    onOpenRandomGoodDoujin?.let { add(stringResource(MR.strings.action_open_random_good_doujin) to it) }
+                                    add(
+                                        stringResource(
+                                            if (isLocalSource) MR.strings.action_clear_current_list_history
+                                            else MR.strings.action_clear_reading_history,
+                                        ) to onClearHistoryClick,
+                                    )
+                                    if (isConfigurableSource) add(stringResource(MR.strings.action_settings) to onSettingsClick)
+                                }
+                                actions.forEach { (label, action) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        onClick = { dismiss(); action() },
+                                    )
+                                }
+                            },
                         ),
                     )
-                    if (onOpenRandomGoodDoujin != null) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(MR.strings.action_open_random_good_doujin),
-                                onClick = onOpenRandomGoodDoujin,
-                            ),
-                        )
-                    }
-                    add(
-                        AppBar.OverflowAction(
-                            title = stringResource(
-                                if (isLocalSource) {
-                                    MR.strings.action_clear_current_list_history
-                                } else {
-                                    MR.strings.action_clear_reading_history
-                                },
-                            ),
-                            onClick = onClearHistoryClick,
-                        ),
-                    )
-                    if (isConfigurableSource) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(MR.strings.action_settings),
-                                onClick = onSettingsClick,
-                            ),
-                        )
-                    }
                 },
             )
         },

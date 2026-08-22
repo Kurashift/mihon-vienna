@@ -74,7 +74,6 @@
     <string name="action_filter_all">All</string>
     <string name="action_filter_finished">Finished</string>
     <string name="action_filter_in_progress">Reading</string>
-    <string name="action_filter_flagged">Flagged</string>
     <string name="action_filter_good_doujin">Good doujins</string>
     <string name="action_filter_marks">Marks</string>
     <string name="action_set_interval">Set interval</string>
@@ -1168,15 +1167,15 @@
     <string name="donationCampaign.paragraph3">Regardless, Mihon will continue to be maintained by me and the volunteers, and it will stay open source.</string>
     <string name="donationCampaign.contactPlatform">Discord</string>
     <string name="donationCampaign.dismiss">Dismiss</string>
-    <string name="action_mark_duplicate">Mark as duplicate</string>
-    <string name="action_unmark_duplicate">Unmark duplicate</string>
-    <string name="action_marks_list">Marked duplicates</string>
+    <string name="action_mark_duplicate">Mark</string>
+    <string name="action_unmark_duplicate">Unmark</string>
+    <string name="action_marks_list">Marked works</string>
     <string name="my_lists_title">My lists</string>
-    <string name="my_lists_summary">Duplicate marks and good doujins</string>
-    <string name="marks_list_title">Marked duplicates</string>
-    <string name="marks_list_empty">No marked works yet. Flag works in the work list to collect duplicates here.</string>
+    <string name="my_lists_summary">Marks and good doujins</string>
+    <string name="marks_list_title">Marked works</string>
+    <string name="marks_list_empty">No marked works yet. Flag works in the work list to collect them here.</string>
     <string name="marks_list_share">Share</string>
-    <string name="pref_marks_list_summary">View and export works flagged as duplicates. Jump back to any manga from here.</string>
+    <string name="pref_marks_list_summary">View and export your marked works. Jump back to any manga from here.</string>
     <string name="marks_list_open_manga">Open manga</string>
     <string name="marks_list_manga_missing">This manga is no longer in the library</string>
     <string name="marks_list_clear">Clear list</string>
@@ -1300,4 +1299,15 @@
     <string name="local_read_review_title">Incorrect read-status review</string>
     <string name="local_read_review_count">%1$d local chapters are marked as read</string>
     <string name="local_read_review_empty">No local chapters are marked as read</string>
+    <string name="action_import_local_chapters">Import local chapters</string>
+    <string name="action_import_local_chapters_short">Import local</string>
+    <string name="action_import_target">Import to</string>
+    <string name="action_create_local_manga">Create local manga</string>
+    <string name="action_move_to">Move to</string>
+    <string name="action_mark_group">Marks</string>
+    <string name="notification_local_transfer_complete">Imported %1$d, skipped %2$d, failed %3$d</string>
+    <string name="notification_local_move_complete">Moved %1$d, skipped %2$d, failed %3$d</string>
+    <string name="local_transfer_conflict_title">Name conflicts found</string>
+    <string name="local_transfer_conflict_message">%1$d items have the same name as an existing or selected item. They will be skipped.</string>
+    <string name="local_transfer_continue">Continue import</string>
 </resources>

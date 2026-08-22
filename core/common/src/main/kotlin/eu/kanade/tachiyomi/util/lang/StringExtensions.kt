@@ -89,7 +89,12 @@ private fun String.sortRuns(): List<String> {
     val runs = mutableListOf<String>()
     var current = StringBuilder()
     var currentIsDigit: Boolean? = null
-    for (char in this) {
+    for (index in indices) {
+        val char = this[index]
+        if (char == '.' && currentIsDigit == true && getOrNull(index - 1)?.isDigit() == true && getOrNull(index + 1)?.isDigit() == true) {
+            current.append(char)
+            continue
+        }
         if (!char.isLetterOrDigit()) continue
         val isDigit = char.isDigit()
         if (current.isNotEmpty() && isDigit != currentIsDigit) {
@@ -104,6 +109,20 @@ private fun String.sortRuns(): List<String> {
 }
 
 private fun compareNumericRuns(first: String, second: String): Int {
+    if (first.contains('.') || second.contains('.')) {
+        val firstParts = first.split('.', limit = 2)
+        val secondParts = second.split('.', limit = 2)
+        val wholeComparison = compareIntegerRuns(firstParts[0], secondParts[0])
+        if (wholeComparison != 0) return wholeComparison
+        val firstFraction = firstParts.getOrNull(1).orEmpty().trimEnd('0')
+        val secondFraction = secondParts.getOrNull(1).orEmpty().trimEnd('0')
+        val maxLength = maxOf(firstFraction.length, secondFraction.length)
+        return firstFraction.padEnd(maxLength, '0').compareTo(secondFraction.padEnd(maxLength, '0'))
+    }
+    return compareIntegerRuns(first, second)
+}
+
+private fun compareIntegerRuns(first: String, second: String): Int {
     val firstTrimmed = first.trimStart('0').ifEmpty { "0" }
     val secondTrimmed = second.trimStart('0').ifEmpty { "0" }
     if (firstTrimmed.length != secondTrimmed.length) {

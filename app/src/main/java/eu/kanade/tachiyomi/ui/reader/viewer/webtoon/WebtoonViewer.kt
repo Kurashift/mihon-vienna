@@ -382,6 +382,14 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             layoutManager.scrollToPositionWithOffset(position, 0)
 
             scope.launch {
+                // Keep fast opens silent, but reveal the loading indicator before a genuinely slow
+                // decode or missing layout callback can make the previous reader look frozen.
+                delay(INITIAL_LOADING_REVEAL_DELAY_MILLIS)
+                if (positioning != InitialPositioning.Ready) {
+                    activity.onViewerLoadingDelayed()
+                }
+            }
+            scope.launch {
                 // A very slow or missing decode callback must not leave the reader transparent
                 // forever. The fallback still runs the normal measured alignment; it never reveals
                 // the page directly at an unchecked offset.
@@ -1071,6 +1079,9 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
 // Double the cache size to reduce rebinds/recycles incurred by the extra layout space on scroll direction changes
 private const val RECYCLER_VIEW_CACHE_SIZE = 4
+
+// Shows the existing loading UI without exposing an unaligned page when initial decoding is slow
+private const val INITIAL_LOADING_REVEAL_DELAY_MILLIS = 300L
 
 // Restarts initial alignment if an image or layout callback is lost
 private const val INITIAL_REVEAL_WATCHDOG_MILLIS = 5_000L

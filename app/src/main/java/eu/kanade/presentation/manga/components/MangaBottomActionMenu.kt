@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.outlined.SwapCalls
 import androidx.compose.material.icons.outlined.UnfoldMore
@@ -88,6 +89,7 @@ fun MangaBottomActionMenu(
     onDeleteClicked: (() -> Unit)? = null,
     onEditTranslatedTitleClicked: (() -> Unit)? = null,
     onToggleMarkClicked: (() -> Unit)? = null,
+    onMoveClicked: (() -> Unit)? = null,
     marksSelected: Boolean = false,
 ) {
     AnimatedVisibility(
@@ -142,23 +144,64 @@ fun MangaBottomActionMenu(
                         onClick = onRemoveBookmarkClicked,
                     )
                 }
-                if (onAddToGoodDoujinClicked != null) {
+                val hasGoodDoujinAction = onAddToGoodDoujinClicked != null || onRemoveFromGoodDoujinClicked != null
+                if (hasGoodDoujinAction || onToggleMarkClicked != null) {
+                    var marksExpanded by remember { mutableStateOf(false) }
                     Button(
-                        title = stringResource(MR.strings.action_add_to_good_doujin),
-                        icon = Icons.Outlined.FavoriteBorder,
-                        toConfirm = confirm[2],
-                        onLongClick = { onLongClickItem(2) },
-                        onClick = onAddToGoodDoujinClicked,
-                    )
-                }
-                if (onRemoveFromGoodDoujinClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.action_remove_from_good_doujin),
-                        icon = Icons.Filled.Favorite,
-                        toConfirm = confirm[3],
-                        onLongClick = { onLongClickItem(3) },
-                        onClick = onRemoveFromGoodDoujinClicked,
-                    )
+                        title = stringResource(MR.strings.action_mark_group),
+                        icon = Icons.AutoMirrored.Outlined.Label,
+                        toConfirm = false,
+                        onLongClick = {},
+                        onClick = { marksExpanded = true },
+                    ) {
+                        DropdownMenu(
+                            expanded = marksExpanded,
+                            onDismissRequest = { marksExpanded = false },
+                            offset = BottomBarMenuDpOffset,
+                        ) {
+                            if (onAddToGoodDoujinClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.action_add_to_good_doujin)) },
+                                    leadingIcon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
+                                    onClick = {
+                                        marksExpanded = false
+                                        onAddToGoodDoujinClicked()
+                                    },
+                                )
+                            }
+                            if (onRemoveFromGoodDoujinClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.action_remove_from_good_doujin)) },
+                                    leadingIcon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
+                                    onClick = {
+                                        marksExpanded = false
+                                        onRemoveFromGoodDoujinClicked()
+                                    },
+                                )
+                            }
+                            if (onToggleMarkClicked != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            stringResource(
+                                                if (marksSelected) MR.strings.action_unmark_duplicate else MR.strings.action_mark_duplicate,
+                                            ),
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (marksSelected) Icons.Filled.Flag else Icons.Outlined.Flag,
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    onClick = {
+                                        marksExpanded = false
+                                        onToggleMarkClicked()
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
                 if (onMarkAsReadClicked != null) {
                     Button(
@@ -178,18 +221,45 @@ fun MangaBottomActionMenu(
                         onClick = onMarkAsUnreadClicked,
                     )
                 }
-                if (onMarkPreviousAsReadClicked != null || onMarkFollowingAsReadClicked != null) {
-                    var markRangeExpanded by remember { mutableStateOf(false) }
+                if (onDownloadClicked != null) {
                     Button(
-                        title = stringResource(MR.strings.action_mark_range_as_read),
-                        icon = Icons.Outlined.UnfoldMore,
-                        toConfirm = confirm[6],
-                        onLongClick = { onLongClickItem(6) },
-                        onClick = { markRangeExpanded = true },
+                        title = stringResource(MR.strings.action_download),
+                        icon = Icons.Outlined.Download,
+                        toConfirm = confirm[7],
+                        onLongClick = { onLongClickItem(7) },
+                        onClick = onDownloadClicked,
+                    )
+                }
+                if (onEditTranslatedTitleClicked != null) {
+                    Button(
+                        title = stringResource(MR.strings.edit_chapter_translated_title),
+                        icon = Icons.Outlined.Edit,
+                        toConfirm = confirm[10],
+                        onLongClick = { onLongClickItem(10) },
+                        onClick = onEditTranslatedTitleClicked,
+                    )
+                }
+                if (onMoveClicked != null) {
+                    Button(
+                        title = stringResource(MR.strings.action_move_to),
+                        icon = Icons.Outlined.DriveFileMove,
+                        toConfirm = false,
+                        onLongClick = {},
+                        onClick = onMoveClicked,
+                    )
+                }
+                if (onDeleteClicked != null || onMarkPreviousAsReadClicked != null || onMarkFollowingAsReadClicked != null) {
+                    var moreExpanded by remember { mutableStateOf(false) }
+                    Button(
+                        title = stringResource(MR.strings.label_more),
+                        icon = Icons.Outlined.MoreVert,
+                        toConfirm = false,
+                        onLongClick = {},
+                        onClick = { moreExpanded = true },
                     ) {
                         DropdownMenu(
-                            expanded = markRangeExpanded,
-                            onDismissRequest = { markRangeExpanded = false },
+                            expanded = moreExpanded,
+                            onDismissRequest = { moreExpanded = false },
                             offset = BottomBarMenuDpOffset,
                         ) {
                             if (onMarkPreviousAsReadClicked != null) {
@@ -202,7 +272,7 @@ fun MangaBottomActionMenu(
                                         )
                                     },
                                     onClick = {
-                                        markRangeExpanded = false
+                                        moreExpanded = false
                                         onMarkPreviousAsReadClicked()
                                     },
                                 )
@@ -217,55 +287,23 @@ fun MangaBottomActionMenu(
                                         )
                                     },
                                     onClick = {
-                                        markRangeExpanded = false
+                                        moreExpanded = false
                                         onMarkFollowingAsReadClicked()
+                                    },
+                                )
+                            }
+                            if (onDeleteClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.action_delete)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                                    onClick = {
+                                        moreExpanded = false
+                                        onDeleteClicked()
                                     },
                                 )
                             }
                         }
                     }
-                }
-                if (onDownloadClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.action_download),
-                        icon = Icons.Outlined.Download,
-                        toConfirm = confirm[7],
-                        onLongClick = { onLongClickItem(7) },
-                        onClick = onDownloadClicked,
-                    )
-                }
-                if (onDeleteClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.action_delete),
-                        icon = Icons.Outlined.Delete,
-                        toConfirm = confirm[8],
-                        onLongClick = { onLongClickItem(8) },
-                        onClick = onDeleteClicked,
-                    )
-                }
-                if (onEditTranslatedTitleClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.edit_chapter_translated_title),
-                        icon = Icons.Outlined.Edit,
-                        toConfirm = confirm[10],
-                        onLongClick = { onLongClickItem(10) },
-                        onClick = onEditTranslatedTitleClicked,
-                    )
-                }
-                if (onToggleMarkClicked != null) {
-                    Button(
-                        title = stringResource(
-                            if (marksSelected) {
-                                MR.strings.action_unmark_duplicate
-                            } else {
-                                MR.strings.action_mark_duplicate
-                            },
-                        ),
-                        icon = if (marksSelected) Icons.Filled.Flag else Icons.Outlined.Flag,
-                        toConfirm = confirm[9],
-                        onLongClick = { onLongClickItem(9) },
-                        onClick = onToggleMarkClicked,
-                    )
                 }
             }
         }

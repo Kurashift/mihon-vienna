@@ -52,6 +52,8 @@ import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.notes.MangaNotesScreen
+import eu.kanade.tachiyomi.ui.local.LocalImportScreen
+import eu.kanade.tachiyomi.ui.local.LocalChapterMoveScreen
 import eu.kanade.tachiyomi.ui.manga.track.TrackInfoDialogHomeScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
@@ -290,6 +292,9 @@ class MangaScreen(
             onChapterTitleTranslationsClicked = {
                 showChapterTitleTranslationDialog = true
             }.takeIf { successState.manga.isLocal() },
+            onImportLocalChaptersClicked = {
+                navigator.push(LocalImportScreen(successState.manga.id))
+            }.takeIf { successState.manga.isLocal() },
             onClearHistoryClicked = viewModel::showClearHistoryDialog,
             onEditNotesClicked = { navigator.push(MangaNotesScreen(manga = successState.manga)) },
             onMultiBookmarkClicked = viewModel::bookmarkChapters,
@@ -298,6 +303,9 @@ class MangaScreen(
             onMarkPreviousAsReadClicked = viewModel::markPreviousChapterRead,
             onMarkFollowingAsReadClicked = viewModel::markFollowingChapterRead,
             onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
+            onMoveChaptersClicked = { chapters ->
+                navigator.push(LocalChapterMoveScreen(successState.manga.id, chapters.map { it.id }))
+            },
             onChapterSwipe = viewModel::chapterSwipe,
             onReorderChapters = viewModel::reorderChapters,
             onEditChapterTranslatedTitle = { item ->

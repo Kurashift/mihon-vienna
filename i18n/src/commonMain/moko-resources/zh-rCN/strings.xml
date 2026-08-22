@@ -19,7 +19,6 @@
 <string name="action_filter_all">全部</string>
     <string name="action_filter_finished">读完</string>
     <string name="action_filter_in_progress">在读</string>
-    <string name="action_filter_flagged">重复标记</string>
     <string name="action_filter_good_doujin">好本子</string>
     <string name="action_filter_marks">标记</string>
     <string name="action_filter_bookmarked">已添加书签</string>
@@ -42,7 +41,7 @@
     <string name="action_remove_bookmark">为篇目删除书签</string>
     <string name="action_delete">删除</string>
     <string name="action_update_library">更新书架</string>
-    <string name="action_refresh_all_chapters">更新所有篇目</string>
+    <string name="action_refresh_all_chapters">刷新本地篇目</string>
     <string name="local_source_refresh_checking">正在翻阅本地书架…</string>
     <string name="local_source_refresh_checking_progress">正在核对漫画：%1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">正在整理有变化的漫画：%1$d/%2$d</string>
@@ -242,7 +241,7 @@
     <string name="chapter_sort_basis_section">排序依据</string>
     <string name="chapter_display_title_section">章节标题</string>
     <string name="chapter_display_layout_section">列表布局</string>
-    <string name="chapter_title_translations">译名导入导出</string>
+    <string name="chapter_title_translations">导入/导出篇目译名</string>
     <string name="current_manga_chapter_title_translations">当前漫画的章节译名</string>
     <string name="local_library_chapter_title_translations">本地库的章节译名</string>
     <string name="export_current_manga_chapter_titles">导出当前漫画</string>
@@ -1028,15 +1027,15 @@
     <string name="downloading_with_progress">正在下载… (%d%%)</string>
     <string name="pref_filter_update_categories_details">同时属于包含和排除分类的作品更新将不予显示。</string>
     <string name="pref_filter_upcoming_categories_details">同时属于包含和排除分类的标题将不予显示。</string>
-    <string name="action_mark_duplicate">标记为重复</string>
-    <string name="action_unmark_duplicate">取消重复标记</string>
-    <string name="action_marks_list">重复标记清单</string>
+    <string name="action_mark_duplicate">标记</string>
+    <string name="action_unmark_duplicate">取消标记</string>
+    <string name="action_marks_list">标记清单</string>
     <string name="my_lists_title">个人清单</string>
-    <string name="my_lists_summary">重复标记与好本子清单</string>
-    <string name="marks_list_title">重复标记清单</string>
-    <string name="marks_list_empty">还没有标记的篇目。在篇目列表里标记篇目，重复清单会汇总到这里。</string>
+    <string name="my_lists_summary">标记与好本子清单</string>
+    <string name="marks_list_title">标记清单</string>
+    <string name="marks_list_empty">还没有标记的篇目。在篇目列表里标记篇目，标记清单会汇总到这里。</string>
     <string name="marks_list_share">分享</string>
-    <string name="pref_marks_list_summary">查看并导出标记为重复的篇目，可从这里直接跳回对应漫画。</string>
+    <string name="pref_marks_list_summary">查看并导出已标记的篇目，可从这里直接跳回对应漫画。</string>
     <string name="marks_list_open_manga">打开漫画</string>
     <string name="marks_list_manga_missing">该漫画已不在库中</string>
     <string name="marks_list_clear">清空名单</string>
@@ -1160,4 +1159,15 @@
     <string name="local_read_review_title">误标已读复查</string>
     <string name="local_read_review_count">共有 %1$d 个本地篇目被标为已读完</string>
     <string name="local_read_review_empty">没有被标为已读完的本地篇目</string>
+    <string name="action_import_local_chapters">导入本地本子</string>
+    <string name="action_import_local_chapters_short">导入本地本子</string>
+    <string name="action_import_target">导入到</string>
+    <string name="action_create_local_manga">新建本地漫画</string>
+    <string name="action_move_to">移动到</string>
+    <string name="action_mark_group">标记</string>
+    <string name="notification_local_transfer_complete">已导入 %1$d，跳过 %2$d，失败 %3$d</string>
+    <string name="notification_local_move_complete">已移动 %1$d，跳过 %2$d，失败 %3$d</string>
+    <string name="local_transfer_conflict_title">发现同名篇目</string>
+    <string name="local_transfer_conflict_message">有 %1$d 个篇目与目标中已有或本次选择的篇目同名，将自动跳过。</string>
+    <string name="local_transfer_continue">继续导入</string>
 </resources>

@@ -53,6 +53,17 @@ class StringExtensionsTest {
     }
 
     @Test
+    fun `title order compares decimal numbers numerically`() {
+        val titles = listOf("1.5", "1", "2", "1.10")
+
+        val sorted = titles.sortedWith { first, second ->
+            first.compareToCaseInsensitiveNaturalOrder(second)
+        }
+
+        assertEquals(listOf("1", "1.10", "1.5", "2"), sorted)
+    }
+
+    @Test
     fun `title order groups latin then chinese then digits`() {
         val titles = listOf("86", "秘密花园", "Another", "12", "春物", "One Piece")
 

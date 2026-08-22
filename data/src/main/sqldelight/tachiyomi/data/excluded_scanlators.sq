@@ -17,6 +17,7 @@ DELETE FROM excluded_scanlators
 WHERE manga_id = :mangaId
 AND scanlator IN :scanlators;
 
+
 getExcludedScanlatorsByMangaId:
 SELECT scanlator
 FROM excluded_scanlators

@@ -306,7 +306,13 @@ class WebtoonPageHolder(
                 }
             }
         }
-        frame.requestLayout()
+        // Image callbacks can arrive while RecyclerView is laying out this holder, when a child
+        // requestLayout() is ignored. Post it so the readiness callback always gets a real pass.
+        frame.post {
+            if (page == decodedPage) {
+                frame.requestLayout()
+            }
+        }
     }
 
     /**

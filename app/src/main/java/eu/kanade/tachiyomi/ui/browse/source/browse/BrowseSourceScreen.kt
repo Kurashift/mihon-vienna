@@ -95,6 +95,7 @@ import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.MarkFil
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.ReadingFilter
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
+import eu.kanade.tachiyomi.ui.local.LocalImportScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import kotlinx.coroutines.channels.Channel
@@ -303,6 +304,9 @@ data class BrowseSourceScreen(
                         onRefreshChapters = viewModel::refreshAllChapters.takeIf {
                             viewModel.source is LocalSource
                         },
+                        onImportLocalChapters = {
+                            if (viewModel.source is LocalSource) navigator.push(LocalImportScreen())
+                        }.takeIf { viewModel.source is LocalSource },
                         onClearHistoryClick = { viewModel.setDialog(BrowseSourceViewModel.Dialog.ClearHistory) },
                         onSearch = viewModel::search,
                     )

@@ -58,6 +58,12 @@ object Notifications {
     const val ID_BACKUP_COMPLETE = -502
     const val ID_RESTORE_COMPLETE = -504
 
+    /** Notification channel and id used by local chapter import/move tasks. */
+    private const val GROUP_LOCAL_TRANSFER = "group_local_transfer"
+    const val CHANNEL_LOCAL_TRANSFER_PROGRESS = "local_transfer_progress_channel"
+    const val ID_LOCAL_TRANSFER_PROGRESS = -801
+    const val ID_LOCAL_TRANSFER_COMPLETE = -802
+
     /**
      * Notification channel used for Incognito Mode
      */
@@ -118,6 +124,9 @@ object Notifications {
                 buildNotificationChannelGroup(GROUP_APK_UPDATES) {
                     setName(context.stringResource(MR.strings.label_recent_updates))
                 },
+                buildNotificationChannelGroup(GROUP_LOCAL_TRANSFER) {
+                    setName(context.stringResource(MR.strings.action_import_local_chapters))
+                },
             ),
         )
 
@@ -169,6 +178,11 @@ object Notifications {
                 },
                 buildNotificationChannel(CHANNEL_AUDIO_PLAYBACK, IMPORTANCE_DEFAULT) {
                     setName(context.stringResource(MR.strings.audio_title))
+                    setShowBadge(false)
+                },
+                buildNotificationChannel(CHANNEL_LOCAL_TRANSFER_PROGRESS, IMPORTANCE_LOW) {
+                    setName(context.stringResource(MR.strings.channel_progress))
+                    setGroup(GROUP_LOCAL_TRANSFER)
                     setShowBadge(false)
                 },
             ),

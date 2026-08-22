@@ -2,11 +2,10 @@ package eu.kanade.presentation.manga.components
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FlipToBack
-import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
@@ -21,16 +20,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.DownloadDropdownMenu
 import eu.kanade.presentation.manga.DownloadAction
-import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -52,6 +48,7 @@ fun MangaToolbar(
     onClickRefresh: () -> Unit,
     onClickMigrate: (() -> Unit)?,
     onClickChapterTitleTranslations: (() -> Unit)?,
+    onClickImportLocalChapters: (() -> Unit)?,
     onClickClearHistory: () -> Unit,
     onClickEditNotes: () -> Unit,
 
@@ -70,7 +67,7 @@ fun MangaToolbar(
     AppBar(
         titleContent = {
             if (isActionMode) {
-                AppBarTitle(actionModeCounter.toString())
+                AppBarTitle("${stringResource(MR.strings.selected)} $actionModeCounter")
             } else {
                 AppBarTitle(
                     title = title,
@@ -140,33 +137,6 @@ fun MangaToolbar(
                             ),
                         )
                     }
-                    if (onClickRandomGoodDoujin != null) {
-                        add(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.action_open_random_good_doujin),
-                                icon = ImageVector.vectorResource(R.drawable.ic_dice_heart_24dp),
-                                onClick = onClickRandomGoodDoujin,
-                            ),
-                        )
-                    }
-                    if (onClickRandom != null) {
-                        add(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.action_open_random_manga),
-                                icon = Icons.Outlined.Casino,
-                                onClick = onClickRandom,
-                            ),
-                        )
-                    }
-                    if (onClickAudio != null) {
-                        add(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.audio_title),
-                                icon = Icons.Outlined.Headphones,
-                                onClick = onClickAudio,
-                            ),
-                        )
-                    }
                     add(
                         AppBar.Action(
                             title = stringResource(MR.strings.chapter_settings),
@@ -176,53 +146,29 @@ fun MangaToolbar(
                         ),
                     )
                     add(
-                        AppBar.OverflowAction(
-                            title = stringResource(MR.strings.action_webview_refresh),
-                            onClick = onClickRefresh,
-                        ),
-                    )
-                    if (onClickEditCategory != null) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(MR.strings.action_edit_categories),
-                                onClick = onClickEditCategory,
-                            ),
-                        )
-                    }
-                    if (onClickMigrate != null) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(MR.strings.action_migrate),
-                                onClick = onClickMigrate,
-                            ),
-                        )
-                    }
-                    if (onClickShare != null) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(MR.strings.action_share),
-                                onClick = onClickShare,
-                            ),
-                        )
-                    }
-                    if (onClickChapterTitleTranslations != null) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(MR.strings.chapter_title_translations),
-                                onClick = onClickChapterTitleTranslations,
-                            ),
-                        )
-                    }
-                    add(
-                        AppBar.OverflowAction(
-                            title = stringResource(MR.strings.action_notes),
-                            onClick = onClickEditNotes,
-                        ),
-                    )
-                    add(
-                        AppBar.OverflowAction(
-                            title = stringResource(MR.strings.action_clear_reading_history),
-                            onClick = onClickClearHistory,
+                        AppBar.MenuAction(
+                            title = stringResource(MR.strings.label_more),
+                            icon = Icons.Outlined.MoreVert,
+                            content = { dismiss ->
+                                listOfNotNull(
+                                    onClickRandomGoodDoujin?.let { stringResource(MR.strings.action_open_random_good_doujin) to it },
+                                    onClickRandom?.let { stringResource(MR.strings.action_open_random_manga) to it },
+                                    onClickAudio?.let { stringResource(MR.strings.audio_title) to it },
+                                    onClickEditCategory?.let { stringResource(MR.strings.action_edit_categories) to it },
+                                    onClickMigrate?.let { stringResource(MR.strings.action_migrate) to it },
+                                    onClickShare?.let { stringResource(MR.strings.action_share) to it },
+                                    onClickChapterTitleTranslations?.let { stringResource(MR.strings.chapter_title_translations) to it },
+                                    onClickImportLocalChapters?.let { stringResource(MR.strings.action_import_local_chapters) to it },
+                                    (stringResource(MR.strings.action_notes) to onClickEditNotes),
+                                    (stringResource(MR.strings.action_clear_reading_history) to onClickClearHistory),
+                                    (stringResource(MR.strings.action_webview_refresh) to onClickRefresh),
+                                ).forEach { (title, action) ->
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { androidx.compose.material3.Text(title) },
+                                        onClick = { dismiss(); action() },
+                                    )
+                                }
+                            },
                         ),
                     )
                 },

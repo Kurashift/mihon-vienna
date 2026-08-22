@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import logcat.LogPriority
+import mihon.core.archive.ArchiveEntry
 import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
 import tachiyomi.core.common.util.system.ImageUtil
@@ -342,12 +343,16 @@ class LocalChapterCoverManager(
     }
 
     private fun decodeDirectoryCover(directory: UniFile): Bitmap? {
-        val image = fileSystem.getFreshFilesInDirectory(directory)
+        val images = fileSystem.getFreshFilesInDirectory(directory)
             .filter { !it.isDirectory }
-            .sortedWith { first, second ->
-                first.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(second.name.orEmpty())
-            }
-            .firstOrNull { ImageUtil.isImage(it.name) { it.openInputStream() } }
+            .filter { ImageUtil.isImage(it.name) { it.openInputStream() } }
+            .sortedWith(
+                compareBy<UniFile> { !it.name.orEmpty().equals(COVER_FILE_NAME, ignoreCase = true) }
+                    .thenComparator { first, second ->
+                        first.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(second.name.orEmpty())
+                    },
+            )
+        val image = images.firstOrNull()
             ?: return null
         return decodeCopiedThumbnail(image.openInputStream())
     }
@@ -357,10 +362,15 @@ class LocalChapterCoverManager(
             val entry = reader.useEntries { entries ->
                 entries
                     .filter { it.isFile }
-                    .sortedWith { first, second ->
-                        first.name.compareToCaseInsensitiveNaturalPageOrder(second.name)
-                    }
-                    .firstOrNull { ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
+                    .filter { ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
+                    .sortedWith(
+                        compareBy<ArchiveEntry> {
+                            !it.name.substringAfterLast('/').equals(COVER_FILE_NAME, ignoreCase = true)
+                        }.thenComparator { first, second ->
+                            first.name.compareToCaseInsensitiveNaturalPageOrder(second.name)
+                        },
+                    )
+                    .firstOrNull()
             } ?: return@use null
             val input = reader.getInputStream(entry.name) ?: return@use null
             decodeCopiedThumbnail(input)
@@ -509,6 +519,7 @@ class LocalChapterCoverManager(
         private const val COVER_DIRECTORY_NAME = "local_chapter_covers"
         private const val CUSTOM_COVER_DIRECTORY_NAME = "local_custom_chapter_covers"
         private const val COVER_EXTENSION = "webp"
+        private const val COVER_FILE_NAME = "cover.jpg"
         private const val MISSING_EXTENSION = "missing"
         private const val TARGET_WIDTH = 480
         private const val TARGET_HEIGHT = 672

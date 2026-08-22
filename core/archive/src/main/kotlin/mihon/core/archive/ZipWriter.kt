@@ -28,7 +28,7 @@ class ZipWriter(val context: Context, file: UniFile) : Closeable {
         }
     }
 
-    fun write(file: UniFile) {
+    fun write(file: UniFile, onBytes: (Long) -> Unit = {}) {
         file.openFileDescriptor(context, "r").use {
             val fd = it.fileDescriptor
             ArchiveEntry.clear(entry)
@@ -40,6 +40,7 @@ class ZipWriter(val context: Context, file: UniFile) : Closeable {
                 buffer.clear()
                 Os.read(fd, buffer)
                 if (buffer.position() == 0) break
+                onBytes(buffer.position().toLong())
                 buffer.flip()
                 Archive.writeData(archive, buffer)
             }
