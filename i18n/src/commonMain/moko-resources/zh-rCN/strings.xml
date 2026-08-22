@@ -814,7 +814,7 @@
     <string name="settings_backup_restore_summary">创建、恢复与自动备份</string>
     <string name="settings_storage">存储空间</string>
     <string name="settings_storage_summary">存储位置、占用与缓存清理</string>
-    <string name="settings_import_export">导入导出</string>
+    <string name="settings_import_export">导入导出译名</string>
     <string name="settings_import_export_summary">书架清单与章节译名数据</string>
     <string name="pref_storage_usage">存储占用</string>
     <string name="action_create">创建</string>

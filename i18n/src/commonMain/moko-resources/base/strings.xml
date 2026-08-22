@@ -37,7 +37,7 @@
     <string name="settings_backup_restore_summary">Create, restore &amp; automatic backups</string>
     <string name="settings_storage">Storage</string>
     <string name="settings_storage_summary">Storage location, usage &amp; cache</string>
-    <string name="settings_import_export">Import &amp; export</string>
+    <string name="settings_import_export">Import/export translated titles</string>
     <string name="settings_import_export_summary">Library list &amp; chapter-title data</string>
     <string name="label_stats">Statistics</string>
     <string name="label_migration">Migrate</string>
