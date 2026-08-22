@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -37,11 +38,13 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -98,10 +101,10 @@ data class LocalImportScreen(
         var selectedUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
         var sourcePreviews by remember { mutableStateOf<List<LocalChapterTransferService.SourcePreview>>(emptyList()) }
         var ignoredSourceCount by remember { mutableLongStateOf(0L) }
-        var targetId by remember { mutableLongStateOf(fixedTargetMangaId ?: -1L) }
+        var targetId by rememberSaveable { mutableStateOf(fixedTargetMangaId ?: -1L) }
         var mangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
-        var newTitle by remember { mutableStateOf("") }
-        var targetMode by remember {
+        var newTitle by rememberSaveable { mutableStateOf("") }
+        var targetMode by rememberSaveable {
             mutableStateOf(if (fixedTargetMangaId != null) ImportTargetMode.EXISTING else ImportTargetMode.NEW)
         }
         var output by remember { mutableStateOf(LocalChapterTransferService.FolderOutput.DIRECTORY) }
@@ -293,7 +296,7 @@ data class LocalImportScreen(
                                         MangaCoverView.Book(
                                             modifier = Modifier
                                                 .padding(end = 10.dp)
-                                                .fillMaxWidth(0.16f),
+                                                .width(44.dp),
                                             data = tachiyomi.domain.manga.model.MangaCover(
                                                 mangaId = selectedManga.id,
                                                 sourceId = selectedManga.source,
@@ -305,8 +308,9 @@ data class LocalImportScreen(
                                         Text(
                                             text = selectedManga.title,
                                             modifier = Modifier.weight(1f),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            maxLines = 2,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     } else {
                                         Text(
@@ -332,7 +336,6 @@ data class LocalImportScreen(
                                     onValueChange = { newTitle = it },
                                     modifier = Modifier.fillMaxWidth(),
                                     label = { Text("新建合集名称") },
-                                    supportingText = { Text("已选合集和名称输入会保留，切换模式不会丢失") },
                                     singleLine = true,
                                 )
                             }
@@ -361,7 +364,7 @@ data class LocalImportScreen(
                                 selected = output == LocalChapterTransferService.FolderOutput.CBZ,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.CBZ },
                             )
-                            Text("CBZ")
+                            Text("CBZ（压缩包形式导入）")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Switch(checked = deleteSource, onCheckedChange = { deleteSource = it })

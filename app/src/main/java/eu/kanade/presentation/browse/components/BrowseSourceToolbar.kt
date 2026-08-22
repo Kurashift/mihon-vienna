@@ -3,7 +3,6 @@ package eu.kanade.presentation.browse.components
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
-import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.MoreVert
@@ -11,14 +10,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.vectorResource
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.RadioMenuItem
 import eu.kanade.presentation.components.SearchToolbar
-import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.search.SearchHistoryScope
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
@@ -82,22 +78,6 @@ fun BrowseSourceToolbar(
                                 onClick = onOpenAudio,
                             ),
                         )
-                        onOpenRandomGoodDoujin?.let {
-                            add(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.action_open_random_good_doujin),
-                                    icon = ImageVector.vectorResource(R.drawable.ic_dice_heart_24dp),
-                                    onClick = it,
-                                ),
-                            )
-                        }
-                        add(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.action_open_random_manga),
-                                icon = Icons.Outlined.Casino,
-                                onClick = onOpenRandomManga,
-                            ),
-                        )
                     }
                     add(
                         AppBar.MenuAction(
@@ -150,10 +130,10 @@ fun BrowseSourceToolbar(
                                         }
                                     } else {
                                         add(stringResource(MR.strings.action_open_in_web_view) to onWebViewClick)
-                                        add(stringResource(MR.strings.action_open_random_manga) to onOpenRandomManga)
-                                        onOpenRandomGoodDoujin?.let {
-                                            add(stringResource(MR.strings.action_open_random_good_doujin) to it)
-                                        }
+                                    }
+                                    add(stringResource(MR.strings.action_open_random_manga) to onOpenRandomManga)
+                                    onOpenRandomGoodDoujin?.let {
+                                        add(stringResource(MR.strings.action_open_random_good_doujin) to it)
                                     }
                                     add(
                                         stringResource(
