@@ -80,6 +80,7 @@ import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.notification.Notifications
@@ -275,8 +276,12 @@ class ReaderActivity : BaseActivity() {
         onBackPressedDispatcher.addCallback(this) {
             val previous = RandomReaderHistory.pop()
             if (previous == null) {
-                isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
+                if (openedViaSwipeJump) {
+                    openMangaScreen()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
             } else {
                 // Popping the last entry returns to the manga the reader originally opened,
                 // which should look like a normal entry (no random-jump details button).
@@ -415,6 +420,9 @@ class ReaderActivity : BaseActivity() {
                                 compact = false,
                                 onExpand = {},
                                 onDismiss = audioController::hideReaderControls,
+                                onOpenWork = {
+                                    audioController.state.item?.let(::openAudioWork)
+                                },
                                 onOpenPlaylist = { showAudioSheet = true },
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
@@ -447,6 +455,9 @@ class ReaderActivity : BaseActivity() {
                     compact = true,
                     onExpand = { setMenuVisibility(true) },
                     onDismiss = audioController::hideReaderControls,
+                    onOpenWork = {
+                        audioController.state.item?.let(::openAudioWork)
+                    },
                     onOpenPlaylist = { showAudioSheet = true },
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -475,14 +486,7 @@ class ReaderActivity : BaseActivity() {
                 onDismiss = { showAudioSheet = false },
                 onOpenWork = { item ->
                     showAudioSheet = false
-                    startActivity(
-                        Intent(this@ReaderActivity, MainActivity::class.java).apply {
-                            action = Constants.SHOW_AUDIO_DETAIL
-                            putExtra(Constants.AUDIO_WORK_EXTRA, item)
-                            putExtra(Constants.AUDIO_RETURN_TO_READER_EXTRA, true)
-                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                        },
-                    )
+                    openAudioWork(item)
                 },
             )
         }
@@ -965,20 +969,25 @@ class ReaderActivity : BaseActivity() {
     }
 
     private fun openMangaScreen() {
-        viewModel.manga?.id?.let { id ->
-            RandomReaderHistory.clear()
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    action = if (openedViaSwipeJump) {
-                        Constants.SHOW_MANGA_PRESERVE_STACK
-                    } else {
-                        Constants.SHORTCUT_MANGA
-                    }
-                    putExtra(Constants.MANGA_EXTRA, id)
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                },
-            )
-        }
+        val id = viewModel.manga?.id ?: viewModel.mangaId.takeIf { it >= 0 } ?: return
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                action = Constants.SHOW_MANGA_PRESERVE_STACK
+                putExtra(Constants.MANGA_EXTRA, id)
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            },
+        )
+    }
+
+    private fun openAudioWork(item: AudioPlayItem) {
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                action = Constants.SHOW_AUDIO_DETAIL
+                putExtra(Constants.AUDIO_WORK_EXTRA, item)
+                putExtra(Constants.AUDIO_RETURN_TO_READER_EXTRA, true)
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            },
+        )
     }
 
     private fun openChapterInWebView() {

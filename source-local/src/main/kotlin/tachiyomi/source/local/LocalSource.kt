@@ -490,6 +490,7 @@ class LocalSource(
         allowEmptyListing: Boolean = false,
     ): List<LocalMangaEntry> {
         val index = if (baseUri != null) loadListingIndex(baseUri) else null
+        val persistedChapterNames = loadPersistedChapterNamesIndex()
 
         val dirs = baseFiles
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
@@ -535,13 +536,26 @@ class LocalSource(
                         ) {
                             ChapterListingStats(indexed.chapterCount, indexed.latestChapterModified)
                         } else {
-                            getChapterListingStats(dir)
+                            getChapterListingStats(
+                                dir = dir,
+                                knownChapterFileNames = persistedChapterNames[name].orEmpty(),
+                            )
                         }
                         val chapterStats = measuredChapterStats.copy(
                             count = resolvedLocalChapterCount(
                                 scannedChapterFiles = scannedChapterFileNames?.get(name),
                                 measuredChapterCount = measuredChapterStats.count,
+                                previousConfirmedChapterCount = indexed?.chapterCount,
                             ),
+                            latestModified = if (
+                                scannedChapterFileNames == null &&
+                                measuredChapterStats.count == 0 &&
+                                indexed?.chapterCount?.let { it > 0 } == true
+                            ) {
+                                indexed.latestChapterModified
+                            } else {
+                                measuredChapterStats.latestModified
+                            },
                         )
                         name to ListingIndexEntry(
                             dirLastModified = dirLastModified,
@@ -1562,18 +1576,7 @@ class LocalSource(
         directoryLastModified: Long,
         knownChapterFileNames: Set<String>,
     ): LocalChapterFolderState {
-        var chapterFiles = readChapterFiles(dir)
-        if (chapterFiles.isEmpty()) {
-            chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
-        }
-        for (retryDelay in EMPTY_DIRECTORY_RETRY_DELAYS) {
-            if (chapterFiles.isNotEmpty()) break
-            delay(retryDelay)
-            chapterFiles = readChapterFiles(dir)
-            if (chapterFiles.isEmpty()) {
-                chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
-            }
-        }
+        val chapterFiles = readChapterFilesWithRecovery(dir, knownChapterFileNames)
         val parts = chapterFiles.map { file ->
             val size = if (file.isDirectory) 0L else file.length()
             "${file.name.orEmpty()}|${file.lastModified()}|$size"
@@ -1588,6 +1591,25 @@ class LocalSource(
     private fun readChapterFiles(dir: UniFile): List<UniFile> {
         return fileSystem.getFilesInDirectory(dir)
             .filter(::isChapterFile)
+    }
+
+    private suspend fun readChapterFilesWithRecovery(
+        dir: UniFile,
+        knownChapterFileNames: Set<String>,
+    ): List<UniFile> {
+        var chapterFiles = readChapterFiles(dir)
+        if (chapterFiles.isEmpty()) {
+            chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
+        }
+        for (retryDelay in EMPTY_DIRECTORY_RETRY_DELAYS) {
+            if (chapterFiles.isNotEmpty()) break
+            delay(retryDelay)
+            chapterFiles = readChapterFiles(dir)
+            if (chapterFiles.isEmpty()) {
+                chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
+            }
+        }
+        return chapterFiles
     }
 
     private fun fingerprint(parts: List<String>): String {
@@ -1686,10 +1708,11 @@ class LocalSource(
         }
     }
 
-    private fun getChapterListingStats(dir: UniFile): ChapterListingStats {
-        val chapterFiles = fileSystem.getFilesInDirectory(dir)
-            .filterNot { it.name.orEmpty().startsWith('.') }
-            .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
+    private suspend fun getChapterListingStats(
+        dir: UniFile,
+        knownChapterFileNames: Set<String>,
+    ): ChapterListingStats {
+        val chapterFiles = readChapterFilesWithRecovery(dir, knownChapterFileNames)
         return ChapterListingStats(
             count = chapterFiles.size,
             latestModified = chapterFiles.maxOfOrNull(UniFile::lastModified) ?: 0L,
@@ -2305,7 +2328,13 @@ internal fun shouldReuseListingAfterUnexpectedEmptyScan(
 internal fun resolvedLocalChapterCount(
     scannedChapterFiles: Set<String>?,
     measuredChapterCount: Int,
-): Int = scannedChapterFiles?.size ?: measuredChapterCount
+    previousConfirmedChapterCount: Int? = null,
+): Int {
+    return scannedChapterFiles?.size
+        ?: measuredChapterCount.takeIf { it > 0 }
+        ?: previousConfirmedChapterCount?.takeIf { it > 0 }
+        ?: measuredChapterCount
+}
 
 internal fun shouldIncludeLocalMangaDirectory(
     mangaUrl: String,

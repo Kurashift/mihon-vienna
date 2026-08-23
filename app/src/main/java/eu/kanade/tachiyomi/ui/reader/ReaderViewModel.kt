@@ -916,9 +916,12 @@ class ReaderViewModel @JvmOverloads constructor(
      * within that manga uniformly.
      */
     suspend fun getRandomInProgressTarget(): Pair<Long, Long>? {
-        val target = findAndWarmRandomTarget(RandomJumpPool.IN_PROGRESS, allowCooldownReset = true) ?: return null
-        RandomJumpPreloadCache.put(target.manga, target.chapters, target.chapter.id)
-        return target.manga.id to target.chapter.id
+        return withIOContext {
+            val target = findAndWarmRandomTarget(RandomJumpPool.IN_PROGRESS, allowCooldownReset = true)
+                ?: return@withIOContext null
+            RandomJumpPreloadCache.put(target.manga, target.chapters, target.chapter.id)
+            target.manga.id to target.chapter.id
+        }
     }
 
     private suspend fun findRandomInProgressTarget(allowCooldownReset: Boolean): RandomJumpTarget? {
@@ -982,9 +985,12 @@ class ReaderViewModel @JvmOverloads constructor(
      * Manga are selected uniformly first, followed by a uniformly selected chapter within it.
      */
     suspend fun getRandomGoodDoujinTarget(): Pair<Long, Long>? {
-        val target = findAndWarmRandomTarget(RandomJumpPool.GOOD_DOUJIN, allowCooldownReset = true) ?: return null
-        RandomJumpPreloadCache.put(target.manga, target.chapters, target.chapter.id)
-        return target.manga.id to target.chapter.id
+        return withIOContext {
+            val target = findAndWarmRandomTarget(RandomJumpPool.GOOD_DOUJIN, allowCooldownReset = true)
+                ?: return@withIOContext null
+            RandomJumpPreloadCache.put(target.manga, target.chapters, target.chapter.id)
+            target.manga.id to target.chapter.id
+        }
     }
 
     private suspend fun findRandomGoodDoujinTarget(allowCooldownReset: Boolean): RandomJumpTarget? {
@@ -1035,11 +1041,13 @@ class ReaderViewModel @JvmOverloads constructor(
     private suspend fun warmRandomTarget(target: RandomJumpTarget) {
         val archive = target.localArchive ?: return
         val context = Injekt.get<Application>()
-        val pageLoader = ArchivePageLoader(archive.file, archive.file.archiveReader(context))
-        try {
-            pageLoader.getPages()
-        } finally {
-            pageLoader.recycle()
+        withIOContext {
+            val pageLoader = ArchivePageLoader(archive.file, archive.file.archiveReader(context))
+            try {
+                pageLoader.getPages()
+            } finally {
+                pageLoader.recycle()
+            }
         }
     }
 

@@ -52,6 +52,30 @@ class LocalListingRecoveryTest {
     }
 
     @Test
+    fun `unconfirmed empty chapter read keeps the last nonempty cbz count`() {
+        assertEquals(
+            2,
+            resolvedLocalChapterCount(
+                scannedChapterFiles = null,
+                measuredChapterCount = 0,
+                previousConfirmedChapterCount = 2,
+            ),
+        )
+    }
+
+    @Test
+    fun `reliable empty chapter scan removes the last known cbz files`() {
+        assertEquals(
+            0,
+            resolvedLocalChapterCount(
+                scannedChapterFiles = emptySet(),
+                measuredChapterCount = 0,
+                previousConfirmedChapterCount = 2,
+            ),
+        )
+    }
+
+    @Test
     fun `reliable refresh does not revive a directory missing from its scan`() {
         assertFalse(
             shouldIncludeLocalMangaDirectory(

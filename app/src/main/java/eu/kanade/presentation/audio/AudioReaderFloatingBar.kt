@@ -62,6 +62,7 @@ fun AudioReaderFloatingBar(
     compact: Boolean,
     onExpand: () -> Unit,
     onDismiss: () -> Unit,
+    onOpenWork: () -> Unit,
     onOpenPlaylist: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -156,7 +157,7 @@ fun AudioReaderFloatingBar(
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .clickable(onClick = onOpenPlaylist)
+                            .clickable(onClick = onOpenWork)
                             .padding(horizontal = 6.dp),
                     ) {
                         Text(
