@@ -103,6 +103,7 @@ data class LocalImportScreen(
         var ignoredSourceCount by remember { mutableLongStateOf(0L) }
         var targetId by rememberSaveable { mutableStateOf(fixedTargetMangaId ?: -1L) }
         var mangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
+        var allLocalMangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
         var newTitle by rememberSaveable { mutableStateOf("") }
         var targetMode by rememberSaveable {
             mutableStateOf(if (fixedTargetMangaId != null) ImportTargetMode.EXISTING else ImportTargetMode.NEW)
@@ -112,8 +113,79 @@ data class LocalImportScreen(
         var importing by remember { mutableStateOf(false) }
         var conflictPreview by remember { mutableStateOf<LocalChapterTransferService.ImportPreview?>(null) }
         var pendingTargetId by remember { mutableLongStateOf(-1L) }
+        var pendingGroupedPlans by remember {
+            mutableStateOf<List<LocalChapterTransferService.GroupPreviewRequest>>(emptyList())
+        }
         val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
             .collectAsStateWithLifecycle(initialValue = null)
+        val isGroupedImport = fixedTargetMangaId == null && sourcePreviews.isNotEmpty() &&
+            sourcePreviews.all { it.groups.isNotEmpty() }
+        val sourceGroups = sourcePreviews.flatMap { it.groups }
+        val groupedNameCollisions = localGroupedImportNameCollisionCount(sourceGroups.map { it.name })
+        val hasInvalidGroupedName = hasInvalidLocalGroupedImportName(sourceGroups.map { it.name })
+        val groupedTargetKeys = sourceGroups.map { localMangaDirectoryIdentity(it.name) }.distinct()
+        val groupedTargetResolutions = sourceGroups
+            .groupBy { localMangaDirectoryIdentity(it.name) }
+            .values
+            .map { groups ->
+                groups to resolveLocalGroupedImportTarget(
+                    proposedName = groups.first().name,
+                    existingUrls = allLocalMangas.map(Manga::url),
+                )
+            }
+        val existingGroupedTargetCount = groupedTargetResolutions.count { (_, target) -> target?.exists == true }
+        val ambiguousExistingGroupedTargetCount = groupedTargetResolutions.count { (_, target) -> target == null }
+
+        fun groupedPlans(): List<LocalChapterTransferService.GroupPreviewRequest> {
+            return groupedTargetResolutions.mapNotNull { (groups, target) ->
+                target?.let {
+                    LocalChapterTransferService.GroupPreviewRequest(
+                        targetUrl = it.url,
+                        uris = groups.flatMap { it.candidateUris }.distinct(),
+                    )
+                }
+            }
+        }
+
+        suspend fun startGroupedImport(
+            plans: List<LocalChapterTransferService.GroupPreviewRequest>,
+        ): Boolean {
+            if (LocalChapterTransferJob.isRunning(context)) return false
+            val currentLocalMangas = mangaRepository.getLocalMangaIds().mapNotNull { id ->
+                runCatching { mangaRepository.getMangaById(id) }.getOrNull()
+            }
+            val resolvedExisting = plans.map { plan ->
+                val target = resolveLocalGroupedImportTarget(plan.targetUrl, currentLocalMangas.map(Manga::url))
+                    ?: return false
+                plan to target
+            }
+            val createdByUrl = networkToLocal(
+                resolvedExisting.mapNotNull { (plan, target) ->
+                    if (target.exists) return@mapNotNull null
+                    Manga.create().copy(
+                        source = LocalSource.ID,
+                        url = target.url,
+                        title = target.url,
+                    )
+                },
+            ).associateBy { it.url }
+            val groups = resolvedExisting.map { (plan, target) ->
+                val manga = if (target.exists) {
+                    currentLocalMangas.singleOrNull { it.url == target.url } ?: return false
+                } else {
+                    createdByUrl[target.url] ?: return false
+                }
+                LocalChapterTransferService.GroupImport(
+                    targetMangaId = manga.id,
+                    uris = plan.uris,
+                )
+            }
+            return LocalChapterTransferJob.startGrouped(
+                context = context,
+                groups = groups,
+                options = LocalChapterTransferService.Options(output, deleteSource),
+            )
+        }
 
         fun addSelectedUris(uris: List<android.net.Uri>) {
             scope.launch {
@@ -127,11 +199,22 @@ data class LocalImportScreen(
                         )
                     }
                 }
-                val previews = uniqueUris.mapNotNull { transferService.inspectSource(it) }
+                val inspected = uniqueUris.mapNotNull { transferService.inspectSource(it) }
+                val expectedGrouped = sourcePreviews.firstOrNull()?.groups?.isNotEmpty()
+                    ?: inspected.firstOrNull()?.groups?.isNotEmpty()
+                val previews = inspected.filter { it.groups.isNotEmpty() == expectedGrouped }
                 ignoredSourceCount += (uniqueUris.size - previews.size)
                 val mergedPreviews = (sourcePreviews + previews).distinctBy { it.uri }
                 sourcePreviews = mergedPreviews
-                selectedUris = mergedPreviews.map { it.uri }
+                selectedUris = if (fixedTargetMangaId != null) {
+                    mergedPreviews.flatMap { preview ->
+                        preview.groups.takeIf { it.isNotEmpty() }
+                            ?.flatMap { it.candidateUris }
+                            ?: listOf(preview.uri)
+                    }.distinct()
+                } else {
+                    mergedPreviews.map { it.uri }
+                }
             }
         }
 
@@ -139,9 +222,10 @@ data class LocalImportScreen(
             val localIds = mangaRepository.getLocalMangaIds()
             val nonEmptyIds = mangaRepository.getMangaProgressBySource(LocalSource.ID)
                 .mapTo(hashSetOf()) { it.mangaId }
-            mangas = localIds.filter { it in nonEmptyIds }.mapNotNull { id ->
+            allLocalMangas = localIds.mapNotNull { id ->
                 runCatching { mangaRepository.getMangaById(id) }.getOrNull()
-            }.sortedBy { it.title.lowercase() }
+            }
+            mangas = allLocalMangas.filter { it.id in nonEmptyIds }.sortedBy { it.title.lowercase() }
             if (targetId < 0 && mangas.size == 1) targetId = mangas.first().id
         }
         // OpenDocument grants persistable read access when the provider supports it, which lets
@@ -215,9 +299,15 @@ data class LocalImportScreen(
                             )
                         } else {
                             Text(
-                                text = "已添加 ${sourcePreviews.size} 个来源，共 ${sourcePreviews.sumOf {
-                                    it.candidateNames.size
-                                }} 个本子",
+                                text = if (isGroupedImport) {
+                                    "已识别 ${sourceGroups.size} 个合集，共 ${sourcePreviews.sumOf {
+                                        it.candidateNames.size
+                                    }} 个本子"
+                                } else {
+                                    "已添加 ${sourcePreviews.size} 个来源，共 ${sourcePreviews.sumOf {
+                                        it.candidateNames.size
+                                    }} 个本子"
+                                },
                                 style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
@@ -229,9 +319,15 @@ data class LocalImportScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(preview.displayName, maxLines = 1)
                                         Text(
-                                            "包含 ${preview.candidateNames.size} 个本子：${preview.candidateNames.take(
-                                                3,
-                                            ).joinToString("、")}",
+                                            if (preview.groups.isNotEmpty() && fixedTargetMangaId == null) {
+                                                "${preview.groups.size} 个合集：${preview.groups.take(3).joinToString("、") {
+                                                    it.name
+                                                }}"
+                                            } else {
+                                                "包含 ${preview.candidateNames.size} 个本子：${preview.candidateNames.take(
+                                                    3,
+                                                ).joinToString("、")}"
+                                            },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 2,
@@ -241,17 +337,32 @@ data class LocalImportScreen(
                                         onClick = {
                                             val remaining = sourcePreviews.filterNot { it.uri == preview.uri }
                                             sourcePreviews = remaining
-                                            selectedUris = remaining.map { it.uri }
+                                            selectedUris = if (fixedTargetMangaId != null) {
+                                                remaining.flatMap { source ->
+                                                    source.groups.takeIf { it.isNotEmpty() }
+                                                        ?.flatMap { it.candidateUris }
+                                                        ?: listOf(source.uri)
+                                                }.distinct()
+                                            } else {
+                                                remaining.map { it.uri }
+                                            }
                                         },
                                         enabled = !importing,
                                     ) {
                                         Icon(Icons.Outlined.Close, contentDescription = "移除")
                                     }
                                 }
+                                if (preview.ignoredGroupCount > 0) {
+                                    Text(
+                                        text = "已忽略 ${preview.ignoredGroupCount} 个不属于作者合集的项目",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                             if (ignoredSourceCount > 0) {
                                 Text(
-                                    text = "已忽略 $ignoredSourceCount 个不包含本子内容的文件或文件夹",
+                                    text = "已忽略 $ignoredSourceCount 个不兼容当前结构或不包含本子内容的来源",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -261,7 +372,44 @@ data class LocalImportScreen(
                 }
                 item {
                     ImportSection(title = "归属合集") {
-                        if (fixedTargetMangaId == null) {
+                        if (isGroupedImport) {
+                            Text("将按一级文件夹名称自动复用或创建合集")
+                            Text(
+                                "复用 $existingGroupedTargetCount 个，新建 ${groupedTargetKeys.size - existingGroupedTargetCount} 个",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                sourceGroups.map {
+                                    localMangaDirectoryName(it.name)
+                                }.distinct().take(6).joinToString("、"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (groupedNameCollisions > 0) {
+                                Text(
+                                    "有 $groupedNameCollisions 组文件夹名称在目标目录中会重名，请先调整名称",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            if (hasInvalidGroupedName) {
+                                Text(
+                                    "存在无法作为合集名称的空白文件夹，请先调整名称",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            if (ambiguousExistingGroupedTargetCount > 0) {
+                                Text(
+                                    "已有合集名称存在歧义，请先在本库中整理同名合集",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        } else if (fixedTargetMangaId == null) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(
                                     selected = targetMode == ImportTargetMode.NEW,
@@ -414,7 +562,7 @@ data class LocalImportScreen(
                                     ) {
                                         targetId
                                     } else if (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank()) {
-                                        val safeTitle = newTitle.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                        val safeTitle = localMangaDirectoryName(newTitle)
                                         networkToLocal(
                                             Manga.create().copy(
                                                 source = LocalSource.ID,
@@ -425,7 +573,27 @@ data class LocalImportScreen(
                                     } else {
                                         -1L
                                     }
-                                    if (resolvedTarget >= 0 && selectedUris.isNotEmpty()) {
+                                    if (
+                                        isGroupedImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
+                                        ambiguousExistingGroupedTargetCount == 0
+                                    ) {
+                                        val plans = groupedPlans()
+                                        val preview = runCatching {
+                                            transferService.previewGroupedImport(plans)
+                                        }.getOrNull()
+                                        if (preview == null) {
+                                            importing = false
+                                        } else if (preview.conflicts.isNotEmpty()) {
+                                            pendingTargetId = -1L
+                                            pendingGroupedPlans = plans
+                                            conflictPreview = preview
+                                        } else if (startGroupedImport(plans)) {
+                                            importing = false
+                                            navigator.pop()
+                                        } else {
+                                            importing = false
+                                        }
+                                    } else if (resolvedTarget >= 0 && selectedUris.isNotEmpty()) {
                                         val preview = runCatching {
                                             transferService.previewImport(selectedUris, resolvedTarget)
                                         }.getOrNull()
@@ -453,9 +621,15 @@ data class LocalImportScreen(
                             },
                             enabled = !importing && selectedUris.isNotEmpty() &&
                                 (
-                                    fixedTargetMangaId != null ||
-                                        (targetMode == ImportTargetMode.EXISTING && targetId >= 0) ||
-                                        (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank())
+                                    (
+                                        isGroupedImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
+                                            ambiguousExistingGroupedTargetCount == 0
+                                        ) ||
+                                        (
+                                            fixedTargetMangaId != null ||
+                                                (targetMode == ImportTargetMode.EXISTING && targetId >= 0) ||
+                                                (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank())
+                                            )
                                     ),
                         ) { Text("开始导入") }
                     }
@@ -480,18 +654,27 @@ data class LocalImportScreen(
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            val target = pendingTargetId
-                            if (target >= 0 && LocalChapterTransferJob.start(
-                                    context = context,
-                                    uris = selectedUris,
-                                    targetMangaId = target,
-                                    options = LocalChapterTransferService.Options(output, deleteSource),
-                                )
-                            ) {
-                                conflictPreview = null
-                                pendingTargetId = -1L
-                                importing = false
-                                navigator.pop()
+                            scope.launch {
+                                val started = if (pendingGroupedPlans.isNotEmpty()) {
+                                    startGroupedImport(pendingGroupedPlans)
+                                } else {
+                                    val target = pendingTargetId
+                                    target >= 0 && LocalChapterTransferJob.start(
+                                        context = context,
+                                        uris = selectedUris,
+                                        targetMangaId = target,
+                                        options = LocalChapterTransferService.Options(output, deleteSource),
+                                    )
+                                }
+                                if (started) {
+                                    conflictPreview = null
+                                    pendingTargetId = -1L
+                                    pendingGroupedPlans = emptyList()
+                                    importing = false
+                                    navigator.pop()
+                                } else {
+                                    importing = false
+                                }
                             }
                         },
                     ) { Text(stringResource(MR.strings.local_transfer_continue)) }
@@ -501,6 +684,7 @@ data class LocalImportScreen(
                         onClick = {
                             conflictPreview = null
                             pendingTargetId = -1L
+                            pendingGroupedPlans = emptyList()
                             importing = false
                         },
                     ) { Text(stringResource(MR.strings.action_cancel)) }

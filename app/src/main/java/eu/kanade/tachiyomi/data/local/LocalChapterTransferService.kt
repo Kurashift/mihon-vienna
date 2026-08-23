@@ -69,12 +69,41 @@ class LocalChapterTransferService(
         val uri: Uri,
         val displayName: String,
         val candidateNames: List<String>,
+        val groups: List<SourceGroupPreview> = emptyList(),
+        val ignoredGroupCount: Int = 0,
+    )
+
+    data class SourceGroupPreview(
+        val uri: Uri,
+        val name: String,
+        val candidateNames: List<String>,
+        val candidateUris: List<Uri>,
+    )
+
+    data class GroupImport(
+        val targetMangaId: Long,
+        val uris: List<Uri>,
+    )
+
+    data class GroupPreviewRequest(
+        val targetUrl: String,
+        val uris: List<Uri>,
     )
 
     data class MoveResult(val moved: Int, val skipped: Int, val failed: Int)
 
     suspend fun inspectSource(uri: Uri): SourcePreview? = withContext(kotlinx.coroutines.Dispatchers.IO) {
         val file = UniFile.fromUri(context, uri) ?: return@withContext null
+        val grouped = expandGrouped(file)
+        if (grouped != null) {
+            return@withContext SourcePreview(
+                uri = uri,
+                displayName = file.name.orEmpty().ifBlank { uri.lastPathSegment.orEmpty() },
+                candidateNames = grouped.flatMap { it.candidateNames },
+                groups = grouped,
+                ignoredGroupCount = (file.listFiles().orEmpty().size - grouped.size).coerceAtLeast(0),
+            )
+        }
         val candidates = expand(file)
         if (candidates.isEmpty()) return@withContext null
         SourcePreview(
@@ -299,6 +328,20 @@ class LocalChapterTransferService(
         targetMangaId: Long,
         options: Options = Options(),
         onProgress: (Progress) -> Unit = {},
+    ): Result = importUrisInternal(
+        uris = uris,
+        targetMangaId = targetMangaId,
+        options = options,
+        onProgress = onProgress,
+        invalidateListing = true,
+    )
+
+    private suspend fun importUrisInternal(
+        uris: List<Uri>,
+        targetMangaId: Long,
+        options: Options,
+        onProgress: (Progress) -> Unit,
+        invalidateListing: Boolean,
     ): Result = withContext(kotlinx.coroutines.Dispatchers.IO) {
         val target = mangaRepository.getMangaById(targetMangaId)
         require(target.source == LocalSource.ID) { "Target manga is not local" }
@@ -398,8 +441,96 @@ class LocalChapterTransferService(
             }
             onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
         }
-        Injekt.get<SourceManager>().get(LocalSource.ID)?.let { (it as? LocalSource)?.invalidateListing() }
+        if (invalidateListing) {
+            Injekt.get<SourceManager>().get(LocalSource.ID)?.let { (it as? LocalSource)?.invalidateListing() }
+        }
         Result(imported, skipped, failed)
+    }
+
+    suspend fun previewGroupedImport(
+        groups: List<GroupPreviewRequest>,
+    ): ImportPreview = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val previews = groups.map { group ->
+            previewImportForTargetUrl(group.uris, group.targetUrl)
+        }
+        ImportPreview(
+            candidateNames = previews.flatMap { it.candidateNames },
+            conflicts = previews.flatMap { it.conflicts }.distinct(),
+        )
+    }
+
+    private fun previewImportForTargetUrl(uris: List<Uri>, targetUrl: String): ImportPreview {
+        val targetDir = fileSystem.getBaseDirectory()?.findFile(targetUrl)
+        val existingNames = targetDir?.listFiles().orEmpty()
+            .map { normalizeName(it.name.orEmpty().substringBeforeLast('.')) }
+            .toHashSet()
+        val candidates = uris
+            .flatMap { expand(UniFile.fromUri(context, it) ?: return@flatMap emptyList()) }
+            .distinctBy { it.file.uri.toString() }
+        val seen = hashSetOf<String>()
+        val conflicts = candidates.mapNotNull { candidate ->
+            val normalized = normalizeName(candidate.name.substringBeforeLast('.'))
+            if (normalized in existingNames || !seen.add(normalized)) candidate.name else null
+        }
+        return ImportPreview(
+            candidateNames = candidates.map { it.name },
+            conflicts = conflicts.distinct(),
+        )
+    }
+
+    suspend fun importGroupedUris(
+        groups: List<GroupImport>,
+        options: Options = Options(),
+        onProgress: (Progress) -> Unit = {},
+    ): Result = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (groups.isEmpty()) return@withContext Result(0, 0, 0)
+        val expanded = groups.flatMap { group ->
+            group.uris.flatMap { uri ->
+                expand(UniFile.fromUri(context, uri) ?: return@flatMap emptyList())
+            }
+        }.distinctBy { it.file.uri.toString() }
+        val total = expanded.size
+        val totalBytes = expanded.sumOf { sizeOfForTransfer(it.file, options) }
+        var completed = 0
+        var copiedBytes = 0L
+        var imported = 0
+        var skipped = 0
+        var failed = 0
+        try {
+            for (group in groups) {
+                coroutineContext.ensureActive()
+                var groupCopiedBytes = 0L
+                val result = importUrisInternal(
+                    uris = group.uris,
+                    targetMangaId = group.targetMangaId,
+                    options = options,
+                    onProgress = { progress ->
+                        groupCopiedBytes = progress.copiedBytes
+                        onProgress(
+                            Progress(
+                                completed = completed + progress.completed,
+                                total = total,
+                                currentName = progress.currentName,
+                                copiedBytes = copiedBytes + progress.copiedBytes,
+                                totalBytes = totalBytes,
+                            ),
+                        )
+                    },
+                    invalidateListing = false,
+                )
+                imported += result.imported
+                skipped += result.skipped
+                failed += result.failed
+                val groupCandidates = group.uris.flatMap { uri ->
+                    expand(UniFile.fromUri(context, uri) ?: return@flatMap emptyList())
+                }
+                completed += groupCandidates.size
+                copiedBytes += groupCopiedBytes
+            }
+            Result(imported, skipped, failed)
+        } finally {
+            Injekt.get<SourceManager>().get(LocalSource.ID)?.let { (it as? LocalSource)?.invalidateListing() }
+        }
     }
 
     private fun expand(file: UniFile): List<Candidate> {
@@ -424,6 +555,25 @@ class LocalChapterTransferService(
                 .sortedBy { it.name.orEmpty() }
                 .map { Candidate(it, it.name.orEmpty().substringBeforeLast('.')) }
         }
+    }
+
+    /** Recognizes root/author/book layouts without making ordinary book containers recursive. */
+    internal fun expandGrouped(file: UniFile): List<SourceGroupPreview>? {
+        if (!file.isDirectory) return null
+        val children = file.listFiles().orEmpty().filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
+        if (children.isEmpty()) return null
+        val groups = children.mapNotNull { groupDir ->
+            val candidates = expand(groupDir)
+            if (candidates.isEmpty()) return@mapNotNull null
+            if (candidates.all { it.file.uri == groupDir.uri }) return@mapNotNull null
+            SourceGroupPreview(
+                uri = groupDir.uri,
+                name = groupDir.name.orEmpty(),
+                candidateNames = candidates.map { it.name },
+                candidateUris = candidates.map { it.file.uri },
+            )
+        }
+        return groups.takeIf { it.isNotEmpty() }
     }
 
     private suspend fun copyEntry(source: UniFile, destination: UniFile, onBytes: (Long) -> Unit) {

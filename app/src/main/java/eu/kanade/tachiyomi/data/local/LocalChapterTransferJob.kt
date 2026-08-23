@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.map
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.File
+import java.util.UUID
 
 class LocalChapterTransferJob(
     private val context: Context,
@@ -45,9 +47,12 @@ class LocalChapterTransferJob(
         setForegroundSafely()
         val targetMangaId = inputData.getLong(KEY_TARGET_MANGA_ID, -1L)
         val isMove = inputData.getBoolean(KEY_IS_MOVE, false)
+        val groupedManifestName = inputData.getString(KEY_GROUPED_MANIFEST)
         val uris = inputData.getStringArray(KEY_URIS)?.map(Uri::parse).orEmpty()
         val chapterIds = inputData.getLongArray(KEY_CHAPTER_IDS)?.toList().orEmpty()
-        if (targetMangaId < 0L || (!isMove && uris.isEmpty()) ||
+        val isGroupedImport = !groupedManifestName.isNullOrBlank()
+        if ((!isGroupedImport && targetMangaId < 0L) ||
+            (!isMove && !isGroupedImport && uris.isEmpty()) ||
             (isMove && chapterIds.isEmpty())
         ) {
             return Result.failure()
@@ -60,7 +65,7 @@ class LocalChapterTransferJob(
         }.getOrDefault(LocalChapterTransferService.FolderOutput.DIRECTORY)
         val deleteSource = inputData.getBoolean(KEY_DELETE_SOURCE, false)
 
-        var completed = false
+        val groupedManifest = groupedManifestName?.let { File(context.filesDir, File(it).name) }
         return try {
             val onProgress: (LocalChapterTransferService.Progress) -> Unit = { progress ->
                 notifier.showProgress(progress)
@@ -84,6 +89,16 @@ class LocalChapterTransferJob(
                 ).let {
                     Triple(it.moved, it.skipped, it.failed)
                 }
+            } else if (groupedManifest != null) {
+                val groups = readGroupedManifest(groupedManifest)
+                if (groups.isEmpty()) return Result.failure()
+                service.importGroupedUris(
+                    groups = groups,
+                    options = LocalChapterTransferService.Options(output, deleteSource),
+                    onProgress = onProgress,
+                ).let {
+                    Triple(it.imported, it.skipped, it.failed)
+                }
             } else {
                 service.importUris(
                     uris = uris,
@@ -95,14 +110,24 @@ class LocalChapterTransferJob(
                 }
             }
             notifier.showResult(result.first, result.second, result.third, isMove)
-            completed = true
             Result.success()
         } catch (_: CancellationException) {
             Result.success()
         } catch (_: Throwable) {
             Result.failure()
         } finally {
+            groupedManifest?.delete()
             notifier.cancel()
+        }
+    }
+
+    private fun readGroupedManifest(file: File): List<LocalChapterTransferService.GroupImport> {
+        if (!file.isFile) return emptyList()
+        return LocalGroupedImportManifest.decode(file.readText()).map { group ->
+            LocalChapterTransferService.GroupImport(
+                targetMangaId = group.targetMangaId,
+                uris = group.uris.map(Uri::parse),
+            )
         }
     }
 
@@ -125,6 +150,7 @@ class LocalChapterTransferJob(
         private const val KEY_DELETE_SOURCE = "delete_source"
         private const val KEY_IS_MOVE = "is_move"
         private const val KEY_CHAPTER_IDS = "chapter_ids"
+        private const val KEY_GROUPED_MANIFEST = "grouped_manifest"
         const val KEY_COMPLETED = "completed"
         const val KEY_TOTAL = "total"
         const val KEY_CURRENT_NAME = "current_name"
@@ -172,6 +198,44 @@ class LocalChapterTransferJob(
                 .build()
             context.workManager.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, request)
             return true
+        }
+
+        fun startGrouped(
+            context: Context,
+            groups: List<LocalChapterTransferService.GroupImport>,
+            options: LocalChapterTransferService.Options,
+        ): Boolean {
+            if (groups.isEmpty() || groups.any { it.targetMangaId < 0L || it.uris.isEmpty() } || isRunning(context)) {
+                return false
+            }
+            var manifest: File? = null
+            return runCatching {
+                val manifestFile = File(context.filesDir, "local-import-${UUID.randomUUID()}.json")
+                manifest = manifestFile
+                manifestFile.writeText(
+                    LocalGroupedImportManifest.encode(
+                        groups.map { group ->
+                            PersistedGroupedImport(group.targetMangaId, group.uris.map(Uri::toString))
+                        },
+                    ),
+                )
+                val request = OneTimeWorkRequestBuilder<LocalChapterTransferJob>()
+                    .addTag(TAG)
+                    .setInputData(
+                        workDataOf(
+                            KEY_GROUPED_MANIFEST to manifestFile.name,
+                            KEY_FOLDER_OUTPUT to options.folderOutput.name,
+                            KEY_DELETE_SOURCE to options.deleteSourceAfterSuccess,
+                            KEY_IS_MOVE to false,
+                        ),
+                    )
+                    .build()
+                context.workManager.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, request)
+                true
+            }.getOrElse {
+                manifest?.delete()
+                false
+            }
         }
 
         fun stop(context: Context) {
