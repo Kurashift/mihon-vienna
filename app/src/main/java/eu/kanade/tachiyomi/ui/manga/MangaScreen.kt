@@ -80,7 +80,7 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 class MangaScreen(
-    private val mangaId: Long,
+    val mangaId: Long,
     val fromSource: Boolean = false,
     val randomCandidates: List<Long> = emptyList(),
 ) : Screen(), AssistContentScreen {

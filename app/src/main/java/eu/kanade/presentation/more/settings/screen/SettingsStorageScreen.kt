@@ -1,11 +1,6 @@
 package eu.kanade.presentation.more.settings.screen
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
@@ -18,7 +13,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.net.toUri
 import com.hippo.unifile.UniFile
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.data.StorageInfo
@@ -77,36 +71,7 @@ object SettingsStorageScreen : SearchableSettings {
                     },
                 ),
                 Preference.PreferenceItem.InfoPreference(stringResource(MR.strings.pref_storage_location_info)),
-                getLocalSourceDirectAccessPref(),
             ),
-        )
-    }
-
-    @Composable
-    private fun getLocalSourceDirectAccessPref(): Preference.PreferenceItem.TextPreference? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val context = LocalContext.current
-        val granted = Environment.isExternalStorageManager()
-
-        return Preference.PreferenceItem.TextPreference(
-            title = stringResource(MR.strings.pref_local_source_direct_access),
-            subtitle = stringResource(
-                if (granted) {
-                    MR.strings.pref_local_source_direct_access_granted
-                } else {
-                    MR.strings.pref_local_source_direct_access_summary
-                },
-            ),
-            onClick = {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    "package:${context.packageName}".toUri(),
-                )
-                runCatching { context.startActivity(intent) }
-                    .recoverCatching {
-                        context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                    }
-            },
         )
     }
 

@@ -88,8 +88,7 @@ fun ReaderTopBar(
 
         AppBarActions(
             actions = buildList {
-                // Random-jump mode shows the manga details entry next to the favorite
-                // button instead of replacing the back button.
+                // Keep manga details directly accessible without changing back navigation.
                 onOpenManga?.let {
                     add(
                         AppBar.Action(

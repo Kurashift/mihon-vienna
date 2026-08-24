@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,6 +38,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import eu.kanade.presentation.util.rememberRequestPackageInstallsPermissionState
 import eu.kanade.tachiyomi.core.security.PrivacyPreferences
+import eu.kanade.tachiyomi.util.system.launchAllFilesAccessPermission
 import eu.kanade.tachiyomi.util.system.launchRequestPackageInstallsPermission
 import eu.kanade.tachiyomi.util.system.telemetryIncluded
 import tachiyomi.i18n.MR
@@ -51,6 +53,7 @@ internal class PermissionStep : OnboardingStep {
 
     private var notificationGranted by mutableStateOf(false)
     private var batteryGranted by mutableStateOf(false)
+    private var allFilesAccessGranted by mutableStateOf(false)
 
     override val isComplete: Boolean = true
 
@@ -72,6 +75,11 @@ internal class PermissionStep : OnboardingStep {
                     }
                     batteryGranted = context.getSystemService<PowerManager>()!!
                         .isIgnoringBatteryOptimizations(context.packageName)
+                    allFilesAccessGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        Environment.isExternalStorageManager()
+                    } else {
+                        true
+                    }
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -117,6 +125,17 @@ internal class PermissionStep : OnboardingStep {
                     context.startActivity(intent)
                 },
             )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                PermissionCheckbox(
+                    title = stringResource(MR.strings.onboarding_permission_all_files_access),
+                    subtitle = stringResource(MR.strings.onboarding_permission_all_files_access_description),
+                    granted = allFilesAccessGranted,
+                    onButtonClick = {
+                        context.launchAllFilesAccessPermission()
+                    },
+                )
+            }
 
             if (!telemetryIncluded) return@Column
 

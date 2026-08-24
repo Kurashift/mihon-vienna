@@ -821,6 +821,8 @@
     <string name="confirm_tracker_update">將進度更新到第 %d 篇？</string>
     <string name="onboarding_permission_analytics">允許資料分析</string>
     <string name="onboarding_permission_analytics_description">傳送匿名使用資料來改進應用程式功能</string>
+    <string name="onboarding_permission_all_files_access">本庫檔案存取</string>
+    <string name="onboarding_permission_all_files_access_description">授予「所有檔案存取」權限，用於在本庫無法識別檔案變化時直接讀取你選擇的本庫目錄。</string>
     <string name="pref_security">安全</string>
     <string name="pref_firebase">資料分析和崩潰日誌</string>
     <string name="onboarding_permission_crashlytics">傳送崩潰日誌</string>

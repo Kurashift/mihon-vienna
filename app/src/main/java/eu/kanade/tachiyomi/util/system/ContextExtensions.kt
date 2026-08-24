@@ -164,3 +164,14 @@ fun Context.launchRequestPackageInstallsPermission() {
         startActivity(this)
     }
 }
+
+fun Context.launchAllFilesAccessPermission() {
+    val intent = Intent(
+        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+        "package:$packageName".toUri(),
+    )
+    runCatching { startActivity(intent) }
+        .recoverCatching {
+            startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+        }
+}

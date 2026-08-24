@@ -189,9 +189,6 @@ class ReaderActivity : BaseActivity() {
 
     private var randomJumping = false
 
-    /** True when this reader was opened from another reader through a random swipe. */
-    private var openedViaSwipeJump = false
-
     private var swipeJumpAnim = ANIM_NONE
 
     /** Set while an onNewIntent-driven jump is finishing this instance, so its close
@@ -268,7 +265,6 @@ class ReaderActivity : BaseActivity() {
 
         if (intent.getBooleanExtra("swipe_jump", false)) {
             swipeJumpTapSuppressUntil = SystemClock.uptimeMillis() + 400
-            openedViaSwipeJump = true
         } else {
             RandomReaderHistory.clear()
         }
@@ -276,9 +272,7 @@ class ReaderActivity : BaseActivity() {
         onBackPressedDispatcher.addCallback(this) {
             val previous = RandomReaderHistory.pop()
             if (previous == null) {
-                if (openedViaSwipeJump) {
-                    openMangaScreen()
-                } else {
+                if (!openMangaScreen()) {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                 }
@@ -872,7 +866,7 @@ class ReaderActivity : BaseActivity() {
             navigateUp = onBackPressedDispatcher::onBackPressed,
             goodDoujinMarked = state.goodDoujinMarked,
             onToggleGoodDoujin = viewModel::toggleCurrentChapterGoodDoujin.takeIf { state.manga?.isLocal() == true },
-            onOpenManga = ::openMangaScreen.takeIf { openedViaSwipeJump },
+            onOpenManga = { openMangaScreen() },
             onOpenInWebView = ::openChapterInWebView.takeIf { isHttpSource },
             onOpenInBrowser = ::openChapterInBrowser.takeIf { isHttpSource },
             onShare = ::shareChapter.takeIf { isHttpSource },
@@ -968,8 +962,8 @@ class ReaderActivity : BaseActivity() {
         binding.readerContainer.addView(loadingIndicator)
     }
 
-    private fun openMangaScreen() {
-        val id = viewModel.manga?.id ?: viewModel.mangaId.takeIf { it >= 0 } ?: return
+    private fun openMangaScreen(): Boolean {
+        val id = viewModel.manga?.id ?: viewModel.mangaId.takeIf { it >= 0 } ?: return false
         startActivity(
             Intent(this, MainActivity::class.java).apply {
                 action = Constants.SHOW_MANGA_PRESERVE_STACK
@@ -977,6 +971,10 @@ class ReaderActivity : BaseActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             },
         )
+        // The details screen is the reader's parent. Keeping this reader below it means the
+        // next chapter launch clears MainActivity and leaves later returns rebuilding the UI.
+        finish()
+        return true
     }
 
     private fun openAudioWork(item: AudioPlayItem) {

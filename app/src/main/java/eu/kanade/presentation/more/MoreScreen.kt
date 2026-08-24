@@ -1,5 +1,6 @@
 package eu.kanade.presentation.more
 
+import android.os.Build
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
@@ -41,6 +42,8 @@ fun MoreScreen(
     onClickCategories: () -> Unit,
     onClickStats: () -> Unit,
     onClickDataAndStorage: () -> Unit,
+    allFilesAccessGranted: Boolean,
+    onAllFilesAccessClick: () -> Unit,
     onClickSettings: () -> Unit,
     onClickSupport: () -> Unit,
     onClickAbout: () -> Unit,
@@ -149,6 +152,16 @@ fun MoreScreen(
                     icon = Icons.Outlined.Storage,
                     onPreferenceClick = onClickDataAndStorage,
                 )
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                item {
+                    SwitchPreferenceWidget(
+                        title = stringResource(MR.strings.pref_local_source_direct_access),
+                        icon = ImageVector.vectorResource(R.drawable.ic_folder_24dp),
+                        checked = allFilesAccessGranted,
+                        onCheckedChanged = { onAllFilesAccessClick() },
+                    )
+                }
             }
 
             item {

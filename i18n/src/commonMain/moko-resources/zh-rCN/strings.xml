@@ -897,6 +897,8 @@
     <string name="onboarding_permission_analytics">数据分析</string>
     <string name="pref_security">安全</string>
     <string name="onboarding_permission_analytics_description">发送匿名的应用数据以提升用户体验</string>
+    <string name="onboarding_permission_all_files_access">本库文件访问</string>
+    <string name="onboarding_permission_all_files_access_description">授予「所有文件访问」权限，用于在本库无法识别文件变化时直接读取你选择的本库目录。</string>
     <string name="pref_firebase">数据分析与崩溃日志</string>
     <string name="firebase_summary">允许发送崩溃日志和数据分析帮助开发者辨别并修复问题，提高应用体验，以期更新符合你需要的功能</string>
     <string name="action_sort_random">随机</string>

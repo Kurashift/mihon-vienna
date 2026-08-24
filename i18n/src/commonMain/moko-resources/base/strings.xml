@@ -238,6 +238,8 @@
     <string name="onboarding_permission_crashlytics_description">Send anonymized crash logs to the developers.</string>
     <string name="onboarding_permission_analytics">Allow analytics</string>
     <string name="onboarding_permission_analytics_description">Send anonymized usage data to improve app features.</string>
+    <string name="onboarding_permission_all_files_access">Local library file access</string>
+    <string name="onboarding_permission_all_files_access_description">Grants all-files access so the local library can read the selected folder directly when the document provider cannot list files.</string>
     <string name="onboarding_permission_action_grant">Grant</string>
     <string name="onboarding_guides_new_user">New to %s? We recommend checking out the getting started guide.</string>
     <string name="onboarding_guides_returning_user">Reinstalling %s?</string>

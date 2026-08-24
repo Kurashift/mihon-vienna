@@ -150,6 +150,9 @@ class MainActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val isLaunch = savedInstanceState == null
+        val isLauncherStart = isLaunch &&
+            intent.action == Intent.ACTION_MAIN &&
+            intent.hasCategory(Intent.CATEGORY_LAUNCHER)
 
         // Prevent splash screen showing up on configuration changes
         val splashScreen = if (isLaunch) installSplashScreen() else null
@@ -158,8 +161,9 @@ class MainActivity : BaseActivity() {
 
         Migrator.awaitAndRelease()
 
-        // Do not let the launcher create a new activity http://stackoverflow.com/questions/16283079
-        if (!isTaskRoot) {
+        // Ignore only duplicate launcher starts. App-internal actions may legitimately open this
+        // activity above the reader when the original main activity is no longer in the task.
+        if (!isTaskRoot && isLauncherStart) {
             finish()
             return
         }
@@ -274,7 +278,11 @@ class MainActivity : BaseActivity() {
         val startTime = System.currentTimeMillis()
         splashScreen?.setKeepOnScreenCondition {
             val elapsed = System.currentTimeMillis() - startTime
-            elapsed <= SPLASH_MIN_DURATION || (!ready && elapsed <= SPLASH_MAX_DURATION)
+            // Launcher starts keep the branded splash for the minimum duration. App-internal
+            // navigation (for example returning from the reader to manga details) may create a
+            // fresh MainActivity above the reader; it must not be held back by the same minimum.
+            elapsed <= (if (isLauncherStart) SPLASH_MIN_DURATION.toLong() else 0L) ||
+                (!ready && elapsed <= SPLASH_MAX_DURATION)
         }
         setSplashScreenExitAnimation(splashScreen)
 
@@ -538,9 +546,16 @@ class MainActivity : BaseActivity() {
             Constants.SHOW_MANGA_PRESERVE_STACK -> {
                 val idToOpen = intent.extras?.getLong(Constants.MANGA_EXTRA) ?: return false
                 when (val currentScreen = navigator.lastItem) {
-                    is MangaScreen -> navigator.replace(
-                        MangaScreen(idToOpen, currentScreen.fromSource, currentScreen.randomCandidates),
-                    )
+                    is MangaScreen -> {
+                        // Reusing the existing details screen keeps its scroll position, loaded
+                        // chapter list, and ViewModel state. Replacing it on every reader
+                        // return discarded that state for no reason.
+                        if (currentScreen.mangaId != idToOpen) {
+                            navigator.replace(
+                                MangaScreen(idToOpen, currentScreen.fromSource, currentScreen.randomCandidates),
+                            )
+                        }
+                    }
                     is BrowseSourceScreen -> navigator.push(MangaScreen(idToOpen, true))
                     else -> navigator.push(MangaScreen(idToOpen))
                 }
