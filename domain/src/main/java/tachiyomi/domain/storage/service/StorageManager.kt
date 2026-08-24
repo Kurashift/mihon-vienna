@@ -2,6 +2,7 @@ package tachiyomi.domain.storage.service
 
 import android.content.Context
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.core.net.toUri
@@ -44,7 +45,9 @@ class StorageManager(
                 baseDir = getBaseDir(uri)
                 baseDir?.let { parent ->
                     parent.createDirectory(AUTOMATIC_BACKUPS_PATH)
-                    parent.createDirectory(LOCAL_SOURCE_PATH)
+                    parent.createDirectory(LOCAL_SOURCE_PATH).also {
+                        DiskUtil.createNoMediaFile(it, context)
+                    }
                     parent.createDirectory(DOWNLOADS_PATH).also {
                         DiskUtil.createNoMediaFile(it, context)
                     }
@@ -68,7 +71,9 @@ class StorageManager(
     }
 
     fun getLocalSourceDirectory(): UniFile? {
-        return baseDir?.createDirectory(LOCAL_SOURCE_PATH)
+        return baseDir?.createDirectory(LOCAL_SOURCE_PATH).also {
+            DiskUtil.createNoMediaFile(it, context)
+        }
     }
 
     /**
@@ -92,8 +97,91 @@ class StorageManager(
 
         val directory = File(Environment.getExternalStorageDirectory(), relativeBasePath)
             .resolve(LOCAL_SOURCE_PATH)
-        return UniFile.fromFile(directory)?.takeIf { it.exists() && it.isDirectory }
+        return UniFile.fromFile(directory)
+            ?.takeIf { it.exists() && it.isDirectory }
+            ?.also { DiskUtil.createNoMediaFile(it, context) }
     }
+
+    /** Asks the document provider to discard stale directory metadata before a removal check. */
+    fun refreshLocalSourceDirectoryMetadata() {
+        val directory = baseDir?.findFile(LOCAL_SOURCE_PATH) ?: return
+        if (directory.uri.scheme != "content") return
+        runCatching {
+            context.contentResolver.refresh(directory.uri, Bundle.EMPTY, null)
+        }
+    }
+
+    /**
+     * Checks one previously indexed manga directory without relying on the provider's child list.
+     * A failed query remains unknown so it can never be mistaken for a confirmed deletion.
+     */
+    fun createLocalSourceDirectoryEntryStateLookup(): (String) -> LocalSourceDirectoryEntryState {
+        val directDirectory = getDirectLocalSourceDirectory()
+        if (directDirectory != null) {
+            val directFile = directDirectory.filePath?.let(::File)
+                ?: return { LocalSourceDirectoryEntryState.UNKNOWN }
+            return { name ->
+                val child = directFile.resolve(name)
+                if (child.exists() && child.isDirectory) {
+                    LocalSourceDirectoryEntryState.EXISTS
+                } else {
+                    LocalSourceDirectoryEntryState.MISSING
+                }
+            }
+        }
+
+        val directory = baseDir?.findFile(LOCAL_SOURCE_PATH)
+            ?: return { LocalSourceDirectoryEntryState.UNKNOWN }
+        val directoryUri = directory.uri
+        if (directoryUri.authority != EXTERNAL_STORAGE_PROVIDER_AUTHORITY) {
+            return { name ->
+                val child = runCatching { directory.findFile(name) }.getOrNull()
+                if (child == null) {
+                    LocalSourceDirectoryEntryState.MISSING
+                } else if (runCatching { child.exists() && child.isDirectory }.getOrDefault(false)) {
+                    LocalSourceDirectoryEntryState.EXISTS
+                } else {
+                    LocalSourceDirectoryEntryState.MISSING
+                }
+            }
+        }
+
+        val parentDocumentId = runCatching { DocumentsContract.getDocumentId(directoryUri) }.getOrNull()
+            ?: return { LocalSourceDirectoryEntryState.UNKNOWN }
+        return { name ->
+            val childDocumentId = storageChildDocumentId(parentDocumentId, name)
+            if (childDocumentId == null) {
+                LocalSourceDirectoryEntryState.UNKNOWN
+            } else {
+                val childUri = DocumentsContract.buildDocumentUriUsingTree(directoryUri, childDocumentId)
+                runCatching {
+                    context.contentResolver.query(
+                        childUri,
+                        arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE),
+                        null,
+                        null,
+                        null,
+                    )?.use { cursor ->
+                        if (!cursor.moveToFirst()) {
+                            LocalSourceDirectoryEntryState.MISSING
+                        } else if (
+                            cursor.getString(0) == DocumentsContract.Document.MIME_TYPE_DIR
+                        ) {
+                            LocalSourceDirectoryEntryState.EXISTS
+                        } else {
+                            LocalSourceDirectoryEntryState.MISSING
+                        }
+                    } ?: LocalSourceDirectoryEntryState.UNKNOWN
+                }.getOrDefault(LocalSourceDirectoryEntryState.UNKNOWN)
+            }
+        }
+    }
+}
+
+enum class LocalSourceDirectoryEntryState {
+    EXISTS,
+    MISSING,
+    UNKNOWN,
 }
 
 internal fun primaryStorageRelativePath(documentId: String): String? {
@@ -107,6 +195,13 @@ internal fun primaryStorageRelativePath(documentId: String): String? {
     return path
 }
 
+internal fun storageChildDocumentId(parentDocumentId: String, childName: String): String? {
+    if (childName.isBlank() || childName == "." || childName == "..") return null
+    if (childName.any { it == '/' || it == '\\' }) return null
+    return "$parentDocumentId/$childName"
+}
+
 private const val AUTOMATIC_BACKUPS_PATH = "autobackup"
 private const val DOWNLOADS_PATH = "downloads"
 private const val LOCAL_SOURCE_PATH = "local"
+private const val EXTERNAL_STORAGE_PROVIDER_AUTHORITY = "com.android.externalstorage.documents"

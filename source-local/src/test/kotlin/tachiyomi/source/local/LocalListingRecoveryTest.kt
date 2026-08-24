@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 
 class LocalListingRecoveryTest {
 
@@ -89,13 +90,40 @@ class LocalListingRecoveryTest {
     fun `more than 64 real directory removals can be confirmed`() = runBlocking {
         val missing = (1..65).mapTo(linkedSetOf()) { "Author $it" }
 
-        assertTrue(confirmMissingLocalMangaDirectoriesGone(missing) { false })
+        assertTrue(
+            confirmMissingLocalMangaDirectoriesGone(missing) {
+                LocalSourceDirectoryEntryState.MISSING
+            },
+        )
     }
 
     @Test
     fun `one existing directory rejects a bulk removal snapshot`() = runBlocking {
         val missing = (1..65).mapTo(linkedSetOf()) { "Author $it" }
 
-        assertFalse(confirmMissingLocalMangaDirectoriesGone(missing) { it == "Author 37" })
+        assertFalse(
+            confirmMissingLocalMangaDirectoriesGone(missing) {
+                if (it == "Author 37") {
+                    LocalSourceDirectoryEntryState.EXISTS
+                } else {
+                    LocalSourceDirectoryEntryState.MISSING
+                }
+            },
+        )
+    }
+
+    @Test
+    fun `one unknown directory rejects a bulk removal snapshot`() = runBlocking {
+        val missing = (1..65).mapTo(linkedSetOf()) { "Author $it" }
+
+        assertFalse(
+            confirmMissingLocalMangaDirectoriesGone(missing) {
+                if (it == "Author 37") {
+                    LocalSourceDirectoryEntryState.UNKNOWN
+                } else {
+                    LocalSourceDirectoryEntryState.MISSING
+                }
+            },
+        )
     }
 }

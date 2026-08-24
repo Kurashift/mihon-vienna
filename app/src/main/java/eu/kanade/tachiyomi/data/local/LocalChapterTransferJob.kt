@@ -13,12 +13,14 @@ import androidx.work.WorkInfo
 import androidx.work.WorkQuery
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.google.common.util.concurrent.ListenableFuture
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.util.system.setForegroundSafely
 import eu.kanade.tachiyomi.util.system.workManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.guava.await
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -67,18 +69,12 @@ class LocalChapterTransferJob(
 
         val groupedManifest = groupedManifestName?.let { File(context.filesDir, File(it).name) }
         return try {
-            val onProgress: (LocalChapterTransferService.Progress) -> Unit = { progress ->
+            var lastProgressUpdate: ListenableFuture<Void>? = null
+            val progressThrottler = LocalChapterTransferProgressThrottler { progress ->
                 notifier.showProgress(progress)
-                setProgressAsync(
-                    workDataOf(
-                        KEY_COMPLETED to progress.completed,
-                        KEY_TOTAL to progress.total,
-                        KEY_CURRENT_NAME to progress.currentName,
-                        KEY_COPIED_BYTES to progress.copiedBytes,
-                        KEY_TOTAL_BYTES to progress.totalBytes,
-                    ),
-                )
+                lastProgressUpdate = setProgressAsync(progress.toWorkData())
             }
+            val onProgress = progressThrottler::update
             val result = if (isMove) {
                 val chapters = chapterIds.mapNotNull { chapterRepository.getChapterById(it) }
                 if (chapters.isEmpty()) return Result.failure()
@@ -109,6 +105,8 @@ class LocalChapterTransferJob(
                     Triple(it.imported, it.skipped, it.failed)
                 }
             }
+            progressThrottler.flush()
+            lastProgressUpdate?.await()
             notifier.showResult(result.first, result.second, result.third, isMove)
             Result.success()
         } catch (_: CancellationException) {
@@ -130,6 +128,14 @@ class LocalChapterTransferJob(
             )
         }
     }
+
+    private fun LocalChapterTransferService.Progress.toWorkData() = workDataOf(
+        KEY_COMPLETED to completed,
+        KEY_TOTAL to total,
+        KEY_CURRENT_NAME to currentName,
+        KEY_COPIED_BYTES to copiedBytes,
+        KEY_TOTAL_BYTES to totalBytes,
+    )
 
     override suspend fun getForegroundInfo(): ForegroundInfo = ForegroundInfo(
         Notifications.ID_LOCAL_TRANSFER_PROGRESS,

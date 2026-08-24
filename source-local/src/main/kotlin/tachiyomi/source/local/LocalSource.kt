@@ -55,6 +55,7 @@ import tachiyomi.core.metadata.comicinfo.getComicInfo
 import tachiyomi.core.metadata.tachiyomi.MangaDetails
 import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.filter.OrderBy
 import tachiyomi.source.local.image.LocalCoverManager
@@ -118,13 +119,14 @@ private const val MAX_CONCURRENT_DIRECTORY_REMOVAL_CHECKS = 16
 
 internal suspend fun confirmMissingLocalMangaDirectoriesGone(
     missingNames: Set<String>,
-    directoryExists: suspend (String) -> Boolean,
+    directoryState: suspend (String) -> LocalSourceDirectoryEntryState,
 ): Boolean = coroutineScope {
     val semaphore = Semaphore(MAX_CONCURRENT_DIRECTORY_REMOVAL_CHECKS)
     missingNames.map { name ->
         async {
             semaphore.withPermit {
-                runCatching { !directoryExists(name) }.getOrDefault(false)
+                runCatching { directoryState(name) == LocalSourceDirectoryEntryState.MISSING }
+                    .getOrDefault(false)
             }
         }
     }.awaitAll().all { it }
@@ -411,6 +413,28 @@ class LocalSource(
             }
             updatePersistedListingCover(mangaUrl, coverUri)
         }
+    }
+
+    /** Generates one collection cover during an explicit import, never during an ordinary listing read. */
+    suspend fun ensureMangaCover(mangaUrl: String, chapterFileName: String): String? {
+        val coverUri = withIOContext {
+            coverManager.find(mangaUrl)?.uri?.toString()?.let { return@withIOContext it }
+            val chapterFile = fileSystem.getMangaDirectory(mangaUrl)
+                ?.findFile(chapterFileName)
+                ?.takeIf(::isChapterFile)
+                ?: return@withIOContext null
+            val manga = SManga.create().apply {
+                title = mangaUrl
+                url = mangaUrl
+            }
+            val chapter = SChapter.create().apply {
+                name = chapterFileName.substringBeforeLast('.', chapterFileName)
+                url = "$mangaUrl/$chapterFileName"
+            }
+            updateCover(chapter, manga)?.uri?.toString()
+        }
+        if (coverUri != null) refreshMangaCover(mangaUrl, coverUri)
+        return coverUri
     }
 
     /**
@@ -1544,13 +1568,18 @@ class LocalSource(
             snapshots += retry
         }
 
+        fileSystem.refreshBaseDirectoryMetadata()
+        val refreshed = getBaseDirectorySnapshot(forceRefresh = true)
+        if (!refreshed.isAccessible) return null
+        snapshots += refreshed
+
         val best = snapshots.maxBy(::directoryCount)
         val observedNames = best.directoryNames()
         val missingNames = knownDirectoryNames - observedNames
         if (missingNames.isEmpty()) return best
-        val directory = best.directory ?: return null
+        val directoryState = fileSystem.createMangaDirectoryEntryStateLookup()
         val everyMissingDirectoryIsGone = confirmMissingLocalMangaDirectoriesGone(missingNames) { name ->
-            directory.findFile(name)?.let { it.exists() && it.isDirectory } == true
+            directoryState(name)
         }
         return best.takeIf { everyMissingDirectoryIsGone }
     }

@@ -127,7 +127,7 @@ internal class PermissionStep : OnboardingStep {
             )
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                PermissionCheckbox(
+                PermissionSettingsEntry(
                     title = stringResource(MR.strings.onboarding_permission_all_files_access),
                     subtitle = stringResource(MR.strings.onboarding_permission_all_files_access_description),
                     granted = allFilesAccessGranted,
@@ -205,6 +205,40 @@ internal class PermissionStep : OnboardingStep {
                 }
             },
             supportingContent = { Text(text = subtitle) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            content = { Text(text = title) },
+        )
+    }
+
+    @Composable
+    private fun PermissionSettingsEntry(
+        title: String,
+        subtitle: String,
+        granted: Boolean,
+        modifier: Modifier = Modifier,
+        onButtonClick: () -> Unit,
+    ) {
+        ListItem(
+            modifier = modifier,
+            trailingContent = {
+                OutlinedButton(onClick = onButtonClick) {
+                    Text(stringResource(MR.strings.action_settings))
+                }
+            },
+            supportingContent = {
+                Column {
+                    Text(text = subtitle)
+                    Text(
+                        text = stringResource(if (granted) MR.strings.on else MR.strings.off),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (granted) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             content = { Text(text = title) },
         )

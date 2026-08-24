@@ -1,6 +1,7 @@
 package tachiyomi.source.local.io
 
 import com.hippo.unifile.UniFile
+import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.domain.storage.service.StorageManager
 import java.io.File
 import java.nio.ByteBuffer
@@ -32,6 +33,14 @@ class LocalSourceFileSystem(
     fun getBaseDirectoryIdentityUri(): String? {
         return storageManager.getLocalSourceDirectory()?.uri?.toString()
             ?: getBaseDirectory()?.uri?.toString()
+    }
+
+    fun refreshBaseDirectoryMetadata() {
+        storageManager.refreshLocalSourceDirectoryMetadata()
+    }
+
+    fun createMangaDirectoryEntryStateLookup(): (String) -> LocalSourceDirectoryEntryState {
+        return storageManager.createLocalSourceDirectoryEntryStateLookup()
     }
 
     fun getFilesInBaseDirectory(): List<UniFile> {
@@ -111,17 +120,10 @@ class LocalSourceFileSystem(
      */
     private fun readDirectTree(baseDirectory: File): DirectTreeListing? {
         val paths = runFind(baseDirectory, maxDepth = 2) ?: return null
-        val rootPath = baseDirectory.absolutePath
-        val childrenByParent = paths
-            .asSequence()
-            .map(::File)
-            .filter { file -> file.absolutePath.startsWith(rootPath + File.separator) }
-            .mapNotNull { file ->
-                val parentPath = file.parentFile?.absolutePath ?: return@mapNotNull null
-                UniFile.fromFile(file)?.let { parentPath to it }
-            }
-            .groupBy(keySelector = { it.first }, valueTransform = { it.second })
-        return DirectTreeListing(rootPath, childrenByParent)
+        return DirectTreeListing(
+            basePath = baseDirectory.absolutePath,
+            childrenByParentPath = directTreeChildrenByParent(baseDirectory, paths),
+        )
     }
 
     private fun readDirectDirectory(directory: File): List<UniFile>? {
@@ -149,6 +151,24 @@ class LocalSourceFileSystem(
         val basePath: String,
         val childrenByParentPath: Map<String, List<UniFile>>,
     )
+}
+
+internal fun directTreeChildrenByParent(
+    baseDirectory: File,
+    paths: List<String>,
+): Map<String, List<UniFile>> {
+    val rootPath = baseDirectory.absolutePath
+    return paths
+        .asSequence()
+        .map(::File)
+        .filter { file -> file.absolutePath.startsWith(rootPath + File.separator) }
+        .mapNotNull { file ->
+            val parentPath = file.parentFile?.absolutePath ?: return@mapNotNull null
+            UniFile.fromFile(file)?.let { parentPath to it }
+        }
+        .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+        .toMutableMap()
+        .apply { putIfAbsent(rootPath, emptyList()) }
 }
 
 internal data class DecodedPaths(

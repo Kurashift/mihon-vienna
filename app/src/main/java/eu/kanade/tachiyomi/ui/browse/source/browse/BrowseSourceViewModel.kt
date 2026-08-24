@@ -73,6 +73,7 @@ import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.SetMangaDefaultChapterFlags
+import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.history.repository.HistoryRepository
@@ -1001,13 +1002,51 @@ class BrowseSourceViewModel(
     }
 
     private suspend fun relocateMovedLocalChapters(scan: tachiyomi.source.local.LocalChapterSyncScan) {
-        if (scan.chapterFileNamesByMangaUrl.isEmpty()) return
-
         val storedMangas = mangaRepository.getMangaProgressBySource(sourceId)
         val mangaUrlById = storedMangas.associate { it.mangaId to it.url }
+        if (mangaUrlById.isEmpty()) return
         val mangaByUrl = mutableMapOf<String, Manga>()
-        val storedChapters = chapterRepository
+        val allStoredChapters = chapterRepository
             .getChaptersByMangaIds(mangaUrlById.keys.toList())
+        val coverManager = Injekt.get<LocalChapterCoverManager>()
+        val historyByMangaId = mutableMapOf<Long, Map<Long, java.util.Date?>>()
+        suspend fun readAt(mangaId: Long, chapterId: Long): java.util.Date? {
+            val histories = historyByMangaId[mangaId] ?: historyRepository
+                .getHistoryByMangaId(mangaId)
+                .associate { it.chapterId to it.readAt }
+                .also { historyByMangaId[mangaId] = it }
+            return histories[chapterId]
+        }
+
+        val duplicateGroups = findExactLocalChapterDuplicateGroups(allStoredChapters)
+        duplicateGroups.forEach { duplicates ->
+            val keeper = duplicates.minBy(Chapter::id)
+            val preferredProgressId = duplicates
+                .mapNotNull { chapter -> readAt(chapter.mangaId, chapter.id)?.let { it to chapter.id } }
+                .maxByOrNull { it.first }
+                ?.second
+            val merged = mergeExactLocalChapterDuplicates(duplicates, preferredProgressId)
+            val mangaTitle = mangaRepository.getMangaById(keeper.mangaId).title
+            duplicates.filterNot { it.id == keeper.id }.forEach { duplicate ->
+                coverManager.copyCustomCover(keeper.id, duplicate.id)
+                chapterRepository.mergeRelocatedChapter(merged, duplicate.id)
+                coverManager.deleteCustomCover(duplicate.id)
+                mangaMarkStore.merge(
+                    chapterId = keeper.id,
+                    duplicateChapterId = duplicate.id,
+                    mangaId = keeper.mangaId,
+                    mangaTitle = mangaTitle,
+                )
+            }
+        }
+
+        if (scan.chapterFileNamesByMangaUrl.isEmpty()) return
+        val duplicateIds = duplicateGroups.flatMap { group ->
+            val keeperId = group.minOf(Chapter::id)
+            group.map(Chapter::id).filterNot { it == keeperId }
+        }.toHashSet()
+        val storedChapters = allStoredChapters
+            .filterNot { it.id in duplicateIds }
             .mapNotNull { chapter ->
                 val mangaUrl = mangaUrlById[chapter.mangaId] ?: return@mapNotNull null
                 StoredLocalChapter(
@@ -1031,15 +1070,6 @@ class BrowseSourceViewModel(
             ).distinctBy(LocalChapterMoveCandidate::chapterId)
         if (candidates.isEmpty()) return
 
-        val coverManager = Injekt.get<LocalChapterCoverManager>()
-        val historyByMangaId = mutableMapOf<Long, Map<Long, java.util.Date?>>()
-        suspend fun readAt(mangaId: Long, chapterId: Long): java.util.Date? {
-            val histories = historyByMangaId[mangaId] ?: historyRepository
-                .getHistoryByMangaId(mangaId)
-                .associate { it.chapterId to it.readAt }
-                .also { historyByMangaId[mangaId] = it }
-            return histories[chapterId]
-        }
         candidates.forEach { candidate ->
             val targetManga = mangaByUrl[candidate.newMangaUrl] ?: (
                 mangaRepository.getMangaByUrlAndSourceId(candidate.newMangaUrl, sourceId)

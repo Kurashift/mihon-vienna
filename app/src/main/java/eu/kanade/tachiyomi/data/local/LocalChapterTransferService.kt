@@ -15,6 +15,7 @@ import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalSource
@@ -355,6 +356,7 @@ class LocalChapterTransferService(
         var imported = 0
         var skipped = 0
         var failed = 0
+        var firstImportedChapterFileName: String? = null
         candidates.forEachIndexed { index, candidate ->
             coroutineContext.ensureActive()
             val destinationName = candidate.name.trim().ifBlank { "Chapter" }
@@ -401,33 +403,35 @@ class LocalChapterTransferService(
                         onProgress(Progress(index, candidates.size, candidate.name, copiedBytes, totalBytes))
                     }
                 }
-                val committed = if (staged.isDirectory) {
-                    staged.renameTo(destinationName)
+                val committedName = if (staged.isDirectory) {
+                    destinationName
                 } else {
-                    val extension = candidate.file.extension?.takeIf { it.isNotBlank() } ?: "cbz"
-                    staged.renameTo("$destinationName.$extension")
-                }
-                if (!committed) error("Cannot commit imported chapter")
-                val chapterUrl = "${target.url}/$destinationName" +
-                    if (candidate.file.isDirectory &&
-                        options.folderOutput == FolderOutput.CBZ
-                    ) {
-                        ".cbz"
+                    val extension = if (candidate.file.isDirectory) {
+                        "cbz"
                     } else {
-                        candidate.file.extension?.let { ".$it" }.orEmpty()
+                        candidate.file.extension?.takeIf { it.isNotBlank() } ?: "cbz"
                     }
-                val added = chapterRepository.addAll(
-                    listOf(
-                        Chapter.create().copy(
-                            mangaId = target.id,
-                            url = chapterUrl,
-                            name = destinationName,
-                            dateFetch = System.currentTimeMillis(),
-                            dateUpload = System.currentTimeMillis(),
-                        ),
-                    ),
-                )
-                if (added.isEmpty()) error("Chapter database commit failed")
+                    "$destinationName.$extension"
+                }
+                withLocalChapterMutationLock(target.url) {
+                    if (!staged.renameTo(committedName)) error("Cannot commit imported chapter")
+                    firstImportedChapterFileName = firstImportedChapterFileName ?: committedName
+                    val chapterUrl = "${target.url}/$committedName"
+                    if (chapterRepository.getChapterByUrlAndMangaId(chapterUrl, target.id) == null) {
+                        val added = chapterRepository.addAll(
+                            listOf(
+                                Chapter.create().copy(
+                                    mangaId = target.id,
+                                    url = chapterUrl,
+                                    name = destinationName,
+                                    dateFetch = System.currentTimeMillis(),
+                                    dateUpload = System.currentTimeMillis(),
+                                ),
+                            ),
+                        )
+                        if (added.isEmpty()) error("Chapter database commit failed")
+                    }
+                }
                 if (options.deleteSourceAfterSuccess && canDeleteSource(candidate.file, options)) {
                     deleteRecursively(candidate.file)
                 }
@@ -440,6 +444,25 @@ class LocalChapterTransferService(
                 failed++
             }
             onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
+        }
+        firstImportedChapterFileName?.let { chapterFileName ->
+            try {
+                val localSource = Injekt.get<SourceManager>().get(LocalSource.ID) as? LocalSource
+                val coverUri = localSource?.ensureMangaCover(target.url, chapterFileName)
+                if (coverUri != null && target.thumbnailUrl.isNullOrBlank()) {
+                    mangaRepository.update(
+                        MangaUpdate(
+                            id = target.id,
+                            thumbnailUrl = coverUri,
+                            coverLastModified = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // A cover can be regenerated later; it must not turn a completed import into a failure.
+            }
         }
         if (invalidateListing) {
             Injekt.get<SourceManager>().get(LocalSource.ID)?.let { (it as? LocalSource)?.invalidateListing() }

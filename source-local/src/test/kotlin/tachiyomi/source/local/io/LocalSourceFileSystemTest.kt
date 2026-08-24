@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import tachiyomi.domain.storage.service.StorageManager
+import java.nio.file.Path
 
 class LocalSourceFileSystemTest {
 
@@ -103,6 +105,16 @@ class LocalSourceFileSystemTest {
         val fileSystem = LocalSourceFileSystem(storageManager)
 
         assertTrue(fileSystem.getBaseDirectory() === directDirectory)
+    }
+
+    @Test
+    fun `empty direct tree keeps an accessible root entry`(@TempDir directory: Path) {
+        val rootPath = directory.toFile().absolutePath
+
+        val children = directTreeChildrenByParent(directory.toFile(), emptyList())
+
+        assertTrue(rootPath in children)
+        assertTrue(children.getValue(rootPath).isEmpty())
     }
 
     @Test

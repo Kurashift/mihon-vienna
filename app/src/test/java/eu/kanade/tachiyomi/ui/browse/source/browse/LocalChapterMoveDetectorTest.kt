@@ -10,6 +10,51 @@ import tachiyomi.domain.chapter.model.Chapter
 class LocalChapterMoveDetectorTest {
 
     @Test
+    fun `exact duplicate rows are grouped only within the same manga`() {
+        val groups = findExactLocalChapterDuplicateGroups(
+            listOf(
+                dbChapter(id = 10, mangaId = 1, url = "Author/Story.cbz", name = "Story"),
+                dbChapter(id = 11, mangaId = 1, url = "Author/Story.cbz", name = "Story"),
+                dbChapter(id = 12, mangaId = 2, url = "Author/Story.cbz", name = "Story"),
+            ),
+        )
+
+        groups.map { it.map(Chapter::id) } shouldBe listOf(listOf(10L, 11L))
+    }
+
+    @Test
+    fun `exact duplicate merge keeps oldest identity and combines user data`() {
+        val old = dbChapter(
+            id = 10,
+            mangaId = 1,
+            url = "Author/Story.cbz",
+            name = "Story",
+            bookmark = true,
+            translatedName = "中文译名",
+        )
+        val scanned = dbChapter(
+            id = 11,
+            mangaId = 1,
+            url = "Author/Story.cbz",
+            name = "Story",
+            read = true,
+            lastPageRead = 18,
+            totalPages = 23,
+            memo = JsonObject(mapOf("mihon.pageCount" to JsonPrimitive(23))),
+        )
+
+        val update = mergeExactLocalChapterDuplicates(listOf(old, scanned), preferredProgressChapterId = scanned.id)
+
+        update.id shouldBe old.id
+        update.read shouldBe true
+        update.bookmark shouldBe true
+        update.lastPageRead shouldBe 18
+        update.totalPages shouldBe 23
+        update.translatedName shouldBe "中文译名"
+        update.memo?.get("mihon.pageCount") shouldBe JsonPrimitive(23)
+    }
+
+    @Test
     fun `unique same-name disappearance and addition is treated as a move`() {
         val moves = detectLocalChapterMoves(
             storedChapters = listOf(chapter(10, 1, "Author A", "Short Story.cbz")),
@@ -287,6 +332,7 @@ class LocalChapterMoveDetectorTest {
         url: String,
         name: String,
         read: Boolean = false,
+        bookmark: Boolean = false,
         lastPageRead: Long = 0,
         totalPages: Long = 0,
         sourceOrder: Long = 0,
@@ -298,6 +344,7 @@ class LocalChapterMoveDetectorTest {
         url = url,
         name = name,
         read = read,
+        bookmark = bookmark,
         lastPageRead = lastPageRead,
         totalPages = totalPages,
         sourceOrder = sourceOrder,

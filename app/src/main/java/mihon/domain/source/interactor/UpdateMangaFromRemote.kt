@@ -6,6 +6,7 @@ import eu.kanade.domain.manga.model.hasCustomCover
 import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.local.withLocalChapterMutationLock
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.SManga
 import logcat.LogPriority
@@ -57,32 +58,59 @@ class UpdateMangaFromRemote(
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
     ): Result<RemoteMangaUpdate> {
         return try {
-            val chapters = chapterRepository.getChapterByMangaId(manga.id)
-                .sortedBy { it.sourceOrder }
-            val update = withIOContext {
-                source.getMangaUpdate(
-                    manga = manga.toSManga(),
-                    chapters = chapters.map(Chapter::toSChapter),
+            val performUpdate: suspend () -> RemoteMangaUpdate = {
+                updateFromSource(
+                    source = source,
+                    manga = manga,
                     fetchDetails = fetchDetails,
                     fetchChapters = fetchChapters,
+                    manualFetch = manualFetch,
+                    fetchWindow = fetchWindow,
                 )
             }
-            awaitUpdateFromSource(manga, update.manga, manualFetch)
-            val newChapters = syncChaptersWithSource.await(
-                rawSourceChapters = update.chapters,
-                manga = manga,
-                source = source,
-                manualFetch = manualFetch,
-                fetchWindow = fetchWindow,
-                allowEmptyLocalSource = source is tachiyomi.source.local.LocalSource && fetchChapters,
-            )
-            val updatedManga = mangaRepository.getMangaById(manga.id)
-
-            Result.success(RemoteMangaUpdate(manga = updatedManga, newChapters = newChapters))
+            val update = if (source.isLocal()) {
+                // Keep one manga's disk snapshot and database sync atomic with its imports.
+                withLocalChapterMutationLock(manga.url, performUpdate)
+            } else {
+                performUpdate()
+            }
+            Result.success(update)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
             Result.failure(e)
         }
+    }
+
+    private suspend fun updateFromSource(
+        source: Source,
+        manga: Manga,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+        manualFetch: Boolean,
+        fetchWindow: Pair<Long, Long>,
+    ): RemoteMangaUpdate {
+        val chapters = chapterRepository.getChapterByMangaId(manga.id)
+            .sortedBy { it.sourceOrder }
+        val update = withIOContext {
+            source.getMangaUpdate(
+                manga = manga.toSManga(),
+                chapters = chapters.map(Chapter::toSChapter),
+                fetchDetails = fetchDetails,
+                fetchChapters = fetchChapters,
+            )
+        }
+        awaitUpdateFromSource(manga, update.manga, manualFetch)
+        val newChapters = syncChaptersWithSource.await(
+            rawSourceChapters = update.chapters,
+            manga = manga,
+            source = source,
+            manualFetch = manualFetch,
+            fetchWindow = fetchWindow,
+            allowEmptyLocalSource = source is tachiyomi.source.local.LocalSource && fetchChapters,
+        )
+        val updatedManga = mangaRepository.getMangaById(manga.id)
+
+        return RemoteMangaUpdate(manga = updatedManga, newChapters = newChapters)
     }
 
     private suspend fun awaitUpdateFromSource(

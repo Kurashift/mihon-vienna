@@ -124,6 +124,55 @@ internal fun mergeMovedLocalChapter(
     )
 }
 
+internal fun findExactLocalChapterDuplicateGroups(chapters: List<Chapter>): List<List<Chapter>> {
+    return chapters
+        .groupBy { it.mangaId to it.url }
+        .values
+        .filter { it.size > 1 }
+}
+
+internal fun mergeExactLocalChapterDuplicates(
+    chapters: List<Chapter>,
+    preferredProgressChapterId: Long? = null,
+): ChapterUpdate {
+    require(chapters.size > 1)
+    require(chapters.map { it.mangaId to it.url }.distinct().size == 1)
+
+    val ordered = chapters.sortedBy(Chapter::id)
+    val keeper = ordered.first()
+    val metadata = ordered.maxWithOrNull(
+        compareBy<Chapter> { it.totalPages }
+            .thenBy { it.memo.size }
+            .thenBy(Chapter::id),
+    ) ?: keeper
+    val progress = ordered.firstOrNull { it.id == preferredProgressChapterId }
+        ?: ordered.maxBy { it.lastPageRead }
+
+    return ChapterUpdate(
+        id = keeper.id,
+        mangaId = keeper.mangaId,
+        read = ordered.any(Chapter::read),
+        bookmark = ordered.any(Chapter::bookmark),
+        lastPageRead = progress.lastPageRead,
+        totalPages = ordered.maxOf(Chapter::totalPages),
+        customOrder = keeper.customOrder,
+        dateFetch = ordered.maxOf(Chapter::dateFetch),
+        sourceOrder = metadata.sourceOrder,
+        url = keeper.url,
+        name = metadata.name,
+        dateUpload = ordered.maxOf(Chapter::dateUpload),
+        chapterNumber = metadata.chapterNumber,
+        scanlator = metadata.scanlator ?: ordered.firstNotNullOfOrNull(Chapter::scanlator),
+        version = ordered.maxOf(Chapter::version),
+        memo = JsonObject(
+            buildMap {
+                ordered.forEach { putAll(it.memo) }
+            },
+        ),
+        translatedName = ordered.firstNotNullOfOrNull(Chapter::translatedNameOrNull),
+    )
+}
+
 private fun Set<String>.containsChapterFile(fileName: String): Boolean {
     return fileName in this || fileName.substringBeforeLast('.', fileName) in this
 }

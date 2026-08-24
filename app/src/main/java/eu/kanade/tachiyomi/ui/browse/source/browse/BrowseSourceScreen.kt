@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +86,7 @@ import eu.kanade.presentation.components.ClearHistoryDialog
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.data.local.LocalChapterTransferJob
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseScreen
 import eu.kanade.tachiyomi.ui.browse.OnlineSourceCenterScreen
@@ -146,6 +148,7 @@ data class BrowseSourceScreen(
                 set(BrowseSourceViewModel.LISTING_QUERY_KEY, listingQuery)
             },
         )
+        val context = LocalContext.current
         val state by viewModel.state.collectAsStateWithLifecycle()
         val progressContext by viewModel.progressContextState.collectAsStateWithLifecycle()
         val lastReadMangaId = progressContext.lastReadMangaId
@@ -155,6 +158,11 @@ data class BrowseSourceScreen(
         val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
         val refreshProgress by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
         val localSourceChanged by viewModel.localSourceChanged.collectAsStateWithLifecycle()
+        val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
+            .collectAsStateWithLifecycle(initialValue = null)
+        val activeTransferStatus = transferStatus
+            ?.takeUnless { it.state.isFinished }
+            ?.takeIf { viewModel.source is LocalSource }
         val scrollToTopRequest = scrollToTopRequests?.collectAsStateWithLifecycle()?.value ?: 0L
 
         LaunchedEffect(viewModel) {
@@ -207,8 +215,8 @@ data class BrowseSourceScreen(
             assistUrl = (viewModel.source as? HttpSource)?.getHomeUrl()
         }
 
-        val context = LocalContext.current
         val mangaList = viewModel.mangaPagerFlowFlow.collectAsLazyPagingItems()
+        val currentMangaList by rememberUpdatedState(mangaList)
 
         // Guards against double taps: while a random pick is in flight, further
         // clicks are ignored so the navigation transition only happens once.
@@ -302,11 +310,11 @@ data class BrowseSourceScreen(
                         },
                         onFilterClick = viewModel::openFilterSheet,
                         onRefreshChapters = viewModel::refreshAllChapters.takeIf {
-                            viewModel.source is LocalSource
+                            viewModel.source is LocalSource && activeTransferStatus == null
                         },
                         onImportLocalChapters = {
                             if (viewModel.source is LocalSource) navigator.push(LocalImportScreen())
-                        }.takeIf { viewModel.source is LocalSource },
+                        }.takeIf { viewModel.source is LocalSource && activeTransferStatus == null },
                         onClearHistoryClick = { viewModel.setDialog(BrowseSourceViewModel.Dialog.ClearHistory) },
                         onSearch = viewModel::search,
                     )
@@ -465,6 +473,50 @@ data class BrowseSourceScreen(
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
+                    } else if (activeTransferStatus != null) {
+                        val transferProgress = when {
+                            activeTransferStatus.totalBytes > 0L -> {
+                                activeTransferStatus.copiedBytes.toFloat() / activeTransferStatus.totalBytes
+                            }
+                            activeTransferStatus.total > 0 -> {
+                                activeTransferStatus.completed.toFloat() / activeTransferStatus.total
+                            }
+                            else -> null
+                        }?.coerceIn(0f, 1f)
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column {
+                                Text(
+                                    text = if (activeTransferStatus.total > 0) {
+                                        stringResource(
+                                            MR.strings.local_transfer_in_progress,
+                                            activeTransferStatus.completed,
+                                            activeTransferStatus.total,
+                                            activeTransferStatus.currentName,
+                                        )
+                                    } else {
+                                        stringResource(MR.strings.local_transfer_preparing)
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                                if (transferProgress != null) {
+                                    LinearProgressIndicator(
+                                        progress = { transferProgress },
+                                        modifier = Modifier.fillMaxWidth().height(2.dp),
+                                    )
+                                } else {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier.fillMaxWidth().height(2.dp),
                                     )
                                 }
                             }
@@ -629,9 +681,15 @@ data class BrowseSourceScreen(
 
         LaunchedEffect(viewModel) {
             viewModel.chapterRefreshEvents.receiveAsFlow().collect { result ->
+                // The local index is already rebuilt at this point. Refresh the currently
+                // collected paging generation so deleted cards disappear without navigating
+                // away and back; this does not trigger another filesystem scan.
+                if (!result.storageUnavailable) {
+                    currentMangaList.refresh()
+                }
                 val message = when {
                     result.storageUnavailable -> {
-                        context.stringResource(MR.strings.missing_storage_permission)
+                        context.stringResource(MR.strings.local_source_refresh_unavailable)
                     }
                     result.changedManga == 0 -> {
                         context.stringResource(MR.strings.local_source_refresh_no_changes)

@@ -120,6 +120,8 @@
     <string name="local_source_refresh_checking">Checking your local manga shelf…</string>
     <string name="local_source_refresh_checking_progress">Checking manga: %1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">Updating changed manga: %1$d/%2$d</string>
+    <string name="local_transfer_preparing">Preparing local import…</string>
+    <string name="local_transfer_in_progress">Importing local works: %1$d/%2$d · %3$s</string>
     <string name="local_source_refresh_no_changes">Your manga shelf is already up to date</string>
     <string name="local_source_refresh_completed">Updated %d manga</string>
     <string name="local_source_refresh_completed_with_new">Updated %1$d manga, found %2$d new chapters</string>
@@ -630,6 +632,7 @@
     <string name="creating_backup">Creating backup</string>
     <string name="creating_backup_error">Backup failed</string>
     <string name="missing_storage_permission">Storage permissions not granted</string>
+    <string name="local_source_refresh_unavailable">The local folder could not be read completely. Existing data was kept; try again later or check folder access.</string>
     <string name="empty_backup_error">No library entries to back up</string>
     <string name="create_backup_file_error">Couldn\'t create a backup file</string>
     <string name="restore_miui_warning">Backup/restore may not function properly if MIUI Optimization is disabled.</string>

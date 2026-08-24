@@ -45,6 +45,8 @@
     <string name="local_source_refresh_checking">正在翻阅本地书架…</string>
     <string name="local_source_refresh_checking_progress">正在核对漫画：%1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">正在整理有变化的漫画：%1$d/%2$d</string>
+    <string name="local_transfer_preparing">正在准备导入本地本子…</string>
+    <string name="local_transfer_in_progress">正在导入本地本子：%1$d/%2$d · %3$s</string>
     <string name="local_source_refresh_no_changes">书架一切如常</string>
     <string name="local_source_refresh_completed">已整理 %d 部漫画</string>
     <string name="local_source_refresh_completed_with_new">已整理 %1$d 部漫画，发现 %2$d 个新篇目</string>
@@ -699,6 +701,7 @@
     <string name="remove_manga">即将从书架中删除 \"%s\"</string>
     <string name="popular">热门</string>
     <string name="missing_storage_permission">未授予存储权限</string>
+    <string name="local_source_refresh_unavailable">本地目录暂时无法完整读取，已保留现有数据；请稍后重试或检查目录访问权限</string>
     <string name="skipped_reason_not_always_update">已跳过，因为作品无需更新</string>
     <string name="action_search_hint">搜索…</string>
     <string name="crash_screen_title">哦豁！</string>

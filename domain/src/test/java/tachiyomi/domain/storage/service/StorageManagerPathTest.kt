@@ -16,4 +16,14 @@ class StorageManagerPathTest {
         assertNull(primaryStorageRelativePath("1234-5678:MIHON"))
         assertNull(primaryStorageRelativePath("primary:A_IMPORTANT/../Android"))
     }
+
+    @Test
+    fun `storage child document id appends one safe directory name`() {
+        assertEquals(
+            "primary:A_IMPORTANT/MIHON/local/Author",
+            storageChildDocumentId("primary:A_IMPORTANT/MIHON/local", "Author"),
+        )
+        assertNull(storageChildDocumentId("primary:A_IMPORTANT/MIHON/local", "../Author"))
+        assertNull(storageChildDocumentId("primary:A_IMPORTANT/MIHON/local", "Author/Book"))
+    }
 }
