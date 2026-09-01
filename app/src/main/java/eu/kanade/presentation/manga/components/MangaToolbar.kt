@@ -54,6 +54,7 @@ fun MangaToolbar(
     onClickImportLocalChapters: (() -> Unit)?,
     onClickClearHistory: () -> Unit,
     onClickEditNotes: () -> Unit,
+    onClickDeleteLocalFiles: (() -> Unit)? = null,
 
     // For action mode
     actionModeCounter: Int,
@@ -198,6 +199,26 @@ fun MangaToolbar(
                                             dismiss()
                                             action()
                                         },
+                                    )
+                                }
+                                // Erasing local files is the only irreversible action in this
+                                // menu, so it is separated and tinted instead of being lumped in
+                                // with the reversible entries above.
+                                if (onClickDeleteLocalFiles != null) {
+                                    androidx.compose.material3.HorizontalDivider()
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = {
+                                            androidx.compose.material3.Text(
+                                                stringResource(MR.strings.action_delete_all_chapters),
+                                            )
+                                        },
+                                        onClick = {
+                                            dismiss()
+                                            onClickDeleteLocalFiles()
+                                        },
+                                        colors = androidx.compose.material3.MenuDefaults.itemColors(
+                                            textColor = MaterialTheme.colorScheme.error,
+                                        ),
                                     )
                                 }
                             },

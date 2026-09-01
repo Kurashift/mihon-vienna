@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.PlaylistRemove
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -45,6 +46,8 @@ import eu.kanade.presentation.audio.components.AudioCover
 import eu.kanade.presentation.audio.components.AudioFolderRow
 import eu.kanade.presentation.audio.components.AudioQueueRow
 import eu.kanade.presentation.audio.components.AudioTrackRow
+import eu.kanade.presentation.audio.components.audioRowEnd
+import eu.kanade.presentation.audio.components.audioRowStart
 import eu.kanade.presentation.audio.components.buildAudioQueueRows
 import eu.kanade.presentation.audio.components.currentWorkKey
 import eu.kanade.presentation.audio.components.initialExpandedFolders
@@ -163,7 +166,7 @@ fun AudioPlaylistContent(
                                 ),
                                 AppBar.Action(
                                     title = stringResource(MR.strings.audio_playlist_remove),
-                                    icon = Icons.Outlined.Delete,
+                                    icon = Icons.Outlined.PlaylistRemove,
                                     enabled = selected.isNotEmpty(),
                                     // A lone track was picked by long press, so the intent is
                                     // already unambiguous; anything larger can hide a whole
@@ -384,7 +387,14 @@ private fun PlaylistWorkRow(
                 onClick = { if (inSelectionMode) onToggleSelection() else onToggleExpanded() },
                 onLongClick = onLongClick,
             )
-            .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            .padding(
+                start = audioRowStart(0),
+                // The chevron has no internal padding of its own, so it needs the full margin;
+                // the checkbox that replaces it while selecting already carries its own.
+                end = audioRowEnd(inSelectionMode),
+                top = 10.dp,
+                bottom = 10.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AudioCover(

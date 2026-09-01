@@ -160,6 +160,7 @@ fun MangaScreen(
     onImportLocalChaptersClicked: (() -> Unit)?,
     onClearHistoryClicked: () -> Unit,
     onEditNotesClicked: () -> Unit,
+    onDeleteLocalMangaClicked: (() -> Unit)? = null,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -168,6 +169,7 @@ fun MangaScreen(
     onMarkPreviousAsReadClicked: (Chapter) -> Unit,
     onMarkFollowingAsReadClicked: (Chapter) -> Unit,
     onMultiDeleteClicked: (List<Chapter>) -> Unit,
+    onDeleteLocalChaptersClicked: (List<Chapter>) -> Unit,
     onMoveChaptersClicked: (List<Chapter>) -> Unit,
 
     // For chapter swipe
@@ -260,6 +262,7 @@ fun MangaScreen(
             onImportLocalChaptersClicked = onImportLocalChaptersClicked,
             onClearHistoryClicked = onClearHistoryClicked,
             onEditNotesClicked = onEditNotesClicked,
+            onDeleteLocalMangaClicked = onDeleteLocalMangaClicked,
             chapterLayoutAvailable = chapterLayoutAvailable,
             chapterLayoutGridEnabled = chapterCoverGridEnabled,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
@@ -268,6 +271,7 @@ fun MangaScreen(
             onMarkPreviousAsReadClicked = onMarkPreviousAsReadClicked,
             onMarkFollowingAsReadClicked = onMarkFollowingAsReadClicked,
             onMultiDeleteClicked = onMultiDeleteClicked,
+            onDeleteLocalChaptersClicked = onDeleteLocalChaptersClicked,
             onMoveChaptersClicked = onMoveChaptersClicked,
             onChapterSwipe = onChapterSwipe,
             onReorderChapters = onReorderChapters,
@@ -315,6 +319,7 @@ fun MangaScreen(
             onImportLocalChaptersClicked = onImportLocalChaptersClicked,
             onClearHistoryClicked = onClearHistoryClicked,
             onEditNotesClicked = onEditNotesClicked,
+            onDeleteLocalMangaClicked = onDeleteLocalMangaClicked,
             chapterLayoutAvailable = chapterLayoutAvailable,
             chapterLayoutGridEnabled = chapterCoverGridEnabled,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
@@ -323,6 +328,7 @@ fun MangaScreen(
             onMarkPreviousAsReadClicked = onMarkPreviousAsReadClicked,
             onMarkFollowingAsReadClicked = onMarkFollowingAsReadClicked,
             onMultiDeleteClicked = onMultiDeleteClicked,
+            onDeleteLocalChaptersClicked = onDeleteLocalChaptersClicked,
             onMoveChaptersClicked = onMoveChaptersClicked,
             onChapterSwipe = onChapterSwipe,
             onReorderChapters = onReorderChapters,
@@ -380,6 +386,7 @@ private fun MangaScreenSmallImpl(
     onImportLocalChaptersClicked: (() -> Unit)?,
     onClearHistoryClicked: () -> Unit,
     onEditNotesClicked: () -> Unit,
+    onDeleteLocalMangaClicked: (() -> Unit)? = null,
 
     // For chapter layout action
     chapterLayoutAvailable: Boolean,
@@ -392,6 +399,7 @@ private fun MangaScreenSmallImpl(
     onMarkPreviousAsReadClicked: (Chapter) -> Unit,
     onMarkFollowingAsReadClicked: (Chapter) -> Unit,
     onMultiDeleteClicked: (List<Chapter>) -> Unit,
+    onDeleteLocalChaptersClicked: (List<Chapter>) -> Unit,
     onMoveChaptersClicked: (List<Chapter>) -> Unit,
 
     // For chapter swipe
@@ -474,6 +482,7 @@ private fun MangaScreenSmallImpl(
                 onClickImportLocalChapters = onImportLocalChaptersClicked,
                 onClickClearHistory = onClearHistoryClicked,
                 onClickEditNotes = onEditNotesClicked,
+                onClickDeleteLocalFiles = onDeleteLocalMangaClicked,
                 actionModeCounter = selectedChapterCount,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 onSelectAll = { onAllChapterSelected(true) },
@@ -497,6 +506,7 @@ private fun MangaScreenSmallImpl(
                 onMarkFollowingAsReadClicked = onMarkFollowingAsReadClicked,
                 onDownloadChapter = onDownloadChapter,
                 onMultiDeleteClicked = onMultiDeleteClicked,
+                onDeleteLocalChaptersClicked = onDeleteLocalChaptersClicked,
                 onMoveChaptersClicked = onMoveChaptersClicked,
                 markedChapterIds = markedChapterIds,
                 goodDoujinChapterIds = goodDoujinChapterIds,
@@ -744,6 +754,7 @@ fun MangaScreenLargeImpl(
     onImportLocalChaptersClicked: (() -> Unit)?,
     onClearHistoryClicked: () -> Unit,
     onEditNotesClicked: () -> Unit,
+    onDeleteLocalMangaClicked: (() -> Unit)? = null,
 
     // For chapter layout action
     chapterLayoutAvailable: Boolean,
@@ -756,6 +767,7 @@ fun MangaScreenLargeImpl(
     onMarkPreviousAsReadClicked: (Chapter) -> Unit,
     onMarkFollowingAsReadClicked: (Chapter) -> Unit,
     onMultiDeleteClicked: (List<Chapter>) -> Unit,
+    onDeleteLocalChaptersClicked: (List<Chapter>) -> Unit,
     onMoveChaptersClicked: (List<Chapter>) -> Unit,
 
     // For swipe actions
@@ -830,6 +842,7 @@ fun MangaScreenLargeImpl(
                 onClickImportLocalChapters = onImportLocalChaptersClicked,
                 onClickClearHistory = onClearHistoryClicked,
                 onClickEditNotes = onEditNotesClicked,
+                onClickDeleteLocalFiles = onDeleteLocalMangaClicked,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 actionModeCounter = selectedChapterCount,
                 onSelectAll = { onAllChapterSelected(true) },
@@ -857,6 +870,7 @@ fun MangaScreenLargeImpl(
                     onMarkFollowingAsReadClicked = onMarkFollowingAsReadClicked,
                     onDownloadChapter = onDownloadChapter,
                     onMultiDeleteClicked = onMultiDeleteClicked,
+                    onDeleteLocalChaptersClicked = onDeleteLocalChaptersClicked,
                     onMoveChaptersClicked = onMoveChaptersClicked,
                     markedChapterIds = markedChapterIds,
                     goodDoujinChapterIds = goodDoujinChapterIds,
@@ -1043,6 +1057,7 @@ private fun SharedMangaBottomActionMenu(
     onMarkFollowingAsReadClicked: (Chapter) -> Unit,
     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
     onMultiDeleteClicked: (List<Chapter>) -> Unit,
+    onDeleteLocalChaptersClicked: (List<Chapter>) -> Unit,
     onMoveChaptersClicked: (List<Chapter>) -> Unit,
     markedChapterIds: Set<Long>,
     goodDoujinChapterIds: Set<Long>,
@@ -1087,10 +1102,13 @@ private fun SharedMangaBottomActionMenu(
             onMultiDeleteClicked(selected.fastMap { it.chapter })
         }.takeIf {
             // Local manga chapters are all reported as "downloaded", but they are not
-            // managed by the download manager, so deleting them would do nothing. Hide
-            // the delete action for local manga instead of showing an ineffective button.
+            // managed by the download manager, so deleting them would do nothing. For local
+            // manga the slot is taken over by the local file deletion instead.
             !isLocalManga && selected.fastAny { it.downloadState == Download.State.DOWNLOADED }
         },
+        onDeleteLocalFilesClicked = {
+            onDeleteLocalChaptersClicked(selected.fastMap { it.chapter })
+        }.takeIf { isLocalManga },
         onMoveClicked = {
             onMoveChaptersClicked(selected.fastMap { it.chapter })
         }.takeIf { goodDoujinEnabled },
@@ -1101,6 +1119,7 @@ private fun SharedMangaBottomActionMenu(
             { toggle(selected.fastMap { it.chapter }) }
         }.takeIf { selected.isNotEmpty() },
         marksSelected = selected.isNotEmpty() && selected.fastAll { it.id in markedChapterIds },
+        selectedCount = selected.size,
     )
 }
 

@@ -28,6 +28,7 @@ import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.presentation.audio.AudioQuickPlaySheet
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
+import eu.kanade.presentation.components.DeleteLocalEntriesDialog
 import eu.kanade.presentation.components.NavigatorAdaptiveSheet
 import eu.kanade.presentation.manga.ChapterSettingsDialog
 import eu.kanade.presentation.manga.ChapterTitleTranslationDialog
@@ -157,6 +158,25 @@ class MangaScreen(
                     }
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR, e) { "Failed to get manga URL" }
+                }
+            }
+        }
+
+        LaunchedEffect(Unit) {
+            viewModel.deleteCompleted.collect { result ->
+                val message = when {
+                    result.deleted == 0 -> context.stringResource(MR.strings.local_delete_failed)
+                    result.failed > 0 -> context.stringResource(
+                        MR.strings.local_delete_partial,
+                        result.deleted,
+                        result.failed,
+                    )
+                    else -> context.stringResource(MR.strings.local_delete_success, result.deleted)
+                }
+                context.toast(message)
+                // The manga is gone from disk, so there is nothing left to show here.
+                if (result.mangaDeleted && result.failed == 0) {
+                    navigator.pop()
                 }
             }
         }
@@ -297,12 +317,16 @@ class MangaScreen(
             }.takeIf { successState.manga.isLocal() },
             onClearHistoryClicked = viewModel::showClearHistoryDialog,
             onEditNotesClicked = { navigator.push(MangaNotesScreen(manga = successState.manga)) },
+            onDeleteLocalMangaClicked = viewModel::showDeleteLocalMangaDialog.takeIf {
+                successState.manga.isLocal()
+            },
             onMultiBookmarkClicked = viewModel::bookmarkChapters,
             onMultiGoodDoujinClicked = viewModel::setGoodDoujinChapters,
             onMultiMarkAsReadClicked = viewModel::markChaptersRead,
             onMarkPreviousAsReadClicked = viewModel::markPreviousChapterRead,
             onMarkFollowingAsReadClicked = viewModel::markFollowingChapterRead,
             onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
+            onDeleteLocalChaptersClicked = viewModel::showDeleteLocalChaptersDialog,
             onMoveChaptersClicked = { chapters ->
                 navigator.push(LocalChapterMoveScreen(successState.manga.id, chapters.map { it.id }))
             },
@@ -399,6 +423,28 @@ class MangaScreen(
                         viewModel.toggleAllSelection(false)
                         viewModel.deleteChapters(dialog.chapters)
                     },
+                )
+            }
+            is MangaViewModel.Dialog.DeleteLocalChapters -> {
+                DeleteLocalEntriesDialog(
+                    title = context.stringResource(
+                        MR.strings.local_delete_chapters_title,
+                        dialog.chapters.size,
+                    ),
+                    entryNames = dialog.chapters.map { it.name },
+                    onDismissRequest = onDismissRequest,
+                    onConfirm = { viewModel.deleteLocalChapters(dialog.chapters) },
+                )
+            }
+            is MangaViewModel.Dialog.DeleteLocalManga -> {
+                DeleteLocalEntriesDialog(
+                    title = context.stringResource(
+                        MR.strings.local_delete_manga_title,
+                        dialog.manga.title,
+                    ),
+                    entryNames = listOf(dialog.manga.title),
+                    onDismissRequest = onDismissRequest,
+                    onConfirm = { viewModel.deleteLocalManga() },
                 )
             }
 

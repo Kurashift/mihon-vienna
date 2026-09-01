@@ -639,13 +639,12 @@ private val ImmediateFadeOutAnimationSpec = tween<Float>(
     durationMillis = ViewConfiguration.getScrollBarFadeDuration(),
 )
 private val EndMarkerLength = 3.dp
-// Shares the thumb's trailing edge and shrinks inward from its leading side only, so both bars
-// end on the same vertical line. Centring a narrower marker under the thumb instead - insetting
-// both sides - pulls it away from the edge the bar is pinned to, which is exactly what made the
-// two look misaligned.
-private val EndMarkerInset = 2.dp
-private val EndMarkerWidth = ThumbThickness - EndMarkerInset * 2
-private val EndMarkerStartPadding = ThumbStartPadding + EndMarkerInset * 2
+// Spans exactly the thumb's width and both of its edges. Insetting the leading side made the
+// marker a narrower stub that stopped short of where the thumb starts, which read as the two
+// bars being out of line; matching the thumb on both sides reads as one bar with its last
+// segment left behind at the end of the track.
+private val EndMarkerWidth = ThumbThickness
+private val EndMarkerStartPadding = ThumbStartPadding
 private val EndMarkerEndPadding = ThumbEndMargin
 private val EndMarkerGap = 2.dp
 private val EndMarkerShape = RoundedCornerShape(EndMarkerLength / 2)

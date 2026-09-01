@@ -651,6 +651,29 @@ class LocalSource(
         saveListingIndex(updated)
     }
 
+    /**
+     * Drops a manga from the listing right after its directory was deleted from disk.
+     *
+     * Only touches the persisted index and the in-memory listing, so no rescan happens. The
+     * directory signature preference is deliberately left untouched so the existing change
+     * detection on the library screen still sees this as a directory change.
+     */
+    suspend fun removeListingEntry(mangaUrl: String) = withIOContext {
+        listingMutex.withLock {
+            loadListingIndex()?.let { index ->
+                if (index.entries.containsKey(mangaUrl)) {
+                    saveListingIndex(index.copy(entries = index.entries - mangaUrl))
+                }
+            }
+            val updated = cachedListing?.filterNot { it.url == mangaUrl }
+            if (updated != null && updated.size != cachedListing?.size) {
+                cachedListing = updated
+                cachedDerivedListing = null
+                publishListingSnapshot(updated)
+            }
+        }
+    }
+
     private data class ListingIndex(
         val baseUri: String,
         val entries: Map<String, ListingIndexEntry>,

@@ -18,10 +18,14 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.PlaylistRemove
+import eu.kanade.presentation.components.DeleteLocalEntriesDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,6 +72,7 @@ import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -77,9 +82,11 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.withLocalChapterDisplayMode
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.source.local.LocalSource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.FastScrollLazyVerticalGrid
 import tachiyomi.presentation.core.components.material.Scaffold
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.image.LocalChapterCover
 import uy.kohesive.injekt.Injekt
@@ -162,24 +169,48 @@ class ChapterFlagListScreen(
         // 显示模式按「漫画」取：标记清单里可能夹着非本地条目，它们有自己的详情页设置，
         // 不该被本地库那份统一设置覆盖。缺的（正常就是本地）回退到统一设置。
         val mangaIds = remember(grouped) { grouped.map { it.mangaId } }
-        val displayModeByMangaId = rememberDisplayModeByMangaId(mangaIds, localDisplayMode)
-        val titleByChapterId = remember(visibleGroups, displayModeByMangaId, visualByChapterId) {
+        val flagsByMangaId = rememberMangaFlagsByMangaId(mangaIds, localDisplayMode)
+        val isLocalByMangaId = remember(flagsByMangaId) {
+            flagsByMangaId.entries.associate { (mangaId, flags) -> mangaId to flags.isLocal }
+        }
+        val titleByChapterId = remember(visibleGroups, flagsByMangaId, visualByChapterId) {
             visibleGroups
                 .flatMap { it.marks }
                 .associate { mark ->
                     mark.chapterId to myListChapterTitle(
                         chapterName = mark.chapterName,
                         translatedName = visualByChapterId[mark.chapterId]?.translatedName,
-                        displayMode = displayModeByMangaId[mark.mangaId] ?: localDisplayMode,
+                        displayMode = flagsByMangaId[mark.mangaId]?.displayMode ?: localDisplayMode,
                     )
                 }
         }
         var showClearConfirm by remember { mutableStateOf(false) }
-        // 多选粒度是「整个漫画」：点卡片勾选该漫画，批量移除按漫画为单位。
-        var selectedMangaIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-        var pendingRemovalMangaIds by remember { mutableStateOf<Set<Long>?>(null) }
+        // 多选粒度是「篇目」：长按卡片勾选单个，长按分组头一键勾选该组下全部本地篇目。
+        // 非本地条目没有磁盘文件可删，置灰且不可勾选。
+        var selectedChapterIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+        var pendingRemovalChapterIds by remember { mutableStateOf<Set<Long>?>(null) }
+        val selectedMarks = remember(visibleGroups, selectedChapterIds) {
+            visibleGroups.flatMap { it.marks }.filter { it.chapterId in selectedChapterIds }
+        }
+        val deletableMarks = remember(selectedMarks, isLocalByMangaId) {
+            selectedMarks.filter { isLocalByMangaId[it.mangaId] == true }
+        }
+        var pendingDeletion by remember { mutableStateOf<Set<Long>?>(null) }
+        var deletionInProgress by remember { mutableStateOf(false) }
+        val deletionService = remember { Injekt.get<LocalEntryDeletionService>() }
         val listTitle = stringResource(type.titleRes)
-        val exportText = exportTextOf(listTitle, visibleGroups, titleByChapterId)
+        // 没选就导出整张清单，选了就只导出选中的那些，省得导出完还得自己删。
+        val exportGroups = remember(visibleGroups, selectedChapterIds) {
+            if (selectedChapterIds.isEmpty()) {
+                visibleGroups
+            } else {
+                visibleGroups.mapNotNull { group ->
+                    val picked = group.marks.filter { it.chapterId in selectedChapterIds }
+                    if (picked.isEmpty()) null else group.copy(marks = picked)
+                }
+            }
+        }
+        val exportText = exportTextOf(listTitle, exportGroups, titleByChapterId)
         val exportList = rememberMyListExportLauncher(
             filename = when (type) {
                 ChapterFlagListType.DUPLICATES -> "mihon_marks_list.txt"
@@ -190,11 +221,13 @@ class ChapterFlagListScreen(
         val gridState = rememberLazyGridState()
 
         LaunchedEffect(visibleGroups) {
-            val availableIds = visibleGroups.mapTo(mutableSetOf()) { it.mangaId }
-            selectedMangaIds = selectedMangaIds.intersect(availableIds)
+            val availableIds = visibleGroups.flatMapTo(mutableSetOf()) { group ->
+                group.marks.map { it.chapterId }
+            }
+            selectedChapterIds = selectedChapterIds.intersect(availableIds)
         }
-        BackHandler(enabled = selectedMangaIds.isNotEmpty()) {
-            selectedMangaIds = emptySet()
+        BackHandler(enabled = selectedChapterIds.isNotEmpty()) {
+            selectedChapterIds = emptySet()
         }
 
         Scaffold(
@@ -212,32 +245,65 @@ class ChapterFlagListScreen(
                     navigateUp = navigator::pop,
                     actions = {
                         AppBarActions(
-                            listOf(
+                            listOfNotNull(
                                 AppBar.Action(
                                     title = stringResource(MR.strings.export),
                                     icon = Icons.Outlined.FileUpload,
                                     onClick = exportList,
                                     enabled = exportText.isNotEmpty(),
                                 ),
+                                // 图标用扫帚而不是垃圾桶：它只清列表，不碰磁盘文件。
+                                // 多选态下 SearchToolbar 会整片换成批量操作，这里不会渲染，
+                                // 不必再判断选中数。
                                 AppBar.Action(
                                     title = stringResource(MR.strings.marks_list_clear),
-                                    icon = Icons.Outlined.Delete,
+                                    icon = Icons.Outlined.DeleteSweep,
                                     onClick = { showClearConfirm = true },
                                 ),
                             ),
                         )
                     },
-                    actionModeCounter = selectedMangaIds.size,
-                    onCancelActionMode = { selectedMangaIds = emptySet() },
+                    actionModeCounter = selectedChapterIds.size,
+                    onCancelActionMode = { selectedChapterIds = emptySet() },
                     actionModeActions = {
                         AppBarActions(
-                            listOf(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.marks_list_remove),
-                                    icon = Icons.Outlined.Delete,
-                                    onClick = { pendingRemovalMangaIds = selectedMangaIds },
-                                ),
-                            ),
+                            buildList {
+                                // 导出在多选时导选中项、不选时导全表，所以两种态都得在。
+                                add(
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.export),
+                                        icon = Icons.Outlined.FileUpload,
+                                        onClick = exportList,
+                                        enabled = exportText.isNotEmpty(),
+                                    ),
+                                )
+                                add(
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.marks_list_remove),
+                                        icon = Icons.Outlined.PlaylistRemove,
+                                        onClick = { pendingRemovalChapterIds = selectedChapterIds },
+                                    ),
+                                )
+                                // 删除本地文件只给标记清单：好本子清单的条目都在库里管着，
+                                // 误删代价更高，暂不开放。
+                                //
+                                // 放在最右角落：它是这排按钮里唯一不可逆的，夹在中间容易被
+                                // 顺手点到，挪到末端与「仅移除列表项」拉开距离。
+                                if (type == ChapterFlagListType.DUPLICATES) {
+                                    add(
+                                        AppBar.Action(
+                                            title = stringResource(MR.strings.action_delete_local_files),
+                                            icon = Icons.Outlined.Delete,
+                                            iconTint = MaterialTheme.colorScheme.error,
+                                            // 只跟选中数挂钩。「是否本地」要查库才知道，若拿它
+                                            // 当开关，数据没回来前按钮一直是灰的，看着像没做。
+                                            // 到底哪些能删，交给确认弹窗按最新数据过滤。
+                                            enabled = selectedChapterIds.isNotEmpty(),
+                                            onClick = { pendingDeletion = selectedChapterIds },
+                                        ),
+                                    )
+                                }
+                            },
                         )
                     },
                     scrollBehavior = scrollBehavior,
@@ -266,20 +332,37 @@ class ChapterFlagListScreen(
                                     title = group.mangaTitle,
                                     count = group.marks.size,
                                     onClick = { openManga(navigator, scope, context, group.mangaId) },
+                                    onLongClick = {
+                                        // 一键勾选该组下所有本地篇目：非本地条目没有文件可删。
+                                        val localIds = group.marks
+                                            .filter { isLocalByMangaId[it.mangaId] == true }
+                                            .mapTo(mutableSetOf()) { it.chapterId }
+                                        if (localIds.isNotEmpty()) {
+                                            // 多选是在全部条目上操作，继续保留搜索过滤会让人
+                                            // 误以为选中的就是搜索结果里的那些。
+                                            query = null
+                                            selectedChapterIds = selectedChapterIds + localIds
+                                        }
+                                    },
                                 )
                             }
                             group.marks.forEach { mark ->
                                 item(key = mark.chapterId) {
+                                    val selectable = isLocalByMangaId[mark.mangaId] != false
                                     ChapterFlagGridCard(
                                         mark = mark,
                                         title = titleByChapterId[mark.chapterId],
                                         coverModel = visualByChapterId[mark.chapterId],
-                                        selectionMode = selectedMangaIds.isNotEmpty(),
-                                        selected = mark.mangaId in selectedMangaIds,
+                                        selectionMode = selectedChapterIds.isNotEmpty(),
+                                        selected = mark.chapterId in selectedChapterIds,
+                                        selectable = selectable,
                                         onClick = { openChapterReader(context, scope, mark.mangaId, mark.chapterId) },
                                         onToggleSelection = {
-                                            selectedMangaIds = selectedMangaIds.toMutableSet().apply {
-                                                if (!add(mark.mangaId)) remove(mark.mangaId)
+                                            // 从搜索结果里长按进入多选时一并退出搜索，避免
+                                            // 选中的只是过滤后的子集却以为是全清单。
+                                            if (selectedChapterIds.isEmpty()) query = null
+                                            selectedChapterIds = selectedChapterIds.toMutableSet().apply {
+                                                if (!add(mark.chapterId)) remove(mark.chapterId)
                                             }
                                         },
                                     )
@@ -312,18 +395,83 @@ class ChapterFlagListScreen(
             )
         }
 
-        pendingRemovalMangaIds?.let { ids ->
+        pendingRemovalChapterIds?.let { ids ->
             ConfirmDialog(
-                text = stringResource(MR.strings.marks_list_remove_selected_confirm, ids.size),
+                text = stringResource(MR.strings.marks_list_remove_selected_entries_confirm, ids.size),
                 confirmText = stringResource(MR.strings.marks_list_remove),
                 onConfirm = {
                     scope.launch {
-                        store.clearMangas(ids)
-                        selectedMangaIds = selectedMangaIds - ids
-                        pendingRemovalMangaIds = null
+                        val marks = grouped.flatMap { it.marks }.filter { it.chapterId in ids }
+                        store.setAll(marks, false)
+                        selectedChapterIds = selectedChapterIds - ids
+                        pendingRemovalChapterIds = null
                     }
                 },
-                onDismiss = { pendingRemovalMangaIds = null },
+                onDismiss = { pendingRemovalChapterIds = null },
+            )
+        }
+
+        pendingDeletion?.let { ids ->
+            // 过滤放在弹窗里做：按钮只管有没有选中，「是否本地」在用户确认的这一刻
+            // 才按最新数据判定，避免异步加载导致的误判。全是非本地时这里为空，
+            // 弹窗的确认按钮会自动禁用，顺便把这种情况摆到用户面前。
+            val marks = selectedMarks.filter { mark ->
+                mark.chapterId in ids && isLocalByMangaId[mark.mangaId] == true
+            }
+            // 同一部漫画下可能同时有本地与非本地条目，删掉本地的后分组还在。
+            val affectedGroups = marks.groupBy { it.mangaId }
+            val groupRemains = affectedGroups.any { (mangaId, groupMarks) ->
+                groupMarks.size < (grouped.firstOrNull { it.mangaId == mangaId }?.marks?.size ?: 0)
+            }
+            val extraWarning = buildString {
+                appendLine(stringResource(MR.strings.local_delete_unmarked_safe))
+                if (groupRemains) {
+                    append(stringResource(MR.strings.local_delete_group_remains))
+                }
+            }.trim()
+            DeleteLocalEntriesDialog(
+                title = stringResource(
+                    MR.strings.local_delete_marked_chapters_title,
+                    affectedGroups.keys
+                        .mapNotNull { mangaId -> grouped.firstOrNull { it.mangaId == mangaId }?.mangaTitle }
+                        .joinToString("、")
+                        .ifBlank { listTitle },
+                    marks.size,
+                ),
+                entryNames = marks.map { it.chapterName },
+                extraWarning = extraWarning,
+                inProgress = deletionInProgress,
+                onDismissRequest = { if (!deletionInProgress) pendingDeletion = null },
+                onConfirm = {
+                    deletionInProgress = true
+                    scope.launch {
+                        val entries = marks.map { mark ->
+                            LocalEntryDeletionService.ChapterTarget(
+                                id = mark.chapterId,
+                                mangaId = mark.mangaId,
+                                mangaTitle = mark.mangaTitle,
+                                name = mark.chapterName,
+                            )
+                        }
+                        val result = deletionService.deleteChapters(entries)
+                        deletionInProgress = false
+                        pendingDeletion = null
+                        // 删掉的篇目其标记已一并清除，marks 流更新后 LaunchedEffect 会自动
+                        // 把失效 id 从选中集合里剔除，这里只需退出多选态。
+                        selectedChapterIds = emptySet()
+                        context.toast(
+                            when {
+                                result.deleted == 0 -> context.stringResource(MR.strings.local_delete_failed)
+                                result.failed.isNotEmpty() -> context.stringResource(
+                                    MR.strings.local_delete_partial,
+                                    result.deleted,
+                                    result.failed.size,
+                                )
+                                else -> context.stringResource(MR.strings.local_delete_success, result.deleted)
+                            },
+                        )
+                    }
+                },
             )
         }
     }
@@ -385,48 +533,61 @@ private data class ChapterVisual(
     val translatedName: String?,
 )
 
+/** 一部漫画在本页需要的两项信息：标题显示模式，以及它是否来自本地源。 */
+private data class MangaFlags(
+    val displayMode: Long,
+    val isLocal: Boolean,
+)
+
 /**
- * 每部漫画自己的篇目标题显示模式。
+ * 每部漫画自己的篇目标题显示模式，外加「是否本地」。
  *
  * 详情页改的是这部漫画的 `displayMode`；本地漫画那一份由库统一设置驱动，
  * [Manga.withLocalChapterDisplayMode] 在这里把统一设置套上去，与阅读器、详情页同源。
+ *
+ * 是否本地顺带一起取：只有本地篇目有磁盘文件可删，标记清单里夹着的非本地条目在多选时
+ * 要置灰且不可勾选。合并进同一次批量查询，避免多打一轮数据库。
  */
 @Composable
-private fun rememberDisplayModeByMangaId(
+private fun rememberMangaFlagsByMangaId(
     mangaIds: List<Long>,
     localDisplayMode: Long,
-): Map<Long, Long> {
+): Map<Long, MangaFlags> {
     val repository = remember { Injekt.get<MangaRepository>() }
-    var displayModeByMangaId by remember { mutableStateOf(emptyMap<Long, Long>()) }
+    var flagsByMangaId by remember { mutableStateOf(emptyMap<Long, MangaFlags>()) }
     // 设置一变就重算，清单不用重进才跟着换显示。
     LaunchedEffect(mangaIds, localDisplayMode) {
-        displayModeByMangaId = withIOContext {
+        flagsByMangaId = withIOContext {
             mangaIds
                 .map { id -> async { runCatching { repository.getMangaById(id) }.getOrNull() } }
                 .awaitAll()
                 .filterNotNull()
                 .associate { manga ->
-                    manga.id to manga.withLocalChapterDisplayMode(localDisplayMode).displayMode
+                    manga.id to MangaFlags(
+                        displayMode = manga.withLocalChapterDisplayMode(localDisplayMode).displayMode,
+                        isLocal = manga.source == LocalSource.ID,
+                    )
                 }
         }
     }
-    return displayModeByMangaId
+    return flagsByMangaId
 }
 
 /**
- * 网格里的分组头：占满一整行，点它打开漫画页。
+ * 网格里的分组头：占满一整行，点它打开漫画页，长按一键勾选该组下全部本地篇目。
  */
 @Composable
 private fun ChapterFlagGroupHeader(
     title: String,
     count: Int,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = MyListHorizontalPadding, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -453,6 +614,9 @@ private fun ChapterFlagGroupHeader(
 
 /**
  * 网格里的篇目卡片：点开阅读器，长按进入多选。
+ *
+ * [selectable] 为 false 的是非本地条目：进入多选后置灰且不响应勾选，因为它们没有磁盘文件可删。
+ * 未进入多选时照常可点开阅读。
  */
 @Composable
 private fun ChapterFlagGridCard(
@@ -463,19 +627,29 @@ private fun ChapterFlagGridCard(
     selected: Boolean,
     onClick: () -> Unit,
     onToggleSelection: () -> Unit,
+    selectable: Boolean = true,
 ) {
     val shape = MaterialTheme.shapes.extraSmall
     val primaryTitle = title?.primary ?: mark.chapterName
+    val dimmed = selectionMode && !selectable
     Column(
-        modifier = Modifier.padding(horizontal = 3.dp, vertical = 5.dp),
+        modifier = Modifier
+            .padding(horizontal = 3.dp, vertical = 5.dp)
+            .then(if (dimmed) Modifier.alpha(0.38f) else Modifier),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(shape)
                 .combinedClickable(
-                    onClick = { if (selectionMode) onToggleSelection() else onClick() },
-                    onLongClick = onToggleSelection,
+                    onClick = {
+                        when {
+                            dimmed -> Unit
+                            selectionMode -> onToggleSelection()
+                            else -> onClick()
+                        }
+                    },
+                    onLongClick = { if (selectable) onToggleSelection() },
                 ),
         ) {
             MyListCover(

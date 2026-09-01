@@ -34,6 +34,7 @@ import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.model.Download
+import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
@@ -50,6 +51,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -137,8 +141,19 @@ class MangaViewModel(
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
     private val updateMangaFromRemote: UpdateMangaFromRemote = Injekt.get(),
+    private val deletionService: LocalEntryDeletionService = Injekt.get(),
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateViewModel<MangaViewModel.State>(State.Loading) {
+
+    private val _deleteCompleted = MutableSharedFlow<DeleteCompleted>(extraBufferCapacity = 1)
+    val deleteCompleted: Flow<DeleteCompleted> = _deleteCompleted.asSharedFlow()
+
+    /** Outcome of a local file deletion, surfaced once so the screen can report and navigate. */
+    data class DeleteCompleted(
+        val deleted: Int,
+        val failed: Int,
+        val mangaDeleted: Boolean,
+    )
 
     companion object {
         val MANGA_ID_KEY = CreationExtras.Key<Long>()
@@ -1038,6 +1053,51 @@ class MangaViewModel(
         }
     }
 
+    /**
+     * Erases the local files behind the given chapters and drops their database rows.
+     */
+    fun deleteLocalChapters(chapters: List<Chapter>) {
+        val state = successState ?: return
+        viewModelScope.launchNonCancellable {
+            dismissDialog()
+            val entries = chapters.map { chapter ->
+                LocalEntryDeletionService.ChapterTarget(
+                    id = chapter.id,
+                    mangaId = state.manga.id,
+                    mangaTitle = state.manga.title,
+                    name = chapter.name,
+                )
+            }
+            val result = deletionService.deleteChapters(entries)
+            toggleAllSelection(false)
+            _deleteCompleted.emit(
+                DeleteCompleted(deleted = result.deleted, failed = result.failed.size, mangaDeleted = false),
+            )
+        }
+    }
+
+    /**
+     * Erases the whole manga directory. The screen is expected to leave afterwards since the
+     * manga no longer exists.
+     */
+    fun deleteLocalManga() {
+        val state = successState ?: return
+        viewModelScope.launchNonCancellable {
+            dismissDialog()
+            val result = deletionService.deleteManga(
+                LocalEntryDeletionService.MangaEntry(
+                    id = state.manga.id,
+                    url = state.manga.url,
+                    title = state.manga.title,
+                    manga = state.manga,
+                ),
+            )
+            _deleteCompleted.emit(
+                DeleteCompleted(deleted = result.deleted, failed = result.failed.size, mangaDeleted = true),
+            )
+        }
+    }
+
     private fun downloadNewChapters(chapters: List<Chapter>) {
         viewModelScope.launchNonCancellable {
             val manga = successState?.manga ?: return@launchNonCancellable
@@ -1367,6 +1427,8 @@ class MangaViewModel(
         data object TrackSheet : Dialog
         data object ClearHistory : Dialog
         data object FullCover : Dialog
+        data class DeleteLocalChapters(val chapters: List<Chapter>) : Dialog
+        data class DeleteLocalManga(val manga: Manga) : Dialog
     }
 
     fun dismissDialog() {
@@ -1375,6 +1437,15 @@ class MangaViewModel(
 
     fun showDeleteChapterDialog(chapters: List<Chapter>) {
         updateSuccessState { it.copy(dialog = Dialog.DeleteChapters(chapters)) }
+    }
+
+    fun showDeleteLocalChaptersDialog(chapters: List<Chapter>) {
+        updateSuccessState { it.copy(dialog = Dialog.DeleteLocalChapters(chapters)) }
+    }
+
+    fun showDeleteLocalMangaDialog() {
+        val manga = successState?.manga ?: return
+        updateSuccessState { it.copy(dialog = Dialog.DeleteLocalManga(manga)) }
     }
 
     fun showSettingsDialog() {

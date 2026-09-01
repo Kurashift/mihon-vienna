@@ -17,6 +17,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - ASMR floating subtitles and Bluetooth/headset media button support
 - Marks list, good doujin list, and completed local chapters review now support search, multi-select, and export
 - History entries for local chapters now show the specific chapter cover and title instead of only the manga
+- Delete local files: erase a whole local manga from the manga details menu, or delete selected chapters from the chapter selection bar and the marks list; every deletion asks for confirmation, lists what will go, and cleans up covers, marks, history and database rows along with the files
+- Marks list: non-local entries are greyed out and cannot be selected for deletion, and long-pressing a group header selects every local chapter under it
+- Marks list export now covers only the selected entries when something is selected
 
 ### Improved
 - ASMR pages load faster and the player UI is more convenient

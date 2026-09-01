@@ -48,6 +48,12 @@ interface MangaRepository {
 
     suspend fun setMangaCategories(mangaId: Long, categoryIds: List<Long>)
 
+    /**
+     * Deletes the manga row. Chapters, history, categories, tracking, good-doujin flags and
+     * excluded scanlators follow through foreign key cascade.
+     */
+    suspend fun deleteMangaById(mangaId: Long)
+
     suspend fun update(update: MangaUpdate): Boolean
 
     suspend fun updateAll(mangaUpdates: List<MangaUpdate>): Boolean

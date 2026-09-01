@@ -1056,7 +1056,7 @@
     <string name="marks_list_remove_selected_entries_confirm">从清单中移除选中的 %1$d 个篇目？不会删除本地漫画。</string>
     <string name="action_mark_range_as_read">批量标记已读</string>
     <string name="marks_list_chapter_count">已标记 %1$d 个篇目</string>
-    <string name="marks_list_search_hint">按漫画名或篇目名搜索（原名与译名皆可）</string>
+    <string name="marks_list_search_hint">按漫画名或篇目名搜索</string>
     <string name="marks_list_open_chapter">进入篇目阅读</string>
     <string name="marks_list_clear_manga_confirm">将该漫画的全部标记从名单中移除，不会删除本地文件。</string>
     <string name="action_good_doujin_list">好本子清单</string>
@@ -1197,4 +1197,25 @@
     <string name="local_transfer_conflict_title">发现同名篇目</string>
     <string name="local_transfer_conflict_message">有 %1$d 个篇目与目标中已有或本次选择的篇目同名，将自动跳过。</string>
     <string name="local_transfer_continue">继续导入</string>
+
+    <!-- 删除本地资源 -->
+    <string name="action_delete_local_files">删除本地文件</string>
+    <string name="action_delete_all_chapters">删除全部篇目</string>
+    <string name="local_delete_warning">文件会从磁盘上直接删除，不会进入回收站，无法恢复。</string>
+    <string name="local_delete_manga_title">删除《%1$s》的本地文件？</string>
+    <string name="local_delete_chapters_title">删除 %1$d 个篇目的本地文件？</string>
+    <string name="local_delete_marked_chapters_title">将删除《%1$s》下已标记的 %2$d 个篇目</string>
+    <string name="local_delete_unmarked_safe">未标记的篇目不会受影响。</string>
+    <string name="local_delete_group_remains">该漫画下仍有非本地条目，删除后仍会留在清单中。</string>
+    <string name="local_delete_and_more">等 %1$d 项</string>
+    <string name="local_delete_progress">正在删除本地文件…</string>
+    <string name="local_delete_success">已删除 %1$d 项</string>
+    <string name="local_delete_partial">已删除 %1$d 项，%2$d 项失败</string>
+    <string name="local_delete_failed">删除失败，文件可能已被占用或已损坏</string>
+    <string name="local_delete_unavailable">无法访问本地目录，未执行删除</string>
+
+    <!-- 篇目标记已读 -->
+    <string name="action_read_selected">所选已读</string>
+    <string name="action_read_previous">之前已读</string>
+    <string name="action_read_following">之后已读</string>
 </resources>

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DriveFileMove
@@ -54,9 +55,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
@@ -87,10 +90,12 @@ fun MangaBottomActionMenu(
     onMarkFollowingAsReadClicked: (() -> Unit)? = null,
     onDownloadClicked: (() -> Unit)? = null,
     onDeleteClicked: (() -> Unit)? = null,
+    onDeleteLocalFilesClicked: (() -> Unit)? = null,
     onEditTranslatedTitleClicked: (() -> Unit)? = null,
     onToggleMarkClicked: (() -> Unit)? = null,
     onMoveClicked: (() -> Unit)? = null,
     marksSelected: Boolean = false,
+    selectedCount: Int = 0,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -207,14 +212,74 @@ fun MangaBottomActionMenu(
                         }
                     }
                 }
-                if (onMarkAsReadClicked != null) {
+                val hasReadAction = onMarkAsReadClicked != null ||
+                    onMarkPreviousAsReadClicked != null ||
+                    onMarkFollowingAsReadClicked != null
+                if (hasReadAction) {
+                    var readExpanded by remember { mutableStateOf(false) }
                     Button(
-                        title = stringResource(MR.strings.action_mark_as_read),
-                        icon = Icons.Outlined.DoneAll,
-                        toConfirm = confirm[4],
-                        onLongClick = { onLongClickItem(4) },
-                        onClick = onMarkAsReadClicked,
-                    )
+                        // Only "read selected" is offered while something unread is picked; once
+                        // everything is read the menu holds just the previous/following entries.
+                        title = if (onMarkAsReadClicked != null) {
+                            stringResource(MR.strings.action_read_selected)
+                        } else {
+                            stringResource(MR.strings.action_mark_as_read)
+                        },
+                        // A single selection gets one check, a multi-selection gets two.
+                        icon = if (selectedCount == 1) Icons.Outlined.Done else Icons.Outlined.DoneAll,
+                        toConfirm = false,
+                        onLongClick = {},
+                        onClick = { readExpanded = true },
+                    ) {
+                        DropdownMenu(
+                            expanded = readExpanded,
+                            onDismissRequest = { readExpanded = false },
+                            offset = BottomBarMenuDpOffset,
+                        ) {
+                            if (onMarkAsReadClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.action_read_selected)) },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.DoneAll, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        readExpanded = false
+                                        onMarkAsReadClicked()
+                                    },
+                                )
+                            }
+                            if (onMarkPreviousAsReadClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.action_read_previous)) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = ImageVector.vectorResource(R.drawable.ic_done_prev_24dp),
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    onClick = {
+                                        readExpanded = false
+                                        onMarkPreviousAsReadClicked()
+                                    },
+                                )
+                            }
+                            if (onMarkFollowingAsReadClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.action_read_following)) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = ImageVector.vectorResource(R.drawable.ic_done_next_24dp),
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    onClick = {
+                                        readExpanded = false
+                                        onMarkFollowingAsReadClicked()
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
                 if (onMarkAsUnreadClicked != null) {
                     Button(
@@ -255,64 +320,26 @@ fun MangaBottomActionMenu(
                         onClick = onEditTranslatedTitleClicked,
                     )
                 }
-                if (onDeleteClicked != null || onMarkPreviousAsReadClicked != null ||
-                    onMarkFollowingAsReadClicked != null
-                ) {
-                    var moreExpanded by remember { mutableStateOf(false) }
+                // The trailing delete slot is either "remove the download" for sourced manga or
+                // "erase the local files" for local manga. The two never coexist, so the row keeps
+                // a single destructive action at the end and stays a contiguous group.
+                if (onDeleteLocalFilesClicked != null) {
                     Button(
-                        title = stringResource(MR.strings.label_more),
-                        icon = Icons.Outlined.MoreVert,
+                        title = stringResource(MR.strings.action_delete_local_files),
+                        icon = Icons.Outlined.Delete,
                         toConfirm = false,
                         onLongClick = {},
-                        onClick = { moreExpanded = true },
-                    ) {
-                        DropdownMenu(
-                            expanded = moreExpanded,
-                            onDismissRequest = { moreExpanded = false },
-                            offset = BottomBarMenuDpOffset,
-                        ) {
-                            if (onMarkPreviousAsReadClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_mark_previous_as_read)) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = ImageVector.vectorResource(R.drawable.ic_done_prev_24dp),
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {
-                                        moreExpanded = false
-                                        onMarkPreviousAsReadClicked()
-                                    },
-                                )
-                            }
-                            if (onMarkFollowingAsReadClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_mark_following_as_read)) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = ImageVector.vectorResource(R.drawable.ic_done_next_24dp),
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {
-                                        moreExpanded = false
-                                        onMarkFollowingAsReadClicked()
-                                    },
-                                )
-                            }
-                            if (onDeleteClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_delete)) },
-                                    leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
-                                    onClick = {
-                                        moreExpanded = false
-                                        onDeleteClicked()
-                                    },
-                                )
-                            }
-                        }
-                    }
+                        onClick = onDeleteLocalFilesClicked,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                } else if (onDeleteClicked != null) {
+                    Button(
+                        title = stringResource(MR.strings.action_delete),
+                        icon = Icons.Outlined.Delete,
+                        toConfirm = confirm[8],
+                        onLongClick = { onLongClickItem(8) },
+                        onClick = onDeleteClicked,
+                    )
                 }
             }
         }
@@ -326,6 +353,7 @@ private fun RowScope.Button(
     toConfirm: Boolean,
     onLongClick: () -> Unit,
     onClick: () -> Unit,
+    tint: Color = LocalContentColor.current,
     content: (@Composable () -> Unit)? = null,
 ) {
     val animatedWeight by animateFloatAsState(
@@ -351,6 +379,7 @@ private fun RowScope.Button(
             Icon(
                 imageVector = icon,
                 contentDescription = title,
+                tint = tint,
             )
             AnimatedVisibility(
                 visible = toConfirm,

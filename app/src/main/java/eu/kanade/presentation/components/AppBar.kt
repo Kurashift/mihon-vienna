@@ -498,6 +498,13 @@ fun SearchToolbar(
         },
         navigateUp = if (searchQuery == null) navigateUp else onClickCloseSearch,
         actions = {
+            // 多选态下顶栏要换成批量操作（删除、移除），搜索与整表清空都不该再出现。
+            // 这里必须自己分流：AppBar 只认 actions，actionModeActions 得由本函数展开。
+            if (isActionMode) {
+                actionModeActions()
+                return@AppBar
+            }
+
             key("search") {
                 val onClick = { onChangeSearchQuery("") }
 

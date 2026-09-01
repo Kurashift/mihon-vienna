@@ -203,6 +203,16 @@ class LocalChapterCoverManager(
         customFile(chapterId).delete()
     }
 
+    /**
+     * Removes both the user supplied custom cover and the generated cache entry for a chapter.
+     * Must run before the chapter row is deleted: the generated file name is derived from the
+     * chapter file on disk, which is already gone afterwards.
+     */
+    suspend fun deleteChapterCovers(chapterId: Long, chapterUrl: String) = withContext(Dispatchers.IO) {
+        customFile(chapterId).delete()
+        deleteGenerated(chapterUrl)
+    }
+
     suspend fun generateAll(
         onProgress: suspend (completed: Int, total: Int) -> Unit = { _, _ -> },
     ): LocalChapterCoverGenerationResult = withContext(Dispatchers.IO) {

@@ -24,6 +24,7 @@ import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferService
+import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.saver.ImageSaver
 import eu.kanade.tachiyomi.data.search.SearchHistoryStore
 import eu.kanade.tachiyomi.data.track.TrackerManager
@@ -181,6 +182,7 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { AndroidStorageFolderProvider(app) }
         addSingletonFactory { LocalSourceFileSystem(get()) }
         addSingletonFactory { LocalChapterTransferService(app, get(), get(), get()) }
+        addSingletonFactory { LocalEntryDeletionService() }
         addSingletonFactory { LocalCoverManager(app, get()) }
         addSingletonFactory {
             val mangaRepository = get<MangaRepository>()

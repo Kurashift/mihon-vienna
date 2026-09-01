@@ -153,6 +153,10 @@ class MangaRepositoryImpl(
         }
     }
 
+    override suspend fun deleteMangaById(mangaId: Long) {
+        database.mangasQueries.deleteMangaById(mangaId)
+    }
+
     override suspend fun update(update: MangaUpdate): Boolean {
         return try {
             partialUpdate(update)

@@ -1338,4 +1338,25 @@
     <string name="local_transfer_conflict_title">Name conflicts found</string>
     <string name="local_transfer_conflict_message">%1$d items have the same name as an existing or selected item. They will be skipped.</string>
     <string name="local_transfer_continue">Continue import</string>
+
+    <!-- Delete local files -->
+    <string name="action_delete_local_files">Delete local files</string>
+    <string name="action_delete_all_chapters">Delete all chapters</string>
+    <string name="local_delete_warning">Files will be erased from disk directly, not moved to a trash folder. This cannot be undone.</string>
+    <string name="local_delete_manga_title">Delete local files of %1$s?</string>
+    <string name="local_delete_chapters_title">Delete local files of %1$d chapters?</string>
+    <string name="local_delete_marked_chapters_title">This will delete %2$d marked chapters under %1$s</string>
+    <string name="local_delete_unmarked_safe">Unmarked chapters will not be affected.</string>
+    <string name="local_delete_group_remains">This manga still has non-local entries and will remain in the list after deletion.</string>
+    <string name="local_delete_and_more">…and %1$d more</string>
+    <string name="local_delete_progress">Deleting local files…</string>
+    <string name="local_delete_success">Deleted %1$d item(s)</string>
+    <string name="local_delete_partial">Deleted %1$d item(s), %2$d failed</string>
+    <string name="local_delete_failed">Deletion failed; the file may be in use or corrupted</string>
+    <string name="local_delete_unavailable">Local directory unavailable; nothing was deleted</string>
+
+    <!-- Chapter read actions -->
+    <string name="action_read_selected">Read selected</string>
+    <string name="action_read_previous">Read previous</string>
+    <string name="action_read_following">Read following</string>
 </resources>

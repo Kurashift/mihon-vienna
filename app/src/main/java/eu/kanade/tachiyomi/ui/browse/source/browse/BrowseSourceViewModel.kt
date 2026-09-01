@@ -1027,7 +1027,10 @@ class BrowseSourceViewModel(
                 .maxByOrNull { it.first }
                 ?.second
             val merged = mergeExactLocalChapterDuplicates(duplicates, preferredProgressId)
-            val mangaTitle = mangaRepository.getMangaById(keeper.mangaId).title
+            // 漫画可能已被删除（比如本地文件刚被清理掉），拿不到就跳过这组，
+            // 否则 awaitAsOne 会抛 "ResultSet returned null"。
+            val mangaTitle = runCatching { mangaRepository.getMangaById(keeper.mangaId) }
+                .getOrNull()?.title ?: return@forEach
             duplicates.filterNot { it.id == keeper.id }.forEach { duplicate ->
                 coverManager.copyCustomCover(keeper.id, duplicate.id)
                 chapterRepository.mergeRelocatedChapter(merged, duplicate.id)
