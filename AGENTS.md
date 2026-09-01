@@ -15,6 +15,8 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 产物目录：`app/build/outputs/apk/vienna/`。
 - 正式交付绝不能保留 `isDebuggable = true`；临时诊断插桩用完后必须删除。
 - 只有用户明确要求时才构建并安装最终 APK。诊断测试包要说明它不是正式交付。
+- 发布 GitHub Release 用 `python scripts/publish_release.py <tag> <abi...>`（例如 `... v2.2.0 arm64-v8a x86_64 universal`）。它从 `secrets.properties` 读 token，正文取 `docs/release-post-<tag>.md`，同名旧附件会先删再传，可重复运行。
+- 发布前先确认 Release 上没有上一次遗留的旧命名附件，发布后回读 API 核对附件清单。
 
 ## 文档与工作区卫生
 
@@ -22,6 +24,7 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 仓库根目录只保留 `README.md`、`CHANGELOG.md`、`AGENTS.md`、`LICENSE` 等通用文件。
 - 不要把构建日志、安装日志、一次性脚本、临时导出、截图、中间数据留在根目录。需要保留的写进 `docs/`，不需要的直接删除。
 - 工具与 IDE 的本地状态目录（`.codebuddy/`、`.dsh/`、`__pycache__/`）由 `.gitignore` 忽略，不要提交。
+- **密钥绝不入库**：token、密码、签名密钥一律放 `secrets.properties`（已在 `.gitignore` 中忽略），从文件里读取。不得写进源码、文档、提交信息、构建脚本或对话里。新增同类文件必须同步登记进 `.gitignore`。一旦误提交，立刻在 GitHub Settings 里吊销并重新签发，不要只删文件。
 - Windows 上 PowerShell 对部分中文路径会编码损坏，处理文件时优先用 Python（`pathlib` / `__file__`）而不是 shell 传路径。
 
 ## 改动原则

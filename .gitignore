@@ -15,6 +15,14 @@ build
 keystore.properties
 local.properties
 
+# 本地密钥（token / 密码 / 签名密钥），严禁提交。
+# 新增同类文件时必须同步在此登记。
+secrets.properties
+*.secrets.properties
+*_token.txt
+*.jks
+*.keystore
+
 # macOS specific files
 .DS_Store
 
