@@ -8,7 +8,6 @@ import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.tachiyomi.core.security.PrivacyPreferences
 import eu.kanade.tachiyomi.core.security.SecurityPreferences
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
-import eu.kanade.tachiyomi.data.manga.LibraryReturnAnchorStore
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
@@ -91,9 +90,6 @@ class PreferenceModule(val app: Application) : InjektModule {
         }
         addSingletonFactory {
             RandomSelectionCooldown(get<BasePreferences>().recentlySkippedManga)
-        }
-        addSingletonFactory {
-            LibraryReturnAnchorStore()
         }
         addSingletonFactory {
             MangaCoverUpdateStore()

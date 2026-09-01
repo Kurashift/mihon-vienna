@@ -1150,7 +1150,6 @@
     <string name="migrationListScreen.skipActionLabel">Don\'t migrate</string>
     <string name="migrationListScreen.migrateNowActionLabel">Migrate now</string>
     <string name="migrationListScreen.copyNowActionLabel">Copy now</string>
-    <string name="migrationListScreen.copyNowActionLabel">Copy now</string>
     <string name="migrationListScreen.exitDialogTitle">Stop migrating?</string>
     <string name="migrationListScreen.exitDialog.stopLabel">Stop</string>
     <string name="migrationListScreen.exitDialog.cancelLabel">Cancel</string>
@@ -1163,7 +1162,6 @@
     <string name="supportUsScreen.perks">These links support the upstream Mihon project. They are not donation channels for Mihon Vienna.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (preferred)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon is currently backed by %d+ patrons. We want to thank each and everyone of you. Let's make Mihon even better together.</string>
     <string name="supportUsScreen.contactForDetailsMessage">For other ways to support Mihon or related questions, visit the Mihon Discord server.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
 
@@ -1175,7 +1173,6 @@
     <string name="donationCampaign.dismiss">Dismiss</string>
     <string name="action_mark_duplicate">Mark</string>
     <string name="action_unmark_duplicate">Unmark</string>
-    <string name="action_marks_list">Marked works</string>
     <string name="my_lists_title">My lists</string>
     <string name="my_lists_summary">Marks and good doujins</string>
     <string name="my_lists_entry_count">%1$d works · %2$d manga</string>
@@ -1194,12 +1191,10 @@
     <string name="marks_list_remove_entry_confirm">Remove “%1$s” from this list? The local manga will not be deleted.</string>
     <string name="marks_list_remove_selected_confirm">Remove the selected %1$d manga and all of their list entries? Your local files will not be touched.</string>
     <string name="marks_list_remove_selected_entries_confirm">Remove the selected %1$d works from this list? Your local manga will not be deleted.</string>
-    <string name="action_mark_range_as_read">Mark range as read</string>
     <string name="marks_list_chapter_count">%1$d marked works</string>
     <string name="marks_list_search_hint">Search by work or chapter name</string>
     <string name="marks_list_open_chapter">Open work</string>
     <string name="marks_list_clear_manga_confirm">Removes all marks for this manga from the list. Your local files are not touched.</string>
-    <string name="action_good_doujin_list">Good doujin list</string>
     <string name="pref_good_doujin_list_summary">View and manage works kept as good doujins. Swipe left on a work to add it.</string>
     <string name="good_doujin_list_title">Good doujin list</string>
     <string name="good_doujin_list_empty">No good doujins yet. Swipe left on a work to add it.</string>
@@ -1225,7 +1220,6 @@
     <string name="audio_empty">No results</string>
     <string name="audio_search_hint">Search ASMR works</string>
     <string name="audio_search_hint_in_category">Search in %1$s</string>
-    <string name="audio_saved">Saved</string>
     <string name="action_play">Play</string>
     <string name="audio_vas">Voice actors</string>
     <string name="audio_sort">Sort</string>
@@ -1255,8 +1249,6 @@
     <string name="audio_history_work_tracks">%1$d played tracks</string>
     <string name="audio_history_continue">Continue listening</string>
     <string name="audio_quick_open">Open ASMR controls</string>
-    <string name="audio_quick_now_playing">Now playing</string>
-    <string name="audio_quick_switch_work">Switch work</string>
     <string name="audio_quick_open_work_details">Open work details</string>
     <string name="audio_quick_track_count">%1$d tracks</string>
     <string name="audio_previous_track">Previous track</string>
@@ -1286,7 +1278,6 @@
     <string name="audio_forward">Forward 10 seconds</string>
     <string name="audio_volume_down">Lower volume</string>
     <string name="audio_volume_up">Raise volume</string>
-    <string name="audio_repeat_one">Repeat current track</string>
     <string name="audio_sleep_timer">Sleep timer</string>
     <string name="audio_quality_fluent">Quality: smooth</string>
     <string name="audio_quality_high">Quality: high</string>

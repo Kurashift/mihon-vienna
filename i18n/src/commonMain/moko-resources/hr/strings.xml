@@ -895,7 +895,6 @@
     <string name="supportUsScreen.perks">Pokrovitelji dobivaju pristup ekskluzivnim kanalima, a uskoro slijede i dodatne pogodnosti.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreona (preferiran način)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Trenutačno više od %d pokrovitelja podržavaju Mihon. Želimo se zahvaliti svakome od vas. Učinimo Mihon zajedno još boljim.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Za alternativne opcije ili bilo koja srodna pitanja, pridruži se našem Discord serveru.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Sviđa ti se aplikacija?</string>

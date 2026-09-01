@@ -606,7 +606,6 @@
     <string name="supportUsScreen.perks">Mezenasek kanal esklusiboetarako sarbidea lortzen dute, abantaila gehiagorekin etorkizunean.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (hobetsia)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Gaur egun %d+ mezenasek babesten dute Mihon. Eskerrak eman nahi dizkizuegu guztioi. Mihon are hobea egin dezagun elkarrekin.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Aukera alternatiboak edo lotutako edozein zalantza argitzeko, gure Discord zerbitzarian sartu.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="label_support_us">Lagun iezaguzu</string>

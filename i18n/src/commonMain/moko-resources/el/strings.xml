@@ -906,7 +906,6 @@
     <string name="supportUsScreen.perks">Οι Patrons έχουν πρόσβαση σε αποκλειστικά κανάλια, ενώ θα ακολουθήσουν και άλλα προνόμια.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (προτιμάται)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Το Mihon υποστηρίζεται αυτήν τη στιγμή από %d+ χρήστες. Θέλουμε να ευχαριστήσουμε τον καθένα από εσάς ξεχωριστά. Ας κάνουμε το Mihon ακόμα καλύτερο μαζί.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Για εναλλακτικές επιλογές ή οποιεσδήποτε σχετικές ερωτήσεις, εγγραφείτε στον Discord server.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Σας αρέσει η εφαρμογή;</string>

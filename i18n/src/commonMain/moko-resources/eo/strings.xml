@@ -898,7 +898,6 @@
     <string name="supportUsScreen.perks">Donacantoj ricevas aliron al ekskluzivaj kanaloj, kaj pli da avantaĝoj poste.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (preferata)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon estas nun finance subtenata de %d+ patronoj. Ni volas danki ĉiun el vi. Ni plibonigu Mihon eĉ pli kune.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Por alternativaj opcioj aŭ iaj ajn rilataj demandoj, aniĝu al nia Discord-servilo.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Ĉu vi ŝatas la apon?</string>

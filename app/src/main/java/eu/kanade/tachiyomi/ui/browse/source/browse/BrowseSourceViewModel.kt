@@ -27,7 +27,6 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
-import eu.kanade.tachiyomi.data.manga.LibraryReturnAnchorStore
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
@@ -127,7 +126,6 @@ class BrowseSourceViewModel(
     private val updateMangaFromRemote: UpdateMangaFromRemote = Injekt.get(),
     private val basePreferences: BasePreferences = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
-    private val libraryReturnAnchorStore: LibraryReturnAnchorStore = Injekt.get(),
     private val mangaCoverUpdateStore: MangaCoverUpdateStore = Injekt.get(),
 ) : StateViewModel<BrowseSourceViewModel.State>(State(Listing.valueOf(listingQuery))) {
 
@@ -165,17 +163,6 @@ class BrowseSourceViewModel(
      */
     val favoriteIds: StateFlow<Set<Long>> = favoriteIdsInternal
     private var hasLoadedFavoriteSnapshot = false
-
-    /** Manga that anchored the library viewport before navigating into a detail screen. */
-    val returnAnchorMangaId: StateFlow<Long?> = libraryReturnAnchorStore.mangaIdToRestore
-
-    fun rememberReturnAnchor(mangaId: Long) {
-        libraryReturnAnchorStore.remember(mangaId)
-    }
-
-    fun consumeReturnAnchor() {
-        libraryReturnAnchorStore.consume()
-    }
 
     init {
         if (source is LocalSource) {

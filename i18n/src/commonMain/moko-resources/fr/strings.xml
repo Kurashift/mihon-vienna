@@ -906,7 +906,6 @@
     <string name="supportUsScreen.perks">Les donnateurs ont accès à des canaux exclusifs, avec plus d\'avantages à venir.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (de préférence)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon est actuellement soutenu par %d+ donnateurs. Nous souhaitons remercier chacun d\'entre vous. Rendons Mihon encore meilleur tous ensemble.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Pour d\'autres options ou pour poser une question, rejoignez notre serveur Discord.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Vous appréciez l\'application ?</string>

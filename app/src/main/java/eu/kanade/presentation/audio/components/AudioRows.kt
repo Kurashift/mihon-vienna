@@ -38,6 +38,16 @@ import eu.kanade.presentation.audio.formatDuration
  */
 internal fun audioRowStart(depth: Int): Dp = 12.dp + 16.dp * depth
 
+/**
+ * Trailing margin shared by every audio row.
+ *
+ * A row that ends in an icon button already carries that button's own internal padding, so it
+ * only needs a token nudge away from the screen edge. A row that ends in plain text — a duration
+ * or a track count — has nothing padding it, so it needs the full margin; without it the text
+ * sits flush against the edge while everything else in the row is inset, which reads as lopsided.
+ */
+internal fun audioRowEnd(hasPaddedTrailing: Boolean): Dp = if (hasPaddedTrailing) 4.dp else 16.dp
+
 /** A folder in an audio track tree. */
 @Composable
 fun AudioFolderRow(
@@ -76,7 +86,7 @@ fun AudioFolderRow(
                 } else {
                     audioRowStart(depth)
                 },
-                end = 4.dp,
+                end = audioRowEnd(actions != null),
                 top = 10.dp,
                 bottom = 10.dp,
             ),
@@ -119,7 +129,7 @@ fun AudioFolderRow(
         if (trackCount != null) {
             Text(
                 text = trackCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 8.dp),
             )
@@ -177,7 +187,7 @@ fun AudioTrackRow(
                 } else {
                     audioRowStart(depth)
                 },
-                end = 4.dp,
+                end = audioRowEnd(actions != null),
                 top = 10.dp,
                 bottom = 10.dp,
             ),

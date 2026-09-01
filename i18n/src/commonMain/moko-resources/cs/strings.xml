@@ -906,7 +906,6 @@
     <string name="supportUsScreen.perks">Patronům se otevírá přístup k exkluzivním kanálům a další výhody budou následovat.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (upřednostňováno)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Projekt Mihon v současné době podporuje %d+ sponzorů. Chceme poděkovat každému z vás. Pojďme společně projekt Mihon ještě vylepšit.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Pokud hledáte další možnosti nebo máte jakékoli související dotazy, připojte se k našemu serveru na Discord.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Líbí se vám aplikace?</string>

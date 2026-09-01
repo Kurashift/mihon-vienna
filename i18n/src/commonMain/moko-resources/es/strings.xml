@@ -889,7 +889,6 @@
     <string name="supportUsScreen.perks">Las personas que contribuyan obtendrán acceso a canales exclusivos, y en el futuro tendréis muchas más ventajas.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (preferido)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon cuenta ahora mismo con el apoyo de %d+ personas. Os damos las gracias de corazón por hacer que Mihon mejore día a día.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Únete a nuestro servidor de Discord si tienes dudas u otras formas de pago.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">¿Te gusta la aplicación?</string>

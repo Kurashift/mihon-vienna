@@ -892,7 +892,6 @@
     <string name="action_filter_excluded_scanlators">Filtreaza scanatorii exclusi</string>
     <string name="supportUsScreen.perks">Abonatii au acces la canale exclusive, iar in viitor vor beneficia de si mai multe beneficii.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (preferabil)</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon este sustinut de %d+ contribuitori. Va multumim tuturor pentru sustinere. Haideti sa imbunatatim impreuna Mihon.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Pentru optiuni alternative, sau orice intrebare despre subiect, alatura-te serverului nostru de Discord.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Iti place aplicatia?</string>

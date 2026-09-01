@@ -899,7 +899,6 @@
     <string name="migrationListScreen.migrateDialog.migrateLabel">Migrera</string>
     <string name="migrationListScreen.matchWithoutChapterToast">Inga kapitel fanns, den här artikeln kan inte användas för migrering</string>
     <string name="supportUsScreen.perks">Stödjare på Patreon får tillgång till exklusiva kanaler, med fler förmåner i framtiden.</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon stöds för närvarande av %d+ personer på Patreon. Vi vill tacka var och en av er. Låt oss göra Mihon ännu bättre tillsammans.</string>
     <string name="supportUsScreen.contactForDetailsMessage">För alternativa alternativ eller andra relaterade frågor, gå med i vår Discord-server.</string>
     <string name="donationCampaign.title">Tycker du om appen?</string>
     <string name="donationCampaign.paragraph2">Du kan donera antingen via Patreon (föredraget) eller OpenCollective. Om du har frågor eller skulle vilja ge stöd via alternativa metoder, tveka inte att kontakta mig genom Mihons Discord-server.</string>

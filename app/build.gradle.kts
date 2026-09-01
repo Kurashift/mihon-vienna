@@ -353,7 +353,25 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
 }
 
+// APK 命名规范：MihonVienna-<versionName>-<abi>.apk
+//   arm64-v8a  手机/真机（默认）
+//   x86_64     安卓模拟器
+//   armeabi-v7a 老 32 位设备
+//   universal  全架构包
+// ABI 从 AGP 生成的默认文件名里解析，不依赖各版本 Variant API 的 filters 类型。
+val appVersionName = android.defaultConfig.versionName ?: "unknown"
+val apkAbiNames = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+
 androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val defaultName = output.outputFileName.get()
+            val abi = apkAbiNames.firstOrNull { defaultName.contains("-$it-") } ?: "universal"
+            val suffix = if (variant.buildType == "vienna") "" else "-${variant.buildType}"
+            output.outputFileName.set("MihonVienna-$appVersionName-$abi$suffix.apk")
+        }
+    }
+
     onVariants { variant ->
         val resSource = variant.sources.res ?: return@onVariants
 

@@ -894,7 +894,6 @@
     <string name="supportUsScreen.perks">支援者は限定チャンネルにアクセスできるほか、今後さらに多くの特典が追加される予定です。</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon（推奨）</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon は現在、%d 人以上の支援者の方々にご支援いただいています。皆様一人ひとりに心より感謝申し上げます。共に Mihon をさらに素晴らしいものにしていきましょう。</string>
     <string name="supportUsScreen.contactForDetailsMessage">代替案や関連するご質問については、Discord サーバーにご参加ください。</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.dismiss">閉じる</string>

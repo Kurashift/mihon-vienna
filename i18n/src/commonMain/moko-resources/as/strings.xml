@@ -887,7 +887,6 @@
     <string name="supportUsScreen.perks">পেট্ৰনসকলে এক্সক্লুছিভ চেনেলবোৰলৈ প্ৰৱেশ পায়, অধিক সুবিধা আহি আছে।</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (পছন্দৰ)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon বৰ্তমান %d+ পেট্ৰনৰ দ্বাৰা সমৰ্থিত। আমি আপোনালোক প্ৰত্যেকজনক ধন্যবাদ জনাইছো। মিলি Mihon ক আৰু উন্নত কৰোঁ আহক।</string>
     <string name="supportUsScreen.contactForDetailsMessage">বিকল্প বা যিকোনো সম্পৰ্কীয় প্ৰশ্নৰ বাবে, আমাৰ Discord চাৰ্ভাৰত যোগদান কৰক।</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">এপটো উপভোগ কৰি আছে নেকি?</string>

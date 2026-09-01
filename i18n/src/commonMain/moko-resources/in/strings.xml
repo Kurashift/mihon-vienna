@@ -906,7 +906,6 @@
     <string name="supportUsScreen.perks">Patrons mendapatkan akses ke saluran eksklusif, dengan lebih banyak keuntungan yang akan datang.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (preferred)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon saat ini didukung oleh %d + patrons. Kami ingin berterima kasih kepada kalian semua. Mari buat Mihon menjadi lebih baik bersama-sama.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Menikmati aplikasi?</string>
     <string name="supportUsScreen.contactForDetailsMessage">Untuk opsi lain atau pertanyaan terkait apa pun, silakan bergabung dengan server Discord kami.</string>

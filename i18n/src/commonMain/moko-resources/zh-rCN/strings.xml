@@ -1006,7 +1006,6 @@
     <string name="supportUsScreen.perks">以下入口用于支持上游 Mihon 项目，不是 Mihon Vienna 的赞助渠道。</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon（首选）</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">目前 Mihon 已获得 %d+ 位赞助者的支持。我们衷心感谢大家。让我们携手把 Mihon 办得更出色。</string>
     <string name="supportUsScreen.contactForDetailsMessage">如需其他支持方式或有相关问题，请前往 Mihon Discord 社区。</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">喜欢本应用吗？</string>
@@ -1035,7 +1034,6 @@
     <string name="pref_filter_upcoming_categories_details">同时属于包含和排除分类的标题将不予显示。</string>
     <string name="action_mark_duplicate">标记</string>
     <string name="action_unmark_duplicate">取消标记</string>
-    <string name="action_marks_list">标记清单</string>
     <string name="my_lists_title">个人清单</string>
     <string name="my_lists_summary">标记与好本子清单</string>
     <string name="my_lists_entry_count">%1$d 个篇目 · %2$d 部漫画</string>
@@ -1054,12 +1052,10 @@
     <string name="marks_list_remove_entry_confirm">从清单中移除“%1$s”？不会删除本地漫画。</string>
     <string name="marks_list_remove_selected_confirm">从清单中移除选中的 %1$d 部漫画及其全部记录？不会删除本地文件。</string>
     <string name="marks_list_remove_selected_entries_confirm">从清单中移除选中的 %1$d 个篇目？不会删除本地漫画。</string>
-    <string name="action_mark_range_as_read">批量标记已读</string>
     <string name="marks_list_chapter_count">已标记 %1$d 个篇目</string>
     <string name="marks_list_search_hint">按漫画名或篇目名搜索</string>
     <string name="marks_list_open_chapter">进入篇目阅读</string>
     <string name="marks_list_clear_manga_confirm">将该漫画的全部标记从名单中移除，不会删除本地文件。</string>
-    <string name="action_good_doujin_list">好本子清单</string>
     <string name="pref_good_doujin_list_summary">查看和管理标记为好本子的篇目，左滑篇目条目即可加入。</string>
     <string name="good_doujin_list_title">好本子清单</string>
     <string name="good_doujin_list_empty">还没有好本子。在篇目条目上左滑即可加入。</string>
@@ -1085,7 +1081,6 @@
     <string name="audio_empty">没有结果</string>
     <string name="audio_search_hint">搜索 ASMR 作品</string>
     <string name="audio_search_hint_in_category">在 %1$s 中搜索</string>
-    <string name="audio_saved">已保存</string>
     <string name="action_play">播放</string>
     <string name="audio_vas">声优</string>
     <string name="audio_sort">排序</string>
@@ -1115,8 +1110,6 @@
     <string name="audio_history_work_tracks">听过 %1$d 首</string>
     <string name="audio_history_continue">继续收听</string>
     <string name="audio_quick_open">打开 ASMR 控制</string>
-    <string name="audio_quick_now_playing">正在播放</string>
-    <string name="audio_quick_switch_work">切换作品</string>
     <string name="audio_quick_open_work_details">打开作品详情</string>
     <string name="audio_quick_track_count">%1$d 首</string>
     <string name="audio_previous_track">上一首</string>
@@ -1146,7 +1139,6 @@
     <string name="audio_forward">前进 10 秒</string>
     <string name="audio_volume_down">降低音量</string>
     <string name="audio_volume_up">提高音量</string>
-    <string name="audio_repeat_one">单曲循环</string>
     <string name="audio_sleep_timer">睡眠定时</string>
     <string name="audio_quality_fluent">音质：流畅</string>
     <string name="audio_quality_high">音质：高音质</string>

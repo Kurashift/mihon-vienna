@@ -895,7 +895,6 @@
     <string name="supportUsScreen.perks">Patronlar, özel kanallara ve gelecekte daha fazlasına erişim elde eder.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (tercih edilen)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon, şu anda %d+ patron tarafından desteklenmektedir. Her birinize ayrı olarak teşekkür etmek istiyoruz. Hadi Mihon\'u birlikte daha iyi yapalım.</string>
     <string name="supportUsScreen.contactForDetailsMessage">Başka seçenekler ve sorularınız için Discord sunucumuza katılın.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
     <string name="donationCampaign.title">Uygulamayı beğendiniz mi?</string>

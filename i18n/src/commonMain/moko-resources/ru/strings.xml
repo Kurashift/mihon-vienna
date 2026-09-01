@@ -894,7 +894,6 @@
     <string name="label_support_us">Поддержите нас</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (Предпочтительно)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
-    <string name="supportUsScreen.currentlySupportedBy">Mihon сейчас поддерживается %d+ спонсорами. Мы хотим поблагодарить каждого из вас. Давайте сделаем Mihon лучше.</string>
     <string name="donationCampaign.contactPlatform">Discord</string>
     <string name="supportUsScreen.perks">Спонсоры получать доступ к эксклюзивным каналам с будущими привилегиями и возможностями.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>

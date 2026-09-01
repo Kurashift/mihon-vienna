@@ -1,4 +1,5 @@
 # Build files
+
 .gradle
 .kotlin
 build
@@ -23,3 +24,16 @@ local.properties
 /device-*.png
 /icon-preview*.png
 /icon-preview*.svg
+
+# Agent / IDE local state (never commit)
+.codebuddy/
+.dsh/
+__pycache__/
+*.pyc
+
+# Throwaway artifacts in the repo root: build/install logs, one-off scripts,
+# scratch exports. Real documentation belongs in docs/.
+/_*.log
+/_*.json
+/_ctx_out/
+/generated-images/

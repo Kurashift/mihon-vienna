@@ -135,7 +135,9 @@ if (lastReadMangaId != null && manga == null) return   // 已删
 
 ### 7.4 遗留死代码（未处理，需知悉）
 
-`BrowseSourceViewModel.rememberReturnAnchor()` 的两处调用被上一会话一并删除，现为死函数。但 `LibraryReturnAnchorStore` 全仓库**没有任何读取方**（只有 DI 注册 + ViewModel 转发），这个「返回定位」功能的读写链本来就是断的，本次删除不改变实际行为。**若后续要启用该功能，需同时补上读取方。**
+~~`BrowseSourceViewModel.rememberReturnAnchor()` 的两处调用被上一会话一并删除，现为死函数。~~
+
+> **已于 2026-09-01 清理（git 上传前死代码审计）**：`LibraryReturnAnchorStore` 整套「返回定位」读写链是断的——只有 DI 注册 + ViewModel 三处转发，全仓零读取方。已删除 `LibraryReturnAnchorStore.kt`、`PreferenceModule` 注册、`BrowseSourceViewModel` 的 `returnAnchorMangaId` / `rememberReturnAnchor()` / `consumeReturnAnchor()`，以及 `LocalLibraryStateStoresTest` 里对应的测试。若将来要启用该功能，需连同读取方一起重新实现。
 
 ### 7.5 无需清理的项
 
