@@ -34,7 +34,7 @@ class AppUpdateChecker {
     }
 }
 
-const val GITHUB_REPO = "a1127810984/mihon-vienna"
+const val GITHUB_REPO = "Kurashift/mihon-vienna"
 const val PROJECT_GITHUB_URL = "https://github.com/$GITHUB_REPO"
 const val PROJECT_ISSUES_URL = "$PROJECT_GITHUB_URL/issues"
 const val PROJECT_RELEASES_URL = "$PROJECT_GITHUB_URL/releases"

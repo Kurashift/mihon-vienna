@@ -1,8 +1,8 @@
 package tachiyomi.core.common
 
 object Constants {
-    const val URL_HELP = "https://github.com/a1127810984/mihon-vienna/issues"
-    const val URL_HELP_UPCOMING = "https://github.com/a1127810984/mihon-vienna/issues"
+    const val URL_HELP = "https://github.com/Kurashift/mihon-vienna/issues"
+    const val URL_HELP_UPCOMING = "https://github.com/Kurashift/mihon-vienna/issues"
     const val URL_DONATE_PATREON = "https://patreon.com/mihon/membership"
     const val URL_DONATE_OPENCOLLECTIVE = "https://opencollective.com/mihon/contribute"
     const val URL_DISCORD = "https://discord.gg/mihon"
