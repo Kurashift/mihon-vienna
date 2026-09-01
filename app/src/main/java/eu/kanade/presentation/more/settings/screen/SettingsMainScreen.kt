@@ -109,10 +109,15 @@ object SettingsMainScreen : Screen() {
                     }
                         .also {
                             LaunchedEffect(Unit) {
-                                state.animateScrollToItem(it)
-                                if (it > 0) {
-                                    // Lift scroll
-                                    topBarState.contentOffset = topBarState.heightOffsetLimit
+                                // -1 when the opened page is not a top level entry, for example a
+                                // second level screen reached from "data and storage". There is no
+                                // row to scroll to, and scrolling to -1 crashes.
+                                if (it >= 0) {
+                                    state.animateScrollToItem(it)
+                                    if (it > 0) {
+                                        // Lift scroll
+                                        topBarState.contentOffset = topBarState.heightOffsetLimit
+                                    }
                                 }
                             }
                         }

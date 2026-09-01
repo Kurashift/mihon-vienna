@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.ui.audio
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
@@ -31,9 +34,13 @@ import eu.kanade.tachiyomi.data.audio.AudioHistoryEntry
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
+import eu.kanade.tachiyomi.data.audio.AudioSubtitleState
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
+import eu.kanade.tachiyomi.data.audio.LyricLine
+import eu.kanade.tachiyomi.data.audio.SubtitleParser
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +52,7 @@ import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import okhttp3.OkHttpClient
 import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
 import java.io.File
@@ -69,6 +77,8 @@ data class AudioPlayerState(
     val maxMediaVolume: Int = 1,
     val isMediaVolumeFixed: Boolean = false,
     val audioQuality: AudioQualityMode = AudioQualityMode.FLUENT_FIRST,
+    val lyrics: List<LyricLine> = emptyList(),
+    val subtitleState: AudioSubtitleState = AudioSubtitleState.NOT_AVAILABLE,
 ) {
     val isBuffering: Boolean
         get() = isLoading && !isPlaying
@@ -101,6 +111,16 @@ class AudioPlayerController(
     var readerControlsVisible by mutableStateOf(false)
         private set
 
+    /**
+     * Whether the full player screen is the page the user is reading right now.
+     *
+     * Floating subtitles step aside while it is, because there the same line is already laid out
+     * inside the page itself. It is deliberately not a mirror of the app being in the foreground:
+     * any other page, and the background, are all reasons for the window to be shown.
+     */
+    var playerScreenVisible by mutableStateOf(false)
+        private set
+
     /** Invoked on playback-state changes so the foreground service can refresh its notification. */
     var onStateChanged: ((AudioPlayerState) -> Unit)? = null
 
@@ -123,6 +143,10 @@ class AudioPlayerController(
     private var items: List<AudioPlayItem> = emptyList()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var progressJob: Job? = null
+    private var subtitleJob: Job? = null
+
+    /** Identifies the subtitle [subtitleJob] is working on, so a track is never fetched twice. */
+    private var subtitleRequestKey: String? = null
     private var bufferingStartedAt = 0L
     private var playbackRetryJob: Job? = null
     private var sleepTimerJob: Job? = null
@@ -133,6 +157,19 @@ class AudioPlayerController(
     private var headphonesWarningToast: Toast? = null
     private var startGeneration = 0
     private var completionCandidateWorkId: Long? = null
+
+    /**
+     * Stops playback when the headphones are unplugged, so the track never jumps out of the
+     * speaker. Registered only while something is actually audible: ExoPlayer handles audio focus
+     * on our behalf, so the only thing it does not cover is the output device going away.
+     */
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            pause()
+        }
+    }
+    private var becomingNoisyRegistered = false
 
     private val cache = SimpleCache(
         File(context.cacheDir, AUDIO_CACHE_DIRECTORY),
@@ -214,7 +251,14 @@ class AudioPlayerController(
             player.stop()
             player.clearMediaItems()
             items = requestedItems
-            updateCurrentItem(targetIndex, loading = true)
+            // player.stop() reset currentPosition to 0, so the position has to be carried over
+            // explicitly: it is where beginPlayback will resume, and reading it back from the
+            // state later would otherwise restart the track from the beginning.
+            updateCurrentItem(
+                targetIndex,
+                loading = true,
+                positionMs = startPositionMs.coerceAtLeast(0),
+            )
             startProgressLoop()
             scope.launch {
                 val resolvedItems = runCatching {
@@ -314,11 +358,6 @@ class AudioPlayerController(
     }
 
     fun togglePlay() {
-        if (player.mediaItemCount == 0) {
-            val item = state.item ?: return
-            start(listOf(item), 0, state.positionMs, playWhenReady = true)
-            return
-        }
         if (player.isPlaying) {
             pause()
         } else {
@@ -327,9 +366,19 @@ class AudioPlayerController(
     }
 
     fun play() {
-        if (player.mediaItemCount == 0 || player.isPlaying) return
+        if (player.isPlaying) return
+        // Nothing is loaded yet, even though the UI and the media session already show a track:
+        // it was only restored from history, or its stream address is still being resolved.
+        // Loading it has to happen here and not just behind the in-app button, because the media
+        // session (notification, lock screen, headset) calls [play] directly and used to be
+        // silently dropped on that branch.
+        if (!startIfNothingLoaded()) return
         applyVolumeProtection()
         if (player.playerError != null || player.playbackState == Player.STATE_IDLE) player.prepare()
+        if (player.playbackState == Player.STATE_ENDED) {
+            // ExoPlayer stays parked at the end once a track has finished, so resume from the top.
+            player.seekTo(0)
+        }
         player.play()
     }
 
@@ -339,8 +388,13 @@ class AudioPlayerController(
 
     fun seekTo(ms: Long) {
         val duration = currentDuration()
-        player.seekTo(ms.coerceIn(0, duration.takeIf { it > 0 } ?: Long.MAX_VALUE))
-        publish(state.copy(positionMs = player.currentPosition.coerceAtLeast(0)))
+        val target = (if (duration > 0) ms.coerceIn(0, duration) else ms.coerceAtLeast(0))
+        if (player.mediaItemCount > 0) {
+            player.seekTo(target)
+        }
+        // ExoPlayer applies the seek on its internal thread, so currentPosition is still the old
+        // one here: publishing it would snap the thumb back until the progress loop catches up.
+        publish(state.copy(positionMs = target))
         recordHistory()
     }
 
@@ -348,26 +402,72 @@ class AudioPlayerController(
         seekTo(player.currentPosition + deltaMs)
     }
 
-    fun next() {
-        if (player.hasNextMediaItem()) {
-            completionCandidateWorkId = null
-            applyVolumeProtection()
-            player.seekToNextMediaItem()
-            player.play()
-        }
+    fun next() = skipBy(step = 1)
+
+    fun previous() = skipBy(step = -1)
+
+    /**
+     * Steps through the queue by [step], wrapping around at either end: from the last track the
+     * next button goes to the first one, and from the first track the previous button goes to the
+     * last one. Skipping never replays the track it was pressed on.
+     *
+     * The target index is worked out here instead of being left to ExoPlayer's own skip, because
+     * that one follows the repeat mode rather than the queue: in single-track repeat "next"
+     * replays the track it is already on, and at the end of the queue the press is silently
+     * dropped. Neither is what the button claims to do. Repeat mode is left to decide what
+     * happens when a track runs out on its own, which is the only thing it is about.
+     */
+    private fun skipBy(step: Int) {
+        if (!startIfNothingLoaded(offset = step)) return
+        // A queue of one has nowhere to skip to, and wrapping there would replay the track in
+        // place — the one thing the button must never do.
+        if (items.size <= 1) return
+        val current = player.currentMediaItemIndex
+            .takeIf { player.mediaItemCount > 0 }
+            ?: state.index
+        val target = (current + step + items.size) % items.size
+        completionCandidateWorkId = null
+        player.seekTo(target, 0)
+        play()
     }
 
-    fun previous() {
-        completionCandidateWorkId = null
-        when {
-            player.currentPosition >= RESTART_TRACK_THRESHOLD_MS -> player.seekTo(0)
-            player.hasPreviousMediaItem() -> {
-                applyVolumeProtection()
-                player.seekToPreviousMediaItem()
-                player.play()
-            }
-            else -> player.seekTo(0)
+    /**
+     * Loads the queue when ExoPlayer has nothing in it yet, and reports whether the caller can
+     * carry on with whatever is loaded.
+     *
+     * Every transport control has to go through this: the media session (notification, lock
+     * screen, headset button) calls them directly, and there is a state where the UI and the
+     * session both advertise a track while the player is still empty — after [restoreLastSession]
+     * rebuilt the state from history, and during the moment a legacy item's stream address is
+     * still being resolved. Without this the controls silently did nothing there.
+     *
+     * [offset] is applied to the current track for the skip controls, so pressing next or previous
+     * lands on the intended neighbour even though nothing is loaded yet.
+     *
+     * Returns false when playback was just started instead, so the caller does not also act on a
+     * player that is still empty.
+     */
+    private fun startIfNothingLoaded(offset: Int = 0): Boolean {
+        if (player.mediaItemCount > 0) return true
+        val item = state.item ?: return false
+        // [items] is the queue handed to start(), which is already known while a legacy item's
+        // address is still being resolved. Rebuilding the queue from the current track alone
+        // would throw every other track away, so keep it whenever it is there.
+        val knownItems = items.takeIf { it.isNotEmpty() } ?: listOf(item)
+        val current = knownItems.indexOfFirst { it.mediaStreamUrl == item.mediaStreamUrl }
+            .coerceAtLeast(0)
+        // Wraps the same way [skipBy] does, so skipping at either end of a queue that is not
+        // loaded yet lands where it lands once it is.
+        val target = if (knownItems.size > 1) {
+            (current + offset + knownItems.size) % knownItems.size
+        } else {
+            current
         }
+        // Resume where the state left off when the request could not move anywhere, which is the
+        // single-track case; a track that was actually skipped to starts from its beginning.
+        val startPosition = if (target == current) state.positionMs else 0L
+        start(knownItems, target, startPosition, playWhenReady = true)
+        return false
     }
 
     fun random() {
@@ -445,11 +545,21 @@ class AudioPlayerController(
         readerControlsVisible = false
     }
 
+    /**
+     * Says whether the full player screen is the page being read, so the floating subtitles know
+     * when to stay out of the way. Only that one page hides them; everything else shows them.
+     */
+    fun notifyPlayerScreenVisibility(visible: Boolean) {
+        playerScreenVisible = visible
+    }
+
     fun release() {
         startGeneration++
         stopProgressLoop()
+        stopSubtitleLoad()
         clearBufferingState()
         stopPlaybackRetry()
+        setBecomingNoisyReceiverRegistered(false)
         recordHistory()
         player.stop()
         player.clearMediaItems()
@@ -467,26 +577,108 @@ class AudioPlayerController(
         publish(AudioPlayerState())
     }
 
-    private fun updateCurrentItem(index: Int, loading: Boolean = state.isLoading) {
+    private fun updateCurrentItem(
+        index: Int,
+        loading: Boolean = state.isLoading,
+        positionMs: Long = player.currentPosition.coerceAtLeast(0),
+    ) {
         val item = items.getOrNull(index) ?: return
         publish(
             state.copy(
                 item = item,
                 isLoading = loading,
-                positionMs = player.currentPosition.coerceAtLeast(0),
+                positionMs = positionMs,
                 bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0),
                 durationMs = currentDuration().takeIf { it > 0 } ?: item.durationMs,
                 error = null,
-                hasPrevious = index > 0,
-                hasNext = index < items.lastIndex,
+                // Both skip buttons walk the whole queue and wrap around, so they are either
+                // available throughout or not at all. That keeps them out of the state of the
+                // track being played, which is what made the next button vanish part-way through
+                // a session and shift the buttons that were left.
+                hasPrevious = items.size > 1,
+                hasNext = items.size > 1,
                 index = index,
                 totalCount = items.size,
             ),
         )
+        loadSubtitles(item)
     }
 
     private fun currentDuration(): Long {
         return player.duration.takeUnless { it == C.TIME_UNSET }?.coerceAtLeast(0) ?: 0L
+    }
+
+    /**
+     * Fetches and parses the transcript of [item].
+     *
+     * Subtitles belong to the track rather than to a screen: the floating subtitle window has to
+     * keep following playback after the player screen is gone, so the controller owns them.
+     * Requests are keyed by the subtitle URLs, so re-entering the same track (or any of the
+     * repeated [updateCurrentItem] calls playback makes) reuses what is already loaded.
+     *
+     * These updates never reach the notification: nothing there shows the transcript, and the
+     * two extra rebuilds per track would be pure overhead.
+     */
+    private fun loadSubtitles(item: AudioPlayItem, force: Boolean = false) {
+        val key = item.subtitleKey
+        if (!force && subtitleRequestKey == key) return
+        subtitleJob?.cancel()
+        subtitleJob = null
+        subtitleRequestKey = key
+        val url = item.subtitleUrl
+        if (url == null) {
+            publish(
+                state.copy(lyrics = emptyList(), subtitleState = AudioSubtitleState.NOT_AVAILABLE),
+                notifyService = false,
+            )
+            return
+        }
+        publish(
+            state.copy(lyrics = emptyList(), subtitleState = AudioSubtitleState.LOADING),
+            notifyService = false,
+        )
+        subtitleJob = scope.launch {
+            try {
+                val parsed = withIOContext {
+                    val content = api.fetchSubtitle(url, item.subtitleFallbackUrl)
+                    SubtitleParser.parse(content, url)
+                }
+                publish(
+                    state.copy(
+                        lyrics = parsed,
+                        subtitleState = if (parsed.isEmpty()) {
+                            AudioSubtitleState.EMPTY
+                        } else {
+                            AudioSubtitleState.READY
+                        },
+                    ),
+                    notifyService = false,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                publish(
+                    state.copy(lyrics = emptyList(), subtitleState = AudioSubtitleState.ERROR),
+                    notifyService = false,
+                )
+            }
+        }
+    }
+
+    /** Loads the current track's subtitles when they are not already loaded or in flight. */
+    fun ensureSubtitlesLoaded() {
+        state.item?.let { loadSubtitles(it) }
+    }
+
+    /** Re-runs the subtitle request after a failure, from the retry button on the player screen. */
+    fun retrySubtitles() {
+        state.item?.let { loadSubtitles(it, force = true) }
+    }
+
+    private fun stopSubtitleLoad() {
+        subtitleJob?.cancel()
+        subtitleJob = null
+        subtitleRequestKey = null
     }
 
     private fun publish(newState: AudioPlayerState, notifyService: Boolean = true) {
@@ -555,8 +747,8 @@ class AudioPlayerController(
         }
 
         clearBufferingState()
-        if (player.hasNextMediaItem()) {
-            player.seekToNextMediaItem()
+        if (canAdvanceToAnotherTrack()) {
+            seekToIndex(player.currentMediaItemIndex + 1)
             player.play()
             markBufferingStarted()
         } else {
@@ -569,6 +761,30 @@ class AudioPlayerController(
                 ),
             )
         }
+    }
+
+    /**
+     * Whether playback is allowed to move on to a *different* track of the queue.
+     *
+     * ExoPlayer's own hasNextMediaItem() answers from the repeat mode rather than from the queue,
+     * so under single-track repeat it is permanently true even though the "next" item is the one
+     * already playing. That is right for a transport control and wrong for a give-up path: both
+     * callers here have to end somewhere, and would otherwise re-enter themselves forever on the
+     * same broken track — a buffer timeout restarting the track that just timed out, every
+     * twenty seconds, with the error never reaching the screen.
+     */
+    private fun canAdvanceToAnotherTrack(): Boolean {
+        if (player.repeatMode == Player.REPEAT_MODE_ONE) return false
+        return player.mediaItemCount > 1 && player.currentMediaItemIndex < player.mediaItemCount - 1
+    }
+
+    /**
+     * Jumps to [index] without going through ExoPlayer's skip, for the same reason [skipBy]
+     * does not: the skip follows the repeat mode, and a give-up path has to land somewhere else.
+     */
+    private fun seekToIndex(index: Int) {
+        val target = index.coerceIn(0, (player.mediaItemCount - 1).coerceAtLeast(0))
+        player.seekTo(target, 0)
     }
 
     private fun retryOrSkipPlayback(error: PlaybackException) {
@@ -588,8 +804,8 @@ class AudioPlayerController(
             return
         }
 
-        if (player.hasNextMediaItem()) {
-            player.seekToNextMediaItem()
+        if (canAdvanceToAnotherTrack()) {
+            seekToIndex(player.currentMediaItemIndex + 1)
             player.prepare()
             player.play()
             markBufferingStarted()
@@ -630,6 +846,9 @@ class AudioPlayerController(
     private fun String.isLowQualityStream(): Boolean {
         return startsWith(LOW_QUALITY_STREAM_PREFIX, ignoreCase = true)
     }
+
+    private val AudioPlayItem.subtitleKey: String
+        get() = "$subtitleUrl|$subtitleFallbackUrl"
 
     private fun String?.isLegacySubtitleDownload(): Boolean {
         return this != null &&
@@ -710,6 +929,23 @@ class AudioPlayerController(
                 }
             }
         }.getOrDefault(false)
+    }
+
+    private fun setBecomingNoisyReceiverRegistered(registered: Boolean) {
+        if (becomingNoisyRegistered == registered) return
+        becomingNoisyRegistered = registered
+        runCatching {
+            if (registered) {
+                val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.registerReceiver(becomingNoisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    context.registerReceiver(becomingNoisyReceiver, filter)
+                }
+            } else {
+                context.unregisterReceiver(becomingNoisyReceiver)
+            }
+        }
     }
 
     private fun showHeadphonesWarning() {
@@ -850,6 +1086,8 @@ class AudioPlayerController(
                 ),
             )
             recordHistory()
+            // Only worth watching for the headphones being pulled out while audio is audible.
+            setBecomingNoisyReceiverRegistered(isPlaying)
             if (isPlaying) syncAccountProgress(state.item, AudioAccountProgress.LISTENING)
         }
 
@@ -882,7 +1120,6 @@ class AudioPlayerController(
         const val LOW_QUALITY_STREAM_PREFIX = "https://fast.kiko-play-niptan.one/"
         const val PROGRESS_INTERVAL_MS = 500L
         const val PERIODIC_HISTORY_INTERVAL_MS = 15_000L
-        const val RESTART_TRACK_THRESHOLD_MS = 5_000L
         const val SAFE_FALLBACK_PLAYER_VOLUME = 0.08f
         const val USER_AGENT = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
         const val VOLUME_PROTECTION_IDLE_WINDOW_MS = 10 * 60 * 1000L

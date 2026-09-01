@@ -1,8 +1,8 @@
 package tachiyomi.core.common
 
 object Constants {
-    const val URL_HELP = "https://mihon.app/docs/guides/troubleshooting/"
-    const val URL_HELP_UPCOMING = "https://mihon.app/docs/faq/updates/upcoming"
+    const val URL_HELP = "https://github.com/a1127810984/mihon-vienna/issues"
+    const val URL_HELP_UPCOMING = "https://github.com/a1127810984/mihon-vienna/issues"
     const val URL_DONATE_PATREON = "https://patreon.com/mihon/membership"
     const val URL_DONATE_OPENCOLLECTIVE = "https://opencollective.com/mihon/contribute"
     const val URL_DISCORD = "https://discord.gg/mihon"
@@ -18,6 +18,7 @@ object Constants {
     const val SHORTCUT_LIBRARY = "eu.kanade.tachiyomi.SHOW_LIBRARY"
     const val SHORTCUT_MANGA = "eu.kanade.tachiyomi.SHOW_MANGA"
     const val SHOW_MANGA_PRESERVE_STACK = "eu.kanade.tachiyomi.SHOW_MANGA_PRESERVE_STACK"
+    const val RETURN_FROM_READER = "eu.kanade.tachiyomi.RETURN_FROM_READER"
     const val SHOW_AUDIO_PLAYER = "eu.kanade.tachiyomi.SHOW_AUDIO_PLAYER"
     const val SHOW_AUDIO_DETAIL = "eu.kanade.tachiyomi.SHOW_AUDIO_DETAIL"
     const val SHORTCUT_UPDATES = "eu.kanade.tachiyomi.SHOW_RECENTLY_UPDATED"

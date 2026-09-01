@@ -234,15 +234,9 @@ fun MangaBottomActionMenu(
                         onClick = onDownloadClicked,
                     )
                 }
-                if (onEditTranslatedTitleClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.edit_chapter_translated_title),
-                        icon = Icons.Outlined.Edit,
-                        toConfirm = confirm[10],
-                        onLongClick = { onLongClickItem(10) },
-                        onClick = onEditTranslatedTitleClicked,
-                    )
-                }
+                // Single-selection actions sit after the ones that survive multi-selection, so
+                // entering selection mode drops the trailing buttons as one contiguous group
+                // instead of tearing a hole in the middle of the row.
                 if (onMoveClicked != null) {
                     Button(
                         title = stringResource(MR.strings.action_move_to),
@@ -250,6 +244,15 @@ fun MangaBottomActionMenu(
                         toConfirm = false,
                         onLongClick = {},
                         onClick = onMoveClicked,
+                    )
+                }
+                if (onEditTranslatedTitleClicked != null) {
+                    Button(
+                        title = stringResource(MR.strings.edit_chapter_translated_title),
+                        icon = Icons.Outlined.Edit,
+                        toConfirm = confirm[10],
+                        onLongClick = { onLongClickItem(10) },
+                        onClick = onEditTranslatedTitleClicked,
                     )
                 }
                 if (onDeleteClicked != null || onMarkPreviousAsReadClicked != null ||

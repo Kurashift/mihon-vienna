@@ -11,8 +11,11 @@ import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriver
 import com.eygraber.sqldelight.androidx.driver.FileProvider
 import eu.kanade.domain.track.store.DelayedTrackingStore
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
+import eu.kanade.tachiyomi.data.audio.AudioCacheInterceptor
+import eu.kanade.tachiyomi.data.audio.AudioCategoryCache
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
+import eu.kanade.tachiyomi.data.audio.AudioPageCache
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.cache.ChapterCache
@@ -36,6 +39,7 @@ import kotlinx.serialization.protobuf.ProtoBuf
 import nl.adaptivity.xmlutil.XmlDeclMode
 import nl.adaptivity.xmlutil.core.XmlVersion
 import nl.adaptivity.xmlutil.serialization.XML
+import okhttp3.Cache
 import okhttp3.OkHttpClient
 import tachiyomi.core.common.storage.AndroidStorageFolderProvider
 import tachiyomi.data.Chapters
@@ -58,10 +62,14 @@ import uy.kohesive.injekt.api.InjektRegistrar
 import uy.kohesive.injekt.api.addSingleton
 import uy.kohesive.injekt.api.addSingletonFactory
 import uy.kohesive.injekt.api.get
+import java.io.File
 import java.lang.ref.WeakReference
 import kotlin.time.Duration.Companion.seconds
 
 private val lock = Any()
+
+/** Sized for the full tag/VA/circle dictionaries plus a few pages of work results. */
+private const val AUDIO_CACHE_BYTES = 20L * 1024 * 1024
 
 class AppModule(val app: Application) : InjektModule {
 
@@ -140,11 +148,17 @@ class AppModule(val app: Application) : InjektModule {
                 .connectTimeout(15.seconds)
                 .readTimeout(30.seconds)
                 .callTimeout(60.seconds)
+                // Separate from the main network cache so it can be sized for multi-megabyte
+                // dictionary payloads without competing with image requests for the same 5 MiB.
+                .cache(Cache(File(app.cacheDir, "audio_network_cache"), AUDIO_CACHE_BYTES))
+                .addNetworkInterceptor(AudioCacheInterceptor)
                 .addInterceptor(UncaughtExceptionInterceptor())
                 .addInterceptor(UserAgentInterceptor(networkHelper::defaultUserAgentProvider))
                 .build()
         }
         addSingletonFactory { KikoeruApi(get(), get(), get()) }
+        addSingletonFactory { AudioCategoryCache(get(), get()) }
+        addSingletonFactory { AudioPageCache() }
         addSingletonFactory { AudioFavoriteStore(get(), get()) }
         addSingletonFactory { AudioAccountSync(get(), get(), get()) }
         addSingletonFactory { AudioHistoryStore(get(), get()) }

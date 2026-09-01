@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.webtoon
 
+import android.animation.ObjectAnimator
 import android.graphics.PointF
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -149,9 +150,10 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                         if (suppressInitialScrollCallbacks) return
                         val candidate = currentVisibleItem(lastScrollDirection)
                         val item = constrainToScrollDirection(candidate, lastScrollDirection)
-                        selectCurrentItem(item)
+                        val userInitiated = lastScrollDirection != 0
+                        selectCurrentItem(item, userInitiated = userInitiated)
                         if (item is ReaderPage) {
-                            activity.onScrollSettled(item)
+                            activity.onScrollSettled(item, userInitiated = userInitiated)
                         }
                         lastScrollDirection = 0
                     }
@@ -299,10 +301,14 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * Called from the RecyclerView listener when a [page] is marked as active. It notifies the
      * activity of the change and requests the preload of the next chapter if this is the last page.
      */
-    private fun onPageSelected(page: ReaderPage, allowPreload: Boolean) {
+    private fun onPageSelected(
+        page: ReaderPage,
+        allowPreload: Boolean,
+        userInitiated: Boolean,
+    ) {
         val pages = page.chapter.pages ?: return
         logcat { "onPageSelected: ${page.number}/${pages.size}" }
-        activity.onPageSelected(page)
+        activity.onPageSelected(page, userInitiated)
 
         if (allowPreload) {
             requestAdjacentPreload(page)
@@ -715,7 +721,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         initialGesturePageIdentity = page.pageIdentity()
         suppressInitialScrollCallbacks = true
         keepInitialPageAnchored(page)
-        activity.prepareViewerContentReveal()
+        activity.hideLoadingIndicator()
         recycler.alpha = 1f
         frame.isEnabled = true
         recycler.isEnabled = true
@@ -760,7 +766,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         } else {
             candidate
         }
-        selectCurrentItem(item)
+        selectCurrentItem(item, userInitiated = true)
     }
 
     private fun constrainToScrollDirection(candidate: Any?, scrollDelta: Int): Any? {
@@ -775,7 +781,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         return if (selectedPosition == currentPosition) currentPage else candidate
     }
 
-    private fun selectCurrentItem(item: Any?) {
+    private fun selectCurrentItem(item: Any?, userInitiated: Boolean = false) {
         if (item == null) return
         if (sameAdapterItem(currentPage, item)) {
             currentPage = item
@@ -787,7 +793,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         val allowPreload = checkAllowPreload(item as? ReaderPage)
         currentPage = item
         when (item) {
-            is ReaderPage -> onPageSelected(item, allowPreload)
+            is ReaderPage -> onPageSelected(item, allowPreload, userInitiated)
             is ChapterTransition -> onTransitionSelected(item)
         }
     }
@@ -921,6 +927,13 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 val identity = item.pageIdentity()
                 adapter.items.indexOfFirst { candidate ->
                     candidate is ReaderPage && candidate.pageIdentity() == identity
+                }
+            }
+            // A separator is the same one as long as it separates the same chapters; its labels
+            // may have been refreshed since the reader last looked at it.
+            is WebtoonChapterDivider -> {
+                adapter.items.indexOfFirst { candidate ->
+                    candidate is WebtoonChapterDivider && candidate.hasSameChapters(item)
                 }
             }
             else -> adapter.items.indexOf(item)

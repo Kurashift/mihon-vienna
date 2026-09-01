@@ -21,6 +21,13 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
             url = "https://example.com/cover.png",
             lastModified = 5L,
         ),
+        chapterFlags = tachiyomi.domain.manga.model.Manga.CHAPTER_DISPLAY_NAME,
+        chapterName = "Chapter 1",
+        chapterTranslatedName = null,
+        chapterUrl = "chapter-1",
+        chapterVersion = 1L,
+        chapterDateUpload = 1L,
+        chapterLastModifiedAt = 1L,
     )
 
     private val historyWithoutReadAt = HistoryWithRelations(
@@ -38,6 +45,13 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
             url = "https://example.com/cover.png",
             lastModified = 5L,
         ),
+        chapterFlags = tachiyomi.domain.manga.model.Manga.CHAPTER_DISPLAY_NAME,
+        chapterName = "Chapter 1",
+        chapterTranslatedName = null,
+        chapterUrl = "chapter-1",
+        chapterVersion = 1L,
+        chapterDateUpload = 1L,
+        chapterLastModifiedAt = 1L,
     )
 
     private val historyWithNegativeChapterNumber = HistoryWithRelations(
@@ -55,6 +69,13 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
             url = "https://example.com/cover.png",
             lastModified = 5L,
         ),
+        chapterFlags = tachiyomi.domain.manga.model.Manga.CHAPTER_DISPLAY_NAME,
+        chapterName = "Chapter 1",
+        chapterTranslatedName = null,
+        chapterUrl = "chapter-1",
+        chapterVersion = 1L,
+        chapterDateUpload = 1L,
+        chapterLastModifiedAt = 1L,
     )
 
     override val values: Sequence<HistoryWithRelations>

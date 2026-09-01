@@ -134,3 +134,11 @@ class AudioPlaylistStore(
 }
 
 private fun AudioPlayItem.workKey(): String = "$workId\u0000$workTitle"
+
+/** Rebuilds the work a group was built from, without having to reach for one of its tracks. */
+fun AudioPlaylistGroup.toWorkSnapshot(): Work = Work(
+    id = workId,
+    title = workTitle,
+    name = circleName,
+    mainCoverUrl = coverUrl,
+)

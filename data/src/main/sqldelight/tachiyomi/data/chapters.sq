@@ -21,6 +21,7 @@ CREATE TABLE chapters(
     total_pages INTEGER NOT NULL DEFAULT 0,
     custom_order INTEGER NOT NULL DEFAULT 0,
     translated_name TEXT,
+    marked_read_at INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(manga_id) REFERENCES mangas (_id)
     ON DELETE CASCADE
 );
@@ -88,6 +89,24 @@ SELECT scanlator
 FROM chapters
 WHERE manga_id = :mangaId;
 
+getTranslatedNamesByMangaIds:
+SELECT manga_id, translated_name
+FROM chapters
+WHERE manga_id IN :mangaIds
+AND translated_name IS NOT NULL
+AND TRIM(translated_name) != '';
+
+-- Translated names keyed by the owning manga's url instead of its id, so the local source can
+-- match them while browsing: it only sees directory names and has no manga ids in hand.
+-- Still a sparse result set - only chapters that actually carry a translated name are returned.
+getTranslatedNamesBySourceId:
+SELECT mangas.url, chapters.translated_name
+FROM chapters
+JOIN mangas ON mangas._id = chapters.manga_id
+WHERE mangas.source = :sourceId
+AND chapters.translated_name IS NOT NULL
+AND TRIM(chapters.translated_name) != '';
+
 getBookmarkedChaptersByMangaId:
 SELECT *
 FROM chapters
@@ -129,7 +148,7 @@ SET version = version + 1
 WHERE _id = :chapterId;
 
 insert:
-INSERT INTO chapters(manga_id, url, name, scanlator, read, bookmark, last_page_read, total_pages, custom_order, chapter_number, source_order, date_fetch, date_upload, last_modified_at, version, is_syncing, memo, translated_name)
+INSERT INTO chapters(manga_id, url, name, scanlator, read, bookmark, last_page_read, total_pages, custom_order, chapter_number, source_order, date_fetch, date_upload, last_modified_at, version, is_syncing, memo, translated_name, marked_read_at)
 VALUES (
     :mangaId,
     :url,
@@ -148,11 +167,12 @@ VALUES (
     :version,
     0,
     :memo,
-    :translatedName
+    :translatedName,
+    CASE WHEN :read = 1 THEN :markedReadAt ELSE 0 END
 );
 
 insertReturningId:
-INSERT INTO chapters(manga_id, url, name, scanlator, read, bookmark, last_page_read, total_pages, custom_order, chapter_number, source_order, date_fetch, date_upload, last_modified_at, version, is_syncing, memo, translated_name)
+INSERT INTO chapters(manga_id, url, name, scanlator, read, bookmark, last_page_read, total_pages, custom_order, chapter_number, source_order, date_fetch, date_upload, last_modified_at, version, is_syncing, memo, translated_name, marked_read_at)
 VALUES (
     :mangaId,
     :url,
@@ -171,7 +191,8 @@ VALUES (
     :version,
     0,
     :memo,
-    :translatedName
+    :translatedName,
+    CASE WHEN :read = 1 THEN :markedReadAt ELSE 0 END
 )
 RETURNING _id;
 
@@ -204,7 +225,8 @@ SET manga_id = coalesce(:mangaId, manga_id),
     version = coalesce(:version, version),
     is_syncing = coalesce(:isSyncing, is_syncing),
     memo = coalesce(:memo, memo),
-    translated_name = coalesce(:translatedName, translated_name)
+    translated_name = coalesce(:translatedName, translated_name),
+    marked_read_at = coalesce(:markedReadAt, marked_read_at)
 WHERE _id = :chapterId;
 
 updateReaderProgress:
@@ -225,6 +247,13 @@ SET read = CASE
     total_pages = CASE
         WHEN :totalPages > 0 THEN :totalPages
         ELSE total_pages
+    END,
+    -- 正常翻阅读完也要记下「读完那一刻」，与详情页手动标记已读同一口径。
+    -- 只在从未读变为已读时写一次；之后重读只更新进度，时间保持不动，
+    -- 否则每打开一次阅读器，已读清单里的时间与排序都会跟着跳。
+    marked_read_at = CASE
+        WHEN read = 0 AND :completed = 1 THEN :completedAt
+        ELSE marked_read_at
     END
 WHERE _id = :chapterId;
 
@@ -264,17 +293,32 @@ SELECT
     mangas.title AS manga_title,
     chapters.url AS chapter_url,
     chapters.name AS chapter_name,
+    chapters.translated_name AS chapter_translated_name,
     chapters.total_pages AS total_pages,
     chapters.date_upload AS date_upload,
     chapters.last_modified_at AS last_modified_at,
-    chapters.version AS version
+    chapters.version AS version,
+    -- 复查用「读完的那一刻」。老数据（阅读器读完但没记到时间）回退到历史里的最后阅读时间，
+    -- 两者都取不到时为 0（排到末尾）。不直接用 history.last_read：打开阅读器会刷新它。
+    -- 注意 marked_read_at 非空（默认 0），所以这里不能用 COALESCE，必须显式判 0。
+    CASE
+        WHEN chapters.marked_read_at > 0 THEN chapters.marked_read_at
+        ELSE coalesce(history.last_read, 0)
+    END AS marked_read_at
+FROM chapters
+JOIN mangas
+ON mangas._id = chapters.manga_id
+LEFT JOIN history
+ON history.chapter_id = chapters._id
+WHERE mangas.source = :sourceId
+AND chapters.read = 1;
+
+countReadChaptersBySource:
+SELECT
+    count(*) AS chapter_count,
+    count(DISTINCT chapters.manga_id) AS manga_count
 FROM chapters
 JOIN mangas
 ON mangas._id = chapters.manga_id
 WHERE mangas.source = :sourceId
-AND chapters.read = 1
-ORDER BY
-    mangas.title COLLATE NOCASE,
-    CASE WHEN chapters.custom_order = 0 THEN 1 ELSE 0 END,
-    chapters.custom_order,
-    chapters.source_order;
+AND chapters.read = 1;

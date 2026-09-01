@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +19,9 @@ import eu.kanade.presentation.audio.AudioDetailContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.audio.AudioAccountProgress
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
+import eu.kanade.tachiyomi.data.audio.AudioCategoryCache
+import eu.kanade.tachiyomi.data.audio.AudioCategoryField
+import eu.kanade.tachiyomi.data.audio.AudioCategoryRef
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
@@ -27,10 +31,13 @@ import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
@@ -54,6 +61,7 @@ class AudioDetailScreen(
         val isFavorite by viewModel.isFavorite.collectAsState()
         val addedToPlaylistText = stringResource(MR.strings.audio_added_to_playlist)
         val removedFromPlaylistText = stringResource(MR.strings.audio_removed_from_playlist)
+        val scope = rememberCoroutineScope()
 
         fun toastPlaylistChange(added: Boolean) {
             Toast.makeText(
@@ -72,6 +80,20 @@ class AudioDetailScreen(
             if (finishActivityOnBack) activity?.finish()
         }
 
+        // Resolve the tapped dictionary entry to a backend id (same route as the category screen,
+        // cacheable id endpoint) and only fall back to the legacy $name$ parse when the on-disk
+        // dictionaries cannot pin it down to a single entry.
+        fun navigateCategory(field: AudioCategoryField, name: String) {
+            scope.launch {
+                val ref = withContext(Dispatchers.IO) { viewModel.resolveRef(field, name) }
+                if (ref != null) {
+                    navigator.push(AudioBrowseScreen(categoryTitle = name, initialCategory = ref))
+                } else {
+                    navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = field.legacyKeyword(name)))
+                }
+            }
+        }
+
         if (finishActivityOnBack) {
             BackHandler(onBack = ::navigateBack)
         }
@@ -83,11 +105,32 @@ class AudioDetailScreen(
             isFavorite = isFavorite,
             bottomBar = { AudioMiniPlayerNavigationBar() },
             navigateUp = ::navigateBack,
-            onRetry = { viewModel.load(work) },
-            onPlayAll = {
-                if (state.flatTracks.isNotEmpty()) navigator.push(AudioPlayerScreen(state.flatTracks, 0))
+            onClickHome = {
+                // Reuse the home screen already in the stack when there is one, otherwise the
+                // reader hand-off would strand the user on a page with no way upstream.
+                val home = navigator.items.filterIsInstance<AudioBrowseScreen>()
+                    .lastOrNull { it.categoryTitle == null }
+                if (home != null) {
+                    navigator.popUntil { it === home }
+                } else {
+                    navigator.push(AudioBrowseScreen())
+                }
             },
-            onClickTrack = { index -> navigator.push(AudioPlayerScreen(state.flatTracks, index)) },
+            onRetry = { viewModel.load(work) },
+            onClickTrack = { index ->
+                // Tapping one track plays its folder, not the whole work: tracks are grouped by
+                // disc/chapter, so the neighbour tracks are the ones that belong to this listen.
+                // The folder also lands in the shared playlist, which is what keeps playing once
+                // the player is closed. Tracks sitting at the work root have an empty folderPath
+                // and simply group with the other root tracks.
+                val target = state.flatTracks[index]
+                val folderTracks = state.flatTracks.filter { it.folderPath == target.folderPath }
+                val startIndex = folderTracks
+                    .indexOfFirst { it.mediaStreamUrl == target.mediaStreamUrl }
+                    .coerceAtLeast(0)
+                viewModel.enqueueFolder(folderTracks)
+                navigator.push(AudioPlayerScreen(folderTracks, startIndex))
+            },
             onTogglePlaylist = { item ->
                 toastPlaylistChange(viewModel.toggleInPlaylist(item))
             },
@@ -98,15 +141,9 @@ class AudioDetailScreen(
                 toastPlaylistChange(viewModel.toggleFolderPlaylist(folderPath))
             },
             onToggleFavorite = { viewModel.toggleFavorite(work) },
-            onClickCircle = { name ->
-                navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = "\$circle:$name\$"))
-            },
-            onClickVa = { name ->
-                navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = "\$va:$name\$"))
-            },
-            onClickTag = { name ->
-                navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = "\$tag:$name\$"))
-            },
+            onClickCircle = { name -> navigateCategory(AudioCategoryField.CIRCLE, name) },
+            onClickVa = { name -> navigateCategory(AudioCategoryField.VA, name) },
+            onClickTag = { name -> navigateCategory(AudioCategoryField.TAG, name) },
         )
     }
 }
@@ -125,6 +162,7 @@ class AudioDetailViewModel(
     private val favoriteStore: AudioFavoriteStore = Injekt.get(),
     private val accountSync: AudioAccountSync = Injekt.get(),
     private val basePreferences: BasePreferences = Injekt.get(),
+    private val categoryCache: AudioCategoryCache = Injekt.get(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AudioDetailState())
@@ -213,6 +251,16 @@ class AudioDetailViewModel(
         }
     }
 
+    /**
+     * Ensures [items] are all present in the shared playlist, keeping any track already queued.
+     * Silent on purpose: the folder rows turning into their checked state is the feedback.
+     */
+    fun enqueueFolder(items: List<AudioPlayItem>) {
+        if (items.isEmpty()) return
+        playlistStore.addAll(items)
+        refreshPlaylistState()
+    }
+
     fun toggleFavorite(work: Work) {
         val isFavorite = favoriteStore.toggle(work)
         _isFavorite.value = isFavorite
@@ -228,5 +276,33 @@ class AudioDetailViewModel(
             .filter { it.mediaStreamUrl in storedUrls }
             .map { it.mediaStreamUrl }
             .toSet()
+    }
+
+    /**
+     * Resolves a dictionary entry name to its backend id so the detail page navigates the same way
+     * as the category screen: an id filter on the cacheable endpoint instead of re-parsing the
+     * name server-side. Returns null when the name is missing from the on-disk dictionaries or
+     * matches more than one entry, in which case the caller keeps the legacy `$name$` route — the
+     * fallback never regresses, it just skips the optimisation.
+     */
+    suspend fun resolveRef(field: AudioCategoryField, name: String): AudioCategoryRef? {
+        val snapshot = categoryCache.read() ?: return null
+        return when (field) {
+            AudioCategoryField.CIRCLE ->
+                snapshot.circles
+                    .filter { it.name == name }
+                    .singleOrNull()
+                    ?.let { AudioCategoryRef(field, it.id.toString(), name) }
+            AudioCategoryField.VA ->
+                snapshot.vas
+                    .filter { it.name == name }
+                    .singleOrNull()
+                    ?.let { AudioCategoryRef(field, it.id, name) }
+            AudioCategoryField.TAG ->
+                snapshot.tags
+                    .filter { it.name == name }
+                    .singleOrNull()
+                    ?.let { AudioCategoryRef(field, it.id.toString(), name) }
+        }
     }
 }

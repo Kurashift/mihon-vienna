@@ -2,16 +2,16 @@ package eu.kanade.presentation.more.settings.screen.about
 
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Public
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +31,9 @@ import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
-import eu.kanade.tachiyomi.data.updater.RELEASE_URL
+import eu.kanade.tachiyomi.data.updater.AppUpdateState
+import eu.kanade.tachiyomi.data.updater.PROJECT_GITHUB_URL
+import eu.kanade.tachiyomi.data.updater.PROJECT_RELEASES_URL
 import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
 import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.tachiyomi.util.lang.toDateTimestampString
@@ -43,22 +45,16 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import logcat.LogPriority
-import tachiyomi.core.common.Constants
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.release.interactor.GetApplicationRelease
 import tachiyomi.i18n.MR
-import tachiyomi.presentation.core.components.LinkIcon
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.icons.CustomIcons
-import tachiyomi.presentation.core.icons.Discord
-import tachiyomi.presentation.core.icons.Facebook
 import tachiyomi.presentation.core.icons.Github
-import tachiyomi.presentation.core.icons.Reddit
-import tachiyomi.presentation.core.icons.X
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import kotlin.time.Instant
@@ -73,6 +69,7 @@ object AboutScreen : Screen() {
         val handleBack = LocalBackPress.current
         val navigator = LocalNavigator.currentOrThrow
         var isCheckingUpdates by remember { mutableStateOf(false) }
+        val hasAppUpdate by AppUpdateState.availableRelease.collectAsState()
 
         Scaffold(
             topBar = { scrollBehavior ->
@@ -108,6 +105,9 @@ object AboutScreen : Screen() {
                         TextPreferenceWidget(
                             title = stringResource(MR.strings.check_for_updates),
                             widget = {
+                                if (hasAppUpdate != null && !isCheckingUpdates) {
+                                    UpdateAvailableDot()
+                                }
                                 AnimatedVisibility(visible = isCheckingUpdates) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(28.dp),
@@ -146,7 +146,7 @@ object AboutScreen : Screen() {
                     item {
                         TextPreferenceWidget(
                             title = stringResource(MR.strings.whats_new),
-                            onPreferenceClick = { uriHandler.openUri(RELEASE_URL) },
+                            onPreferenceClick = { uriHandler.openUri(PROJECT_RELEASES_URL) },
                         )
                     }
                 }
@@ -160,52 +160,28 @@ object AboutScreen : Screen() {
 
                 item {
                     TextPreferenceWidget(
-                        title = stringResource(MR.strings.privacy_policy),
-                        onPreferenceClick = { uriHandler.openUri("https://mihon.app/privacy/") },
+                        title = "GitHub",
+                        widget = {
+                            Icon(
+                                imageVector = CustomIcons.Github,
+                                tint = MaterialTheme.colorScheme.primary,
+                                contentDescription = null,
+                            )
+                        },
+                        onPreferenceClick = { uriHandler.openUri(PROJECT_GITHUB_URL) },
                     )
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        LinkIcon(
-                            label = stringResource(MR.strings.website),
-                            icon = Icons.Outlined.Public,
-                            url = "https://mihon.app",
-                        )
-                        LinkIcon(
-                            label = "Discord",
-                            icon = CustomIcons.Discord,
-                            url = Constants.URL_DISCORD,
-                        )
-                        LinkIcon(
-                            label = "X",
-                            icon = CustomIcons.X,
-                            url = "https://x.com/mihonapp",
-                        )
-                        LinkIcon(
-                            label = "Facebook",
-                            icon = CustomIcons.Facebook,
-                            url = "https://facebook.com/mihonapp",
-                        )
-                        LinkIcon(
-                            label = "Reddit",
-                            icon = CustomIcons.Reddit,
-                            url = "https://www.reddit.com/r/mihonapp",
-                        )
-                        LinkIcon(
-                            label = "GitHub",
-                            icon = CustomIcons.Github,
-                            url = "https://github.com/a1127810984/mihon-personal",
-                        )
-                    }
                 }
             }
         }
+    }
+
+    @Composable
+    private fun UpdateAvailableDot() {
+        Spacer(
+            modifier = Modifier
+                .size(10.dp)
+                .background(MaterialTheme.colorScheme.error, CircleShape),
+        )
     }
 
     /**

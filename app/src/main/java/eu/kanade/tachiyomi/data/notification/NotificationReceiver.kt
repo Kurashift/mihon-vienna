@@ -149,7 +149,9 @@ class NotificationReceiver : BroadcastReceiver() {
         val manga = runBlocking { getManga.await(mangaId) }
         val chapter = runBlocking { getChapter.await(chapterId) }
         if (manga != null && chapter != null) {
-            val intent = ReaderActivity.newIntent(context, manga.id, chapter.id).apply {
+            // Nothing of the app is necessarily underneath when the reader is opened from a
+            // notification, so the details screen is what back should land on.
+            val intent = ReaderActivity.newIntent(context, manga.id, chapter.id, returnToManga = true).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
             context.startActivity(intent)
@@ -394,7 +396,7 @@ class NotificationReceiver : BroadcastReceiver() {
          * @param chapter chapter that needs to be opened
          */
         internal fun openChapterPendingActivity(context: Context, manga: Manga, chapter: Chapter): PendingIntent {
-            val newIntent = ReaderActivity.newIntent(context, manga.id, chapter.id)
+            val newIntent = ReaderActivity.newIntent(context, manga.id, chapter.id, returnToManga = true)
             return PendingIntent.getActivity(
                 context,
                 manga.id.hashCode(),

@@ -29,7 +29,10 @@ fun ChapterHeader(
                 enabled = enabled,
                 onClick = onClick,
             )
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            // Sits closer to the rows it labels than to the divider above it: a section label
+            // belongs to its list, so the wide gap goes on top. Chapter rows carry their own
+            // 12dp top padding, which is where the space below comes from.
+            .padding(start = 16.dp, top = 16.dp, end = 16.dp),
         verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
     ) {
         Text(

@@ -1,0 +1,15 @@
+-- 阅读器正常翻到最后一页读完时，此前只写了 read，没有写 marked_read_at，
+-- 已读清单里这些篇目的时间会显示成「尚未」。这里用历史里最后一次阅读时间补录一次；
+-- 补录之后打开阅读器只更新进度，不再改动这个时间，排序与展示都保持稳定。
+UPDATE chapters
+SET marked_read_at = coalesce(
+    (
+        SELECT history.last_read
+        FROM history
+        WHERE history.chapter_id = chapters._id
+        AND history.last_read > 0
+    ),
+    marked_read_at
+)
+WHERE read = 1
+AND marked_read_at = 0;

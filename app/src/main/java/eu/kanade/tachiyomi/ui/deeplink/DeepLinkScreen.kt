@@ -67,6 +67,7 @@ class DeepLinkScreen(
                             context,
                             resultState.manga.id,
                             resultState.chapterId,
+                            returnToManga = true,
                         ).also(context::startActivity)
                     }
                 }

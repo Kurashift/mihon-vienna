@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.audio
 
+import android.os.SystemClock
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.HttpException
@@ -19,6 +20,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import tachiyomi.core.common.util.lang.withIOContext
+import tachiyomi.core.common.util.system.logcat
 import java.io.IOException
 import java.net.URLEncoder
 
@@ -39,7 +41,31 @@ class KikoeruApi(
     ): WorksResponse = withIOContext {
         val url = "$BASE_URL/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
         with(json) {
-            executeWithRetry { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url) { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+        }
+    }
+
+    /**
+     * Works belonging to one category entry, filtered by its id.
+     *
+     * Preferred over [search] with a `$circle:Name$` keyword. Measured against the live backend the
+     * id endpoints answer in roughly half the time, and they honour `order`/`sort` the same way
+     * [fetchWorks] does. They are also requested without `CacheControl.FORCE_NETWORK`, so the
+     * network interceptor gives them a `max-age` and repeat visits are served from disk.
+     */
+    suspend fun fetchCategoryWorks(
+        field: AudioCategoryField,
+        id: String,
+        page: Int,
+        pageSize: Int,
+        order: String = "release",
+        sort: String = "desc",
+    ): WorksResponse = withIOContext {
+        val encodedId = URLEncoder.encode(id, "UTF-8")
+        val url = "$BASE_URL/api/${field.pathSegment}/$encodedId/works" +
+            "?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
+        with(json) {
+            executeWithRetry(url) { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
         }
     }
 
@@ -55,7 +81,7 @@ class KikoeruApi(
         val encoded = URLEncoder.encode(keyword, "UTF-8").replace("+", "%20")
         val url = "$BASE_URL/api/search/$encoded?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
         with(json) {
-            executeWithRetry {
+            executeWithRetry(url) {
                 client.newCall(authenticated(GET(url, cache = CacheControl.FORCE_NETWORK)))
                     .awaitSuccess()
                     .use { it.parseAs() }
@@ -68,28 +94,36 @@ class KikoeruApi(
     ): List<TrackNode> = withIOContext {
         val url = "$BASE_URL/api/tracks/$workId"
         with(json) {
-            executeWithRetry { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url) { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
         }
     }
 
+    // The three dictionaries below are large and slow, and every one of them now has a persisted
+    // copy to fall back on, so they give up sooner than the work feeds do.
     suspend fun fetchTags(): List<TagItem> = withIOContext {
         val url = "$BASE_URL/api/tags/"
         with(json) {
-            executeWithRetry { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url, DICTIONARY_ATTEMPTS) {
+                client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() }
+            }
         }
     }
 
     suspend fun fetchVas(): List<VaItem> = withIOContext {
         val url = "$BASE_URL/api/vas/"
         with(json) {
-            executeWithRetry { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url, DICTIONARY_ATTEMPTS) {
+                client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() }
+            }
         }
     }
 
     suspend fun fetchCircles(): List<CircleItem> = withIOContext {
         val url = "$BASE_URL/api/circles/"
         with(json) {
-            executeWithRetry { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url, DICTIONARY_ATTEMPTS) {
+                client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() }
+            }
         }
     }
 
@@ -101,7 +135,7 @@ class KikoeruApi(
             put("password", password)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         with(json) {
-            executeWithRetry { client.newCall(POST(url, body = body)).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url) { client.newCall(POST(url, body = body)).awaitSuccess().use { it.parseAs() } }
         }
     }
 
@@ -114,7 +148,7 @@ class KikoeruApi(
             put("pageSize", pageSize)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         with(json) {
-            executeWithRetry {
+            executeWithRetry(url) {
                 client.newCall(authenticated(POST(url, body = body))).awaitSuccess().use { it.parseAs() }
             }
         }
@@ -130,7 +164,7 @@ class KikoeruApi(
             put("pageSize", pageSize)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         with(json) {
-            executeWithRetry {
+            executeWithRetry(url) {
                 client.newCall(authenticated(POST(url, body = body))).awaitSuccess().use { it.parseAs() }
             }
         }
@@ -141,7 +175,7 @@ class KikoeruApi(
         val encodedProgress = URLEncoder.encode(progress.wireValue, "UTF-8")
         val url = "$BASE_URL/api/review?order=updated_at&sort=desc&page=$page&filter=$encodedProgress"
         with(json) {
-            executeWithRetry {
+            executeWithRetry(url) {
                 client.newCall(authenticated(GET(url, cache = CacheControl.FORCE_NETWORK)))
                     .awaitSuccess()
                     .use { it.parseAs() }
@@ -153,7 +187,7 @@ class KikoeruApi(
     suspend fun updateAccountProgress(workId: Long, progress: AudioAccountProgress?) = withIOContext {
         val url = "$BASE_URL/api/review"
         val body = buildAccountProgressBody(workId, progress).toRequestBody(JSON_MEDIA_TYPE)
-        executeWithRetry {
+        executeWithRetry(url) {
             client.newCall(authenticated(PUT(url, body = body))).awaitSuccess().close()
         }
     }
@@ -163,7 +197,7 @@ class KikoeruApi(
         var lastError: Exception? = null
         subtitleUrls(url, fallbackUrl).forEach { candidate ->
             try {
-                return@withIOContext executeWithRetry {
+                return@withIOContext executeWithRetry(candidate) {
                     val request = GET(candidate, cache = CacheControl.FORCE_NETWORK).let { request ->
                         if (candidate.startsWith(BASE_URL, ignoreCase = true)) authenticated(request) else request
                     }
@@ -188,32 +222,44 @@ class KikoeruApi(
      * Retries transient failures (server 5xx, connection reset) a couple of times with a short
      * backoff. The backend sits behind Cloudflare and occasionally returns 503 under load, which
      * previously surfaced as an instant error.
+     *
+     * @param url Only used to label the timing log, which is how the loading work is measured.
      */
-    private suspend fun <T> executeWithRetry(block: suspend () -> T): T {
-        var lastError: Exception? = null
-        repeat(MAX_ATTEMPTS) { attempt ->
-            try {
-                return block()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (e is HttpException && e.code == 401) {
-                    basePreferences.audioAuthToken.set("")
-                    basePreferences.audioUsername.set("")
-                }
-                if (e is HttpException && e.code in 400..499) throw e
-                lastError = e
-                if (attempt < MAX_ATTEMPTS - 1) {
-                    delay(RETRY_BACKOFF_MILLIS shl attempt)
+    private suspend fun <T> executeWithRetry(
+        url: String,
+        maxAttempts: Int = MAX_ATTEMPTS,
+        block: suspend () -> T,
+    ): T {
+        val startedAt = SystemClock.elapsedRealtime()
+        try {
+            var lastError: Exception? = null
+            repeat(maxAttempts) { attempt ->
+                try {
+                    return block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (e is HttpException && e.code == 401) {
+                        basePreferences.audioAuthToken.set("")
+                        basePreferences.audioUsername.set("")
+                    }
+                    if (e is HttpException && e.code in 400..499) throw e
+                    lastError = e
+                    if (attempt < maxAttempts - 1) {
+                        delay(RETRY_BACKOFF_MILLIS shl attempt)
+                    }
                 }
             }
+            throw lastError ?: IOException("request failed")
+        } finally {
+            logcat { "kikoeru ${SystemClock.elapsedRealtime() - startedAt}ms $url" }
         }
-        throw lastError ?: IOException("request failed")
     }
 
     private companion object {
         const val BASE_URL = "https://api.asmr-200.com"
         const val MAX_ATTEMPTS = 3
+        const val DICTIONARY_ATTEMPTS = 2
         const val RETRY_BACKOFF_MILLIS = 400L
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }

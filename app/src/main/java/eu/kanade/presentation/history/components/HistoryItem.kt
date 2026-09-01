@@ -31,6 +31,8 @@ import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.image.LocalChapterCover
 
 private val HistoryItemHeight = 96.dp
 
@@ -50,9 +52,20 @@ fun HistoryItem(
             .padding(horizontal = MaterialTheme.padding.medium, vertical = MaterialTheme.padding.small),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val isLocal = history.coverData.sourceId == LocalSource.ID
+        val cover = if (isLocal) {
+            LocalChapterCover(
+                chapterId = history.chapterId,
+                chapterUrl = history.chapterUrl,
+                version = history.chapterVersion xor history.chapterDateUpload xor history.chapterLastModifiedAt,
+            )
+        } else {
+            history.coverData
+        }
+        val title = if (isLocal) history.chapterDisplayName else history.title
         MangaCover.Book(
             modifier = Modifier.fillMaxHeight(),
-            data = history.coverData,
+            data = cover,
             onClick = onClickCover,
         )
         Column(
@@ -62,7 +75,7 @@ fun HistoryItem(
         ) {
             val textStyle = MaterialTheme.typography.bodyMedium
             Text(
-                text = history.title,
+                text = title,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,

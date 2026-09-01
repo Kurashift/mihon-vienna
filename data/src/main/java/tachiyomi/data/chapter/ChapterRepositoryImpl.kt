@@ -4,6 +4,7 @@ import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.JsonObject
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.toLong
@@ -12,6 +13,7 @@ import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.data.subscribeToList
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.model.ChapterTranslatedName
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 
@@ -40,6 +42,7 @@ class ChapterRepositoryImpl(
                         chapter.version,
                         chapter.memo,
                         chapter.translatedName,
+                        chapter.markedReadAt,
                     )
                         .awaitAsOne()
                     chapter.copy(id = chapterId)
@@ -108,6 +111,7 @@ class ChapterRepositoryImpl(
                 isSyncing = 0,
                 memo = chapterUpdate.memo?.let(MemoColumnAdapter::encode),
                 translatedName = chapterUpdate.translatedName,
+                markedReadAt = chapterUpdate.markedReadAt,
             )
         }
     }
@@ -121,12 +125,14 @@ class ChapterRepositoryImpl(
         pageNumber: Long,
         totalPages: Long,
         completed: Boolean,
+        completedAt: Long,
     ) {
         database.chaptersQueries.updateReaderProgress(
             chapterId = chapterId,
             pageNumber = pageNumber,
             totalPages = totalPages,
             completed = completed.toLong(),
+            completedAt = completedAt,
         )
     }
 
@@ -152,6 +158,7 @@ class ChapterRepositoryImpl(
                     isSyncing = 0,
                     memo = chapterUpdate.memo?.let(MemoColumnAdapter::encode),
                     translatedName = chapterUpdate.translatedName,
+                    markedReadAt = chapterUpdate.markedReadAt,
                 )
             }
         }
@@ -196,6 +203,32 @@ class ChapterRepositoryImpl(
         return database.chaptersQueries
             .getChaptersByMangaIds(mangaIds, applyScanlatorFilter.toLong(), ::mapChapter)
             .awaitAsList()
+    }
+
+    override suspend fun getTranslatedNames(mangaIds: List<Long>): List<ChapterTranslatedName> {
+        if (mangaIds.isEmpty()) return emptyList()
+        return database.chaptersQueries
+            .getTranslatedNamesByMangaIds(mangaIds) { mangaId, translatedName ->
+                ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
+            }
+            .awaitAsList()
+    }
+
+    override fun observeTranslatedNames(mangaIds: List<Long>): Flow<List<ChapterTranslatedName>> {
+        if (mangaIds.isEmpty()) return flowOf(emptyList())
+        return database.chaptersQueries
+            .getTranslatedNamesByMangaIds(mangaIds) { mangaId, translatedName ->
+                ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
+            }
+            .subscribeToList()
+    }
+
+    override suspend fun getTranslatedNamesBySourceId(sourceId: Long): Map<String, List<String>> {
+        return database.chaptersQueries
+            .getTranslatedNamesBySourceId(sourceId) { url, translatedName -> url to translatedName.trim() }
+            .awaitAsList()
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, names) -> names.distinct() }
     }
 
     override suspend fun getScanlatorsByMangaId(mangaId: Long): List<String> {
@@ -255,6 +288,7 @@ class ChapterRepositoryImpl(
         totalPages: Long,
         customOrder: Long,
         translatedName: String?,
+        markedReadAt: Long,
     ): Chapter = Chapter(
         id = id,
         mangaId = mangaId,
@@ -274,5 +308,6 @@ class ChapterRepositoryImpl(
         version = version,
         memo = memo,
         translatedName = translatedName,
+        markedReadAt = markedReadAt,
     )
 }

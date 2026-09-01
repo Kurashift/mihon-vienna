@@ -1,0 +1,1 @@
+ALTER TABLE chapters ADD COLUMN marked_read_at INTEGER NOT NULL DEFAULT 0;

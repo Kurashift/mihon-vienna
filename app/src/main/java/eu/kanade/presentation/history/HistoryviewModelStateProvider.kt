@@ -108,6 +108,13 @@ class HistoryviewModelStateProvider : PreviewParameterProvider<HistoryViewModel.
                             url = "https://example.com/cover.png",
                             lastModified = Random.nextLong(),
                         ),
+                        chapterFlags = tachiyomi.domain.manga.model.Manga.CHAPTER_DISPLAY_NAME,
+                        chapterName = "Chapter Title",
+                        chapterTranslatedName = null,
+                        chapterUrl = "chapter-url",
+                        chapterVersion = 1L,
+                        chapterDateUpload = 1L,
+                        chapterLastModifiedAt = 1L,
                     ),
                 ),
             )

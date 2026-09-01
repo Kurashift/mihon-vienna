@@ -34,8 +34,6 @@ fun BrowseSourceToolbar(
     navigateUp: (() -> Unit)?,
     onWebViewClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onOpenRandomManga: () -> Unit,
-    onOpenRandomGoodDoujin: (() -> Unit)? = null,
     onOpenAudio: () -> Unit,
     onOpenSources: (() -> Unit)? = null,
     onFilterClick: (() -> Unit)? = null,
@@ -130,10 +128,6 @@ fun BrowseSourceToolbar(
                                         }
                                     } else {
                                         add(stringResource(MR.strings.action_open_in_web_view) to onWebViewClick)
-                                    }
-                                    add(stringResource(MR.strings.action_open_random_manga) to onOpenRandomManga)
-                                    onOpenRandomGoodDoujin?.let {
-                                        add(stringResource(MR.strings.action_open_random_good_doujin) to it)
                                     }
                                     add(
                                         stringResource(

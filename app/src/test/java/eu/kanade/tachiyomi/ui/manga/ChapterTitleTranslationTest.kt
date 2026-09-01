@@ -8,7 +8,7 @@ import tachiyomi.domain.manga.model.Manga
 class ChapterTitleTranslationTest {
 
     @Test
-    fun `translation follows a moved chapter with the same database id`() {
+    fun `translation follows a moved chapter with the same name`() {
         val document = document(
             ChapterTitleTranslationEntry(
                 chapterId = 10,
@@ -42,7 +42,74 @@ class ChapterTitleTranslationTest {
     }
 
     @Test
-    fun `same title alone never assigns a translation to a new chapter`() {
+    fun `single manga import follows a moved chapter that has a unique name`() {
+        val document = document(
+            ChapterTitleTranslationEntry(
+                chapterId = 10,
+                originalTitle = "Short Story",
+                originalUrl = "Old Author/Short Story.cbz",
+                translatedTitle = "短篇故事",
+            ),
+        )
+        val movedChapter = chapter(20, "New Author/Short Story.cbz", "Short Story")
+
+        val plan = ChapterTitleTranslationCodec.planImport(document, listOf(movedChapter))
+
+        plan.updates.single().id shouldBe 20L
+        plan.updates.single().translatedName shouldBe "短篇故事"
+        plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `single manga import uses database id only after portable matches fail`() {
+        val document = document(
+            ChapterTitleTranslationEntry(
+                chapterId = 10,
+                originalTitle = "Repeated Name",
+                originalUrl = "Old Author/Repeated Name.cbz",
+                translatedTitle = "正确译名",
+            ),
+        ).copy(exportInstanceId = "device-a")
+        val moved = chapter(10, "New Author/Repeated Name.cbz", "Repeated Name")
+        val sameName = chapter(20, "New Author/Repeated Name (2).cbz", "Repeated Name")
+
+        val plan = ChapterTitleTranslationCodec.planImport(
+            document = document,
+            currentChapters = listOf(moved, sameName),
+            currentInstanceId = "device-a",
+        )
+
+        plan.updates.single().id shouldBe 10L
+        plan.updates.single().translatedName shouldBe "正确译名"
+        plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `single manga unique name wins over a colliding database id`() {
+        val document = document(
+            ChapterTitleTranslationEntry(
+                chapterId = 10,
+                originalTitle = "Story",
+                originalUrl = "Old Author/Story.cbz",
+                translatedTitle = "故事",
+            ),
+        ).copy(exportInstanceId = "device-a")
+        val idCollision = chapter(10, "Other Author/Different.cbz", "Different")
+        val correctByName = chapter(20, "New Author/Story.cbz", "Story")
+
+        val plan = ChapterTitleTranslationCodec.planImport(
+            document = document,
+            currentChapters = listOf(idCollision, correctByName),
+            currentInstanceId = "device-a",
+        )
+
+        plan.updates.single().id shouldBe 20L
+        plan.updates.single().translatedName shouldBe "故事"
+        plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `ambiguous title alone never assigns a translation to a new chapter`() {
         val document = document(
             ChapterTitleTranslationEntry(
                 chapterId = 10,
@@ -51,9 +118,11 @@ class ChapterTitleTranslationTest {
                 translatedTitle = "旧篇目",
             ),
         )
-        val newChapter = chapter(20, "Author B/Repeated Name.cbz", "Repeated Name")
+        // Two chapters share that name, so there is no unambiguous target.
+        val first = chapter(10, "Author B/Repeated Name.cbz", "Repeated Name")
+        val second = chapter(21, "Author B/Repeated Name (2).cbz", "Repeated Name")
 
-        val plan = ChapterTitleTranslationCodec.planImport(document, listOf(newChapter))
+        val plan = ChapterTitleTranslationCodec.planImport(document, listOf(first, second))
 
         plan.updates shouldBe emptyList()
         plan.ignoredCount shouldBe 1
@@ -78,6 +147,25 @@ class ChapterTitleTranslationTest {
     }
 
     @Test
+    fun `export instance id round trips through json and csv`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val chapter = chapter(10, "Author/Story.cbz", "Story")
+
+        ChapterTitleTranslationFormat.entries.forEach { format ->
+            val decoded = ChapterTitleTranslationCodec.decode(
+                ChapterTitleTranslationCodec.encode(
+                    manga = manga,
+                    chapters = listOf(chapter),
+                    format = format,
+                    exportInstanceId = "device-a",
+                ),
+            )
+
+            decoded.exportInstanceId shouldBe "device-a"
+        }
+    }
+
+    @Test
     fun `local library export groups mangas and keeps untranslated titles blank`() {
         val firstManga = Manga.create().copy(id = 7, title = "Author B", url = "Author B")
         val secondManga = Manga.create().copy(id = 8, title = "Author A", url = "Author A")
@@ -97,6 +185,23 @@ class ChapterTitleTranslationTest {
         decoded.mangas.map { it.mangaTitle } shouldBe listOf("Author A", "Author B")
         decoded.mangas.first().chapters.single().translatedTitle shouldBe ""
         decoded.mangas.last().chapters.single().translatedTitle shouldBe "故事"
+    }
+
+    @Test
+    fun `csv import keeps rows whose stable key is missing or malformed`() {
+        // Hand editing a spreadsheet can easily break this column. It is no longer used to match a
+        // chapter, so it must not discard an otherwise usable row.
+        val csv = buildString {
+            append('\uFEFF')
+            appendLine("stable_key,漫画原名,漫画路径,篇目原名,篇目路径,中文名")
+            appendLine(",Author A,Author A,Story,Author A/Story.cbz,故事 A")
+            appendLine("not-a-number,Author B,Author B,Story,Author B/Story.cbz,故事 B")
+        }
+
+        val decoded = ChapterTitleTranslationCodec.decodeLocalLibrary(csv)
+
+        decoded.mangas.map { it.mangaTitle } shouldBe listOf("Author A", "Author B")
+        decoded.mangas.map { it.chapters.single().translatedTitle } shouldBe listOf("故事 A", "故事 B")
     }
 
     @Test
@@ -243,7 +348,7 @@ class ChapterTitleTranslationTest {
     }
 
     @Test
-    fun `database id collision does not import a translation across devices`() {
+    fun `database id is never used to import a translation across different instances`() {
         val exported = LocalLibraryChapterTitleTranslationDocument(
             mangas = listOf(
                 document(
@@ -253,19 +358,165 @@ class ChapterTitleTranslationTest {
                         originalUrl = "Author A/Story.cbz",
                         translatedTitle = "旧译名",
                     ),
-                ).copy(mangaId = 7, mangaTitle = "Author A", mangaUrl = "Author A"),
+                ).copy(
+                    exportInstanceId = "device-a",
+                    mangaId = 7,
+                    mangaTitle = "Author A",
+                    mangaUrl = "Author A",
+                ),
             ),
         )
+        // Same database id and manga id, different name and path. Ids are device local, so they
+        // must not be enough to place a translation.
         val unrelatedManga = Manga.create().copy(id = 7, title = "Author A", url = "Other Author")
-        val unrelatedChapter = chapter(10, "Other Author/Different.cbz", "Story").copy(mangaId = 7)
+        val unrelatedChapter = chapter(10, "Other Author/Different.cbz", "Different").copy(mangaId = 7)
 
         val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
             document = exported,
             currentMangas = listOf(unrelatedManga to listOf(unrelatedChapter)),
+            currentInstanceId = "device-b",
         )
 
         plan.updates shouldBe emptyList()
         plan.ignoredCount shouldBe 1
+    }
+
+    @Test
+    fun `cross device import matches a reorganized chapter by its unique name`() {
+        // Exported on another device before the library was reorganized: the manga folder was
+        // renamed and the chapter moved, so neither manga nor chapter path matches anymore.
+        val exported = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = 10,
+                        originalTitle = "Story",
+                        originalUrl = "Old Author/Story.cbz",
+                        translatedTitle = "故事",
+                    ),
+                ).copy(mangaId = 99, mangaTitle = "Old Author", mangaUrl = "Old Author"),
+            ),
+        )
+        val reorganizedManga = Manga.create().copy(id = 7, title = "New Author", url = "New Author")
+        val movedChapter = chapter(10, "New Author/Story.cbz", "Story").copy(mangaId = 7)
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = exported,
+            currentMangas = listOf(reorganizedManga to listOf(movedChapter)),
+        )
+
+        plan.updates.single().id shouldBe 10L
+        plan.updates.single().translatedName shouldBe "故事"
+        plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `cross device import skips an ambiguous name instead of guessing`() {
+        // Exported on another device from a manga that does not exist here.
+        val exported = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = 10,
+                        originalTitle = "Story",
+                        originalUrl = "Missing Author/Story.cbz",
+                        translatedTitle = "别的作品的译名",
+                    ),
+                ).copy(
+                    exportInstanceId = "device-a",
+                    mangaId = 99,
+                    mangaTitle = "Missing Author",
+                    mangaUrl = "Missing Author",
+                ),
+            ),
+        )
+        // Two unrelated chapters share that name, so there is no unambiguous target.
+        val firstManga = Manga.create().copy(id = 7, title = "Author A", url = "Author A")
+        val secondManga = Manga.create().copy(id = 8, title = "Author B", url = "Author B")
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = exported,
+            currentMangas = listOf(
+                firstManga to listOf(chapter(10, "Author A/Story.cbz", "Story").copy(mangaId = 7)),
+                secondManga to listOf(chapter(11, "Author B/Story.cbz", "Story").copy(mangaId = 8)),
+            ),
+            currentInstanceId = "device-b",
+        )
+
+        plan.updates shouldBe emptyList()
+        plan.ignoredCount shouldBe 1
+    }
+
+    @Test
+    fun `library import uses database id as a final fallback for a moved duplicate name`() {
+        val exported = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = 10,
+                        originalTitle = "Repeated Name",
+                        originalUrl = "Old Author/Repeated Name.cbz",
+                        translatedTitle = "正确译名",
+                    ),
+                ).copy(
+                    exportInstanceId = "device-a",
+                    mangaId = 7,
+                    mangaTitle = "Old Author",
+                    mangaUrl = "Old Author",
+                ),
+            ),
+        )
+        val newManga = Manga.create().copy(id = 8, title = "New Author", url = "New Author")
+        val moved = chapter(10, "New Author/Repeated Name.cbz", "Repeated Name").copy(mangaId = 8)
+        val sameName = chapter(20, "New Author/Repeated Name (2).cbz", "Repeated Name").copy(mangaId = 8)
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = exported,
+            currentMangas = listOf(newManga to listOf(moved, sameName)),
+            currentInstanceId = "device-a",
+        )
+
+        plan.updates.single().id shouldBe 10L
+        plan.updates.single().translatedName shouldBe "正确译名"
+        plan.ignoredCount shouldBe 0
+    }
+
+    @Test
+    fun `library unique name wins over a colliding database id`() {
+        val exported = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = 10,
+                        originalTitle = "Story",
+                        originalUrl = "Old Author/Story.cbz",
+                        translatedTitle = "故事",
+                    ),
+                ).copy(
+                    exportInstanceId = "device-a",
+                    mangaId = 99,
+                    mangaTitle = "Old Author",
+                    mangaUrl = "Old Author",
+                ),
+            ),
+        )
+        val unrelatedManga = Manga.create().copy(id = 7, title = "Other Author", url = "Other Author")
+        val correctManga = Manga.create().copy(id = 8, title = "New Author", url = "New Author")
+        val idCollision = chapter(10, "Other Author/Different.cbz", "Different").copy(mangaId = 7)
+        val correctByName = chapter(20, "New Author/Story.cbz", "Story").copy(mangaId = 8)
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = exported,
+            currentMangas = listOf(
+                unrelatedManga to listOf(idCollision),
+                correctManga to listOf(correctByName),
+            ),
+            currentInstanceId = "device-a",
+        )
+
+        plan.updates.single().id shouldBe 20L
+        plan.updates.single().translatedName shouldBe "故事"
+        plan.ignoredCount shouldBe 0
     }
 
     @Test
@@ -363,7 +614,7 @@ class ChapterTitleTranslationTest {
     }
 
     @Test
-    fun `moved untranslated chapter imports by stable id while old context is ignored`() {
+    fun `moved untranslated chapter imports by its name while old context is ignored`() {
         val oldManga = Manga.create().copy(id = 7, title = "Author A", url = "Author A")
         val context = chapter(10, "Author A/Context.cbz", "Context").copy(translatedName = "旧参考译名")
         val untranslated = chapter(11, "Author A/Story.cbz", "Story")

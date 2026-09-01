@@ -98,12 +98,6 @@ class SupportUsScreen : Screen() {
                 )
 
                 Text(
-                    text = stringResource(MR.strings.supportUsScreen_currentlySupportedBy, 200),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
-                )
-
-                Text(
                     text = stringResource(MR.strings.supportUsScreen_contactForDetailsMessage),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),

@@ -59,6 +59,7 @@ import tachiyomi.domain.category.repository.CategoryRepository
 import tachiyomi.domain.chapter.interactor.GetBookmarkedChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.interactor.GetChapterByUrlAndMangaId
+import tachiyomi.domain.chapter.interactor.GetChapterTranslatedNames
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.SetMangaDefaultChapterFlags
 import tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter
@@ -123,7 +124,7 @@ class DomainModule : InjektModule {
         addFactory { GetMangaByUrlAndSourceId(get()) }
         addFactory { GetManga(get()) }
         addFactory { GetMangaProgress(get()) }
-        addFactory { GetNextChapters(get(), get(), get()) }
+        addFactory { GetNextChapters(get(), get(), get(), get()) }
         addFactory { GetUpcomingManga(get()) }
         addFactory { ResetViewerFlags(get()) }
         addFactory { SetMangaChapterFlags(get()) }
@@ -158,6 +159,7 @@ class DomainModule : InjektModule {
         addSingletonFactory<ChapterRepository> { ChapterRepositoryImpl(get()) }
         addFactory { GetChapter(get()) }
         addFactory { GetChaptersByMangaId(get()) }
+        addFactory { GetChapterTranslatedNames(get()) }
         addFactory { GetBookmarkedChaptersByMangaId(get()) }
         addFactory { GetChapterByUrlAndMangaId(get()) }
         addFactory { UpdateChapter(get()) }

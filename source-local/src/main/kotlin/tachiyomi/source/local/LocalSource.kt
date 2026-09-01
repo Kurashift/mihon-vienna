@@ -45,6 +45,7 @@ import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.storage.extension
 import tachiyomi.core.common.storage.nameWithoutExtension
+import tachiyomi.core.common.util.lang.SearchTextNormalizer.containsSearch
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
@@ -53,6 +54,7 @@ import tachiyomi.core.metadata.comicinfo.ComicInfo
 import tachiyomi.core.metadata.comicinfo.copyFromComicInfo
 import tachiyomi.core.metadata.comicinfo.getComicInfo
 import tachiyomi.core.metadata.tachiyomi.MangaDetails
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
@@ -140,6 +142,12 @@ class LocalSource(
 
     private val json: Json by injectLazy()
     private val xml: XML by injectLazy()
+
+    /**
+     * Only consulted to enrich search with manually assigned chapter translated names. Lazy so the
+     * source stays constructible before the database module is registered.
+     */
+    private val chapterRepository: ChapterRepository by injectLazy()
 
     @Volatile
     private var cachedListing: List<LocalMangaEntry>? = null
@@ -932,6 +940,24 @@ class LocalSource(
     }
 
     /**
+     * Returns the manually assigned Chinese translated names (中文译名) of local chapters, keyed by
+     * manga url - the same url used by the listing and by [getChapterNamesIndex], so all three
+     * sources of a match line up.
+     *
+     * The database is an enhancement here, not the source of truth: the listing itself always comes
+     * from the file system, so a failed lookup degrades to matching on file names alone rather than
+     * failing the search.
+     */
+    private suspend fun getTranslatedNamesIndex(): Map<String, List<String>> {
+        return try {
+            chapterRepository.getTranslatedNamesBySourceId(ID)
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to load local source translated names" }
+            emptyMap()
+        }
+    }
+
+    /**
      * Whether the in-memory chapter names index is still usable. Falls back to the short TTL
      * when the base directory mtime can't be determined; otherwise trusts the index only while
      * the base directory is unchanged, so manga added/removed/renamed on disk are picked up by
@@ -1060,19 +1086,20 @@ class LocalSource(
             mangaEntries = mangaEntries.filter { it.latestChapterModified >= lastModifiedLimit }
         }
 
-        // Match both the manga title and its chapter names, so searching for a chapter
-        // finds its manga even when the same text also appears in another manga title.
         if (query.isNotBlank()) {
             val chapterNames = getChapterNamesIndex()
+            val translatedNames = getTranslatedNamesIndex()
             val matched = linkedMapOf<String, LocalMangaEntry>()
             mangaEntries.forEach { entry ->
-                val titleHit = entry.title.contains(query, ignoreCase = true)
-                val hitChapter = chapterNames[entry.url].orEmpty().firstOrNull { it.contains(query, ignoreCase = true) }
-                if (titleHit || hitChapter != null) {
+                val match = localSearchMatch(
+                    query = query,
+                    title = entry.title,
+                    chapterNames = chapterNames[entry.url].orEmpty(),
+                    translatedNames = translatedNames[entry.url].orEmpty(),
+                )
+                if (match != null) {
                     matched[entry.url] = entry
-                    if (hitChapter != null) {
-                        matchedChapters[entry.url] = hitChapter
-                    }
+                    match.matchedChapter?.let { matchedChapters[entry.url] = it }
                 }
             }
             mangaEntries = matched.values.toList()
@@ -2363,6 +2390,38 @@ internal fun resolvedLocalChapterCount(
         ?: measuredChapterCount.takeIf { it > 0 }
         ?: previousConfirmedChapterCount?.takeIf { it > 0 }
         ?: measuredChapterCount
+}
+
+/**
+ * Outcome of matching a local manga against a search query.
+ *
+ * [matchedChapter] is the name the browse UI should credit for the hit, or null when only the manga
+ * title matched and no chapter deserves the credit.
+ */
+internal data class LocalSearchMatch(val matchedChapter: String?)
+
+/**
+ * Decides whether a local manga matches [query], and which chapter name the browse UI should credit
+ * for the hit.
+ *
+ * A chapter is enough to find its manga, so the manga title, its chapter file names and the manually
+ * assigned Chinese translated names are all searched - the text only has to appear in one of them.
+ * Normalization matches library search, otherwise a translated name would be reachable from the
+ * library that stores it but not from the local source it belongs to.
+ *
+ * File names stay authoritative, so a translated name is only credited when no file name matched.
+ *
+ * Returns null when the manga must be filtered out.
+ */
+internal fun localSearchMatch(
+    query: String,
+    title: String,
+    chapterNames: List<String>,
+    translatedNames: List<String>,
+): LocalSearchMatch? {
+    chapterNames.firstOrNull { it.containsSearch(query) }?.let { return LocalSearchMatch(it) }
+    translatedNames.firstOrNull { it.containsSearch(query) }?.let { return LocalSearchMatch(it) }
+    return if (title.containsSearch(query)) LocalSearchMatch(null) else null
 }
 
 internal fun shouldIncludeLocalMangaDirectory(

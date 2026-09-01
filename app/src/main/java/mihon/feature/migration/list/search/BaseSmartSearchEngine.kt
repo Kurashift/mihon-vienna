@@ -4,7 +4,7 @@ import com.aallam.similarity.NormalizedLevenshtein
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
-import java.util.Locale
+import tachiyomi.core.common.util.lang.SearchTextNormalizer
 
 typealias SearchAction<T> = suspend (String) -> List<T>
 
@@ -17,8 +17,9 @@ abstract class BaseSmartSearchEngine<T>(
     protected abstract fun getTitle(result: T): String
 
     protected suspend fun regularSearch(searchAction: SearchAction<T>, title: String): T? {
+        val normalizedTitle = SearchTextNormalizer.normalize(title)
         return baseSearch(searchAction, listOf(title)) {
-            normalizedLevenshtein.similarity(title, getTitle(it))
+            normalizedLevenshtein.similarity(normalizedTitle, SearchTextNormalizer.normalize(getTitle(it)))
         }
     }
 
@@ -67,7 +68,9 @@ abstract class BaseSmartSearchEngine<T>(
     }
 
     private fun cleanDeepSearchTitle(title: String): String {
-        val preTitle = title.lowercase(Locale.getDefault())
+        // Normalize up front so traditional/simplified and full-width/half-width variants of the
+        // same title collapse into one comparable form.
+        val preTitle = SearchTextNormalizer.normalize(title)
 
         // Remove text in brackets
         var cleanedTitle = removeTextInBrackets(preTitle, true)
@@ -78,15 +81,10 @@ abstract class BaseSmartSearchEngine<T>(
         // Strip chapter reference RU
         cleanedTitle = cleanedTitle.replace(chapterRefCyrillicRegexp, " ").trim()
 
-        // Strip non-special characters
-        val cleanedTitleEng = cleanedTitle.replace(titleRegex, " ")
-
-        // Do not strip foreign language letters if cleanedTitle is too short
-        cleanedTitle = if (cleanedTitleEng.length <= 5) {
-            cleanedTitle.replace(titleCyrillicRegex, " ")
-        } else {
-            cleanedTitleEng
-        }
+        // Strip everything that is not a letter, a digit, a hyphen or a space. Letters are kept
+        // for every script: the previous Latin-only pattern reduced CJK titles to whitespace,
+        // which made deep search unusable for them.
+        cleanedTitle = cleanedTitle.replace(titleRegex, " ")
 
         // Strip splitters and consecutive spaces
         cleanedTitle = cleanedTitle.trim().replace(" - ", " ").replace(consecutiveSpacesRegex, " ").trim()
@@ -142,8 +140,7 @@ abstract class BaseSmartSearchEngine<T>(
     companion object {
         const val MIN_ELIGIBLE_THRESHOLD = 0.4
 
-        private val titleRegex = Regex("[^a-zA-Z0-9- ]")
-        private val titleCyrillicRegex = Regex("[^\\p{L}0-9- ]")
+        private val titleRegex = Regex("[^\\p{L}\\p{N} -]")
         private val consecutiveSpacesRegex = Regex(" +")
         private val chapterRefCyrillicRegexp = Regex("""((- часть|- глава) \d*)""")
     }

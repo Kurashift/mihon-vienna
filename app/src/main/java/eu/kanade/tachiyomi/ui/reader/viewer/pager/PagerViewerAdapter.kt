@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.calculateChapterGap
 import eu.kanade.tachiyomi.util.system.createReaderThemeContext
 import eu.kanade.tachiyomi.widget.ViewPagerAdapter
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.source.local.isLocal
 
 /**
  * Pager adapter used by this [viewer] to where [ViewerChapters] updates are posted.
@@ -48,8 +49,17 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
         val newItems = mutableListOf<Any>()
 
         // Forces chapter transition if there is missing chapters
-        val prevHasMissingChapters = calculateChapterGap(chapters.currChapter, chapters.prevChapter) > 0
-        val nextHasMissingChapters = calculateChapterGap(chapters.nextChapter, chapters.currChapter) > 0
+        val isLocalSource = viewer.activity.viewModel.manga?.isLocal() == true
+        val prevHasMissingChapters = calculateChapterGap(
+            chapters.currChapter,
+            chapters.prevChapter,
+            isLocalSource,
+        ) > 0
+        val nextHasMissingChapters = calculateChapterGap(
+            chapters.nextChapter,
+            chapters.currChapter,
+            isLocalSource,
+        ) > 0
 
         // Add previous chapter pages and transition
         chapters.prevChapter?.pages?.let(newItems::addAll)

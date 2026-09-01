@@ -29,18 +29,20 @@ class AppUpdateChecker {
                 ),
             )
 
+            when (result) {
+                is GetApplicationRelease.Result.NewUpdate -> AppUpdateState.setAvailable(result.release)
+                is GetApplicationRelease.Result.NoNewUpdate -> AppUpdateState.clear()
+                is GetApplicationRelease.Result.OsTooOld -> Unit
+            }
             result
         }
     }
 }
 
-val GITHUB_REPO: String by lazy {
-    if (isPreviewBuildType) {
-        "mihonapp/mihon-preview"
-    } else {
-        "mihonapp/mihon"
-    }
-}
+const val GITHUB_REPO = "a1127810984/mihon-vienna"
+const val PROJECT_GITHUB_URL = "https://github.com/$GITHUB_REPO"
+const val PROJECT_ISSUES_URL = "$PROJECT_GITHUB_URL/issues"
+const val PROJECT_RELEASES_URL = "$PROJECT_GITHUB_URL/releases"
 
 val RELEASE_TAG: String by lazy {
     if (isPreviewBuildType) {

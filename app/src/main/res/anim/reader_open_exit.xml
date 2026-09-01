@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      The manga screen stays exactly where it is while the reader fades in over it.
+
+      This animation is a no-op on purpose, but it must exist: passing 0 lets the platform's
+      default slide through, and that slide runs for 450ms and drags the manga screen sideways
+      the whole time. Holding the alpha at 1 for the length of the fade pins the screen in place
+      and keeps the transition to just the fade.
+    -->
+    <alpha
+        android:duration="200"
+        android:fromAlpha="1"
+        android:toAlpha="1" />
+</set>

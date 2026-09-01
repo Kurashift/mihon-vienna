@@ -17,17 +17,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAddCheck
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.UnfoldLess
-import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +40,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import eu.kanade.presentation.audio.components.AudioFolderRow
+import eu.kanade.presentation.audio.components.AudioTrackRow
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.TrackNode
@@ -66,8 +63,8 @@ fun AudioDetailContent(
     isFavorite: Boolean,
     bottomBar: @Composable () -> Unit,
     navigateUp: () -> Unit,
+    onClickHome: () -> Unit,
     onRetry: () -> Unit,
-    onPlayAll: () -> Unit,
     onClickTrack: (Int) -> Unit,
     onTogglePlaylist: (AudioPlayItem) -> Unit,
     onToggleWorkPlaylist: () -> Unit,
@@ -78,8 +75,6 @@ fun AudioDetailContent(
     onClickTag: (String) -> Unit,
 ) {
     var expanded by remember(state.rootNodes) { mutableStateOf(emptySet<String>()) }
-    val folderKeys = remember(state.rootNodes) { collectFolderKeys(state.rootNodes) }
-    val allFoldersExpanded = folderKeys.isNotEmpty() && expanded.containsAll(folderKeys)
     val audioIndexByUrl = remember(state.flatTracks) {
         state.flatTracks.mapIndexed { index, item -> item.mediaStreamUrl to index }.toMap()
     }
@@ -90,41 +85,26 @@ fun AudioDetailContent(
     Scaffold(
         topBar = { scrollBehavior ->
             AppBar(
-                title = stringResource(MR.strings.audio_title),
+                // No title: the header below already carries the work title, and a static
+                // section name here repeated what the back stack makes obvious.
+                title = null,
                 navigateUp = navigateUp,
+                navigationActions = {
+                    // Landing on the details from the reader or a notification leaves no ASMR
+                    // home underneath, so offer an explicit way into it. Sits next to the up
+                    // button because it is a navigation target, not a command on this work.
+                    IconButton(onClick = onClickHome) {
+                        Icon(
+                            Icons.Outlined.Home,
+                            contentDescription = stringResource(MR.strings.audio_title),
+                        )
+                    }
+                },
                 scrollBehavior = scrollBehavior,
                 actions = {
                     if (state.flatTracks.isNotEmpty()) {
                         val queuedCount = state.flatTracks.count { it.mediaStreamUrl in playlistUrls }
                         val allQueued = queuedCount == state.flatTracks.size
-                        if (folderKeys.isNotEmpty()) {
-                            IconButton(
-                                onClick = {
-                                    expanded = if (allFoldersExpanded) emptySet() else folderKeys
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = if (allFoldersExpanded) {
-                                        Icons.Outlined.UnfoldLess
-                                    } else {
-                                        Icons.Outlined.UnfoldMore
-                                    },
-                                    contentDescription = stringResource(
-                                        if (allFoldersExpanded) {
-                                            MR.strings.manga_info_collapse
-                                        } else {
-                                            MR.strings.manga_info_expand
-                                        },
-                                    ),
-                                )
-                            }
-                        }
-                        IconButton(onClick = onPlayAll) {
-                            Icon(
-                                imageVector = Icons.Outlined.PlayArrow,
-                                contentDescription = stringResource(MR.strings.audio_playlist_play_all),
-                            )
-                        }
                         IconButton(onClick = onToggleWorkPlaylist) {
                             Icon(
                                 imageVector = if (allQueued) {
@@ -208,28 +188,34 @@ fun AudioDetailContent(
                         val folderTracks = state.flatTracks.filter { it.folderPath == row.key }
                         val allQueued = folderTracks.isNotEmpty() &&
                             folderTracks.all { it.mediaStreamUrl in playlistUrls }
-                        FolderRow(
-                            row = row,
+                        AudioFolderRow(
+                            title = row.title,
                             expanded = row.key in expanded,
-                            allInPlaylist = allQueued,
+                            depth = row.depth,
                             onClick = {
                                 expanded = if (row.key in expanded) expanded - row.key else expanded + row.key
                             },
-                            onTogglePlaylist = {
-                                onToggleFolderPlaylist(row.key)
+                            actions = {
+                                PlaylistToggleIcon(
+                                    added = allQueued,
+                                    onClick = { onToggleFolderPlaylist(row.key) },
+                                )
                             },
                         )
                     } else {
-                        AudioRow(
-                            row = row,
-                            isInPlaylist = row.audioUrl in playlistUrls,
-                            onClick = {
-                                val index = audioIndexByUrl[row.audioUrl] ?: return@AudioRow
-                                onClickTrack(index)
-                            },
-                            onTogglePlaylist = {
-                                state.flatTracks.getOrNull(audioIndexByUrl[row.audioUrl] ?: -1)
-                                    ?.let(onTogglePlaylist)
+                        val index = audioIndexByUrl[row.audioUrl] ?: -1
+                        AudioTrackRow(
+                            title = row.title,
+                            durationMs = row.durationMs,
+                            depth = row.depth,
+                            onClick = { if (index >= 0) onClickTrack(index) },
+                            actions = {
+                                PlaylistToggleIcon(
+                                    added = row.audioUrl in playlistUrls,
+                                    onClick = {
+                                        state.flatTracks.getOrNull(index)?.let(onTogglePlaylist)
+                                    },
+                                )
                             },
                         )
                     }
@@ -279,21 +265,6 @@ private fun buildVisibleRows(nodes: List<TrackNode>, expanded: Set<String>): Lis
     }
     walk(nodes, 0, "")
     return rows
-}
-
-private fun collectFolderKeys(nodes: List<TrackNode>): Set<String> {
-    val result = mutableSetOf<String>()
-    fun walk(list: List<TrackNode>, parentKey: String) {
-        list.forEach { node ->
-            val path = if (parentKey.isEmpty()) node.title else "$parentKey/${node.title}"
-            if (node.type == "folder" && node.hasPlayableAudio()) {
-                result += path
-                walk(node.children, path)
-            }
-        }
-    }
-    walk(nodes, "")
-    return result
 }
 
 private fun TrackNode.hasPlayableAudio(): Boolean {
@@ -398,124 +369,32 @@ private fun TagChip(text: String, onClick: (() -> Unit)? = null) {
     )
 }
 
+/** Shared by folder and track rows: adds the whole folder, or the single track, to the playlist. */
 @Composable
-private fun FolderRow(
-    row: TreeRow,
-    expanded: Boolean,
-    allInPlaylist: Boolean,
+private fun PlaylistToggleIcon(
+    added: Boolean,
     onClick: () -> Unit,
-    onTogglePlaylist: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = (12 + row.depth * 16).dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    IconButton(onClick = onClick) {
         Icon(
-            imageVector = if (expanded) {
-                Icons.Outlined.KeyboardArrowDown
+            imageVector = if (added) {
+                Icons.AutoMirrored.Outlined.PlaylistAddCheck
             } else {
-                Icons.AutoMirrored.Outlined.KeyboardArrowRight
+                Icons.AutoMirrored.Outlined.PlaylistAdd
             },
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            contentDescription = stringResource(
+                if (added) {
+                    MR.strings.audio_playlist_remove
+                } else {
+                    MR.strings.audio_add_to_playlist
+                },
+            ),
+            tint = if (added) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             modifier = Modifier.size(20.dp),
         )
-        Icon(
-            imageVector = Icons.Outlined.Folder,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .padding(start = 6.dp)
-                .size(20.dp),
-        )
-        Text(
-            text = row.title,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        IconButton(onClick = onTogglePlaylist) {
-            Icon(
-                imageVector = if (allInPlaylist) {
-                    Icons.AutoMirrored.Outlined.PlaylistAddCheck
-                } else {
-                    Icons.AutoMirrored.Outlined.PlaylistAdd
-                },
-                contentDescription = stringResource(
-                    if (allInPlaylist) {
-                        MR.strings.audio_playlist_remove_work
-                    } else {
-                        MR.strings.audio_add_to_playlist
-                    },
-                ),
-                tint = if (allInPlaylist) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AudioRow(
-    row: TreeRow,
-    isInPlaylist: Boolean,
-    onClick: () -> Unit,
-    onTogglePlaylist: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = (12 + row.depth * 16).dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.PlayArrow,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-        )
-        Text(
-            text = row.title,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (row.durationMs > 0) {
-            Text(
-                text = formatDuration(row.durationMs),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = onTogglePlaylist) {
-            Icon(
-                imageVector = if (isInPlaylist) {
-                    Icons.AutoMirrored.Outlined.PlaylistAddCheck
-                } else {
-                    Icons.AutoMirrored.Outlined.PlaylistAdd
-                },
-                contentDescription = null,
-                tint = if (isInPlaylist) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(20.dp),
-            )
-        }
     }
 }

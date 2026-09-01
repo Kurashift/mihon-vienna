@@ -1,11 +1,7 @@
 package eu.kanade.tachiyomi.ui.more
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.CreationExtras
-import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.more.NewUpdateScreen
@@ -23,29 +19,11 @@ class NewUpdateScreen(
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
-        val viewModel = viewModel<NewUpdateScreenModel>(
-            factory = NewUpdateScreenModel.Factory,
-            extras = CreationExtras {
-                set(NewUpdateScreenModel.CHANGELOG_INFO_KEY, changelogInfo)
-                set(NewUpdateScreenModel.DOWNLOAD_LINK_KEY, downloadLink)
-            },
-        )
-
-        val state by viewModel.state.collectAsState()
-
         NewUpdateScreen(
             versionName = versionName,
-            stage = state.stage,
-            downloadProgress = { state.downloadProgress },
-            changelogInfo = state.changelogInfo,
+            changelogInfo = changelogInfo,
             onOpenInBrowser = { context.openInBrowser(releaseLink) },
-            onAcceptUpdate = {
-                when (state.stage) {
-                    NewUpdateScreenModel.Stage.Available, NewUpdateScreenModel.Stage.Failed -> viewModel.startDownload()
-                    NewUpdateScreenModel.Stage.Downloaded -> viewModel.installUpdate()
-                    else -> Unit
-                }
-            },
+            onAcceptUpdate = { context.openInBrowser(downloadLink) },
             onRejectUpdate = navigator::pop,
         )
     }

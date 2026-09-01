@@ -47,6 +47,7 @@ import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.GetBookmarkedChaptersByMangaId
+import tachiyomi.domain.chapter.interactor.GetChapterTranslatedNames
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetHistory
@@ -76,6 +77,7 @@ class LibraryViewModel(
     private val getNextChapters: GetNextChapters = Injekt.get(),
     private val getBookmarkedChaptersByMangaId: GetBookmarkedChaptersByMangaId = Injekt.get(),
     private val getChaptersByMangaId: GetChaptersByMangaId = Injekt.get(),
+    private val getChapterTranslatedNames: GetChapterTranslatedNames = Injekt.get(),
     private val getHistory: GetHistory = Injekt.get(),
     private val setReadStatus: SetReadStatus = Injekt.get(),
     private val updateManga: UpdateManga = Injekt.get(),
@@ -97,10 +99,16 @@ class LibraryViewModel(
             combine(
                 state.map { it.searchQuery }.distinctUntilChanged().debounce(0.25.seconds),
                 getCategories.subscribe(),
-                getFavoritesFlow(),
+                combine(getFavoritesFlow(), getChapterTranslatedNamesFlow(), ::Pair),
                 combine(getTracksPerManga.subscribe(), getTrackingFiltersFlow(), ::Pair),
                 getLibraryItemPreferencesFlow(),
-            ) { searchQuery, categories, favorites, (tracksMap, trackingFilters), itemPreferences ->
+            ) {
+                    searchQuery,
+                    categories,
+                    (favorites, chapterTranslatedNames),
+                    (tracksMap, trackingFilters),
+                    itemPreferences,
+                ->
                 val showSystemCategory = favorites.any { it.libraryManga.categories.contains(0) }
                 val filteredFavorites = favorites
                     .applyFilters(tracksMap, trackingFilters, itemPreferences)
@@ -109,7 +117,7 @@ class LibraryViewModel(
                             libraryItems
                         } else {
                             val queryNode = QueryNode.from(searchQuery)
-                            libraryItems.filter { queryNode.matches(it) }
+                            libraryItems.filter { queryNode.matches(it, chapterTranslatedNames) }
                         }
                     }
 
@@ -428,6 +436,22 @@ class LibraryViewModel(
                 )
             }
         }
+    }
+
+    /**
+     * Maps each manga id to its chapters' non-empty Chinese translated names (中文译名), so library
+     * search can reach a manga by the translated name a chapter was given even though the manga
+     * title itself stays in the original script.
+     *
+     * Derives the manga id set from the same library flow that feeds [getFavoritesFlow] and re-emits
+     * on chapters-table changes, so an edit made in the manga screen or a CSV import becomes
+     * searchable as soon as the user returns to the library.
+     */
+    private fun getChapterTranslatedNamesFlow(): Flow<Map<Long, List<String>>> {
+        return getLibraryManga.subscribe()
+            .map { mangas -> mangas.map { it.id } }
+            .distinctUntilChanged()
+            .flatMapLatest { mangaIds -> getChapterTranslatedNames.observe(mangaIds) }
     }
 
     /**

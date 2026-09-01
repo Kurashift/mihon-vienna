@@ -27,7 +27,14 @@ object HistoryMapper {
         sourceId: Long,
         isFavorite: Boolean,
         coverLastModified: Long,
+        chapterFlags: Long,
         chapterNumber: Double,
+        chapterName: String,
+        chapterTranslatedName: String?,
+        chapterUrl: String,
+        chapterVersion: Long,
+        chapterDateUpload: Long,
+        chapterLastModifiedAt: Long,
         readAt: Date?,
         readDuration: Long,
     ): HistoryWithRelations = HistoryWithRelations(
@@ -45,5 +52,12 @@ object HistoryMapper {
             url = thumbnailUrl,
             lastModified = coverLastModified,
         ),
+        chapterFlags = chapterFlags,
+        chapterName = chapterName,
+        chapterTranslatedName = chapterTranslatedName,
+        chapterUrl = chapterUrl,
+        chapterVersion = chapterVersion,
+        chapterDateUpload = chapterDateUpload,
+        chapterLastModifiedAt = chapterLastModifiedAt,
     )
 }

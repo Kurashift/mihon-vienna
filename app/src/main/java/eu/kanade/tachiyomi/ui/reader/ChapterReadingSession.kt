@@ -15,15 +15,57 @@ internal class ChapterReadingSession(
     private val totalPages: Int,
     entryDirection: ChapterEntryDirection,
     private val alreadyRead: Boolean,
+    lastPageRead: Int,
 ) {
 
     private val lastIndex = totalPages - 1
-    private val settledPages = linkedSetOf<Int>()
     private val protectedBackwardEntry =
         entryDirection == ChapterEntryDirection.Backward && !alreadyRead
-    private var completionArmed = !protectedBackwardEntry
-    private var lastSettledPage: Int? = null
-    private var movedForwardAfterArming = false
+    private val backwardUnlockIndex = if (lastPageRead in 1 until totalPages) {
+        lastPageRead - 1
+    } else {
+        minOf(2, lastIndex)
+    }
+    private var reachedUnlockBoundary = false
+    private var normalReadingStarted = !protectedBackwardEntry
+    private var lastObservedPageIndex: Int? = null
+    private var forwardBoundaryCrossed = false
+
+    /**
+     * Observes a page selected by an actual webtoon scroll. This only changes in-memory guards;
+     * database persistence remains tied to [onSettled].
+     */
+    fun onUserPageSelected(pageIndex: Int) {
+        if (!protectedBackwardEntry || pageIndex !in 0..lastIndex) return
+
+        val previousPageIndex = lastObservedPageIndex
+        lastObservedPageIndex = pageIndex
+
+        if (pageIndex <= backwardUnlockIndex) {
+            reachedUnlockBoundary = true
+        }
+
+        if (reachedUnlockBoundary &&
+            previousPageIndex != null &&
+            previousPageIndex <= backwardUnlockIndex &&
+            pageIndex > backwardUnlockIndex
+        ) {
+            normalReadingStarted = true
+        }
+    }
+
+    /** Marks that the user crossed into the next chapter while moving forward. */
+    fun markForwardBoundaryCrossed() {
+        forwardBoundaryCrossed = true
+    }
+
+    /**
+     * A protected backward entry may only complete on a forward chapter exit after the user has
+     * returned through its saved reading boundary and resumed reading forward.
+     */
+    fun canCompleteOnForwardExit(): Boolean {
+        return !alreadyRead && forwardBoundaryCrossed && normalReadingStarted
+    }
 
     fun onSettled(pageIndex: Int): ChapterProgressDecision? =
         evaluate(pageIndex = pageIndex, completingOnExit = false)
@@ -49,33 +91,17 @@ internal class ChapterReadingSession(
             )
         }
 
-        settledPages += pageIndex
-        if (!completionArmed && settledPages.size >= minOf(REQUIRED_SETTLED_PAGES, totalPages)) {
-            completionArmed = true
-            lastSettledPage = pageIndex
-            return ChapterProgressDecision(pageIndex = pageIndex, completed = false)
-        }
-        if (!completionArmed) return null
-
-        val previousPage = lastSettledPage
-        if (previousPage != null && pageIndex > previousPage) {
-            movedForwardAfterArming = true
-        }
-        lastSettledPage = pageIndex
+        if (!normalReadingStarted) return null
 
         return ChapterProgressDecision(
             pageIndex = pageIndex,
-            completed = movedForwardAfterArming && canComplete(pageIndex, completingOnExit),
+            completed = canComplete(pageIndex, completingOnExit),
         )
     }
 
     private fun canComplete(pageIndex: Int, completingOnExit: Boolean): Boolean {
         return pageIndex == lastIndex ||
             (completingOnExit && pageIndex >= tailCompletionStartIndex(totalPages))
-    }
-
-    private companion object {
-        const val REQUIRED_SETTLED_PAGES = 3
     }
 }
 

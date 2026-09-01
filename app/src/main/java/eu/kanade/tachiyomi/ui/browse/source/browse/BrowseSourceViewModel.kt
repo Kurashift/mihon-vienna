@@ -32,6 +32,7 @@ import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.ui.manga.RandomGoodDoujinResult
 import eu.kanade.tachiyomi.util.lang.toLocalDate
 import eu.kanade.tachiyomi.util.removeCovers
 import kotlinx.coroutines.CancellationException
@@ -1157,15 +1158,19 @@ class BrowseSourceViewModel(
         return randomSelectionCooldown.pickManga(ids)
     }
 
-    fun pickRandomMangaId(candidates: Collection<Long>): Long? {
-        return randomSelectionCooldown.pickManga(candidates)
-    }
-
-    suspend fun getRandomGoodDoujinMangaId(): Long? {
+    /**
+     * Picks a random manga from the good doujin list. [RandomGoodDoujinResult.hasEntries]
+     * tells an empty list apart from a pick that simply had nothing left to choose, so
+     * the caller can show the right message.
+     */
+    internal suspend fun getRandomGoodDoujinManga(): RandomGoodDoujinResult {
         val markedMangaIds = goodDoujinStore.marks.value
             .map { it.mangaId }
             .distinct()
-        return randomSelectionCooldown.pickManga(markedMangaIds)
+        return RandomGoodDoujinResult(
+            hasEntries = markedMangaIds.isNotEmpty(),
+            mangaId = randomSelectionCooldown.pickManga(markedMangaIds),
+        )
     }
 
     /** Enumerates the manga URLs shown by the current listing and reading filter. */

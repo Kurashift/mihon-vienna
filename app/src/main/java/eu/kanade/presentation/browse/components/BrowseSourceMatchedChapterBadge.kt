@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -86,6 +88,8 @@ private fun MarqueeText(
             .onSizeChanged { boxWidth = it.width }
             .clipToBounds(),
     ) {
+        // Scroll only when the name does not fit. Anything that fits stays
+        // static and is simply ellipsized by the non-scrolling branch.
         if (boxWidth > 0 && textWidth > boxWidth) {
             val density = LocalDensity.current
             // Scroll until the tail of the name is aligned with the right edge of
@@ -122,7 +126,14 @@ private fun MarqueeText(
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Clip,
-                modifier = Modifier.graphicsLayer { translationX = offset },
+                modifier = Modifier
+                    // Lay the name out at its natural width instead of letting the box's
+                    // max width truncate it: a clipped text would move a truncated strip
+                    // out of the viewport and leave the badge blank. The box keeps the
+                    // capped width and clips whatever the animation moves past it.
+                    // align takes Alignment.Horizontal, so CenterStart does not compile.
+                    .wrapContentWidth(unbounded = true, align = Alignment.Start)
+                    .graphicsLayer { translationX = offset },
             )
         } else {
             Text(
@@ -144,7 +155,7 @@ private val MARQUEE_SPEED_DP_PER_SECOND = 40.dp
 private const val MARQUEE_INITIAL_PAUSE_MILLIS = 1_000
 
 /** How long the name rests at the end before looping back. */
-private const val MARQUEE_END_PAUSE_MILLIS = 800
+private const val MARQUEE_END_PAUSE_MILLIS = 2_300
 
 /** Floor for the scroll phase so very short names don't blink. */
 private const val MIN_MARQUEE_SCROLL_MILLIS = 800

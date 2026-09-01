@@ -23,6 +23,7 @@ import eu.kanade.tachiyomi.util.system.dpToPx
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -59,6 +60,11 @@ class WebtoonPageHolder(
      * adapter would create more views to fill the screen, which is not wanted.
      */
     private lateinit var progressContainer: ViewGroup
+
+    /**
+     * Pending reveal of [progressIndicator], cancelled as soon as the page resolves.
+     */
+    private var progressRevealJob: Job? = null
 
     /**
      * Error layout to show when the image fails to load.
@@ -139,10 +145,13 @@ class WebtoonPageHolder(
         loadJob?.cancel()
         loadJob = null
         page = null
+        // A holder back in the pool must not carry a pending reveal into its next binding.
+        cancelProgressReveal()
 
         removeErrorLayout()
         frame.recycle()
         isImageLayoutReady = false
+        progressIndicator.hide()
         progressIndicator.setProgress(0)
         progressContainer.isVisible = true
     }
@@ -184,8 +193,7 @@ class WebtoonPageHolder(
      * Called when the page is queued.
      */
     private fun setQueued() {
-        progressContainer.isVisible = true
-        progressIndicator.show()
+        showProgressContainer()
         removeErrorLayout()
     }
 
@@ -193,8 +201,7 @@ class WebtoonPageHolder(
      * Called when the page is loading.
      */
     private fun setLoading() {
-        progressContainer.isVisible = true
-        progressIndicator.show()
+        showProgressContainer()
         removeErrorLayout()
     }
 
@@ -202,15 +209,44 @@ class WebtoonPageHolder(
      * Called when the page is downloading
      */
     private fun setDownloading() {
-        progressContainer.isVisible = true
-        progressIndicator.show()
+        showProgressContainer()
         removeErrorLayout()
+    }
+
+    /**
+     * Reserves the page area and schedules the spinner.
+     *
+     * The container must be shown at once: it keeps a minimum height for this holder, so hiding
+     * it while decoding would let the adapter inflate more holders to fill the screen.
+     *
+     * The spinner itself waits. Prefetching several pages means most of them finish within the
+     * delay, and a spinner that appears and vanishes inside ~120ms reads as a flicker rather than
+     * as progress. Slow pages still reveal it, then keep showing real download progress.
+     */
+    private fun showProgressContainer() {
+        progressContainer.isVisible = true
+        if (progressIndicator.isVisible || progressRevealJob?.isActive == true) return
+        progressRevealJob = scope.launch {
+            delay(PAGE_PROGRESS_REVEAL_DELAY_MILLIS)
+            progressIndicator.show()
+        }
+    }
+
+    /**
+     * Cancels a pending spinner reveal. Called once the page no longer needs one, so a page that
+     * resolves quickly never shows it at all.
+     */
+    private fun cancelProgressReveal() {
+        progressRevealJob?.cancel()
+        progressRevealJob = null
     }
 
     /**
      * Called when the page is ready.
      */
     private suspend fun setImage(page: ReaderPage, generation: Long) {
+        // The page resolved, so any spinner still waiting on the delay must not appear now.
+        cancelProgressReveal()
         progressIndicator.setProgress(0)
 
         val streamFn = page.stream ?: return
@@ -281,6 +317,7 @@ class WebtoonPageHolder(
      * Called when the page has an error.
      */
     private fun setError(error: Throwable?) {
+        cancelProgressReveal()
         progressContainer.isVisible = false
         initErrorLayout(error)
         notifyPageLayoutReady()
@@ -290,6 +327,7 @@ class WebtoonPageHolder(
      * Called when the image is decoded and going to be displayed.
      */
     private fun onImageDecoded() {
+        cancelProgressReveal()
         progressContainer.isVisible = false
         removeErrorLayout()
         notifyPageLayoutReady()
@@ -372,3 +410,7 @@ class WebtoonPageHolder(
         }
     }
 }
+
+// Matches the reader's own reveal delay: anything that resolves within this window would only
+// flash a spinner, so it stays hidden instead.
+private const val PAGE_PROGRESS_REVEAL_DELAY_MILLIS = 300L

@@ -63,6 +63,7 @@ import androidx.core.util.Consumer
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.interpolator.view.animation.LinearOutSlowInInterpolator
 import androidx.lifecycle.lifecycleScope
+import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.NavigatorDisposeBehavior
@@ -93,7 +94,6 @@ import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.deeplink.DeepLinkScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
-import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
 import eu.kanade.tachiyomi.ui.more.OnboardingScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.util.system.dpToPx
@@ -117,7 +117,6 @@ import tachiyomi.core.common.Constants
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.release.interactor.GetApplicationRelease
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.components.material.padding
@@ -143,6 +142,15 @@ class MainActivity : BaseActivity() {
     var ready = false
 
     private var navigator: Navigator? = null
+
+    /**
+     * Key of the screen the reader is handing back, which has to appear without the shared-axis
+     * slide because the change happens while the reader still covers this activity.
+     *
+     * Read from composition, so it has to be snapshot state: the value is set immediately
+     * before the push that triggers the recomposition which decides the transition.
+     */
+    private val instantScreenKey = mutableStateOf<ScreenKey?>(null)
 
     init {
         registerSecureActivity(this)
@@ -230,6 +238,7 @@ class MainActivity : BaseActivity() {
                         // Shows current screen
                         DefaultNavigatorScreenTransition(
                             navigator = navigator,
+                            instantScreenKey = instantScreenKey.value,
                             modifier = Modifier
                                 .padding(contentPadding)
                                 .consumeWindowInsets(contentPadding),
@@ -318,22 +327,15 @@ class MainActivity : BaseActivity() {
     @Composable
     private fun CheckForUpdates() {
         val context = LocalContext.current
-        val navigator = LocalNavigator.currentOrThrow
 
         // App updates
+        // The check only records the result: the "More" tab shows a red dot when an
+        // update exists. Pushing the update screen on start-up is intrusive, so the
+        // user opts in by opening the check themselves in About.
         LaunchedEffect(Unit) {
             if (updaterEnabled) {
                 try {
-                    val result = AppUpdateChecker().checkForUpdate()
-                    if (result is GetApplicationRelease.Result.NewUpdate) {
-                        val updateScreen = NewUpdateScreen(
-                            versionName = result.release.version,
-                            changelogInfo = result.release.info,
-                            releaseLink = result.release.releaseLink,
-                            downloadLink = result.release.downloadLink,
-                        )
-                        navigator.push(updateScreen)
-                    }
+                    AppUpdateChecker().checkForUpdate()
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR, e)
                 }
@@ -543,27 +545,54 @@ class MainActivity : BaseActivity() {
                 navigator.popUntilRoot()
                 HomeScreen.Tab.Library(idToOpen)
             }
+            // The reader was opened straight from a list (history, personal lists, updates, the
+            // library grid) and is now closing. That list is already on top of this stack, so
+            // there is nothing to navigate to — only this activity has to come back to the
+            // front. Opening the details screen here is what used to bury the list under an
+            // extra layer the user then had to back out of.
+            Constants.RETURN_FROM_READER -> null
             Constants.SHOW_MANGA_PRESERVE_STACK -> {
                 val idToOpen = intent.extras?.getLong(Constants.MANGA_EXTRA) ?: return false
-                when (val currentScreen = navigator.lastItem) {
+                val currentScreen = navigator.lastItem
+                val screen = when (currentScreen) {
                     is MangaScreen -> {
                         // Reusing the existing details screen keeps its scroll position, loaded
                         // chapter list, and ViewModel state. Replacing it on every reader
                         // return discarded that state for no reason.
-                        if (currentScreen.mangaId != idToOpen) {
-                            navigator.replace(
-                                MangaScreen(idToOpen, currentScreen.fromSource, currentScreen.randomCandidates),
-                            )
+                        if (currentScreen.mangaId == idToOpen) {
+                            null
+                        } else {
+                            MangaScreen(idToOpen, currentScreen.fromSource, currentScreen.randomCandidates)
                         }
                     }
-                    is BrowseSourceScreen -> navigator.push(MangaScreen(idToOpen, true))
-                    else -> navigator.push(MangaScreen(idToOpen))
+                    is BrowseSourceScreen -> MangaScreen(idToOpen, true)
+                    else -> MangaScreen(idToOpen)
+                }
+                if (screen != null) {
+                    // The reader is still the activity on top, so this activity is stopped and
+                    // not producing frames. An animated push would only start once it is on
+                    // screen again and would read as a flash of the previous screen followed
+                    // by the manga screen sliding in — worse still, it would play underneath
+                    // the reader's fade instead of being revealed by it.
+                    instantScreenKey.value = screen.key
+                    if (currentScreen is MangaScreen) {
+                        navigator.replace(screen)
+                    } else {
+                        navigator.push(screen)
+                    }
                 }
                 null
             }
             Constants.SHOW_AUDIO_PLAYER -> {
                 if (navigator.lastItem !is AudioPlayerScreen) {
-                    navigator.push(AudioPlayerScreen.current())
+                    navigator.push(
+                        AudioPlayerScreen.current(
+                            finishActivityOnBack = intent.getBooleanExtra(
+                                Constants.AUDIO_RETURN_TO_READER_EXTRA,
+                                false,
+                            ),
+                        ),
+                    )
                 }
                 null
             }

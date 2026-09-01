@@ -128,6 +128,7 @@ fun ChapterSettingsDialog(
                 }
                 2 -> {
                     FilterPage(
+                        isLocal = manga?.isLocal() ?: false,
                         downloadFilter = manga?.downloadedFilter ?: TriState.DISABLED,
                         onDownloadFilterChanged = onDownloadFilterChanged
                             .takeUnless { downloadedOnly },
@@ -146,6 +147,7 @@ fun ChapterSettingsDialog(
 
 @Composable
 private fun ColumnScope.FilterPage(
+    isLocal: Boolean,
     downloadFilter: TriState,
     onDownloadFilterChanged: ((TriState) -> Unit)?,
     unreadFilter: TriState,
@@ -156,26 +158,35 @@ private fun ColumnScope.FilterPage(
     onScanlatorFilterClicked: (() -> Unit),
 ) {
     ListGroupHeader(text = stringResource(MR.strings.chapter_filter_status_section))
-    TriStateItem(
-        label = stringResource(MR.strings.label_downloaded),
-        state = downloadFilter,
-        onClick = onDownloadFilterChanged,
-    )
+    if (!isLocal) {
+        // Every local chapter counts as downloaded, so the filter cannot narrow anything.
+        TriStateItem(
+            label = stringResource(MR.strings.label_downloaded),
+            state = downloadFilter,
+            onClick = onDownloadFilterChanged,
+        )
+    }
     TriStateItem(
         label = stringResource(MR.strings.action_filter_unread),
         state = unreadFilter,
         onClick = onUnreadFilterChanged,
     )
-    TriStateItem(
-        label = stringResource(MR.strings.action_filter_bookmarked),
-        state = bookmarkedFilter,
-        onClick = onBookmarkedFilterChanged,
-    )
-    ListGroupHeader(text = stringResource(MR.strings.chapter_filter_source_section))
-    ScanlatorFilterItem(
-        active = scanlatorFilterActive,
-        onClick = onScanlatorFilterClicked,
-    )
+    if (!isLocal) {
+        // Local chapters cannot be bookmarked any more, so this filter has no source of truth.
+        TriStateItem(
+            label = stringResource(MR.strings.action_filter_bookmarked),
+            state = bookmarkedFilter,
+            onClick = onBookmarkedFilterChanged,
+        )
+    }
+    if (!isLocal) {
+        // Local chapters have no scanlator, so there is never anything to exclude here.
+        ListGroupHeader(text = stringResource(MR.strings.chapter_filter_source_section))
+        ScanlatorFilterItem(
+            active = scanlatorFilterActive,
+            onClick = onScanlatorFilterClicked,
+        )
+    }
 }
 
 @Composable

@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import eu.kanade.presentation.manga.components.MarkdownRender
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
-import eu.kanade.tachiyomi.ui.more.NewUpdateScreenModel
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -29,8 +28,6 @@ import tachiyomi.presentation.core.screens.InfoScreen
 fun NewUpdateScreen(
     versionName: String,
     changelogInfo: String,
-    stage: NewUpdateScreenModel.Stage,
-    downloadProgress: () -> Int,
     onOpenInBrowser: () -> Unit,
     onAcceptUpdate: () -> Unit,
     onRejectUpdate: () -> Unit,
@@ -39,17 +36,8 @@ fun NewUpdateScreen(
         icon = Icons.Outlined.NewReleases,
         headingText = stringResource(MR.strings.update_check_notification_update_available),
         subtitleText = versionName,
-        acceptText = when (stage) {
-            NewUpdateScreenModel.Stage.Available -> stringResource(MR.strings.update_check_confirm)
-            NewUpdateScreenModel.Stage.Downloading -> stringResource(
-                MR.strings.downloading_with_progress,
-                downloadProgress(),
-            )
-            NewUpdateScreenModel.Stage.Downloaded -> stringResource(MR.strings.action_install)
-            NewUpdateScreenModel.Stage.Failed -> stringResource(MR.strings.action_retry)
-        },
+        acceptText = stringResource(MR.strings.update_check_confirm),
         onAcceptClick = onAcceptUpdate,
-        canAccept = stage != NewUpdateScreenModel.Stage.Downloading,
         rejectText = stringResource(MR.strings.action_not_now),
         onRejectClick = onRejectUpdate,
     ) {
@@ -89,8 +77,6 @@ private fun NewUpdateScreenPreview() {
                 - Hello
                 - World
             """.trimIndent(),
-            stage = NewUpdateScreenModel.Stage.Available,
-            downloadProgress = { 0 },
             onOpenInBrowser = {},
             onAcceptUpdate = {},
             onRejectUpdate = {},

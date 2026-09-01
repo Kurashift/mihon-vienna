@@ -11,10 +11,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -29,10 +34,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -40,6 +49,8 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabNavigator
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.presentation.components.BottomNavFabLift
+import eu.kanade.presentation.components.LocalBottomNavFabPadding
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
@@ -60,6 +71,7 @@ import soup.compose.material.motion.animation.materialFadeThroughIn
 import soup.compose.material.motion.animation.materialFadeThroughOut
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.components.LocalFastScrollerBottomInset
 import tachiyomi.presentation.core.components.material.NavigationBar
 import tachiyomi.presentation.core.components.material.NavigationRail
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -91,6 +103,13 @@ object HomeScreen : Screen() {
             // triggering a cold load of the local source listing.
             LibraryTab
         }
+        val bottomNavVisible by produceState(initialValue = true) {
+            showBottomNavEvent.receiveAsFlow().collectLatest { value = it }
+        }
+        // Read before the scaffold content consumes the insets, so the value stays stable
+        // no matter how much of the system bar the bottom bar is currently covering.
+        val systemBarsBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
+
         TabNavigator(
             tab = initialTab,
             key = TabNavigatorKey,
@@ -109,16 +128,18 @@ object HomeScreen : Screen() {
                     },
                     bottomBar = {
                         if (!isTabletUi()) {
-                            val bottomNavVisible by produceState(initialValue = true) {
-                                showBottomNavEvent.receiveAsFlow().collectLatest { value = it }
-                            }
                             AnimatedVisibility(
                                 visible = bottomNavVisible,
+                                // Animate from the bar's own top edge: its bottom strip is the
+                                // system bar padding, so growing from the bottom reveals an
+                                // empty band first and the items only pop in at the end.
                                 enter = expandVertically(
                                     animationSpec = tween(240, easing = FastOutSlowInEasing),
+                                    expandFrom = Alignment.Top,
                                 ) + fadeIn(animationSpec = tween(160)),
                                 exit = shrinkVertically(
                                     animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                    shrinkTowards = Alignment.Top,
                                 ) + fadeOut(animationSpec = tween(140)),
                             ) {
                                 NavigationBar {
@@ -131,21 +152,55 @@ object HomeScreen : Screen() {
                     },
                     contentWindowInsets = WindowInsets(0),
                 ) { contentPadding ->
-                    Box(
-                        modifier = Modifier
-                            .padding(contentPadding)
-                            .consumeWindowInsets(contentPadding),
+                    // Hiding the bar is a scaffold animation: the height it gives back leaves
+                    // the content padding frame by frame, so the content box grows as the bar
+                    // collapses. Everything derived from that height - the fast scroller track,
+                    // floating controls - is handed back what the bar released so it keeps the
+                    // bar's resting position instead of breathing along with the animation.
+                    val restingBottom = systemBarsBottom + BottomNavFabLift
+                    // Keep the system bar strip reserved even while the bar is away. Inner
+                    // scaffolds derive their own bottom padding from the insets we report as
+                    // consumed; letting that report drop with the bar makes them grow a system
+                    // bar's worth of padding mid-animation, which shifts the content box by an
+                    // amount the compensation below cannot know about.
+                    val contentBottom = maxOf(contentPadding.calculateBottomPadding(), systemBarsBottom)
+                    val collapsedSpace = (restingBottom - contentBottom).coerceAtLeast(0.dp)
+                    val layoutDirection = LocalLayoutDirection.current
+                    val contentInsets = PaddingValues(
+                        start = contentPadding.calculateStartPadding(layoutDirection),
+                        end = contentPadding.calculateEndPadding(layoutDirection),
+                        top = contentPadding.calculateTopPadding(),
+                        bottom = contentBottom,
+                    )
+                    val consumedInsets = PaddingValues(
+                        start = contentInsets.calculateStartPadding(layoutDirection),
+                        end = contentInsets.calculateEndPadding(layoutDirection),
+                        top = contentInsets.calculateTopPadding(),
+                        bottom = systemBarsBottom,
+                    )
+                    CompositionLocalProvider(
+                        LocalBottomNavFabPadding provides collapsedSpace,
+                        LocalFastScrollerBottomInset provides collapsedSpace,
                     ) {
-                        AnimatedContent(
-                            targetState = tabNavigator.current,
-                            transitionSpec = {
-                                materialFadeThroughIn(initialScale = 1f, durationMillis = TabFadeDuration) togetherWith
-                                    materialFadeThroughOut(durationMillis = TabFadeDuration)
-                            },
-                            label = "tabContent",
+                        Box(
+                            modifier = Modifier
+                                .padding(contentInsets)
+                                .consumeWindowInsets(consumedInsets),
                         ) {
-                            tabNavigator.saveableState(key = "currentTab", it) {
-                                it.Content()
+                            AnimatedContent(
+                                targetState = tabNavigator.current,
+                                transitionSpec = {
+                                    materialFadeThroughIn(
+                                        initialScale = 1f,
+                                        durationMillis = TabFadeDuration,
+                                    ) togetherWith
+                                        materialFadeThroughOut(durationMillis = TabFadeDuration)
+                                },
+                                label = "tabContent",
+                            ) {
+                                tabNavigator.saveableState(key = "currentTab", it) {
+                                    it.Content()
+                                }
                             }
                         }
                     }

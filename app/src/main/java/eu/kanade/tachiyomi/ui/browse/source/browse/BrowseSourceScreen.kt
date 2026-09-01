@@ -200,6 +200,64 @@ data class BrowseSourceScreen(
         val snackbarHostState = remember { SnackbarHostState() }
 
         val onHelpClick = { uriHandler.openUri(LocalSource.HELP_URL) }
+
+        // Random entry points from the bottom-start button. A guard keeps a stray
+        // double trigger from pushing two detail screens on top of each other.
+        var randomInProgress by remember { mutableStateOf(false) }
+        val onRandomManga: (() -> Unit)? = if (viewModel.source is LocalSource) {
+            {
+                if (!randomInProgress) {
+                    randomInProgress = true
+                    scope.launch {
+                        try {
+                            val randomId = viewModel.getRandomLocalMangaId()
+                            if (randomId != null) {
+                                navigator.push(MangaScreen(randomId, true))
+                                // Hold the guard through the transition.
+                                delay(600)
+                            } else {
+                                snackbarHostState.showSnackbarReplacing(
+                                    context.stringResource(MR.strings.information_no_entries_found),
+                                )
+                            }
+                        } finally {
+                            randomInProgress = false
+                        }
+                    }
+                }
+            }
+        } else {
+            null
+        }
+        val onRandomGoodDoujin: (() -> Unit)? = if (viewModel.source is LocalSource) {
+            {
+                if (!randomInProgress) {
+                    randomInProgress = true
+                    scope.launch {
+                        try {
+                            val result = viewModel.getRandomGoodDoujinManga()
+                            if (result.mangaId != null) {
+                                navigator.push(MangaScreen(result.mangaId, true))
+                                delay(600)
+                            } else if (!result.hasEntries) {
+                                snackbarHostState.showSnackbarReplacing(
+                                    context.stringResource(MR.strings.good_doujin_list_empty),
+                                )
+                            } else {
+                                snackbarHostState.showSnackbarReplacing(
+                                    context.stringResource(MR.strings.good_doujin_list_no_others),
+                                )
+                            }
+                        } finally {
+                            randomInProgress = false
+                        }
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
         val onWebViewClick = f@{
             val source = viewModel.source as? HttpSource ?: return@f
             navigator.push(
@@ -218,71 +276,6 @@ data class BrowseSourceScreen(
         val mangaList = viewModel.mangaPagerFlowFlow.collectAsLazyPagingItems()
         val currentMangaList by rememberUpdatedState(mangaList)
 
-        // Guards against double taps: while a random pick is in flight, further
-        // clicks are ignored so the navigation transition only happens once.
-        var randomInProgress by remember { mutableStateOf(false) }
-
-        val onOpenRandomManga: () -> Unit = {
-            if (!randomInProgress) {
-                randomInProgress = true
-                scope.launch {
-                    try {
-                        // Local source: pick from the current listing and reading filter.
-                        // Other sources keep the old behaviour of picking from the loaded results.
-                        val randomId = if (viewModel.source is LocalSource) {
-                            viewModel.getRandomLocalMangaId()
-                        } else {
-                            viewModel.pickRandomMangaId(
-                                mangaList.itemSnapshotList.items
-                                    .filterIsInstance<BrowseSourceUiModel.Item>()
-                                    .map { it.manga.id },
-                            )
-                        }
-                        if (randomId != null) {
-                            navigator.push(MangaScreen(randomId, true))
-                            viewModel.rememberReturnAnchor(randomId)
-                            // Keep the guard through the transition so a second tap
-                            // cannot push a second random manga.
-                            delay(600)
-                        } else {
-                            snackbarHostState.showSnackbarReplacing(
-                                context.stringResource(MR.strings.information_no_entries_found),
-                            )
-                        }
-                    } finally {
-                        randomInProgress = false
-                    }
-                }
-            }
-        }
-
-        // Random pick from the good doujin list; double taps are ignored while
-        // a pick is in flight so the transition only happens once.
-        var randomGoodDoujinInProgress by remember { mutableStateOf(false) }
-        val onOpenRandomGoodDoujin: () -> Unit = {
-            if (!randomGoodDoujinInProgress) {
-                randomGoodDoujinInProgress = true
-                scope.launch {
-                    try {
-                        val randomId = viewModel.getRandomGoodDoujinMangaId()
-                        if (randomId != null) {
-                            navigator.push(MangaScreen(randomId, true))
-                            viewModel.rememberReturnAnchor(randomId)
-                            // Keep the guard through the transition so a second tap
-                            // cannot push a second random manga.
-                            delay(600)
-                        } else {
-                            snackbarHostState.showSnackbarReplacing(
-                                context.stringResource(MR.strings.good_doujin_list_empty),
-                            )
-                        }
-                    } finally {
-                        randomGoodDoujinInProgress = false
-                    }
-                }
-            }
-        }
-
         Scaffold(
             topBar = {
                 Column(
@@ -300,8 +293,6 @@ data class BrowseSourceScreen(
                         navigateUp = navigateUp,
                         onWebViewClick = onWebViewClick,
                         onSettingsClick = { navigator.push(SourcePreferencesScreen(sourceId)) },
-                        onOpenRandomManga = onOpenRandomManga,
-                        onOpenRandomGoodDoujin = onOpenRandomGoodDoujin,
                         onOpenAudio = { navigator.push(AudioBrowseScreen()) },
                         onOpenSources = if (isRoot) {
                             { navigator.push(OnlineSourceCenterScreen) }
@@ -324,9 +315,12 @@ data class BrowseSourceScreen(
                             ?.takeIf { !it.query.isNullOrBlank() }
                             ?.previousListing
                             ?: state.listing
+                        // 本地源在没有搜索词时（首次进入、清空搜索）搜索态等同于"全部"，
+                        // 否则初始界面会落到 CUSTOM 而四个按钮一个都不亮。
+                        val displayedQuery = (displayedListing as? Listing.Search)?.query
                         val localBrowseMode = when {
                             displayedListing == Listing.Latest -> LocalBrowseMode.UPDATED
-                            displayedListing is Listing.Search -> LocalBrowseMode.CUSTOM
+                            !displayedQuery.isNullOrBlank() -> LocalBrowseMode.CUSTOM
                             else -> when (markFilter) {
                                 MarkFilter.NONE -> LocalBrowseMode.ALL
                                 MarkFilter.FLAGGED -> LocalBrowseMode.FLAGGED
@@ -580,6 +574,8 @@ data class BrowseSourceScreen(
                         ),
                     )
                 },
+                onRandomManga = onRandomManga,
+                onRandomGoodDoujin = onRandomGoodDoujin,
                 onMangaLongClick = { manga ->
                     scope.launchIO {
                         val duplicates = viewModel.getDuplicateLibraryManga(manga)

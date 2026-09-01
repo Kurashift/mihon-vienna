@@ -44,7 +44,7 @@
     <string name="label_extensions">Extensions</string>
     <string name="label_extension_info">Extension info</string>
     <string name="label_help">Help</string>
-    <string name="label_support_us">Support Us</string>
+    <string name="label_support_us">Support Mihon</string>
     <string name="more_section_reading_mode">Reading mode</string>
     <string name="more_section_library">Library &amp; lists</string>
     <string name="more_section_settings">Settings</string>
@@ -105,6 +105,7 @@
     <string name="action_global_search">Global search</string>
     <string name="manga_title_search_local">Local search</string>
     <string name="manga_title_search_sources">Source search</string>
+    <string name="manga_title_action_web_search">Web search</string>
     <string name="action_select_all">Select all</string>
     <string name="action_select_inverse">Select inverse</string>
     <string name="action_mark_as_read">Mark as read</string>
@@ -1159,11 +1160,11 @@
     <string name="migrationListScreen.progressDialog.cancelLabel">Cancel</string>
     <string name="migrationListScreen.matchWithoutChapterToast">No works found, this entry cannot be used for migration</string>
 
-    <string name="supportUsScreen.perks">Patrons get access to exclusive channels, with more perks to come.</string>
+    <string name="supportUsScreen.perks">These links support the upstream Mihon project. They are not donation channels for Mihon Vienna.</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon (preferred)</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
     <string name="supportUsScreen.currentlySupportedBy">Mihon is currently backed by %d+ patrons. We want to thank each and everyone of you. Let's make Mihon even better together.</string>
-    <string name="supportUsScreen.contactForDetailsMessage">For alternative options or any related questions, join our Discord server.</string>
+    <string name="supportUsScreen.contactForDetailsMessage">For other ways to support Mihon or related questions, visit the Mihon Discord server.</string>
     <string name="supportUsScreen.contactPlatform">Discord</string>
 
     <string name="donationCampaign.title">Enjoying the app?</string>
@@ -1177,6 +1178,10 @@
     <string name="action_marks_list">Marked works</string>
     <string name="my_lists_title">My lists</string>
     <string name="my_lists_summary">Marks and good doujins</string>
+    <string name="my_lists_entry_count">%1$d works · %2$d manga</string>
+    <string name="my_lists_share_header">%1$s: %2$d entries</string>
+    <string name="my_lists_export_failed">Couldn\'t export the list</string>
+    <string name="my_lists_empty_hint">Lists fill up as you mark works from a manga's work list, swipe to keep good doujins, or finish reading local works.</string>
     <string name="marks_list_title">Marked works</string>
     <string name="marks_list_empty">No marked works yet. Flag works in the work list to collect them here.</string>
     <string name="marks_list_share">Share</string>
@@ -1188,8 +1193,10 @@
     <string name="marks_list_remove">Remove</string>
     <string name="marks_list_remove_entry_confirm">Remove “%1$s” from this list? The local manga will not be deleted.</string>
     <string name="marks_list_remove_selected_confirm">Remove the selected %1$d manga and all of their list entries? Your local files will not be touched.</string>
+    <string name="marks_list_remove_selected_entries_confirm">Remove the selected %1$d works from this list? Your local manga will not be deleted.</string>
     <string name="action_mark_range_as_read">Mark range as read</string>
     <string name="marks_list_chapter_count">%1$d marked works</string>
+    <string name="marks_list_search_hint">Search by work or chapter name</string>
     <string name="marks_list_open_chapter">Open work</string>
     <string name="marks_list_clear_manga_confirm">Removes all marks for this manga from the list. Your local files are not touched.</string>
     <string name="action_good_doujin_list">Good doujin list</string>
@@ -1217,11 +1224,11 @@
     <string name="audio_no_tracks">No playable tracks</string>
     <string name="audio_empty">No results</string>
     <string name="audio_search_hint">Search ASMR works</string>
+    <string name="audio_search_hint_in_category">Search in %1$s</string>
     <string name="audio_saved">Saved</string>
     <string name="action_play">Play</string>
     <string name="audio_vas">Voice actors</string>
     <string name="audio_sort">Sort</string>
-    <string name="audio_filters">Filters and categories</string>
     <string name="audio_sort_release_desc">Release ↓</string>
     <string name="audio_sort_rating_desc">Rating ↓</string>
     <string name="audio_sort_dl_desc">Downloads ↓</string>
@@ -1241,15 +1248,14 @@
     <string name="audio_playlist_play_all">Play all</string>
     <string name="audio_playlist_clear">Clear playlist</string>
     <string name="audio_playlist_clear_confirm">Remove every track from the playlist? This cannot be undone.</string>
+    <string name="audio_playlist_remove_selected_confirm">Remove the selected %1$d tracks from the playlist?</string>
     <string name="audio_add_work_to_playlist">Add entire work to playlist</string>
     <string name="audio_add_to_playlist">Add to playlist</string>
     <string name="audio_remove_work_from_history">Remove work from history</string>
     <string name="audio_history_work_tracks">%1$d played tracks</string>
     <string name="audio_history_continue">Continue listening</string>
-    <string name="audio_quick_random">Play random</string>
     <string name="audio_quick_open">Open ASMR controls</string>
-    <string name="audio_quick_choose_work">Choose a work to play</string>
-    <string name="audio_quick_queue_summary">%1$d works · %2$d tracks</string>
+    <string name="audio_quick_now_playing">Now playing</string>
     <string name="audio_quick_switch_work">Switch work</string>
     <string name="audio_quick_open_work_details">Open work details</string>
     <string name="audio_quick_track_count">%1$d tracks</string>
@@ -1265,6 +1271,9 @@
     <string name="audio_tab_recommended">Recommended</string>
     <string name="audio_tab_popular">Popular</string>
     <string name="audio_tab_latest">Latest</string>
+    <string name="audio_tab_sort_rating">By rating</string>
+    <string name="audio_tab_sort_dl">By downloads</string>
+    <string name="audio_tab_sort_create">By date added</string>
     <string name="audio_tab_favorites">Favorites</string>
     <string name="audio_favorite_add">Collect work</string>
     <string name="audio_favorite_remove">Remove from collection</string>
@@ -1283,6 +1292,15 @@
     <string name="audio_quality_high">Quality: high</string>
     <string name="audio_sleep_minutes">%1$d minutes</string>
     <string name="audio_sleep_off">Turn off timer</string>
+    <string name="audio_subtitle_display_mode">Subtitle display mode</string>
+    <string name="audio_loop_on">Repeat: on</string>
+    <string name="audio_loop_off">Repeat: off</string>
+    <!-- One glyph shown inside the circular floating-subtitle toggle; screen readers read audio_subtitle instead. -->
+    <string name="audio_floating_subtitle_short">L</string>
+    <string name="audio_floating_subtitle_permission_title">Permission to draw over other apps</string>
+    <string name="audio_floating_subtitle_permission_message">Floating subtitles need this permission. Turn it on for Mihon in system settings.</string>
+    <string name="audio_floating_subtitle_lock">Lock floating subtitles</string>
+    <string name="audio_floating_subtitle_unlock">Unlock floating subtitles</string>
     <string name="local_chapter_covers">Local short-story covers</string>
     <string name="local_chapter_covers_summary">Show the first image from each local chapter as a cached thumbnail</string>
     <string name="local_chapter_covers_grid">Use cover grid in local details</string>
@@ -1299,11 +1317,16 @@
     <string name="local_chapter_covers_clear">Clear generated covers</string>
     <string name="local_chapter_covers_clear_confirm">Delete all generated thumbnails? Your CBZ files, library data, and reading progress will not be changed.</string>
     <string name="local_chapter_covers_cleared">Cleared %1$d covers</string>
-    <string name="local_read_review_action">Review completed local chapters</string>
-    <string name="local_read_review_summary">Browse all completed local works together, review them from the first page, and undo incorrect read status.</string>
-    <string name="local_read_review_title">Incorrect read-status review</string>
+    <string name="local_read_review_action">Completed local chapters</string>
+    <string name="local_read_review_summary">All completed local chapters, grouped by manga. Jump back to the manga, read it again, or undo a wrong read status.</string>
+    <string name="local_read_review_title">Completed local chapters</string>
     <string name="local_read_review_count">%1$d local chapters are marked as read</string>
     <string name="local_read_review_empty">No local chapters are marked as read</string>
+    <string name="local_read_review_clear">Mark all as unread</string>
+    <string name="local_read_review_clear_confirm">Mark all %1$d local works as unread? Your files are not touched.</string>
+    <string name="local_read_review_mark_unread_selected_confirm">Mark the selected %1$d works as unread?</string>
+    <string name="local_read_review_search_hint">Search by work or chapter name (original or translated)</string>
+    <string name="local_read_review_group_subtitle">%1$d works · latest %2$s</string>
     <string name="action_import_local_chapters">Import local chapters</string>
     <string name="action_import_local_chapters_short">Import local</string>
     <string name="action_import_target">Import to</string>

@@ -30,6 +30,9 @@
         tools:ignore="QueryAllPackagesPermission" />
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Floating subtitles drawn on top of other apps. Cannot be granted at runtime. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission
         android:name="android.permission.READ_APP_SPECIFIC_LOCALES"
         tools:ignore="ProtectedPermissions" />
@@ -57,7 +60,8 @@
             android:name=".ui.main.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.Tachiyomi.SplashScreen">
+            android:theme="@style/Theme.Tachiyomi.SplashScreen"
+            android:configChanges="density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -213,10 +217,25 @@
             android:exported="false"
             android:foregroundServiceType="shortService" />
 
+        <!-- Headset and Bluetooth media buttons. Exported because the system's media session
+             service broadcasts ACTION_MEDIA_BUTTON to it; it then hands the key to whichever
+             service declares the same action, which is the playback service below. -->
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".ui.audio.AudioPlaybackService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
 
         <service
             android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"

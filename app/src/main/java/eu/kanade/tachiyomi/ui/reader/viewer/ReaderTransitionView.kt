@@ -45,6 +45,7 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
                             skipCache = true,
                         )
                     } ?: false,
+                isLocalSource = manga.isLocal(),
             )
         } else {
             null
@@ -63,6 +64,7 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
                         transition = it.transition,
                         currChapterDownloaded = it.currChapterDownloaded,
                         goingToChapterDownloaded = it.goingToChapterDownloaded,
+                        isLocalSource = it.isLocalSource,
                         compact = compact,
                     )
                 }
@@ -74,5 +76,6 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
         val transition: ChapterTransition,
         val currChapterDownloaded: Boolean,
         val goingToChapterDownloaded: Boolean,
+        val isLocalSource: Boolean,
     )
 }

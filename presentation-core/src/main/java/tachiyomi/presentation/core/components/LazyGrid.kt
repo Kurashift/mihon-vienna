@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -24,8 +25,10 @@ fun FastScrollLazyVerticalGrid(
     onScrollingChanged: ((Boolean) -> Unit)? = null,
     onThumbDraggedChanged: ((Boolean) -> Unit)? = null,
     alwaysVisible: Boolean = false,
+    showEndMarker: Boolean = false,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     contentPadding: PaddingValues = PaddingValues(0.dp),
+    endContentPadding: Dp? = null,
     reverseLayout: Boolean = false,
     verticalArrangement: Arrangement.Vertical =
         if (!reverseLayout) Arrangement.Top else Arrangement.Bottom,
@@ -44,10 +47,11 @@ fun FastScrollLazyVerticalGrid(
         onScrollingChanged = onScrollingChanged,
         onThumbDraggedChanged = onThumbDraggedChanged,
         alwaysVisible = alwaysVisible,
+        showEndMarker = showEndMarker,
         thumbColor = thumbColor,
         topContentPadding = contentPadding.calculateTopPadding(),
         bottomContentPadding = contentPadding.calculateBottomPadding(),
-        endContentPadding = contentPadding.calculateEndPadding(layoutDirection),
+        endContentPadding = endContentPadding ?: contentPadding.calculateEndPadding(layoutDirection),
     ) {
         LazyVerticalGrid(
             columns = columns,

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Holds the reader fully opaque while the manga screen fades in over it.
+
+      Bringing the manga screen forward puts the reader underneath, so fading out here would
+      not be visible anyway — and worse, animating both windows at once blends each of them
+      with the black window background at the midpoint. Staying opaque turns the fade above
+      into a clean cross-fade.
+
+      The animation still has to exist rather than passing 0: it is what keeps the reader's
+      window part of the transition, so it stays on screen for the whole fade instead of
+      being dropped the moment it finishes.
+    -->
+    <alpha
+        android:duration="200"
+        android:fromAlpha="1"
+        android:toAlpha="1" />
+</set>

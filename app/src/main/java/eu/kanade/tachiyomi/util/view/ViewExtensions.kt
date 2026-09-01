@@ -40,9 +40,12 @@ inline fun ComponentActivity.setComposeContent(
 }
 
 fun ComposeView.setComposeContent(
+    disposeStrategy: ViewCompositionStrategy = ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
     content: @Composable () -> Unit,
 ) {
-    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+    // A view hosted in a WindowManager overlay has no lifecycle owner, so it has to dispose with
+    // the window instead; the default would throw on attach.
+    setViewCompositionStrategy(disposeStrategy)
     setContent {
         TachiyomiTheme {
             CompositionLocalProvider(

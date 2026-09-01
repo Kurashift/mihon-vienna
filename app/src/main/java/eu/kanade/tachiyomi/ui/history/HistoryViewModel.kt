@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -40,6 +41,7 @@ import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaWithChapterCount
+import tachiyomi.domain.manga.model.shouldDisplayChapterNumber
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -68,21 +70,26 @@ class HistoryViewModel(
             state.map { it.searchQuery }
                 .distinctUntilChanged()
                 .flatMapLatest { query ->
-                    getHistory.subscribe(query ?: "")
-                        .distinctUntilChanged()
+                    combine(
+                        getHistory.subscribe(query ?: "").distinctUntilChanged(),
+                        libraryPreferences.localChapterDisplayMode.changes(),
+                    ) { history, localChapterDisplayMode ->
+                        history.toHistoryUiModels(localChapterDisplayMode)
+                    }
                         .catch { error ->
                             logcat(LogPriority.ERROR, error)
                             _events.send(Event.InternalError)
                         }
-                        .map { it.toHistoryUiModels() }
                         .flowOn(Dispatchers.IO)
                 }
                 .collect { newList -> mutableState.update { it.copy(list = newList) } }
         }
     }
 
-    private fun List<HistoryWithRelations>.toHistoryUiModels(): List<HistoryUiModel> {
-        return map { HistoryUiModel.Item(it) }
+    private fun List<HistoryWithRelations>.toHistoryUiModels(
+        localChapterDisplayMode: Long,
+    ): List<HistoryUiModel> {
+        return map { HistoryUiModel.Item(it.hideLocalChapterNumber(localChapterDisplayMode)) }
             .insertSeparators { before, after ->
                 val beforeDate = before?.item?.readAt?.time?.toLocalDate()
                 val afterDate = after?.item?.readAt?.time?.toLocalDate()
@@ -92,6 +99,22 @@ class HistoryViewModel(
                     else -> null
                 }
             }
+    }
+
+    /**
+     * Local chapters only get a chapter number because the file name was parsed for one, which
+     * turns names like "vol1-17.5" into a meaningless "第 1.17 篇". The chapter list already hides
+     * that number unless local chapters were explicitly set to display it, so history must follow
+     * the same rule instead of always printing whatever was parsed out of the file name.
+     */
+    private fun HistoryWithRelations.hideLocalChapterNumber(
+        localChapterDisplayMode: Long,
+    ): HistoryWithRelations {
+        val showChapterNumber = shouldDisplayChapterNumber(
+            sourceId = coverData.sourceId,
+            localDisplayMode = localChapterDisplayMode,
+        )
+        return if (showChapterNumber) this else copy(chapterNumber = -1.0)
     }
 
     /**

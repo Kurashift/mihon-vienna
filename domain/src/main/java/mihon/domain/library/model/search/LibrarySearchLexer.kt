@@ -14,17 +14,20 @@ object LibrarySearchLexer {
             # Comparison fields
             (?<CompField> [a-zA-Z_][a-zA-Z0-9_]* )
             (?<Comparator> >=|<=|>|<|= )
-            (?: " (?<CompValQuoted> [^"]* ) " | ' (?<CompValSingleQuoted> [^']* ) ' | (?<CompVal> [^\s,()]+ ))|
+            (?: " (?<CompValQuoted> [^"]* ) " | ' (?<CompValSingleQuoted> [^']* ) ' | (?<CompVal> [^\s,()\u3000，、]+ ))|
 
             # Key-Value fields
             (?<Field> [a-zA-Z_][a-zA-Z0-9_]* ) :
-            (?: " (?<FieldValQuoted> [^"]* ) " | ' (?<FieldValSingleQuoted> [^']* ) ' | (?<FieldVal> [^\s,()]+ ))|
+            (?: " (?<FieldValQuoted> [^"]* ) " | ' (?<FieldValSingleQuoted> [^']* ) ' | (?<FieldVal> [^\s,()\u3000，、]+ ))|
 
             # General catch-all
-            (?: " (?<GeneralQuoted> [^"]* ) " | ' (?<GeneralSingleQuoted> [^']* ) ' | (?<General> [^\s,()]+ ))|
+            (?: " (?<GeneralQuoted> [^"]* ) " | ' (?<GeneralSingleQuoted> [^']* ) ' | (?<General> [^\s,()\u3000，、]+ ))|
 
-            # Seperator
-            (?<Separator> [\s,]+ )
+            # Seperator. CJK punctuation (ideographic comma, enumeration comma, ideographic
+            # space) has to be listed explicitly: \\s only covers ASCII whitespace, so without
+            # this a query written with full-width punctuation stays a single token and can
+            # never match a title that does not repeat the exact same punctuation.
+            (?<Separator> [\s,，、\x{3000}]+ )
         """.trimIndent(),
         RegexOption.COMMENTS,
     )

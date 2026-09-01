@@ -1,7 +1,6 @@
 package eu.kanade.presentation.audio
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,12 +46,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import eu.kanade.domain.base.BasePreferences
+import eu.kanade.presentation.util.marqueeTitle
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import kotlin.math.roundToInt
@@ -79,22 +85,31 @@ fun AudioReaderFloatingBar(
         return
     }
 
+    val basePreferences = remember { Injekt.get<BasePreferences>() }
+    val floatingSubtitleEnabled by basePreferences.audioFloatingSubtitle.collectAsState()
+    val floatingSubtitleLocked by basePreferences.audioFloatingSubtitleLocked.collectAsState()
+
     var volumeVisible by remember { mutableStateOf(false) }
-    Column(modifier = modifier) {
+    // Measured rather than hard-coded: the popup has to sit over whichever button opens it, and
+    // an offset written for one arrangement silently points at the wrong button in the next.
+    var barLeftPx by remember { mutableStateOf(0f) }
+    var volumeButtonCenterPx by remember { mutableStateOf(0f) }
+    val volumePopupOffsetX = with(LocalDensity.current) {
+        (volumeButtonCenterPx - barLeftPx).toDp() - VOLUME_POPUP_WIDTH / 2
+    }
+
+    Column(
+        modifier = modifier.onGloballyPositioned { barLeftPx = it.positionInRoot().x },
+    ) {
         AnimatedVisibility(
             visible = volumeVisible,
             enter = fadeIn(tween(90)),
             exit = fadeOut(tween(90)),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 6.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
                 AudioVerticalVolumeControl(
                     controller = controller,
-                    modifier = Modifier.padding(end = 69.dp),
+                    modifier = Modifier.offset(x = volumePopupOffsetX.coerceAtLeast(0.dp)),
                 )
             }
         }
@@ -112,6 +127,19 @@ fun AudioReaderFloatingBar(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Previous, play and next are one control in every music player there has
+                    // ever been, so they stay together and in that order.
+                    IconButton(
+                        onClick = controller::previous,
+                        enabled = state.hasPrevious,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.SkipPrevious,
+                            contentDescription = stringResource(MR.strings.audio_previous_track),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                     FilledIconButton(
                         onClick = controller::togglePlay,
                         modifier = Modifier.size(38.dp),
@@ -123,24 +151,17 @@ fun AudioReaderFloatingBar(
                             )
                         } else {
                             Icon(
-                                imageVector = if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                imageVector = if (state.isPlaying) {
+                                    Icons.Outlined.Pause
+                                } else {
+                                    Icons.Outlined.PlayArrow
+                                },
                                 contentDescription = stringResource(
                                     if (state.isPlaying) MR.strings.action_pause else MR.strings.action_play,
                                 ),
                                 modifier = Modifier.size(22.dp),
                             )
                         }
-                    }
-                    IconButton(
-                        onClick = controller::previous,
-                        enabled = state.hasPrevious || state.positionMs > 0,
-                        modifier = Modifier.size(34.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.SkipPrevious,
-                            contentDescription = stringResource(MR.strings.audio_previous_track),
-                            modifier = Modifier.size(20.dp),
-                        )
                     }
                     IconButton(
                         onClick = controller::next,
@@ -164,7 +185,10 @@ fun AudioReaderFloatingBar(
                             text = state.item.trackTitle,
                             style = MaterialTheme.typography.labelLarge,
                             maxLines = 1,
+                            // Titles here are long and the card is narrow, so an ellipsis hides
+                            // most of them. Scrolling instead costs nothing until it is needed.
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.marqueeTitle(),
                         )
                         Text(
                             text = state.item.workTitle,
@@ -177,7 +201,11 @@ fun AudioReaderFloatingBar(
 
                     IconButton(
                         onClick = { volumeVisible = !volumeVisible },
-                        modifier = Modifier.size(34.dp),
+                        modifier = Modifier
+                            .size(34.dp)
+                            .onGloballyPositioned {
+                                volumeButtonCenterPx = it.positionInRoot().x + it.size.width / 2f
+                            },
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
@@ -187,16 +215,6 @@ fun AudioReaderFloatingBar(
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    IconButton(
-                        onClick = onOpenPlaylist,
-                        modifier = Modifier.size(34.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
-                            contentDescription = stringResource(MR.strings.audio_quick_open),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -212,10 +230,45 @@ fun AudioReaderFloatingBar(
                     }
                 }
 
-                AudioSeekBar(
-                    controller = controller,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
+                // The track takes whatever the buttons leave, so it stays as long as the card is
+                // wide. Giving it the full row instead would have cost the title its width.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AudioSeekBar(
+                        controller = controller,
+                        modifier = Modifier.weight(1f),
+                    )
+                    FloatingSubtitleToggle(
+                        enabled = floatingSubtitleEnabled,
+                        toggleSize = SUBTITLE_TOGGLE_SIZE,
+                        onToggle = {
+                            // A locked window is touch-through, so the only way back into it is
+                            // this button. The first tap therefore unlocks instead of closing:
+                            // closing a window the user cannot reach into would look like the tap
+                            // did nothing.
+                            when {
+                                !floatingSubtitleEnabled ->
+                                    basePreferences.audioFloatingSubtitle.set(true)
+                                floatingSubtitleLocked ->
+                                    basePreferences.audioFloatingSubtitleLocked.set(false)
+                                else -> basePreferences.audioFloatingSubtitle.set(false)
+                            }
+                        },
+                        modifier = Modifier.size(34.dp),
+                    )
+                    IconButton(
+                        onClick = onOpenPlaylist,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                            contentDescription = stringResource(MR.strings.audio_quick_open),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
             }
         }
     }
@@ -257,7 +310,11 @@ private fun AudioReaderMiniControl(
                         )
                     } else {
                         Icon(
-                            imageVector = if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                            imageVector = if (state.isPlaying) {
+                                Icons.Outlined.Pause
+                            } else {
+                                Icons.Outlined.PlayArrow
+                            },
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
                         )
@@ -321,7 +378,7 @@ private fun AudioVerticalVolumeControl(
     val volume = (dragValue ?: state.mediaVolume.toFloat()).coerceIn(0f, maximum.toFloat())
 
     Surface(
-        modifier = modifier.size(width = 32.dp, height = 140.dp),
+        modifier = modifier.size(width = VOLUME_POPUP_WIDTH, height = VOLUME_POPUP_HEIGHT),
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
         tonalElevation = 2.dp,
@@ -439,3 +496,13 @@ private fun AudioVerticalVolumeControl(
         }
     }
 }
+
+private val VOLUME_POPUP_WIDTH: Dp = 32.dp
+private val VOLUME_POPUP_HEIGHT: Dp = 140.dp
+
+/**
+ * Ring diameter for the subtitle toggle. The neighbouring icons in this bar are 20dp, and an
+ * outlined shape reads as smaller than a solid one of the same size, so the ring is a notch
+ * larger to weigh the same rather than to match the number.
+ */
+private val SUBTITLE_TOGGLE_SIZE: Dp = 24.dp

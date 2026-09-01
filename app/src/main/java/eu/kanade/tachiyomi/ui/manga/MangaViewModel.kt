@@ -15,6 +15,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import eu.kanade.core.preference.asState
 import eu.kanade.core.util.addOrRemove
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.interactor.GetAvailableScanlators
 import eu.kanade.domain.chapter.interactor.SetReadStatus
 import eu.kanade.domain.manga.interactor.GetExcludedScanlators
@@ -108,6 +109,7 @@ class MangaViewModel(
     private val randomCandidates: List<Long> = emptyList(),
     private val isFromSource: Boolean,
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
+    private val basePreferences: BasePreferences = Injekt.get(),
     trackPreferences: TrackPreferences = Injekt.get(),
     readerPreferences: ReaderPreferences = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
@@ -1130,6 +1132,7 @@ class MangaViewModel(
             chapters = state.chapters.map { it.chapter },
             format = format,
             onlyUntranslated = onlyUntranslated,
+            exportInstanceId = basePreferences.installationId.get().takeIf(String::isNotBlank),
         )
         viewModelScope.launchIO {
             runCatching {
@@ -1165,6 +1168,7 @@ class MangaViewModel(
                 ChapterTitleTranslationCodec.planImport(
                     document = ChapterTitleTranslationCodec.decode(content),
                     currentChapters = chapters,
+                    currentInstanceId = basePreferences.installationId.get().takeIf(String::isNotBlank),
                 )
             }.onSuccess { plan ->
                 if (plan.updates.isNotEmpty()) {

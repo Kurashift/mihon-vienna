@@ -10,6 +10,7 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
+import kotlin.time.Clock
 
 class SetReadStatus(
     private val downloadPreferences: DownloadPreferences,
@@ -22,6 +23,8 @@ class SetReadStatus(
         ChapterUpdate(
             read = read,
             lastPageRead = if (!read) 0L else chapter.totalPages.takeIf { it > 0 },
+            // 标记已读时记录时间点，标记未读时清空——复查页据此稳定排序，不随打开阅读器刷新。
+            markedReadAt = if (read) Clock.System.now().toEpochMilliseconds() else 0L,
             id = chapter.id,
         )
     }

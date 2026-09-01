@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -30,9 +31,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
+import eu.kanade.presentation.components.LocalBottomNavFabPadding
 import eu.kanade.presentation.components.relativeDateText
 import eu.kanade.presentation.library.components.CommonMangaItemDefaults
 import eu.kanade.presentation.library.components.IndexLabel
@@ -63,6 +66,8 @@ fun BrowseSourceCompactGrid(
     onMangaLongClick: (Manga) -> Unit,
     onLocateMangaHandled: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
+    onRandomManga: (() -> Unit)? = null,
+    onRandomGoodDoujin: (() -> Unit)? = null,
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -123,6 +128,7 @@ fun BrowseSourceCompactGrid(
             modifier = Modifier.browseSourceLocateTransition(locateTransition),
             onThumbDraggedChanged = { isThumbDragging = it },
             contentPadding = contentPadding + PaddingValues(8.dp),
+            scrollerEndPadding = contentPadding.calculateEndPadding(LocalLayoutDirection.current),
             verticalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridVerticalSpacer),
             horizontalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridHorizontalSpacer),
         ) {
@@ -188,12 +194,16 @@ fun BrowseSourceCompactGrid(
         BrowseSourceLastReadFab(
             mangaList = mangaList,
             lastReadMangaId = lastReadMangaId,
+            scrollState = gridState,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .windowInsetsPadding(
                     WindowInsets.systemBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Start),
                 )
-                .padding(16.dp),
+                .padding(
+                    start = 16.dp,
+                    bottom = 16.dp + LocalBottomNavFabPadding.current,
+                ),
             visibleItemsRange = remember(gridState, leadingItemCount) {
                 snapshotFlow {
                     val visibleItems = gridState.layoutInfo.visibleItemsInfo
@@ -219,6 +229,8 @@ fun BrowseSourceCompactGrid(
                 }
             },
             onOpenManga = onMangaClick,
+            onRandomManga = onRandomManga,
+            onRandomGoodDoujin = onRandomGoodDoujin,
         )
     }
 }

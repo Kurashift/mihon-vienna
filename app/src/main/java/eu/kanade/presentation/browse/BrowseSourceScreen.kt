@@ -58,6 +58,8 @@ fun BrowseSourceContent(
     onRefreshChapters: (() -> Unit)? = null,
     onLocateMangaHandled: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
+    onRandomManga: (() -> Unit)? = null,
+    onRandomGoodDoujin: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
 
@@ -147,6 +149,8 @@ fun BrowseSourceContent(
                 onMangaLongClick = onMangaLongClick,
                 onLocateMangaHandled = onLocateMangaHandled,
                 scrollToTopRequest = scrollToTopRequest,
+                onRandomManga = onRandomManga,
+                onRandomGoodDoujin = onRandomGoodDoujin,
             )
         }
         LibraryDisplayMode.List -> {
@@ -163,6 +167,8 @@ fun BrowseSourceContent(
                 onMangaLongClick = onMangaLongClick,
                 onLocateMangaHandled = onLocateMangaHandled,
                 scrollToTopRequest = scrollToTopRequest,
+                onRandomManga = onRandomManga,
+                onRandomGoodDoujin = onRandomGoodDoujin,
             )
         }
         LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
@@ -180,6 +186,8 @@ fun BrowseSourceContent(
                 onMangaLongClick = onMangaLongClick,
                 onLocateMangaHandled = onLocateMangaHandled,
                 scrollToTopRequest = scrollToTopRequest,
+                onRandomManga = onRandomManga,
+                onRandomGoodDoujin = onRandomGoodDoujin,
             )
         }
     }

@@ -34,7 +34,9 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchUI
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.library.model.LibraryManga
+import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.shouldDisplayChapterNumber
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
@@ -46,6 +48,7 @@ class LibraryUpdateNotifier(
     private val context: Context,
     private val securityPreferences: SecurityPreferences = Injekt.get(),
     private val sourceManager: SourceManager = Injekt.get(),
+    private val libraryPreferences: LibraryPreferences = Injekt.get(),
 ) {
 
     private val percentFormatter = NumberFormat.getPercentInstance().apply {
@@ -226,7 +229,7 @@ class LibraryUpdateNotifier(
         return context.notificationBuilder(Notifications.CHANNEL_NEW_CHAPTERS) {
             setContentTitle(manga.title)
 
-            val description = getNewChaptersDescription(chapters)
+            val description = getNewChaptersDescription(manga, chapters)
             setContentText(description)
             setStyle(NotificationCompat.BigTextStyle().bigText(description))
 
@@ -299,12 +302,26 @@ class LibraryUpdateNotifier(
         return drawable?.getBitmapOrNull()
     }
 
-    private fun getNewChaptersDescription(chapters: Array<Chapter>): String {
-        val displayableChapterNumbers = chapters
-            .filter { it.isRecognizedNumber }
-            .sortedBy { it.chapterNumber }
-            .map { formatChapterNumber(it.chapterNumber) }
-            .toSet()
+    /**
+     * Local chapters only carry a chapter number because one was parsed out of the file name, so a
+     * name like "vol1-17.5" would be announced as "第 1.17 篇". The chapter list already hides that
+     * number unless local chapters were explicitly set to display it; fall back to the generic
+     * "N new chapters" text in that case instead of printing the parsed number.
+     */
+    private fun getNewChaptersDescription(manga: Manga, chapters: Array<Chapter>): String {
+        val showChapterNumber = shouldDisplayChapterNumber(
+            sourceId = manga.source,
+            localDisplayMode = libraryPreferences.localChapterDisplayMode.get(),
+        )
+        val displayableChapterNumbers: Set<String> = if (showChapterNumber) {
+            chapters
+                .filter { it.isRecognizedNumber }
+                .sortedBy { it.chapterNumber }
+                .map { formatChapterNumber(it.chapterNumber) }
+                .toSet()
+        } else {
+            emptySet()
+        }
 
         return when (displayableChapterNumbers.size) {
             // No sensible chapter numbers to show (i.e. no chapters have parsed chapter number)

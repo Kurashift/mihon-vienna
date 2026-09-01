@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.SearchHistoryDropdown
 import eu.kanade.presentation.components.rememberSearchHistoryStore
+import eu.kanade.tachiyomi.data.audio.AudioCategoryField
 import eu.kanade.tachiyomi.data.search.SearchHistoryScope
 import eu.kanade.tachiyomi.ui.audio.AudioCategoryState
 import eu.kanade.tachiyomi.ui.audio.AudioCategoryType
@@ -49,8 +51,9 @@ fun AudioCategoryContent(
     initialType: AudioCategoryType,
     bottomBar: @Composable () -> Unit,
     navigateUp: () -> Unit,
-    onRetry: () -> Unit,
-    onSelect: (AudioCategoryType, String) -> Unit,
+    onSelectTab: (AudioCategoryType) -> Unit,
+    onRetry: (AudioCategoryField) -> Unit,
+    onSelect: (AudioCategoryType, String, String) -> Unit,
 ) {
     var selectedTab by remember(initialType) { mutableStateOf(initialType) }
     var query by remember { mutableStateOf("") }
@@ -72,13 +75,26 @@ fun AudioCategoryContent(
                 .fillMaxSize()
                 .padding(contentPadding),
         ) {
+            // Same row structure as the browse screen (equal-width tabs split by a column rule)
+            // so the two tab rows read identically even though they pick from different sources.
             PrimaryTabRow(selectedTabIndex = selectedTab.ordinal) {
-                AudioCategoryType.entries.forEach { type ->
-                    Tab(
-                        selected = selectedTab == type,
-                        onClick = { selectedTab = type },
-                        text = { Text(stringResource(type.label)) },
-                    )
+                AudioCategoryType.entries.forEachIndexed { index, type ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Tab(
+                            selected = selectedTab == type,
+                            onClick = {
+                                if (selectedTab != type) {
+                                    selectedTab = type
+                                    onSelectTab(type)
+                                }
+                            },
+                            text = { Text(stringResource(type.label)) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (index < AudioCategoryType.entries.lastIndex) {
+                            AudioTabDivider()
+                        }
+                    }
                 }
             }
 
@@ -120,46 +136,63 @@ fun AudioCategoryContent(
                 )
             }
 
-            if (state.loading) {
-                LoadingScreen()
-            } else if (state.error) {
-                EmptyScreen(
-                    stringRes = MR.strings.audio_load_failed,
-                    actions = listOf(
-                        EmptyScreenAction(
-                            stringRes = MR.strings.audio_retry,
-                            icon = Icons.Outlined.Refresh,
-                            onClick = onRetry,
+            val activeField = selectedTab.field
+            val activeItems = when (selectedTab) {
+                AudioCategoryType.CIRCLE -> state.circles
+                AudioCategoryType.VA -> state.vas
+                AudioCategoryType.TAG -> state.tags
+            }
+            when {
+                activeItems.isNotEmpty() -> {
+                    // Anything already loaded stays on screen while a refresh runs: a thin bar is
+                    // enough of a signal, and blanking a populated list would defeat the point of
+                    // having cached it.
+                    if (activeField in state.loadingFields) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    when (selectedTab) {
+                        AudioCategoryType.CIRCLE -> CategoryList(
+                            items = state.circles,
+                            query = query,
+                            nameOf = { it.name },
+                            countOf = { it.count },
+                            keyOf = { it.id },
+                            idOf = { it.id.toString() },
+                            onSelect = { id, name -> onSelect(AudioCategoryType.CIRCLE, id, name) },
+                        )
+                        AudioCategoryType.VA -> CategoryList(
+                            items = state.vas,
+                            query = query,
+                            nameOf = { it.name },
+                            countOf = { it.count },
+                            keyOf = { it.id },
+                            idOf = { it.id },
+                            onSelect = { id, name -> onSelect(AudioCategoryType.VA, id, name) },
+                        )
+                        AudioCategoryType.TAG -> CategoryList(
+                            items = state.tags,
+                            query = query,
+                            nameOf = { it.name },
+                            countOf = { it.count },
+                            keyOf = { it.id },
+                            idOf = { it.id.toString() },
+                            onSelect = { id, name -> onSelect(AudioCategoryType.TAG, id, name) },
+                        )
+                    }
+                }
+                activeField in state.errorFields -> {
+                    EmptyScreen(
+                        stringRes = MR.strings.audio_load_failed,
+                        actions = listOf(
+                            EmptyScreenAction(
+                                stringRes = MR.strings.audio_retry,
+                                icon = Icons.Outlined.Refresh,
+                                onClick = { onRetry(activeField) },
+                            ),
                         ),
-                    ),
-                )
-            } else {
-                when (selectedTab) {
-                    AudioCategoryType.CIRCLE -> CategoryList(
-                        items = state.circles,
-                        query = query,
-                        nameOf = { it.name },
-                        countOf = { it.count },
-                        keyOf = { it.id },
-                        onSelect = { onSelect(AudioCategoryType.CIRCLE, it) },
-                    )
-                    AudioCategoryType.VA -> CategoryList(
-                        items = state.vas,
-                        query = query,
-                        nameOf = { it.name },
-                        countOf = { it.count },
-                        keyOf = { it.id },
-                        onSelect = { onSelect(AudioCategoryType.VA, it) },
-                    )
-                    AudioCategoryType.TAG -> CategoryList(
-                        items = state.tags,
-                        query = query,
-                        nameOf = { it.name },
-                        countOf = { it.count },
-                        keyOf = { it.id },
-                        onSelect = { onSelect(AudioCategoryType.TAG, it) },
                     )
                 }
+                else -> LoadingScreen()
             }
         }
     }
@@ -172,17 +205,21 @@ private fun <T> CategoryList(
     nameOf: (T) -> String,
     countOf: (T) -> Int,
     keyOf: (T) -> Any,
-    onSelect: (String) -> Unit,
+    /** The backend id, so the results page can filter by id instead of re-parsing the name. */
+    idOf: (T) -> String,
+    onSelect: (String, String) -> Unit,
 ) {
-    val filtered = items.filter {
-        query.isBlank() || nameOf(it).contains(query, ignoreCase = true)
+    // The tag list is tens of thousands of rows, so re-filtering it on every recomposition (every
+    // keystroke in the search field) is a measurable stall.
+    val filtered = remember(items, query) {
+        items.filter { query.isBlank() || nameOf(it).contains(query, ignoreCase = true) }
     }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(filtered, key = { keyOf(it) }) { item ->
             CategoryRow(
                 name = nameOf(item),
                 count = countOf(item),
-                onClick = { onSelect(nameOf(item)) },
+                onClick = { onSelect(idOf(item), nameOf(item)) },
             )
         }
     }

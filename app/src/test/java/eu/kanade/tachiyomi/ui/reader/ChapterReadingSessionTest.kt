@@ -12,56 +12,68 @@ class ChapterReadingSessionTest {
     fun `backward entry at unread tail does not change progress`() {
         val session = backwardSession(totalPages = 12)
 
+        session.onUserPageSelected(11)
         assertNull(session.onSettled(11))
+        session.onUserPageSelected(10)
         assertNull(session.onSettled(10))
     }
 
     @Test
-    fun `three distinct settled pages confirm reading without completing`() {
-        val session = backwardSession(totalPages = 12)
+    fun `backward entry reaches the start zone without writing its position`() {
+        val session = backwardSession(totalPages = 12, lastPageRead = 0)
 
+        session.onUserPageSelected(11)
         assertNull(session.onSettled(11))
-        assertNull(session.onSettled(10))
-        val decision = session.onSettled(9)
-
-        assertEquals(9, decision?.pageIndex)
-        assertFalse(decision?.completed ?: true)
+        session.onUserPageSelected(0)
+        assertNull(session.onSettled(0))
     }
 
     @Test
-    fun `fast jump across pages does not complete until tail is reached forward`() {
-        val session = backwardSession(totalPages = 12)
+    fun `backward entry resumes after moving forward out of the start zone`() {
+        val session = backwardSession(totalPages = 12, lastPageRead = 0)
 
-        session.onSettled(11)
-        session.onSettled(7)
-        val armed = session.onSettled(3)
-        val forward = session.onSettled(8)
-        val completed = session.onSettled(11)
+        session.onUserPageSelected(11)
+        session.onUserPageSelected(0)
+        session.onUserPageSelected(3)
 
-        assertFalse(armed?.completed ?: true)
-        assertFalse(forward?.completed ?: true)
-        assertTrue(completed?.completed == true)
+        assertEquals(3, session.onSettled(3)?.pageIndex)
+        assertFalse(session.onSettled(3)?.completed ?: true)
     }
 
     @Test
-    fun `revisiting tail without forward movement remains unfinished`() {
-        val session = backwardSession(totalPages = 12)
+    fun `backward entry with saved progress resumes after crossing that progress`() {
+        val session = backwardSession(totalPages = 12, lastPageRead = 10)
 
-        session.onSettled(11)
-        session.onSettled(10)
-        session.onSettled(9)
+        session.onUserPageSelected(11)
+        assertNull(session.onSettled(11))
+        session.onUserPageSelected(8)
+        assertNull(session.onSettled(8))
+        session.onUserPageSelected(10)
 
-        assertFalse(session.onSettled(9)?.completed ?: true)
-        assertFalse(session.onSettled(8)?.completed ?: true)
+        assertEquals(10, session.onSettled(10)?.pageIndex)
     }
 
     @Test
-    fun `two page backward entry requires first page then forward return`() {
-        val session = backwardSession(totalPages = 2)
+    fun `reaching saved progress without moving forward remains protected`() {
+        val session = backwardSession(totalPages = 12, lastPageRead = 10)
 
-        assertNull(session.onSettled(1))
-        assertFalse(session.onSettled(0)?.completed ?: true)
-        assertTrue(session.onSettled(1)?.completed == true)
+        session.onUserPageSelected(11)
+        session.onUserPageSelected(9)
+
+        assertNull(session.onSettled(9))
+        assertNull(session.onExit(9))
+    }
+
+    @Test
+    fun `normal reading can move backwards after protection is released`() {
+        val session = backwardSession(totalPages = 12, lastPageRead = 10)
+
+        session.onUserPageSelected(11)
+        session.onUserPageSelected(9)
+        session.onUserPageSelected(10)
+
+        assertEquals(10, session.onSettled(10)?.pageIndex)
+        assertEquals(5, session.onSettled(5)?.pageIndex)
     }
 
     @Test
@@ -74,8 +86,8 @@ class ChapterReadingSessionTest {
 
     @Test
     fun `single page direct and forward entry never auto completes`() {
-        val direct = ChapterReadingSession(1, ChapterEntryDirection.Direct, alreadyRead = false)
-        val forward = ChapterReadingSession(1, ChapterEntryDirection.Forward, alreadyRead = false)
+        val direct = ChapterReadingSession(1, ChapterEntryDirection.Direct, alreadyRead = false, lastPageRead = 0)
+        val forward = ChapterReadingSession(1, ChapterEntryDirection.Forward, alreadyRead = false, lastPageRead = 0)
 
         assertNull(direct.onSettled(0))
         assertNull(direct.onExit(0))
@@ -85,8 +97,8 @@ class ChapterReadingSessionTest {
 
     @Test
     fun `direct and forward entry complete normally at final page`() {
-        val direct = ChapterReadingSession(3, ChapterEntryDirection.Direct, alreadyRead = false)
-        val forward = ChapterReadingSession(3, ChapterEntryDirection.Forward, alreadyRead = false)
+        val direct = ChapterReadingSession(3, ChapterEntryDirection.Direct, alreadyRead = false, lastPageRead = 0)
+        val forward = ChapterReadingSession(3, ChapterEntryDirection.Forward, alreadyRead = false, lastPageRead = 0)
 
         assertTrue(direct.onSettled(2)?.completed == true)
         assertTrue(forward.onSettled(2)?.completed == true)
@@ -94,7 +106,7 @@ class ChapterReadingSessionTest {
 
     @Test
     fun `normal reading completes from final three pages only when leaving`() {
-        val session = ChapterReadingSession(12, ChapterEntryDirection.Direct, alreadyRead = false)
+        val session = ChapterReadingSession(12, ChapterEntryDirection.Direct, alreadyRead = false, lastPageRead = 0)
 
         assertFalse(session.onSettled(9)?.completed ?: true)
         assertTrue(session.onExit(9)?.completed == true)
@@ -102,7 +114,7 @@ class ChapterReadingSessionTest {
 
     @Test
     fun `page before tail allowance remains unfinished on exit`() {
-        val session = ChapterReadingSession(12, ChapterEntryDirection.Direct, alreadyRead = false)
+        val session = ChapterReadingSession(12, ChapterEntryDirection.Direct, alreadyRead = false, lastPageRead = 0)
 
         assertFalse(session.onExit(8)?.completed ?: true)
     }
@@ -112,8 +124,8 @@ class ChapterReadingSessionTest {
         assertEquals(3, tailCompletionStartIndex(totalPages = 5))
         assertEquals(2, tailCompletionStartIndex(totalPages = 3))
 
-        val fivePages = ChapterReadingSession(5, ChapterEntryDirection.Direct, alreadyRead = false)
-        val threePages = ChapterReadingSession(3, ChapterEntryDirection.Direct, alreadyRead = false)
+        val fivePages = ChapterReadingSession(5, ChapterEntryDirection.Direct, alreadyRead = false, lastPageRead = 0)
+        val threePages = ChapterReadingSession(3, ChapterEntryDirection.Direct, alreadyRead = false, lastPageRead = 0)
 
         assertFalse(fivePages.onExit(2)?.completed ?: true)
         assertTrue(fivePages.onExit(3)?.completed == true)
@@ -123,39 +135,64 @@ class ChapterReadingSessionTest {
 
     @Test
     fun `unconfirmed backward entry cannot use tail exit allowance`() {
-        val session = backwardSession(totalPages = 12)
+        val session = backwardSession(totalPages = 12, lastPageRead = 10)
 
-        session.onSettled(11)
-        session.onSettled(10)
+        session.onUserPageSelected(11)
+        session.onUserPageSelected(8)
 
-        assertNull(session.onExit(10))
+        assertNull(session.onExit(8))
     }
 
     @Test
-    fun `confirmed backward entry needs forward reading before tail exit completion`() {
-        val session = backwardSession(totalPages = 12)
+    fun `forward exit completes after backward entry resumes reading`() {
+        val session = backwardSession(totalPages = 12, lastPageRead = 10)
 
-        session.onSettled(11)
-        session.onSettled(10)
-        session.onSettled(9)
-        assertFalse(session.onExit(9)?.completed ?: true)
+        session.onUserPageSelected(11)
+        session.onUserPageSelected(8)
+        session.onUserPageSelected(10)
+        assertFalse(session.onExit(8)?.completed ?: true)
 
-        session.onSettled(8)
-        session.onSettled(9)
-        assertTrue(session.onExit(9)?.completed == true)
+        session.onUserPageSelected(11)
+        assertTrue(session.onExit(11)?.completed == true)
+    }
+
+    @Test
+    fun `forward boundary cannot complete before backward entry resumes reading`() {
+        val session = backwardSession(totalPages = 12, lastPageRead = 10)
+
+        session.markForwardBoundaryCrossed()
+
+        assertFalse(session.canCompleteOnForwardExit())
+    }
+
+    @Test
+    fun `forward boundary completes a normal entry`() {
+        val session = ChapterReadingSession(
+            totalPages = 12,
+            entryDirection = ChapterEntryDirection.Direct,
+            alreadyRead = false,
+            lastPageRead = 0,
+        )
+
+        session.markForwardBoundaryCrossed()
+
+        assertTrue(session.canCompleteOnForwardExit())
     }
 
     @Test
     fun `already read chapter does not emit a downgrade decision`() {
-        val session = ChapterReadingSession(12, ChapterEntryDirection.Forward, alreadyRead = true)
+        val session = ChapterReadingSession(12, ChapterEntryDirection.Forward, alreadyRead = true, lastPageRead = 10)
 
         assertNull(session.onSettled(0))
         assertNull(session.onSettled(5))
+        session.markForwardBoundaryCrossed()
+        assertFalse(session.canCompleteOnForwardExit())
     }
 
-    private fun backwardSession(totalPages: Int) = ChapterReadingSession(
+    private fun backwardSession(totalPages: Int, lastPageRead: Int = 0) = ChapterReadingSession(
         totalPages = totalPages,
         entryDirection = ChapterEntryDirection.Backward,
         alreadyRead = false,
+        lastPageRead = lastPageRead,
     )
 }

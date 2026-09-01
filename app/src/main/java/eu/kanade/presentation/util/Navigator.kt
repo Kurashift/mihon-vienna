@@ -4,6 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.with
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -39,15 +42,28 @@ interface AssistContentScreen {
 fun DefaultNavigatorScreenTransition(
     navigator: Navigator,
     modifier: Modifier = Modifier,
+    /**
+     * Key of a screen that has to appear without the shared-axis slide.
+     *
+     * The reader hands a manga screen back while it is still the activity on top, so the
+     * change lands while this activity is stopped. An animated push only starts once the
+     * activity is on screen again, which reads as a flash of whichever screen was there
+     * before followed by the manga screen sliding in over it.
+     */
+    instantScreenKey: ScreenKey? = null,
 ) {
     val slideDistance = rememberSlideDistance()
     ScreenTransition(
         navigator = navigator,
         transition = {
-            materialSharedAxisX(
-                forward = navigator.lastEvent != StackEvent.Pop,
-                slideDistance = slideDistance,
-            )
+            if (instantScreenKey != null && targetState.key == instantScreenKey) {
+                EnterTransition.None with ExitTransition.None
+            } else {
+                materialSharedAxisX(
+                    forward = navigator.lastEvent != StackEvent.Pop,
+                    slideDistance = slideDistance,
+                )
+            }
         },
         modifier = modifier,
     )

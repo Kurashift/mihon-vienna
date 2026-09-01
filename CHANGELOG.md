@@ -10,10 +10,24 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Fixed` - for any bug fixes.
 - `Other` - for technical stuff.
 
-## [Unreleased]
+## [v2.2.0] - 2026-09-01
+### Added
+- Bottom-left locate button now supports gestures: swipe up for a random good doujin, swipe right for a random manga; it stays visible as a dice fallback when there is nothing to locate
+- App bar titles are now clickable to open the manga details screen, with a small arrow hint
+- ASMR floating subtitles and Bluetooth/headset media button support
+- Marks list, good doujin list, and completed local chapters review now support search, multi-select, and export
+- History entries for local chapters now show the specific chapter cover and title instead of only the manga
+
+### Improved
+- ASMR pages load faster and the player UI is more convenient
+- Reader entry/exit transitions no longer flash, and back navigation is more intuitive
+- Search experience improved
+- Local manga filters and chapter title translation import/export improved
+
 ### Fixed
-- Fixed app and extension update check running again on configuration change ([@AntsyLich](https://github.com/AntsyLich)) ([#3708](https://github.com/mihonapp/mihon/pull/3708))
-- Fixed MangaBaka user start/finish dates drifting in negative offset timezones ([@MajorTanya](https://github.com/MajorTanya)) ([#3711](https://github.com/mihonapp/mihon/pull/3711))
+- Fixed marked chapters that no longer exist opening the wrong manga
+- Fixed manga detail title disappearing while scrolling
+- Fixed migration search failing to match CJK titles
 
 ## [v0.20.4] - 2026-08-05
 ### Fixed

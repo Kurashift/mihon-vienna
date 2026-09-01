@@ -74,7 +74,7 @@ class BasePreferences(
     /** Play history of the audio module, stored as a JSON list. */
     val audioHistory: Preference<String> = preferenceStore.getString("audio_history", "")
 
-    /** Audio "待播列表" (play queue) for quick background playback, stored as a JSON list. */
+    /** Audio play queue for quick background playback, stored as a JSON list. */
     val audioPlaylist: Preference<String> = preferenceStore.getString("audio_favorite_list", "")
 
     /** Schema version of [audioPlaylist]; bump to discard old playlist entries once. */
@@ -88,6 +88,49 @@ class BasePreferences(
 
     /** Preferred audio stream quality for the ASMR backend. */
     val audioQuality: Preference<String> = preferenceStore.getString("audio_quality", "fluent_first")
+
+    /** How much of the audio player screen the subtitle list takes, see AudioSubtitleDisplayMode. */
+    val audioSubtitleDisplayMode: Preference<String> = preferenceStore.getString(
+        "audio_subtitle_display_mode",
+        "standard",
+    )
+
+    /**
+     * Whether subtitles are mirrored into a window drawn on top of other apps. Off by default:
+     * turning it on is what sends the user to the system "draw over other apps" screen.
+     */
+    val audioFloatingSubtitle: Preference<Boolean> = preferenceStore.getBoolean(
+        "audio_floating_subtitle",
+        false,
+    )
+
+    /**
+     * Whether the floating subtitle window ignores touches. A locked window lets them through to
+     * whatever runs underneath, leaving only the lock button itself tappable.
+     */
+    val audioFloatingSubtitleLocked: Preference<Boolean> = preferenceStore.getBoolean(
+        "audio_floating_subtitle_locked",
+        false,
+    )
+
+    /** Where the floating subtitle window was last dragged, [UNSET_POSITION] until the first drag. */
+    val audioFloatingSubtitleX: Preference<Int> = preferenceStore.getInt(
+        "audio_floating_subtitle_x",
+        UNSET_POSITION,
+    )
+
+    val audioFloatingSubtitleY: Preference<Int> = preferenceStore.getInt(
+        "audio_floating_subtitle_y",
+        UNSET_POSITION,
+    )
+
+    companion object {
+        /**
+         * Marks a window position that was never dragged. A real coordinate can never be this low,
+         * which is what lets "unset" be told apart from "dragged to the top left corner".
+         */
+        const val UNSET_POSITION = Int.MIN_VALUE
+    }
 
     /** Logged-in username of the audio backend ("" = not logged in). */
     val audioUsername: Preference<String> = preferenceStore.getString("audio_username", "")

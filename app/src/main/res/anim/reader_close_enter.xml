@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      This, not the reader's exit, is the half of the cross-fade that is actually visible.
+
+      REORDER_TO_FRONT lifts the manga screen *above* the reader, so once the transition starts
+      the reader is underneath and anything it animates is hidden. Fading the manga screen in
+      over the reader is what reads as the reader fading out.
+
+      The reader below deliberately stays opaque (see reader_close_exit). Fading both at once
+      blends each of them with the black window background at the midpoint, which shows as a
+      dip to near-black halfway through.
+
+      No movement: the platform default pairs its fade with a 450ms slide, and that slide drags
+      the manga screen around while it is still being brought back to the front.
+    -->
+    <alpha
+        android:duration="200"
+        android:fromAlpha="0"
+        android:interpolator="@android:interpolator/fast_out_linear_in"
+        android:toAlpha="1" />
+</set>

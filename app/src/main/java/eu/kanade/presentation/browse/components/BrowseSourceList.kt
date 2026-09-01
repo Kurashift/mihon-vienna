@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
+import eu.kanade.presentation.components.LocalBottomNavFabPadding
 import eu.kanade.presentation.components.relativeDateText
 import eu.kanade.presentation.library.components.CommonMangaItemDefaults
 import eu.kanade.presentation.library.components.IndexLabel
@@ -60,6 +61,8 @@ fun BrowseSourceList(
     onMangaLongClick: (Manga) -> Unit,
     onLocateMangaHandled: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
+    onRandomManga: (() -> Unit)? = null,
+    onRandomGoodDoujin: (() -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -177,12 +180,16 @@ fun BrowseSourceList(
         BrowseSourceLastReadFab(
             mangaList = mangaList,
             lastReadMangaId = lastReadMangaId,
+            scrollState = listState,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .windowInsetsPadding(
                     WindowInsets.systemBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Start),
                 )
-                .padding(16.dp),
+                .padding(
+                    start = 16.dp,
+                    bottom = 16.dp + LocalBottomNavFabPadding.current,
+                ),
             visibleItemsRange = remember(listState, leadingItemCount) {
                 snapshotFlow {
                     val visibleItems = listState.layoutInfo.visibleItemsInfo
@@ -208,6 +215,8 @@ fun BrowseSourceList(
                 }
             },
             onOpenManga = onMangaClick,
+            onRandomManga = onRandomManga,
+            onRandomGoodDoujin = onRandomGoodDoujin,
         )
     }
 }

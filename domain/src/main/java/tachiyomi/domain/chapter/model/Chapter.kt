@@ -22,6 +22,8 @@ data class Chapter(
     val version: Long,
     val memo: JsonObject,
     val translatedName: String? = null,
+    /** 该篇目被「标记为已读」那一刻的 epoch 毫秒；未标记过为 0。用于误标复查的稳定时间排序。 */
+    val markedReadAt: Long = 0L,
 ) {
     val isRecognizedNumber: Boolean
         get() = chapterNumber >= 0f

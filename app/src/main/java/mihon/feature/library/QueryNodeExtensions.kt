@@ -14,23 +14,24 @@ import mihon.domain.library.model.search.MangaField
 import mihon.domain.library.model.search.NotNode
 import mihon.domain.library.model.search.OrNode
 import mihon.domain.library.model.search.QueryNode
+import tachiyomi.core.common.util.lang.SearchTextNormalizer.containsSearch
 import tachiyomi.source.local.LocalSource
 import kotlin.math.abs
 import kotlin.time.Instant
 
-fun QueryNode.matches(item: LibraryItem): Boolean {
+fun QueryNode.matches(item: LibraryItem, chapterTranslatedNames: Map<Long, List<String>> = emptyMap()): Boolean {
     return when (this) {
-        is AndNode -> children.all { it.matches(item) }
-        is OrNode -> children.any { it.matches(item) }
-        is NotNode -> !child.matches(item)
+        is AndNode -> children.all { it.matches(item, chapterTranslatedNames) }
+        is OrNode -> children.any { it.matches(item, chapterTranslatedNames) }
+        is NotNode -> !child.matches(item, chapterTranslatedNames)
         is EmptyQueryNode -> true
-        is GeneralQueryNode -> matches(item)
+        is GeneralQueryNode -> matches(item, chapterTranslatedNames)
         is FieldQueryNode -> matches(item)
         is ComparisonQueryNode -> matches(item)
     }
 }
 
-private fun GeneralQueryNode.matches(item: LibraryItem): Boolean {
+private fun GeneralQueryNode.matches(item: LibraryItem, chapterTranslatedNames: Map<Long, List<String>>): Boolean {
     val manga = item.libraryManga.manga
 
     // Use when so each added field has to be handled explicitly
@@ -38,21 +39,21 @@ private fun GeneralQueryNode.matches(item: LibraryItem): Boolean {
         if (field.fieldOnly) return@any false
 
         when (field) {
-            MangaField.TITLE -> manga.title.contains(value, ignoreCase = true)
-            MangaField.AUTHOR -> manga.author?.contains(value, ignoreCase = true) ?: false
-            MangaField.ARTIST -> manga.artist?.contains(value, ignoreCase = true) ?: false
-            MangaField.DESCRIPTION -> manga.description?.contains(value, ignoreCase = true) ?: false
-            MangaField.GENRE -> manga.genre?.any { it.contains(value, ignoreCase = true) } ?: false
+            MangaField.TITLE -> manga.title.containsSearch(value)
+            MangaField.AUTHOR -> manga.author?.containsSearch(value) ?: false
+            MangaField.ARTIST -> manga.artist?.containsSearch(value) ?: false
+            MangaField.DESCRIPTION -> manga.description?.containsSearch(value) ?: false
+            MangaField.GENRE -> manga.genre?.any { it.containsSearch(value) } ?: false
             MangaField.SOURCE -> {
-                item.sourceName.contains(value, ignoreCase = true) ||
+                item.sourceName.containsSearch(value) ||
                     (value.equals("local", ignoreCase = true) && manga.source == LocalSource.ID)
             }
-            MangaField.NOTES -> manga.notes.contains(value, ignoreCase = true)
+            MangaField.NOTES -> manga.notes.containsSearch(value)
 
             // field-only queries; unreachable; added here to make `when` exhaustive
             MangaField.LANGUAGE, MangaField.SOURCE_ID -> error("How did we get here?")
         }
-    }
+    } || chapterTranslatedNames[manga.id].orEmpty().any { it.containsSearch(value) }
     return if (negated) !match else match
 }
 
@@ -64,7 +65,7 @@ private fun FieldQueryNode.matches(item: LibraryItem): Boolean {
             if (value.isEmpty()) {
                 manga.genre.isNullOrEmpty()
             } else {
-                manga.genre?.any { it.contains(value, ignoreCase = true) } ?: false
+                manga.genre?.any { it.containsSearch(value) } ?: false
             }
         }
 
@@ -72,7 +73,7 @@ private fun FieldQueryNode.matches(item: LibraryItem): Boolean {
             if (value.isEmpty()) {
                 item.sourceName.isEmpty()
             } else {
-                item.sourceName.contains(value, ignoreCase = true) ||
+                item.sourceName.containsSearch(value) ||
                     (value.equals("local", ignoreCase = true) && manga.source == LocalSource.ID)
             }
         }
@@ -97,7 +98,7 @@ private fun FieldQueryNode.matches(item: LibraryItem): Boolean {
             if (value.isEmpty()) {
                 text.isNullOrEmpty()
             } else {
-                text?.contains(value, ignoreCase = true) ?: false
+                text?.containsSearch(value) ?: false
             }
         }
     }

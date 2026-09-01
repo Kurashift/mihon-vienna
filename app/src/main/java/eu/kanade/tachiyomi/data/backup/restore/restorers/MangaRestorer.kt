@@ -230,6 +230,7 @@ class MangaRestorer(
                     chapter.version,
                     chapter.memo,
                     chapter.translatedName,
+                    chapter.markedReadAt,
                 )
             }
         }
@@ -257,6 +258,7 @@ class MangaRestorer(
                     isSyncing = 0,
                     memo = chapter.memo.let(MemoColumnAdapter::encode),
                     translatedName = chapter.translatedName,
+                    markedReadAt = chapter.markedReadAt,
                 )
             }
         }

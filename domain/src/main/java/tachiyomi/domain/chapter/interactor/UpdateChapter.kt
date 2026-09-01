@@ -30,6 +30,7 @@ class UpdateChapter(
         pageNumber: Long,
         totalPages: Long,
         completed: Boolean,
+        completedAt: Long,
     ) {
         try {
             chapterRepository.updateReaderProgress(
@@ -37,6 +38,7 @@ class UpdateChapter(
                 pageNumber = pageNumber,
                 totalPages = totalPages,
                 completed = completed,
+                completedAt = completedAt,
             )
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)

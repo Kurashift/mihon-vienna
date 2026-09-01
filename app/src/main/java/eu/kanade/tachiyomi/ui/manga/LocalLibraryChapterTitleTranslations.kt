@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.manga
 
 import android.content.Context
 import android.net.Uri
+import eu.kanade.domain.base.BasePreferences
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -15,6 +16,7 @@ internal class LocalLibraryChapterTitleTranslations(
     private val sourceManager: SourceManager = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
     private val chapterRepository: ChapterRepository = Injekt.get(),
+    private val basePreferences: BasePreferences = Injekt.get(),
 ) {
 
     suspend fun export(
@@ -23,7 +25,12 @@ internal class LocalLibraryChapterTitleTranslations(
         onlyUntranslated: Boolean,
     ): Pair<Int, Int> = withIOContext {
         val mangas = getCurrentMangasWithChapters()
-        val content = ChapterTitleTranslationCodec.encodeLocalLibrary(mangas, format, onlyUntranslated)
+        val content = ChapterTitleTranslationCodec.encodeLocalLibrary(
+            mangas = mangas,
+            format = format,
+            onlyUntranslated = onlyUntranslated,
+            exportInstanceId = basePreferences.installationId.get().takeIf(String::isNotBlank),
+        )
         context.contentResolver.openOutputStream(uri, "wt")
             ?.bufferedWriter(Charsets.UTF_8)
             ?.use { it.write(content) }
@@ -61,6 +68,7 @@ internal class LocalLibraryChapterTitleTranslations(
         val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
             document = document,
             currentMangas = getCurrentMangasWithChapters(),
+            currentInstanceId = basePreferences.installationId.get().takeIf(String::isNotBlank),
         )
         if (plan.updates.isNotEmpty()) {
             chapterRepository.updateAll(plan.updates)

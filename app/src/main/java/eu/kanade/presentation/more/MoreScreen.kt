@@ -1,7 +1,11 @@
 package eu.kanade.presentation.more
 
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.Label
@@ -13,7 +17,9 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.vectorResource
@@ -47,6 +53,7 @@ fun MoreScreen(
     onClickSettings: () -> Unit,
     onClickSupport: () -> Unit,
     onClickAbout: () -> Unit,
+    hasAppUpdate: Boolean,
 ) {
     val uriHandler = LocalUriHandler.current
 
@@ -87,7 +94,6 @@ fun MoreScreen(
             item {
                 TextPreferenceWidget(
                     title = stringResource(MR.strings.my_lists_title),
-                    subtitle = stringResource(MR.strings.my_lists_summary),
                     icon = Icons.Outlined.Flag,
                     onPreferenceClick = onClickMyLists,
                 )
@@ -178,6 +184,11 @@ fun MoreScreen(
                 TextPreferenceWidget(
                     title = stringResource(MR.strings.pref_category_about),
                     icon = Icons.Outlined.Info,
+                    widget = {
+                        if (hasAppUpdate) {
+                            UpdateAvailableDot()
+                        }
+                    },
                     onPreferenceClick = onClickAbout,
                 )
             }
@@ -190,4 +201,13 @@ fun MoreScreen(
             }
         }
     }
+}
+
+@Composable
+private fun UpdateAvailableDot() {
+    Spacer(
+        modifier = Modifier
+            .size(10.dp)
+            .background(MaterialTheme.colorScheme.error, CircleShape),
+    )
 }

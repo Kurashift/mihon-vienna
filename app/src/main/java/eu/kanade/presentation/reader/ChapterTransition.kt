@@ -37,8 +37,8 @@ import eu.kanade.presentation.theme.TachiyomiPreviewTheme
 import eu.kanade.tachiyomi.data.database.models.toDomainChapter
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
+import eu.kanade.tachiyomi.ui.reader.viewer.calculateChapterGap
 import tachiyomi.domain.chapter.model.Chapter
-import tachiyomi.domain.chapter.service.calculateChapterGap
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
@@ -49,6 +49,7 @@ fun ChapterTransition(
     transition: ChapterTransition,
     currChapterDownloaded: Boolean,
     goingToChapterDownloaded: Boolean,
+    isLocalSource: Boolean = false,
     compact: Boolean = false,
 ) {
     val currChapter = transition.from.chapter.toDomainChapter()
@@ -65,7 +66,7 @@ fun ChapterTransition(
                     bottomChapter = currChapter,
                     bottomChapterDownloaded = currChapterDownloaded,
                     fallbackLabel = stringResource(MR.strings.transition_no_previous),
-                    chapterGap = calculateChapterGap(currChapter, goingToChapter),
+                    chapterGap = calculateChapterGap(transition.from, transition.to, isLocalSource),
                     compact = compact,
                 )
             }
@@ -78,7 +79,7 @@ fun ChapterTransition(
                     bottomChapter = goingToChapter,
                     bottomChapterDownloaded = goingToChapterDownloaded,
                     fallbackLabel = stringResource(MR.strings.transition_no_next),
-                    chapterGap = calculateChapterGap(goingToChapter, currChapter),
+                    chapterGap = calculateChapterGap(transition.to, transition.from, isLocalSource),
                     compact = compact,
                 )
             }

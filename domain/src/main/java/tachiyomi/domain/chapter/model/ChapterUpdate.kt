@@ -20,6 +20,8 @@ data class ChapterUpdate(
     val version: Long? = null,
     val memo: JsonObject? = null,
     val translatedName: String? = null,
+    /** 标记为已读时写入的时间戳；标记为未读时清空。 */
+    val markedReadAt: Long? = null,
 )
 
 fun Chapter.toChapterUpdate(): ChapterUpdate {
@@ -41,5 +43,6 @@ fun Chapter.toChapterUpdate(): ChapterUpdate {
         version,
         memo,
         translatedName,
+        markedReadAt,
     )
 }

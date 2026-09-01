@@ -2,6 +2,7 @@ package tachiyomi.domain.chapter.repository
 
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.model.ChapterTranslatedName
 import tachiyomi.domain.chapter.model.ChapterUpdate
 
 interface ChapterRepository {
@@ -23,6 +24,7 @@ interface ChapterRepository {
         pageNumber: Long,
         totalPages: Long,
         completed: Boolean,
+        completedAt: Long,
     )
 
     suspend fun removeChaptersWithIds(chapterIds: List<Long>)
@@ -34,6 +36,19 @@ interface ChapterRepository {
     suspend fun getChapterByMangaId(mangaId: Long, applyScanlatorFilter: Boolean = false): List<Chapter>
 
     suspend fun getChaptersByMangaIds(mangaIds: List<Long>, applyScanlatorFilter: Boolean = false): List<Chapter>
+
+    suspend fun getTranslatedNames(mangaIds: List<Long>): List<ChapterTranslatedName>
+
+    fun observeTranslatedNames(mangaIds: List<Long>): Flow<List<ChapterTranslatedName>>
+
+    /**
+     * Returns the manually assigned Chinese translated names (中文译名) of every chapter whose
+     * manga belongs to [sourceId], keyed by the manga's url - the only identifier the local source
+     * can match against, since it only ever sees directory names.
+     *
+     * Only chapters that actually carry a translated name are returned.
+     */
+    suspend fun getTranslatedNamesBySourceId(sourceId: Long): Map<String, List<String>>
 
     suspend fun getScanlatorsByMangaId(mangaId: Long): List<String>
 

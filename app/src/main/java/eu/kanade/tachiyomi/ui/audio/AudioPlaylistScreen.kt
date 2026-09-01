@@ -31,10 +31,12 @@ class AudioPlaylistScreen : Screen() {
 
         AudioPlaylistContent(
             groups = groups,
+            currentItem = controller.state.item,
+            isPlaying = controller.state.isPlaying,
             bottomBar = { AudioMiniPlayerNavigationBar() },
             navigateUp = navigator::pop,
             onOpenWork = { group ->
-                group.tracks.firstOrNull()?.let { navigator.push(AudioDetailScreen(it.toWorkSnapshot())) }
+                navigator.push(AudioDetailScreen(group.toWorkSnapshot()))
             },
             onClickTrack = { group, index ->
                 if (index in group.tracks.indices) {
@@ -48,12 +50,8 @@ class AudioPlaylistScreen : Screen() {
                     AudioPlaybackService.start(context)
                 }
             },
-            onRemoveTrack = { item ->
-                playlistStore.remove(item.mediaStreamUrl)
-                refresh()
-            },
-            onRemoveWork = { group ->
-                playlistStore.removeWork(group.workId, group.workTitle)
+            onRemoveSelected = { urls ->
+                playlistStore.removeAll(urls)
                 refresh()
             },
             onPlayAll = {

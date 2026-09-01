@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader
 
 import android.annotation.SuppressLint
+import android.app.ActivityOptions
 import android.app.assist.AssistContent
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -23,6 +24,7 @@ import android.view.View
 import android.view.View.LAYER_TYPE_HARDWARE
 import android.view.ViewTreeObserver
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
@@ -138,23 +140,31 @@ class ReaderActivity : BaseActivity() {
 
     companion object {
         private const val SWIPE_DIRECTION_EXTRA = "swipe_direction"
-        private const val ANIM_NONE = 0
-        private const val ANIM_PUSH_X = 1
-        private const val ANIM_POP_X = 2
-        private const val ANIM_PUSH_Y = 3
-        private const val ANIM_POP_Y = 4
+        private const val RETURN_TO_MANGA_EXTRA = "return_to_manga"
 
+        /** How long the reader's own colour and pages take to fade in over the theme background. */
+        private const val READER_CONTENT_REVEAL_DURATION_MILLIS = 200L
+
+        /**
+         * @param returnToManga whether leaving the reader belongs on the manga details screen.
+         * Only the details screen itself sets this: back then continues to the screen the reader
+         * was opened from. Everywhere else (history, personal lists, updates, the library grid…)
+         * the reader is opened straight from a list, and that list is still underneath in the
+         * task — sending back through the details screen would bury it under an extra layer.
+         */
         fun newIntent(
             context: Context,
             mangaId: Long?,
             chapterId: Long?,
             swipeJump: Boolean = false,
             pageIndex: Int? = null,
+            returnToManga: Boolean = false,
         ): Intent {
             return Intent(context, ReaderActivity::class.java).apply {
                 putExtra("manga", mangaId)
                 putExtra("chapter", chapterId)
                 putExtra("swipe_jump", swipeJump)
+                putExtra(RETURN_TO_MANGA_EXTRA, returnToManga)
                 if (chapterId != null && pageIndex != null) {
                     putExtra("chapter_id", chapterId)
                     putExtra("page_index", pageIndex)
@@ -173,9 +183,44 @@ class ReaderActivity : BaseActivity() {
     private var assistUrl: String? = null
 
     /**
+     * Whether leaving the reader belongs on the manga details screen, i.e. the reader was opened
+     * from there. Read off the intent rather than kept in a field so it survives the reader
+     * relaunching itself for a chapter jump, and so a jump inherits it from the chapter it
+     * jumped from instead of silently switching where back lands.
+     */
+    private val returnToMangaScreen: Boolean
+        get() = intent.getBooleanExtra(RETURN_TO_MANGA_EXTRA, false)
+
+    /**
      * Configuration at reader level, like background color or forced orientation.
      */
     private var config: ReaderConfig? = null
+
+    private val grayBackgroundColor = Color.rgb(0x20, 0x21, 0x25)
+
+    /**
+     * Background of the reader behind a page, and of the window while nothing is drawn yet.
+     *
+     * The window has to wear this colour too. The first frame is deliberately held back, and
+     * what shows through in the meantime is the window background — leaving it on the theme's
+     * default near-white made the reader flash white before its usual black appeared.
+     */
+    private fun readerBackgroundColor(theme: Int): Int {
+        return when (theme) {
+            0 -> Color.WHITE
+            2 -> grayBackgroundColor
+            3 -> automaticBackgroundColor()
+            else -> Color.BLACK
+        }
+    }
+
+    private fun automaticBackgroundColor(): Int {
+        return if (baseContext.isNightMode()) {
+            grayBackgroundColor
+        } else {
+            Color.WHITE
+        }
+    }
 
     private var menuToggleToast: Toast? = null
     private val displayRefreshHost = DisplayRefreshHost()
@@ -188,12 +233,6 @@ class ReaderActivity : BaseActivity() {
     private var firstReaderFrameGate: ViewTreeObserver.OnPreDrawListener? = null
 
     private var randomJumping = false
-
-    private var swipeJumpAnim = ANIM_NONE
-
-    /** Set while an onNewIntent-driven jump is finishing this instance, so its close
-     *  transition doesn't fight the fresh instance's open transition. */
-    private var restartingForJump = false
 
     /** The intent that must relaunch the reader once this finishing instance is destroyed. */
     private var pendingJumpIntent: Intent? = null
@@ -223,23 +262,22 @@ class ReaderActivity : BaseActivity() {
 
         super.onCreate(savedInstanceState)
 
-        // Swipe jumps animate along the swipe direction. A normal chapter-list entry has no
-        // activity alpha transition: the webtoon viewer owns its first-frame reveal, and fading
-        // the whole window at the same time exposes the loading/background hand-off as a flash.
+        // A swipe jump relaunches the reader and slides along the direction of the swipe, so the
+        // jump reads as moving through the chapters — the direction is the point of that gesture.
+        //
+        // A normal entry from the chapter list cross-fades instead. The platform default pairs a
+        // short 83ms fade with a 450ms slide, and that slide is what reads as pages being
+        // shuffled; it also drags the manga screen sideways long after the fade has finished,
+        // which is what made the transition feel slow. Both halves are overridden so the manga
+        // screen holds still and only the reader fades.
         val openTransition = when (intent.getStringExtra(SWIPE_DIRECTION_EXTRA)) {
-            "left" -> Triple(R.anim.shared_axis_x_push_enter, R.anim.shared_axis_x_push_exit, ANIM_PUSH_X)
-            "right" -> Triple(R.anim.shared_axis_x_pop_enter, R.anim.shared_axis_x_pop_exit, ANIM_POP_X)
-            "up" -> Triple(R.anim.shared_axis_y_push_enter, R.anim.shared_axis_y_push_exit, ANIM_PUSH_Y)
-            "down" -> Triple(R.anim.shared_axis_y_pop_enter, R.anim.shared_axis_y_pop_exit, ANIM_POP_Y)
-            else -> null
+            "left" -> R.anim.shared_axis_x_push_enter to R.anim.shared_axis_x_push_exit
+            "right" -> R.anim.shared_axis_x_pop_enter to R.anim.shared_axis_x_pop_exit
+            "up" -> R.anim.shared_axis_y_push_enter to R.anim.shared_axis_y_push_exit
+            "down" -> R.anim.shared_axis_y_pop_enter to R.anim.shared_axis_y_pop_exit
+            else -> R.anim.reader_open_enter to R.anim.reader_open_exit
         }
-        val (openEnter, openExit) = openTransition?.let { (enter, exit, jumpAnim) ->
-            swipeJumpAnim = jumpAnim
-            enter to exit
-        } ?: run {
-            swipeJumpAnim = ANIM_NONE
-            0 to 0
-        }
+        val (openEnter, openExit) = openTransition
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, openEnter, openExit)
         } else {
@@ -248,6 +286,11 @@ class ReaderActivity : BaseActivity() {
         }
 
         binding = ReaderActivityBinding.inflate(layoutInflater)
+        // The window keeps the theme's background, i.e. the colour of the screen the reader was
+        // opened from, so the transition lands on that colour rather than cutting to the reader's
+        // own before any page exists. The reader's colour and pages then fade in together over
+        // it, which turns the colour difference into a gradient instead of a cut.
+        binding.readerContainer.alpha = 0f
         setContentView(binding.root)
         holdFirstReaderFrame()
         binding.setComposeOverlay()
@@ -272,7 +315,9 @@ class ReaderActivity : BaseActivity() {
         onBackPressedDispatcher.addCallback(this) {
             val previous = RandomReaderHistory.pop()
             if (previous == null) {
-                if (!openMangaScreen()) {
+                if (!returnToMangaScreen) {
+                    returnToOriginScreen()
+                } else if (!openMangaScreen()) {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                 }
@@ -415,7 +460,7 @@ class ReaderActivity : BaseActivity() {
                                 onExpand = {},
                                 onDismiss = audioController::hideReaderControls,
                                 onOpenWork = {
-                                    audioController.state.item?.let(::openAudioWork)
+                                    if (audioController.state.item != null) openAudioPlayer()
                                 },
                                 onOpenPlaylist = { showAudioSheet = true },
                                 modifier = Modifier
@@ -450,7 +495,7 @@ class ReaderActivity : BaseActivity() {
                     onExpand = { setMenuVisibility(true) },
                     onDismiss = audioController::hideReaderControls,
                     onOpenWork = {
-                        audioController.state.item?.let(::openAudioWork)
+                        if (audioController.state.item != null) openAudioPlayer()
                     },
                     onOpenPlaylist = { showAudioSheet = true },
                     modifier = Modifier
@@ -557,7 +602,6 @@ class ReaderActivity : BaseActivity() {
         // and some Android versions may re-deliver the intent to the finishing instance
         // before the fresh one is created. Without this the finish+start can loop.
         if (isFinishing) return
-        restartingForJump = intent.hasExtra(SWIPE_DIRECTION_EXTRA)
         pendingJumpIntent = intent
         finish()
     }
@@ -571,13 +615,11 @@ class ReaderActivity : BaseActivity() {
         // the good doujin list, so both swipe directions jump somewhere useful.
         if (leftSwipe) {
             jumpToRandomManga(
-                anim = ANIM_PUSH_X,
                 direction = "left",
                 targetSelector = viewModel::getRandomInProgressTarget,
             )
         } else {
             jumpToRandomManga(
-                anim = ANIM_POP_X,
                 direction = "right",
                 targetSelector = viewModel::getRandomGoodDoujinTarget,
             )
@@ -593,13 +635,11 @@ class ReaderActivity : BaseActivity() {
         // source's in-progress manga, backward direction from the good doujin list.
         if (upSwipe) {
             jumpToRandomManga(
-                anim = ANIM_PUSH_Y,
                 direction = "up",
                 targetSelector = viewModel::getRandomInProgressTarget,
             )
         } else {
             jumpToRandomManga(
-                anim = ANIM_POP_Y,
                 direction = "down",
                 targetSelector = viewModel::getRandomGoodDoujinTarget,
             )
@@ -607,13 +647,11 @@ class ReaderActivity : BaseActivity() {
     }
 
     private fun jumpToRandomManga(
-        anim: Int,
         direction: String,
         targetSelector: suspend () -> Pair<Long, Long>?,
     ) {
         if (randomJumping) return
         randomJumping = true
-        swipeJumpAnim = anim
         lifecycleScope.launch {
             val target = try {
                 targetSelector()
@@ -639,16 +677,16 @@ class ReaderActivity : BaseActivity() {
                     )
                 }
                 val intent = ReaderActivity.newIntent(
-                    this@ReaderActivity,
-                    target.first,
-                    target.second,
+                    context = this@ReaderActivity,
+                    mangaId = target.first,
+                    chapterId = target.second,
                     swipeJump = true,
+                    returnToManga = returnToMangaScreen,
                 )
                 intent.putExtra(SWIPE_DIRECTION_EXTRA, direction)
                 startActivity(intent)
             } else {
                 randomJumping = false
-                swipeJumpAnim = ANIM_NONE
                 Toast.makeText(
                     this@ReaderActivity,
                     if (direction == "right" || direction == "down") {
@@ -670,6 +708,7 @@ class ReaderActivity : BaseActivity() {
             chapterId = entry.chapterId,
             swipeJump = swipeJump,
             pageIndex = entry.pageIndex,
+            returnToManga = returnToMangaScreen,
         ).apply {
             putExtra(SWIPE_DIRECTION_EXTRA, entry.returnDirection)
         }
@@ -744,29 +783,6 @@ class ReaderActivity : BaseActivity() {
      */
     override fun finish() {
         viewModel.onActivityFinish()
-        if (restartingForJump) {
-            // A jump is relaunching the reader: the fresh instance's open transition drives
-            // both directions (its exit anim moves this one out), so don't set a close
-            // transition here. A second, opposite-direction close transition is what made
-            // the swipe-in direction flip randomly.
-            swipeJumpAnim = ANIM_NONE
-        } else {
-            // Returning from a random reader reverses the animation that opened it.
-            val (closeEnter, closeExit) = when (swipeJumpAnim) {
-                ANIM_PUSH_X -> R.anim.shared_axis_x_pop_enter to R.anim.shared_axis_x_pop_exit
-                ANIM_POP_X -> R.anim.shared_axis_x_push_enter to R.anim.shared_axis_x_push_exit
-                ANIM_PUSH_Y -> R.anim.shared_axis_y_pop_enter to R.anim.shared_axis_y_pop_exit
-                ANIM_POP_Y -> R.anim.shared_axis_y_push_enter to R.anim.shared_axis_y_push_exit
-                else -> R.anim.shared_axis_x_pop_enter to R.anim.shared_axis_x_pop_exit
-            }
-            swipeJumpAnim = ANIM_NONE
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, closeEnter, closeExit)
-            } else {
-                @Suppress("DEPRECATION")
-                overridePendingTransition(closeEnter, closeExit)
-            }
-        }
         super.finish()
     }
 
@@ -962,19 +978,78 @@ class ReaderActivity : BaseActivity() {
         binding.readerContainer.addView(loadingIndicator)
     }
 
+    /**
+     * Hands the screen back to whatever opened the reader — history, a personal list, updates,
+     * the library grid. That screen is still underneath in the task, so lifting MainActivity
+     * above the reader is all it takes to show it again; no screen is pushed and nothing is
+     * popped, so the list keeps its scroll position and selection the way it was left.
+     *
+     * Going through MainActivity rather than just finishing keeps the same cross-fade the
+     * details-screen return plays (see [openMangaScreen]) and keeps the app in front even when
+     * the reader was started from outside it.
+     */
+    private fun returnToOriginScreen() {
+        val options = ActivityOptions.makeCustomAnimation(
+            this,
+            R.anim.reader_close_enter,
+            R.anim.reader_close_exit,
+        )
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                action = Constants.RETURN_FROM_READER
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            },
+            options.toBundle(),
+        )
+        finish()
+    }
+
     private fun openMangaScreen(): Boolean {
         val id = viewModel.manga?.id ?: viewModel.mangaId.takeIf { it >= 0 } ?: return false
+        // Mirror of the fade that plays on the way in, except the two windows swap roles.
+        // Opening the reader puts the reader on top of the manga screen, so the reader's own
+        // fade in is the visible half there. Closing it lifts the manga screen above the
+        // reader, so here it is the manga screen fading in that is visible and the reader
+        // underneath has to stay put. Fading the reader instead — the obvious mirror — is
+        // invisible, which is what made this look like a hard cut.
+        //
+        // The animation has to be handed to startActivity, not to finish(). Bringing the manga
+        // screen forward with REORDER_TO_FRONT is an *open* transition for the destination, so
+        // overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE) is ignored here — only options
+        // passed to startActivity can override this transition.
+        //
+        // Neither window moves. Moving one vacates a strip of screen that the other has to
+        // fill while it is still being brought back to the front, which is what showed as a
+        // black edge along that strip.
+        val options = ActivityOptions.makeCustomAnimation(
+            this,
+            R.anim.reader_close_enter,
+            R.anim.reader_close_exit,
+        )
         startActivity(
             Intent(this, MainActivity::class.java).apply {
                 action = Constants.SHOW_MANGA_PRESERVE_STACK
                 putExtra(Constants.MANGA_EXTRA, id)
                 addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             },
+            options.toBundle(),
         )
         // The details screen is the reader's parent. Keeping this reader below it means the
         // next chapter launch clears MainActivity and leaves later returns rebuilding the UI.
         finish()
         return true
+    }
+
+    // Opens the player rather than the work details: tapping the floating bar while listening
+    // means "show me what is playing", and the details are still one tap away from there.
+    private fun openAudioPlayer() {
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                action = Constants.SHOW_AUDIO_PLAYER
+                putExtra(Constants.AUDIO_RETURN_TO_READER_EXTRA, true)
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            },
+        )
     }
 
     private fun openAudioWork(item: AudioPlayItem) {
@@ -1045,7 +1120,13 @@ class ReaderActivity : BaseActivity() {
         releaseFirstReaderFrame(removeIndicator = false)
     }
 
-    fun prepareViewerContentReveal() {
+    /**
+     * Hides the loading indicator once the pages it was standing in for are about to appear.
+     *
+     * Hidden rather than removed: the indicator keeps [binding.readerContainer] occupied for one
+     * more frame, so removing it here would let the container measure a frame without it.
+     */
+    fun hideLoadingIndicator() {
         loadingIndicator?.visibility = View.INVISIBLE
     }
 
@@ -1055,6 +1136,23 @@ class ReaderActivity : BaseActivity() {
         }
         firstReaderFrameGate = listener
         binding.root.viewTreeObserver.addOnPreDrawListener(listener)
+    }
+
+    /**
+     * Fades the reader's own colour and its pages in together over the theme's window background.
+     *
+     * The window keeps the theme's colour, which is the colour of the screen the reader was
+     * opened from, so the transition into this activity lands somewhere continuous. Bringing the
+     * reader's colour up in one step instead reads as a cut, because it usually differs from the
+     * manga screen's — that is what the earlier "paint the window with the reader's colour"
+     * approach kept showing as a flash, in whichever colour the reader happened to use.
+     */
+    private fun revealReaderContent() {
+        binding.readerContainer.animate()
+            .alpha(1f)
+            .setDuration(READER_CONTENT_REVEAL_DURATION_MILLIS)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
     }
 
     private fun releaseFirstReaderFrame(removeIndicator: Boolean) {
@@ -1067,6 +1165,7 @@ class ReaderActivity : BaseActivity() {
                 ?.removeOnPreDrawListener(listener)
         }
         firstReaderFrameGate = null
+        revealReaderContent()
         binding.root.postInvalidateOnAnimation()
     }
 
@@ -1140,8 +1239,8 @@ class ReaderActivity : BaseActivity() {
      * Called from the viewer whenever a [page] is marked as active. It updates the values of the
      * bottom menu and delegates the change to the presenter.
      */
-    fun onPageSelected(page: ReaderPage) {
-        viewModel.onPageSelected(page)
+    fun onPageSelected(page: ReaderPage, userInitiated: Boolean = false) {
+        viewModel.onPageSelected(page, userInitiated)
     }
 
     /**
@@ -1156,8 +1255,8 @@ class ReaderActivity : BaseActivity() {
      * Called from the viewer once the scroll has settled on [page] (webtoon) or a page has been
      * fully displayed (pager). The presenter persists the reading progress at this point.
      */
-    fun onScrollSettled(page: ReaderPage) {
-        viewModel.onScrollSettled(page)
+    fun onScrollSettled(page: ReaderPage, userInitiated: Boolean = false) {
+        viewModel.onScrollSettled(page, userInitiated)
     }
 
     /**
@@ -1329,17 +1428,6 @@ class ReaderActivity : BaseActivity() {
             }
         }
 
-        private val grayBackgroundColor = Color.rgb(0x20, 0x21, 0x25)
-
-        private fun readerBackgroundColor(theme: Int): Int {
-            return when (theme) {
-                0 -> Color.WHITE
-                2 -> grayBackgroundColor
-                3 -> automaticBackgroundColor()
-                else -> Color.BLACK
-            }
-        }
-
         /*
          * Initializes the reader subscriptions.
          */
@@ -1382,17 +1470,6 @@ class ReaderActivity : BaseActivity() {
                     updateViewerInset(fullscreen, drawUnderCutout)
                 }
                 .launchIn(lifecycleScope)
-        }
-
-        /**
-         * Picks background color for [ReaderActivity] based on light/dark theme preference
-         */
-        private fun automaticBackgroundColor(): Int {
-            return if (baseContext.isNightMode()) {
-                grayBackgroundColor
-            } else {
-                Color.WHITE
-            }
         }
 
         /**

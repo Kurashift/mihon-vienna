@@ -25,8 +25,8 @@ android {
     defaultConfig {
         applicationId = "app.mihon"
 
-        versionCode = 182
-        versionName = "2.1.7"
+        versionCode = 200
+        versionName = "2.2.0"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -71,6 +71,12 @@ android {
             versionNameSuffix = "-${getLatestCommitCount()}"
             isPseudoLocalesEnabled = true
         }
+        // 本项目日常只维护两个构建类型：debug（调试）与 vienna（正式交付、原位升级）。
+        // 其余 buildType（release / foss / preview / localFirst / benchmark）均沿用上游原样保留，
+        // 不要删除也不要改动：
+        // - vienna 依赖 initWith(release) 继承混淆与签名配置，删掉 release 会连带失效
+        // - :baseline-profile 的 Baseline Profile 插件默认针对 release 变体生成
+        // - 保留原样可让将来合并上游 Mihon 时此文件的冲突降到最低
         val release = getByName("release") {
             applicationIdSuffix = ".vienna"
             isMinifyEnabled = true
@@ -121,6 +127,7 @@ android {
             applicationIdSuffix = ".dev"
             matchingFallbacks.addAll(commonMatchingFallbacks)
 
+            buildConfigField("boolean", "UPDATER_ENABLED", "true")
             buildConfigField("boolean", "LOCAL_SOURCE_FIRST", "true")
         }
         create("benchmark") {

@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +40,9 @@ fun AudioSeekBar(
         AudioSlimProgress(
             positionMs = position,
             durationMs = duration,
-            enabled = !state.isBuffering && duration > 0,
+            // Buffering deliberately does not dim this bar: a seek always round-trips through
+            // STATE_BUFFERING, so tying the colours to it made every jump flicker.
+            seekEnabled = duration > 0,
             onSeek = { dragPosition = it.coerceIn(0, duration) },
             onSeekFinished = {
                 dragPosition?.let(controller::seekTo)
@@ -54,15 +57,19 @@ fun AudioSeekBar(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                // Tabular figures: the digits here change every half second, and proportional
+                // digits make the whole label twitch as 1s swap in for 8s.
                 Text(
                     text = formatDuration(position),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                 )
                 Text(
                     text = formatDuration(duration),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                 )
             }
         }
@@ -73,34 +80,46 @@ fun AudioSeekBar(
 private fun AudioSlimProgress(
     positionMs: Long,
     durationMs: Long,
-    enabled: Boolean,
+    seekEnabled: Boolean,
     onSeek: (Long) -> Unit,
     onSeekFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val progressColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
+    // Read the live values from inside the pointer-input coroutine instead of using them as
+    // pointerInput keys: restarting the coroutine mid-drag would cancel the gesture before
+    // onSeekFinished runs, which is exactly how the seek used to get dropped.
+    val currentDuration by rememberUpdatedState(durationMs)
+    val currentSeekEnabled by rememberUpdatedState(seekEnabled)
+    val currentOnSeek by rememberUpdatedState(onSeek)
+    val currentOnSeekFinished by rememberUpdatedState(onSeekFinished)
 
     Box(
         modifier = modifier
-            .pointerInput(enabled, durationMs) {
-                if (!enabled) return@pointerInput
-                val widthPx = size.width.toFloat()
+            .pointerInput(Unit) {
                 fun seekAt(px: Float) {
-                    if (durationMs <= 0) return
+                    val widthPx = size.width.toFloat()
+                    if (widthPx <= 0f) return
                     val fraction = (px / widthPx).coerceIn(0f, 1f)
-                    onSeek((fraction * durationMs).toLong())
+                    currentOnSeek((fraction * currentDuration).toLong())
                 }
                 awaitPointerEventScope {
                     while (true) {
                         val down = awaitFirstDown()
+                        if (!currentSeekEnabled || currentDuration <= 0) continue
+                        // Claim the gesture, otherwise the parent handler that drags the whole
+                        // floating bar around steals it.
+                        down.consume()
                         seekAt(down.position.x)
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            change.consume()
                             if (!change.pressed) break
                             seekAt(change.position.x)
                         }
+                        currentOnSeekFinished()
                     }
                 }
             },
@@ -119,23 +138,21 @@ private fun AudioSlimProgress(
             val trackHeight = 4.dp.toPx()
             val y = size.height / 2f
             val corner = CornerRadius(trackHeight / 2f)
-            val effectiveTrack = trackColor.let { if (enabled) it else it.copy(alpha = 0.5f) }
             drawRoundRect(
-                color = effectiveTrack,
+                color = trackColor,
                 topLeft = Offset(0f, y - trackHeight / 2f),
                 size = Size(size.width, trackHeight),
                 cornerRadius = corner,
             )
             if (fraction > 0f) {
-                val effectiveProgress = if (enabled) progressColor else progressColor.copy(alpha = 0.5f)
                 drawRoundRect(
-                    color = effectiveProgress,
+                    color = progressColor,
                     topLeft = Offset(0f, y - trackHeight / 2f),
                     size = Size(size.width * fraction, trackHeight),
                     cornerRadius = corner,
                 )
                 drawCircle(
-                    color = effectiveProgress,
+                    color = progressColor,
                     radius = 4.5.dp.toPx(),
                     center = Offset(size.width * fraction, y),
                 )
@@ -143,3 +160,6 @@ private fun AudioSlimProgress(
         }
     }
 }
+
+/** OpenType feature tag for tabular (equal-width) numerals. */
+private const val TABULAR_FIGURES = "tnum"

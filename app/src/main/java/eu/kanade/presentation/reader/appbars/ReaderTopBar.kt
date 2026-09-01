@@ -1,6 +1,6 @@
 package eu.kanade.presentation.reader.appbars
 
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
@@ -20,10 +20,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
+import eu.kanade.presentation.components.TitleOpenHint
+import eu.kanade.presentation.util.marqueeTitle
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
@@ -59,45 +62,53 @@ fun ReaderTopBar(
             )
         }
 
-        Column(
+        // The whole title block is one tap target: whatever is being read belongs to this manga,
+        // so both lines lead back to the details screen. Tapping the button-sized second line
+        // alone left the target far smaller than the text it represents.
+        Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 2.dp),
+                .clip(RoundedCornerShape(4.dp))
+                .clickable(
+                    enabled = onOpenManga != null,
+                    onClickLabel = stringResource(MR.strings.action_open_manga_details),
+                    onClick = { onOpenManga?.invoke() },
+                )
+                .padding(horizontal = 4.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            // Chapter name takes the lead; the manga name stays as a small second line.
-            chapterTitle?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.basicMarquee(
-                        repeatDelayMillis = 2_000,
-                    ),
-                )
+            Column(modifier = Modifier.weight(1f)) {
+                // Chapter name takes the lead; the manga name stays as a small second line.
+                chapterTitle?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.marqueeTitle(),
+                    )
+                }
+                mangaTitle?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            mangaTitle?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            // 提示这块标题可点：贴在可跳转区域的右端，不再往右侵占收藏等按钮的位置。
+            if (onOpenManga != null) {
+                TitleOpenHint()
             }
         }
 
         AppBarActions(
             actions = buildList {
-                // Keep manga details directly accessible without changing back navigation.
-                onOpenManga?.let {
-                    add(
-                        AppBar.Action(
-                            title = stringResource(MR.strings.action_open_manga_details),
-                            icon = Icons.AutoMirrored.Outlined.MenuBook,
-                            onClick = it,
-                        ),
-                    )
-                }
+                // Opening the details screen lives on the tappable title block above. It is not
+                // duplicated as an overflow entry either: local reads have no other overflow item,
+                // so adding one would grow a new ⋮ button to replace the icon just removed.
                 onToggleGoodDoujin?.let {
                     add(
                         AppBar.Action(

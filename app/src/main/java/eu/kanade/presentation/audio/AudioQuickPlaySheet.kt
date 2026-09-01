@@ -1,37 +1,37 @@
 package eu.kanade.presentation.audio
 
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.outlined.Headphones
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,12 +41,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import eu.kanade.presentation.audio.components.AudioCover
+import eu.kanade.presentation.audio.components.AudioFolderRow
+import eu.kanade.presentation.audio.components.AudioQueueRow
+import eu.kanade.presentation.audio.components.AudioTrackRow
+import eu.kanade.presentation.audio.components.buildAudioQueueRows
+import eu.kanade.presentation.audio.components.currentWorkKey
+import eu.kanade.presentation.audio.components.initialExpandedFolders
+import eu.kanade.presentation.util.marqueeTitle
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
+import eu.kanade.tachiyomi.data.audio.AudioPlaylistGroup
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
 import eu.kanade.tachiyomi.ui.audio.AudioPlaybackService
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
@@ -55,61 +62,39 @@ import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
+/**
+ * Quick picker for the playlist: what is playing, which work to browse, and its tracks.
+ *
+ * Editing deliberately lives in the full playlist screen instead — this sheet only picks a track
+ * to play, so selecting a work here must never start playback on its own.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioQuickPlaySheet(
     onDismiss: () -> Unit,
-    onOpenWork: ((AudioPlayItem) -> Unit)? = null,
+    onOpenWork: (AudioPlayItem) -> Unit,
 ) {
     val context = LocalContext.current
     val controller = remember { Injekt.get<AudioPlayerController>() }
     val playlistStore = remember { Injekt.get<AudioPlaylistStore>() }
-    val playlist = remember { playlistStore.load() }
+    var groups by remember { mutableStateOf(playlistStore.loadGrouped()) }
     val state = controller.state
-    val works = remember(playlist) {
-        playlist.groupBy { it.workId to it.workTitle }.toList()
-    }
-    var selectedWork by remember { mutableStateOf<Pair<Long, String>?>(null) }
-    var expandedFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val currentItem = state.item
 
-    LaunchedEffect(state.item?.folderPath) {
-        val currentFolder = state.item?.folderPath.orEmpty()
-        expandedFolders = if (currentFolder.isBlank()) emptySet() else setOf(currentFolder)
-    }
+    // The playlist is edited elsewhere, so whatever was read at the time this composable first
+    // ran can already be stale by the time the sheet is opened again.
+    LaunchedEffect(Unit) { groups = playlistStore.loadGrouped() }
 
-    LaunchedEffect(works, state.item?.workId, state.item?.workTitle) {
-        val playingWork = state.item?.let { it.workId to it.workTitle }
-        selectedWork = when {
-            playingWork != null && works.any { it.first == playingWork } -> playingWork
-            selectedWork != null && works.any { it.first == selectedWork } -> selectedWork
-            else -> works.firstOrNull()?.first
-        }
+    // Seeded once from what is playing, then owned by the user: no effect may pull the selection
+    // or the expansion back, or a manual choice would be undone by the next playback event.
+    var selectedKey by remember {
+        mutableStateOf(currentWorkKey(groups, currentItem) ?: groups.firstOrNull()?.key)
     }
+    var expandedFolders by remember { mutableStateOf(initialExpandedFolders(currentItem)) }
 
-    val selectedTracks = remember(works, selectedWork) {
-        works.firstOrNull { it.first == selectedWork }?.second.orEmpty()
-    }
-
-    val queueRows = remember(selectedTracks, expandedFolders) {
-        buildList {
-            selectedTracks
-                .groupBy { it.folderPath }
-                .toList()
-                .forEach { (folderPath, folderTracks) ->
-                    if (folderPath.isNotBlank()) {
-                        add(QueueRow.Folder(folderPath))
-                        if (folderPath in expandedFolders) {
-                            folderTracks.forEachIndexed { index, item ->
-                                add(QueueRow.Track(item, index + 1))
-                            }
-                        }
-                    } else {
-                        folderTracks.forEachIndexed { index, item ->
-                            add(QueueRow.Track(item, index + 1))
-                        }
-                    }
-                }
-        }
+    val selected = groups.firstOrNull { it.key == selectedKey } ?: groups.firstOrNull()
+    val rows = remember(selected, expandedFolders) {
+        selected?.let { buildAudioQueueRows(it.tracks, expandedFolders) }.orEmpty()
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -118,49 +103,20 @@ fun AudioQuickPlaySheet(
                 .fillMaxHeight(0.88f)
                 .fillMaxWidth(),
         ) {
-            item(key = "header") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(MR.strings.audio_title),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = stringResource(
-                                MR.strings.audio_quick_queue_summary,
-                                works.size,
-                                playlist.size,
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (playlist.isNotEmpty()) {
-                        TextButton(
-                            onClick = {
-                                playAudio(playlist, playlist.indices.random(), controller, context)
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Shuffle,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(stringResource(MR.strings.audio_quick_random))
-                        }
-                    }
+            if (currentItem != null) {
+                item(key = "now-playing") {
+                    NowPlayingBar(
+                        controller = controller,
+                        item = currentItem,
+                        isPlaying = state.isPlaying,
+                        onTogglePlay = controller::togglePlay,
+                        onOpenWork = { onOpenWork(currentItem) },
+                    )
                 }
+                item(key = "now-playing-divider") { HorizontalDivider() }
             }
 
-            item(key = "divider") { HorizontalDivider() }
-
-            if (playlist.isEmpty()) {
+            if (groups.isEmpty()) {
                 item(key = "empty") {
                     Box(
                         modifier = Modifier
@@ -175,296 +131,269 @@ fun AudioQuickPlaySheet(
                         )
                     }
                 }
-            } else {
-                item(key = "switch-title") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(MR.strings.audio_playlist),
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.weight(1f),
-                        )
-                        val currentItem = state.item
-                        if (currentItem != null && onOpenWork != null) {
-                            Surface(
-                                onClick = { onOpenWork(currentItem) },
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                                    contentDescription = stringResource(MR.strings.audio_quick_open_work_details),
-                                    modifier = Modifier.size(28.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
+            } else if (selected != null) {
+                item(key = "work-tabs") {
+                    AudioWorkTabs(
+                        groups = groups,
+                        selected = selected,
+                        onSelect = { selectedKey = it.key },
+                    )
                 }
+                item(key = "selector-divider") { HorizontalDivider() }
 
-                item(key = "works") {
-                    LazyRow(
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(
-                            items = works,
-                            key = { it.first },
-                        ) { (workKey, tracks) ->
-                            AudioWorkItem(
-                                item = tracks.first(),
-                                trackCount = tracks.size,
-                                selected = workKey == selectedWork,
+                items(items = rows, key = { it.key }) { row ->
+                    when (row) {
+                        is AudioQueueRow.Folder -> {
+                            val folderExpanded = row.path in expandedFolders
+                            AudioFolderRow(
+                                title = row.path,
+                                expanded = folderExpanded,
+                                depth = 0,
+                                trackCount = row.trackCount,
                                 onClick = {
-                                    selectedWork = workKey
-                                    val index = playlist.indexOfFirst {
-                                        it.mediaStreamUrl ==
-                                            tracks.first().mediaStreamUrl
+                                    expandedFolders = if (folderExpanded) {
+                                        expandedFolders - row.path
+                                    } else {
+                                        expandedFolders + row.path
                                     }
-                                    playAudio(playlist, index, controller, context)
+                                },
+                            )
+                        }
+
+                        is AudioQueueRow.Track -> {
+                            val isCurrent = currentItem?.mediaStreamUrl == row.item.mediaStreamUrl
+                            AudioTrackRow(
+                                title = row.item.trackTitle,
+                                number = row.number,
+                                durationMs = row.item.durationMs,
+                                isCurrent = isCurrent,
+                                isPlaying = isCurrent && state.isPlaying,
+                                depth = 1,
+                                onClick = {
+                                    playTrack(
+                                        context = context,
+                                        controller = controller,
+                                        tracks = selected.tracks,
+                                        index = row.number - 1,
+                                    )
                                 },
                             )
                         }
                     }
                 }
-
-                item(key = "selected-title") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = selectedTracks.firstOrNull()?.workTitle.orEmpty(),
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            text = stringResource(MR.strings.audio_quick_track_count, selectedTracks.size),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                items(
-                    items = queueRows,
-                    key = { row ->
-                        when (row) {
-                            is QueueRow.Folder -> "folder:${row.path}"
-                            is QueueRow.Track -> "track:${row.item.mediaStreamUrl}"
-                        }
-                    },
-                ) { row ->
-                    when (row) {
-                        is QueueRow.Folder -> {
-                            val expanded = row.path in expandedFolders
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        expandedFolders = if (expanded) {
-                                            expandedFolders - row.path
-                                        } else {
-                                            expandedFolders + row.path
-                                        }
-                                    }
-                                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    imageVector = if (expanded) {
-                                        Icons.Outlined.KeyboardArrowDown
-                                    } else {
-                                        Icons.AutoMirrored.Outlined.KeyboardArrowRight
-                                    },
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Icon(
-                                    imageVector = Icons.Outlined.Folder,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Text(
-                                    text = row.path,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(start = 6.dp),
-                                )
-                            }
-                        }
-                        is QueueRow.Track -> {
-                            val globalIndex = playlist.indexOfFirst { it.mediaStreamUrl == row.item.mediaStreamUrl }
-                            val isCurrent = state.item?.mediaStreamUrl == row.item.mediaStreamUrl
-                            AudioTrackItem(
-                                number = row.number,
-                                item = row.item,
-                                isCurrent = isCurrent,
-                                isPlaying = isCurrent && state.isPlaying,
-                                onClick = { playAudio(playlist, globalIndex, controller, context) },
-                            )
-                        }
-                    }
-                }
             }
         }
     }
 }
 
-private sealed interface QueueRow {
-    data class Folder(val path: String) : QueueRow
-    data class Track(val item: AudioPlayItem, val number: Int) : QueueRow
-}
-
+/**
+ * The one playing track, laid out as a player: cover on the left, a transport button, and a
+ * progress bar spanning the whole sheet underneath.
+ *
+ * The bar is what separates it from the work tabs below, which also show covers — those are
+ * narrow posters with the title underneath, while this is a full-width row with playback controls.
+ * The selected work and the playing work are usually the same one, so their artwork looks alike;
+ * making the layout differ is what actually tells them apart.
+ */
 @Composable
-private fun AudioWorkItem(
+private fun NowPlayingBar(
+    controller: AudioPlayerController,
     item: AudioPlayItem,
-    trackCount: Int,
-    selected: Boolean,
-    onClick: () -> Unit,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onOpenWork: () -> Unit,
 ) {
-    Surface(
+    Column(
         modifier = Modifier
-            .width(160.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(6.dp),
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        },
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onOpenWork)
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             AudioCover(
                 coverUrl = item.coverUrl,
                 contentDescription = item.workTitle,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(80.dp),
             )
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 8.dp),
+                    .padding(horizontal = 12.dp),
             ) {
+                MarqueeTrackTitle(item.trackTitle)
                 Text(
                     text = item.workTitle,
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = stringResource(MR.strings.audio_quick_track_count, trackCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+            // A nested clickable: it consumes the touch, so it does not fall through to the row.
+            IconButton(onClick = onTogglePlay) {
+                Icon(
+                    imageVector = if (isPlaying) {
+                        Icons.Outlined.Pause
+                    } else {
+                        Icons.Outlined.PlayArrow
+                    },
+                    contentDescription = stringResource(
+                        if (isPlaying) MR.strings.action_pause else MR.strings.action_play,
+                    ),
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = stringResource(MR.strings.audio_quick_open_work_details),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+
+        Spacer(Modifier.height(8.dp))
+        PlaybackProgress(controller)
     }
 }
 
+/**
+ * Split out so the position updates recompose only this, and never the row above.
+ *
+ * That matters for the marquee: [marqueeTitle] is a composable, so every recomposition of the
+ * parent hands the title a fresh Modifier, which restarts the scroll mid-animation. Keeping the
+ * per-frame reads down here leaves the title untouched.
+ */
 @Composable
-private fun AudioTrackItem(
-    number: Int,
-    item: AudioPlayItem,
-    isCurrent: Boolean,
-    isPlaying: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier.size(32.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (isCurrent) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Outlined.GraphicEq else Icons.Outlined.PlayArrow,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+private fun PlaybackProgress(controller: AudioPlayerController) {
+    val state = controller.state
+    val duration = state.durationMs
+
+    LinearProgressIndicator(
+        progress = {
+            if (duration > 0) {
+                (state.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
             } else {
-                Text(
-                    text = number.toString(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                0f
             }
-        }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(4.dp))
+    Row(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = item.trackTitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp),
+            text = formatDuration(state.positionMs),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = formatDuration(duration),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
+/**
+ * Title that scrolls when it overflows, matching the full player.
+ *
+ * Its own composable for the same reason as [PlaybackProgress]: the modifier has to stay out of
+ * the parent's recomposition to keep the scroll running.
+ */
 @Composable
-private fun AudioCover(
-    coverUrl: String?,
-    contentDescription: String? = null,
-    onClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
+private fun MarqueeTrackTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.marqueeTitle(),
+    )
+}
+
+/**
+ * A poster per work, one tap to switch which tracks are listed.
+ *
+ * Deliberately the opposite arrangement to [NowPlayingBar]: cover on top with the title below, in a
+ * narrow card. Comparing the two is how a user tells "what is playing" from "what I am browsing",
+ * which matters because on open they are usually the same work and so share the same artwork.
+ * Playback is started by tapping a track only — never by picking a tab.
+ */
+@Composable
+private fun AudioWorkTabs(
+    groups: List<AudioPlaylistGroup>,
+    selected: AudioPlaylistGroup,
+    onSelect: (AudioPlaylistGroup) -> Unit,
 ) {
-    val interactionModifier = if (onClick != null) {
-        Modifier.clickable(onClick = onClick)
-    } else {
-        Modifier
+    val listState = rememberLazyListState()
+
+    // The initial selection follows whatever is playing, which can sit far to the right.
+    LaunchedEffect(selected.key) {
+        val index = groups.indexOfFirst { it.key == selected.key }
+        if (index >= 0) listState.animateScrollToItem(index)
     }
-    Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(5.dp))
-            .then(interactionModifier),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+
+    LazyRow(
+        state = listState,
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (coverUrl.isNullOrBlank()) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Outlined.Headphones,
-                    contentDescription = contentDescription,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        items(items = groups, key = { it.key }) { group ->
+            val isSelected = group.key == selected.key
+            val tint = if (isSelected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
             }
-        } else {
-            AsyncImage(
-                model = coverUrl,
-                contentDescription = contentDescription,
-                contentScale = ContentScale.Crop,
-            )
+            Column(
+                modifier = Modifier
+                    .width(76.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onSelect(group) }
+                    .padding(4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                AudioCover(
+                    coverUrl = group.coverUrl,
+                    contentDescription = group.workTitle,
+                    modifier = Modifier.size(68.dp),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = group.workTitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(MR.strings.audio_quick_track_count, group.tracks.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint,
+                )
+                Spacer(Modifier.height(4.dp))
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                } else {
+                    Spacer(Modifier.height(2.dp))
+                }
+            }
         }
     }
 }
 
-private fun playAudio(
-    playlist: List<AudioPlayItem>,
-    index: Int,
-    controller: AudioPlayerController,
+private fun playTrack(
     context: Context,
+    controller: AudioPlayerController,
+    tracks: List<AudioPlayItem>,
+    index: Int,
 ) {
-    if (index !in playlist.indices) return
-    controller.start(playlist, index, 0)
+    if (index !in tracks.indices) return
+    controller.start(tracks, index, 0)
     AudioPlaybackService.start(context)
 }

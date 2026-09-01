@@ -42,10 +42,16 @@ class GetApplicationRelease(
             val newSemVer = newVersion.split(".").map { it.toInt() }
             val oldSemVer = oldVersion.split(".").map { it.toInt() }
 
-            oldSemVer.mapIndexed { index, i ->
-                if (newSemVer[index] > i) {
-                    return true
-                }
+            // Compare segment by segment and stop at the first difference. A lower
+            // segment must never decide on its own: 2.1.7 is older than 2.2.0 even
+            // though its last segment is larger. Missing segments count as zero, so
+            // versions with a different number of segments don't crash either.
+            val segmentCount = maxOf(newSemVer.size, oldSemVer.size)
+            for (index in 0 until segmentCount) {
+                val newSegment = newSemVer.getOrNull(index) ?: 0
+                val oldSegment = oldSemVer.getOrNull(index) ?: 0
+                if (newSegment > oldSegment) return true
+                if (newSegment < oldSegment) return false
             }
 
             false

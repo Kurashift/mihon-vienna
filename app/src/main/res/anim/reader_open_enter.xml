@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      A plain fade in. No slide: the platform default pairs a short fade with a 450ms slide and
+      that slide is what reads as pages being shuffled, which is the part that felt wrong here.
+      The fade also has to outlast the wait for the first page, so the reader emerges instead of
+      cutting in once the page decodes.
+    -->
+    <alpha
+        android:duration="200"
+        android:fromAlpha="0"
+        android:interpolator="@android:interpolator/linear_out_slow_in"
+        android:toAlpha="1" />
+</set>

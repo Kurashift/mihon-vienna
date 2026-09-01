@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -42,6 +43,7 @@ internal fun BrowseSourceLazyColumn(
             modifier = modifier,
             state = state,
             alwaysVisible = true,
+            showEndMarker = true,
             onThumbDraggedChanged = onThumbDraggedChanged,
             contentPadding = contentPadding,
             content = content,
@@ -66,6 +68,10 @@ internal fun BrowseSourceLazyVerticalGrid(
     verticalArrangement: Arrangement.Vertical,
     horizontalArrangement: Arrangement.Horizontal,
     modifier: Modifier = Modifier,
+    // Grids add their own decorative spacing around the cards, which would otherwise drag the
+    // scroller inward and leave it off-axis with the list and detail screens. Pass the container
+    // padding the caller started from so all three land on the same line.
+    scrollerEndPadding: Dp? = null,
     content: LazyGridScope.() -> Unit,
 ) {
     if (fastScroll) {
@@ -74,8 +80,10 @@ internal fun BrowseSourceLazyVerticalGrid(
             state = state,
             columns = columns,
             alwaysVisible = true,
+            showEndMarker = true,
             onThumbDraggedChanged = onThumbDraggedChanged,
             contentPadding = contentPadding,
+            endContentPadding = scrollerEndPadding,
             verticalArrangement = verticalArrangement,
             horizontalArrangement = horizontalArrangement,
             content = content,

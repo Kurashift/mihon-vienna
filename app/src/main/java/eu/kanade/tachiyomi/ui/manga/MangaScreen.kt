@@ -502,7 +502,11 @@ class MangaScreen(
     }
 
     private fun openChapter(context: Context, chapter: Chapter) {
-        context.startActivity(ReaderActivity.newIntent(context, chapter.mangaId, chapter.id))
+        // The details screen is the reader's parent here, so back belongs to it rather than to
+        // whatever is under this screen.
+        context.startActivity(
+            ReaderActivity.newIntent(context, chapter.mangaId, chapter.id, returnToManga = true),
+        )
     }
 
     private fun getMangaUrl(manga_: Manga?, source_: Source?): String? {

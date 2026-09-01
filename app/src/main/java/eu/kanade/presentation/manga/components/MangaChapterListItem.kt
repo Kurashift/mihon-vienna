@@ -47,6 +47,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import eu.kanade.tachiyomi.data.download.model.Download
@@ -148,43 +149,53 @@ fun MangaChapterListItem(
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = LocalContentColor.current.copy(alpha = if (read) DISABLED_ALPHA else 1f),
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = when {
-                                onCopyTitle != null && copyTitleOnLongPress -> Modifier.combinedClickable(
-                                    onClick = onClick,
-                                    onLongClick = {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onCopyTitle()
-                                    },
-                                )
-                                onTitleBoundsChanged != null -> Modifier.onGloballyPositioned(onTitleBoundsChanged)
-                                else -> Modifier
-                            },
-                        )
-                    }
-
                     val metadataStyle = MaterialTheme.typography.bodySmall
                         .merge(
                             color = LocalContentColor.current
                                 .copy(alpha = if (read) DISABLED_ALPHA else SECONDARY_ALPHA),
                         )
-                    ProvideTextStyle(value = metadataStyle) {
-                        if (subtitle != null) {
+                    // 「译名与原名」模式下原名作为第二行显示，长按复制的命中判定要覆盖
+                    // 这两行整体：只挂在主标题上的话，按在原名那行会被当成选中章节。
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = when {
+                            onCopyTitle != null && copyTitleOnLongPress -> Modifier.combinedClickable(
+                                onClick = onClick,
+                                onLongClick = {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onCopyTitle()
+                                },
+                                // 波纹仍由外层整行的 clickable 提供，这里不要再叠一层。
+                                indication = null,
+                                interactionSource = null,
+                            )
+                            onTitleBoundsChanged != null -> Modifier.onGloballyPositioned(onTitleBoundsChanged)
+                            else -> Modifier
+                        },
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
                             Text(
-                                text = subtitle,
-                                maxLines = 2,
+                                text = title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = LocalContentColor.current.copy(alpha = if (read) DISABLED_ALPHA else 1f),
+                                maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        ProvideTextStyle(value = metadataStyle) {
+                            if (subtitle != null) {
+                                Text(
+                                    text = subtitle,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    ProvideTextStyle(value = metadataStyle) {
                         if (scanlator != null) {
                             Text(
                                 text = scanlator,
@@ -220,57 +231,124 @@ fun MangaChapterListItem(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column(
-                    // With a cover the rail is 144dp tall: spread the status icons evenly so
-                    // sparse rows fill the vertical space instead of leaving a dead zone.
-                    // Without a cover the row stays compact, so fall back to fixed spacing.
-                    modifier = if (cover != null) Modifier.weight(1f) else Modifier,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = if (cover != null) {
-                        Arrangement.SpaceEvenly
-                    } else {
-                        Arrangement.spacedBy(10.dp)
-                    },
-                ) {
-                    if (read) {
-                        Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = stringResource(MR.strings.action_mark_as_read),
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                if (cover != null) {
+                    // With a cover the rail has room to spare, so each marker gets a reserved
+                    // slot and the group is centred as a whole. Slots stay put whether or not
+                    // their marker is set, so the read marker keeps the exact same spot on every
+                    // row and can be scanned down the list, and adding a flag or a heart never
+                    // pushes anything around.
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(
+                                // The download indicator is 40dp tall, so both side groups are
+                                // reserved at that height to keep the read marker centred.
+                                modifier = Modifier.heightIn(min = 40.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (flagMarked) {
+                                    StatusIcon(
+                                        imageVector = Icons.Filled.Flag,
+                                        contentDescription = stringResource(
+                                            MR.strings.action_mark_duplicate,
+                                        ),
+                                    )
+                                }
+                                if (bookmark) {
+                                    StatusIcon(
+                                        imageVector = Icons.Filled.Bookmark,
+                                        contentDescription = stringResource(
+                                            MR.strings.action_filter_bookmarked,
+                                        ),
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier.size(18.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (read) {
+                                    StatusIcon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = stringResource(
+                                            MR.strings.action_mark_as_read,
+                                        ),
+                                        size = 18.dp,
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.heightIn(min = 40.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (goodDoujinMarked) {
+                                    StatusIcon(
+                                        imageVector = Icons.Filled.Favorite,
+                                        contentDescription = stringResource(
+                                            MR.strings.action_add_to_good_doujin,
+                                        ),
+                                    )
+                                }
+                                if (downloadIndicatorEnabled) {
+                                    ChapterDownloadIndicator(
+                                        enabled = true,
+                                        downloadStateProvider = downloadStateProvider,
+                                        downloadProgressProvider = downloadProgressProvider,
+                                        onClick = { onDownloadClick?.invoke(it) },
+                                    )
+                                }
+                            }
+                        }
                     }
-                    if (flagMarked) {
-                        Icon(
-                            imageVector = Icons.Filled.Flag,
-                            contentDescription = stringResource(MR.strings.action_mark_duplicate),
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    if (bookmark) {
-                        Icon(
-                            imageVector = Icons.Filled.Bookmark,
-                            contentDescription = stringResource(MR.strings.action_filter_bookmarked),
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    if (goodDoujinMarked) {
-                        Icon(
-                            imageVector = Icons.Filled.Favorite,
-                            contentDescription = stringResource(MR.strings.action_add_to_good_doujin),
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    if (downloadIndicatorEnabled) {
-                        ChapterDownloadIndicator(
-                            enabled = true,
-                            downloadStateProvider = downloadStateProvider,
-                            downloadProgressProvider = downloadProgressProvider,
-                            onClick = { onDownloadClick?.invoke(it) },
-                        )
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (read) {
+                            StatusIcon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = stringResource(MR.strings.action_mark_as_read),
+                                size = 18.dp,
+                            )
+                        }
+                        if (flagMarked) {
+                            StatusIcon(
+                                imageVector = Icons.Filled.Flag,
+                                contentDescription = stringResource(MR.strings.action_mark_duplicate),
+                            )
+                        }
+                        if (bookmark) {
+                            StatusIcon(
+                                imageVector = Icons.Filled.Bookmark,
+                                contentDescription = stringResource(
+                                    MR.strings.action_filter_bookmarked,
+                                ),
+                            )
+                        }
+                        if (goodDoujinMarked) {
+                            StatusIcon(
+                                imageVector = Icons.Filled.Favorite,
+                                contentDescription = stringResource(
+                                    MR.strings.action_add_to_good_doujin,
+                                ),
+                            )
+                        }
+                        if (downloadIndicatorEnabled) {
+                            ChapterDownloadIndicator(
+                                enabled = true,
+                                downloadStateProvider = downloadStateProvider,
+                                downloadProgressProvider = downloadProgressProvider,
+                                onClick = { onDownloadClick?.invoke(it) },
+                            )
+                        }
                     }
                 }
 
@@ -285,6 +363,20 @@ fun MangaChapterListItem(
             }
         }
     }
+}
+
+@Composable
+private fun StatusIcon(
+    imageVector: ImageVector,
+    contentDescription: String,
+    size: Dp = 16.dp,
+) {
+    Icon(
+        imageVector = imageVector,
+        contentDescription = contentDescription,
+        modifier = Modifier.size(size),
+        tint = MaterialTheme.colorScheme.primary,
+    )
 }
 
 private fun getSwipeAction(

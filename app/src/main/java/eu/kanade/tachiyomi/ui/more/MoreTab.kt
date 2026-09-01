@@ -31,6 +31,7 @@ import eu.kanade.presentation.more.settings.screen.MyListsScreen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.updater.AppUpdateState
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
@@ -73,6 +74,7 @@ data object MoreTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val viewModel = viewModel<MoreViewModel>()
         val downloadQueueState by viewModel.downloadQueueState.collectAsState()
+        val hasAppUpdate by AppUpdateState.availableRelease.collectAsState()
 
         var allFilesAccessGranted by remember {
             mutableStateOf(
@@ -115,6 +117,7 @@ data object MoreTab : Tab {
             onClickSettings = { navigator.push(SettingsScreen()) },
             onClickSupport = { navigator.push(SupportUsScreen()) },
             onClickAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
+            hasAppUpdate = hasAppUpdate != null,
         )
     }
 }

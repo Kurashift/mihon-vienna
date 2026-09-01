@@ -87,6 +87,7 @@ val backupChapterMapper = {
         totalPages: Long,
         customOrder: Long,
         translatedName: String?,
+        _: Long,
     ->
     BackupChapter(
         url = url,

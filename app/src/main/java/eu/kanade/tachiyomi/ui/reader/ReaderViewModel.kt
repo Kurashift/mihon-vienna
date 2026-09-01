@@ -81,6 +81,7 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaProgress
+import tachiyomi.domain.manga.model.withLocalChapterDisplayMode
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalSource
@@ -345,9 +346,12 @@ class ReaderViewModel @JvmOverloads constructor(
     private suspend fun init() {
         withIOContext {
             try {
-                val manga = preloadedJump?.manga
-                    ?: getManga.await(mangaId)
-                    ?: error("Requested manga of id $mangaId not found")
+                val manga = (
+                    preloadedJump?.manga
+                        ?: getManga.await(mangaId)
+                        ?: error("Requested manga of id $mangaId not found")
+                    )
+                    .withLocalChapterDisplayMode(libraryPreferences.localChapterDisplayMode.get())
                 sourceManager.isInitialized.first { it }
                 mutableState.update { it.copy(manga = manga) }
                 if (chapterId == -1L) chapterId = initialChapterId
@@ -577,6 +581,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 totalPages = page.chapter.pages?.size ?: return,
                 entryDirection = ChapterEntryDirection.Direct,
                 alreadyRead = page.chapter.chapter.read,
+                lastPageRead = page.chapter.chapter.last_page_read,
             ),
         )
         progressSession.recordInitial(chapterId, page.index)
@@ -588,7 +593,7 @@ class ReaderViewModel @JvmOverloads constructor(
      * read, update tracking services, enqueue downloaded chapter deletion, and updating the active chapter if this
      * [page]'s chapter is different from the currently active.
      */
-    fun onPageSelected(page: ReaderPage) {
+    fun onPageSelected(page: ReaderPage, userInitiated: Boolean = false) {
         // InsertPage doesn't change page progress
         if (page is InsertPage) {
             return
@@ -600,14 +605,25 @@ class ReaderViewModel @JvmOverloads constructor(
         val previousChapterId = lastSelectedChapterId
 
         if (previousChapterId != selectedChapterId) {
+            if (userInitiated &&
+                previousChapterId != null &&
+                getChapterEntryDirection(selectedChapterId, previousChapterId) == ChapterEntryDirection.Forward
+            ) {
+                chapterReadingSessions[previousChapterId]?.markForwardBoundaryCrossed()
+            }
             progressSession.beginEntry(selectedChapterId)
             chapterReadingSessions[selectedChapterId] = ChapterReadingSession(
                 totalPages = pages.size,
                 entryDirection = getChapterEntryDirection(selectedChapterId, previousChapterId),
                 alreadyRead = selectedChapter.chapter.read,
+                lastPageRead = selectedChapter.chapter.last_page_read,
             )
         }
         lastSelectedChapterId = selectedChapterId
+
+        if (userInitiated) {
+            chapterReadingSessions[selectedChapterId]?.onUserPageSelected(page.index)
+        }
 
         // Track the current page in memory only. The actual DB write happens when the
         // scroll settles (see onScrollSettled) so transient page positions reported
@@ -632,11 +648,14 @@ class ReaderViewModel @JvmOverloads constructor(
      * fully displayed (pager). This is the only point where reading progress is persisted,
      * so intermediate positions during scrolling or layout churn are never written.
      */
-    fun onScrollSettled(page: ReaderPage) {
+    fun onScrollSettled(page: ReaderPage, userInitiated: Boolean = false) {
         if (page is InsertPage) {
             return
         }
         val chapterId = page.chapter.chapter.id ?: return
+        if (userInitiated) {
+            chapterReadingSessions[chapterId]?.onUserPageSelected(page.index)
+        }
         progressSession.recordSettled(chapterId, page.index)
         val sequence = chapterProgressSequence.incrementAndGet()
         latestChapterProgressSequences[chapterId] = sequence
@@ -780,6 +799,8 @@ class ReaderViewModel @JvmOverloads constructor(
                 pageNumber = totalPages.toLong(),
                 totalPages = totalPages.toLong(),
                 completed = false,
+                // 已经是已读态，读完时间保持原值，这里传什么都写不进去。
+                completedAt = completedTimestamp(),
             )
             return
         }
@@ -789,6 +810,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 totalPages = totalPages,
                 entryDirection = ChapterEntryDirection.Direct,
                 alreadyRead = false,
+                lastPageRead = readerChapter.chapter.last_page_read,
             )
         }
         val decision = if (completingOnExit) {
@@ -808,8 +830,12 @@ class ReaderViewModel @JvmOverloads constructor(
             pageNumber = readerChapter.chapter.last_page_read.toLong(),
             totalPages = totalPages.toLong(),
             completed = decision.completed,
+            // 正常滑到最后一页读完的那一刻，和详情页手动标记已读记录同一个时间口径。
+            completedAt = completedTimestamp(),
         )
     }
+
+    private fun completedTimestamp(): Long = Clock.System.now().toEpochMilliseconds()
 
     /**
      * Persists the current in-memory reading position of [readerChapter], used when leaving the
@@ -817,7 +843,11 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     private suspend fun flushChapterProgress(readerChapter: ReaderChapter) {
         val chapterId = readerChapter.chapter.id ?: return
-        val pageIndex = progressSession.getForExit(chapterId) ?: return
+        val pageIndex = if (chapterReadingSessions[chapterId]?.canCompleteOnForwardExit() == true) {
+            readerChapter.pages?.lastIndex
+        } else {
+            progressSession.getForExit(chapterId)
+        } ?: return
         val sequence = chapterProgressSequence.incrementAndGet()
         latestChapterProgressSequences[chapterId] = sequence
         persistLatestChapterProgress(
@@ -848,6 +878,7 @@ class ReaderViewModel @JvmOverloads constructor(
                         id = chapter.id,
                         read = true,
                         lastPageRead = chapter.totalPages.takeIf { it > 0 },
+                        markedReadAt = completedTimestamp(),
                     )
                 } else {
                     null
