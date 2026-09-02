@@ -94,7 +94,10 @@ import tachiyomi.presentation.core.screens.LoadingScreen
 fun AudioBrowseContent(
     state: AudioBrowseState,
     title: String,
+    /** Sort of the tab on screen, which the sort sheet edits. */
     sort: AudioSort,
+    /** Sort of the work-list tab, which is what that tab is named after. */
+    workListSort: AudioSort,
     auth: AudioAuthState,
     audioQuality: AudioQualityMode,
     showTabs: Boolean,
@@ -102,6 +105,8 @@ fun AudioBrowseContent(
     onClickWork: (Work) -> Unit,
     onClickHistory: () -> Unit,
     onClickCategories: () -> Unit,
+    /** Opens one tag's works. Tapping a tag leaves the row it sits on, so it is not a work tap. */
+    onClickTag: (String) -> Unit,
     navigateUp: () -> Unit,
     onSearch: (String) -> Unit,
     onExitSearch: () -> Unit,
@@ -208,9 +213,14 @@ fun AudioBrowseContent(
                     ) {
                         availableTabs.forEachIndexed { index, tab ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                // The work-list tab is the only one a sort applies to, so it
-                                // carries the active sort as its name instead of a fixed one.
-                                val label = if (tab == AudioBrowseTab.LATEST) sort.tabLabel else tab.label
+                                // The work-list tab carries its own sort as its name instead of a
+                                // fixed one. It is the sort of that tab, not of the one on screen:
+                                // the row has to keep naming it while the favorites tab is open.
+                                val label = if (tab == AudioBrowseTab.LATEST) {
+                                    workListSort.tabLabel
+                                } else {
+                                    tab.label
+                                }
                                 Tab(
                                     selected = state.tab == tab,
                                     onClick = {
@@ -316,6 +326,7 @@ fun AudioBrowseContent(
                                 WorkGridItem(
                                     work = work,
                                     onClick = { onClickWork(work) },
+                                    onClickTag = onClickTag,
                                 )
                             }
                         }
@@ -371,14 +382,16 @@ fun AudioBrowseContent(
 internal fun WorkGridItem(
     work: Work,
     onClick: () -> Unit,
+    onClickTag: (String) -> Unit,
 ) {
     Card(
         onClick = onClick,
         // Fixed total height, so no card ever sits taller or shorter than its neighbours.
         // The tag row is a strip along the bottom edge — full card width, under the cover as
         // well as the text — which is both where it reads as its own band and where it has the
-        // most room to show tags. A work with no tags drops the strip and the cover grows into
-        // the space instead, so the card keeps its height without an empty strip under it.
+        // most room to show tags. The strip is reserved even when a work carries no tags:
+        // dropping it grew the cover into the freed space, which made those rows read as a
+        // different, larger card than every other one in the list.
         modifier = Modifier
             .fillMaxWidth()
             .height(WORK_CARD_HEIGHT),
@@ -391,8 +404,8 @@ internal fun WorkGridItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // Takes whatever the tag strip does not, which is the whole card when there
-                    // are no tags. The cover follows this row's height rather than setting it.
+                    // Takes whatever the tag strip does not, which is the same on every card.
+                    // The cover follows this row's height rather than setting it.
                     .weight(1f),
                 verticalAlignment = Alignment.Top,
             ) {
@@ -401,18 +414,13 @@ internal fun WorkGridItem(
                     contentDescription = work.title,
                     modifier = Modifier
                         .fillMaxHeight()
-                        // Square off the row's height, so dropping the tag strip shows a larger
-                        // cover rather than a gap beside one that stayed put.
+                        // Square off the row's height, so every cover is the same size and the
+                        // row's own height is the only thing that sets it.
                         .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                        // Bottom corner only when the cover reaches the card's own bottom edge.
-                        // With a tag strip below it, its bottom edge lands mid-card, where a
-                        // rounded corner would punch a notch out of the card's fill.
-                        .clip(
-                            RoundedCornerShape(
-                                topStart = WORK_CARD_CORNER,
-                                bottomStart = if (work.tags.isNotEmpty()) 0.dp else WORK_CARD_CORNER,
-                            ),
-                        ),
+                        // The bottom corner is left square: the tag strip below means the cover's
+                        // bottom edge always lands mid-card, where a rounded corner would punch
+                        // a notch out of the card's fill.
+                        .clip(RoundedCornerShape(topStart = WORK_CARD_CORNER)),
                     contentScale = ContentScale.Crop,
                 )
                 Column(
@@ -433,16 +441,20 @@ internal fun WorkGridItem(
                     WorkStats(work)
                 }
             }
-            if (work.tags.isNotEmpty()) {
-                WorkTagRow(work.tags)
-            }
+            // Always rendered, empty or not: the band is what keeps every card the same shape.
+            WorkTagRow(work.tags, onClickTag)
         }
     }
 }
 
-/** One scrollable line of tags along the bottom of a card, spanning its full width. */
+/**
+ * One scrollable line of tags along the bottom of a card, spanning its full width.
+ *
+ * Kept in the tree when a work has no tags — an empty band instead of no band at all — so the
+ * cover above it cannot grow into the space and tower over the other cards.
+ */
 @Composable
-private fun WorkTagRow(tags: List<TagRef>) {
+private fun WorkTagRow(tags: List<TagRef>, onClickTag: (String) -> Unit) {
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
@@ -452,7 +464,7 @@ private fun WorkTagRow(tags: List<TagRef>) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         items(tags.size) { index ->
-            WorkTag(tags[index].name)
+            WorkTag(tags[index].name, onClick = { onClickTag(tags[index].name) })
         }
     }
 }
@@ -496,9 +508,18 @@ private fun WorkStats(work: Work) {
     }
 }
 
+/**
+ * One tag, which opens that tag's works instead of the work it is printed on.
+ *
+ * The border stays neutral while the label takes the primary colour: the strip can carry five or
+ * six of these on every card in the list, and filling them all with `primaryContainer` the way
+ * the single detail header does would turn each card into a block of colour. The label is what
+ * reads as a link, and the ripple confirms the tap.
+ */
 @Composable
-private fun WorkTag(name: String) {
+private fun WorkTag(name: String, onClick: () -> Unit) {
     Surface(
+        onClick = onClick,
         shape = RoundedCornerShape(4.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
@@ -506,7 +527,7 @@ private fun WorkTag(name: String) {
             text = name,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
         )
     }

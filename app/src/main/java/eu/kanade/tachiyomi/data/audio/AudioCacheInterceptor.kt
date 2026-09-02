@@ -29,9 +29,12 @@ object AudioCacheInterceptor : Interceptor {
         // copy of the same multi-megabyte payload would only double the disk cost.
         if (request.url.encodedPath in UNCACHED_PATHS) return response
         // A request carrying `no-cache` refuses to read from the cache, so storing its response
-        // would only fill the disk with entries that can never be served. What is left after this
-        // check is exactly the public, order independent data: work pages and track trees.
+        // would only fill the disk with entries that can never be served.
         if (request.cacheControl.noCache) return response
+        // A random draw answers differently every time, so a stored copy is a wrong one: it hands
+        // back the very selection the user is trying to get away from. What is left after these
+        // two checks is exactly the public, order independent data: work pages and track trees.
+        if (request.url.queryParameter("order") == RANDOM_ORDER) return response
         return response.newBuilder()
             .header("Cache-Control", "public, max-age=$MAX_AGE_SECONDS")
             .removeHeader("Pragma")
@@ -39,6 +42,9 @@ object AudioCacheInterceptor : Interceptor {
     }
 
     private const val API_HOST = "api.asmr-200.com"
+
+    /** `order` value of the work feed that must never be replayed from disk. */
+    private const val RANDOM_ORDER = "random"
 
     /** How long a work list / track tree may be reused without hitting the network. */
     private const val MAX_AGE_SECONDS = 300L

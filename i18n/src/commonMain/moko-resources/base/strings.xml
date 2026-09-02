@@ -118,6 +118,7 @@
     <string name="action_delete">Delete</string>
     <string name="action_update_library">Update library</string>
     <string name="action_refresh_all_chapters">Refresh all works</string>
+    <string name="action_refresh_all_chapters_short">Refresh</string>
     <string name="local_source_refresh_checking">Checking your local manga shelf…</string>
     <string name="local_source_refresh_checking_progress">Checking manga: %1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">Updating changed manga: %1$d/%2$d</string>
@@ -768,6 +769,7 @@
     <string name="chapter_not_found">Work not found</string>
     <string name="local_invalid_format">Invalid work format</string>
     <string name="local_filter_order_by">Order by</string>
+    <string name="local_filter_order_by_count">Chapter count</string>
     <string name="date">Date</string>
 
     <!-- Manga info -->
@@ -825,6 +827,7 @@
     <string name="chapter_display_title_section">Chapter title</string>
     <string name="chapter_display_layout_section">Layout</string>
     <string name="chapter_title_translations">Import/export chapter title translations</string>
+    <string name="chapter_title_translations_short">Import/export title translations</string>
     <string name="current_manga_chapter_title_translations">Chapter title translations for this manga</string>
     <string name="local_library_chapter_title_translations">Local library chapter title translations</string>
     <string name="export_current_manga_chapter_titles">Export current manga</string>

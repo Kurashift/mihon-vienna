@@ -38,10 +38,11 @@ class KikoeruApi(
         pageSize: Int,
         order: String = "release",
         sort: String = "desc",
+        cache: CacheControl? = null,
     ): WorksResponse = withIOContext {
         val url = "$BASE_URL/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
         with(json) {
-            executeWithRetry(url) { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
         }
     }
 
@@ -50,8 +51,9 @@ class KikoeruApi(
      *
      * Preferred over [search] with a `$circle:Name$` keyword. Measured against the live backend the
      * id endpoints answer in roughly half the time, and they honour `order`/`sort` the same way
-     * [fetchWorks] does. They are also requested without `CacheControl.FORCE_NETWORK`, so the
-     * network interceptor gives them a `max-age` and repeat visits are served from disk.
+     * [fetchWorks] does. They are also requested without `CacheControl.FORCE_NETWORK` unless a
+     * caller passes one, so the network interceptor gives them a `max-age` and repeat visits are
+     * served from disk.
      */
     suspend fun fetchCategoryWorks(
         field: AudioCategoryField,
@@ -60,12 +62,13 @@ class KikoeruApi(
         pageSize: Int,
         order: String = "release",
         sort: String = "desc",
+        cache: CacheControl? = null,
     ): WorksResponse = withIOContext {
         val encodedId = URLEncoder.encode(id, "UTF-8")
         val url = "$BASE_URL/api/${field.pathSegment}/$encodedId/works" +
             "?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
         with(json) {
-            executeWithRetry(url) { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
+            executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
         }
     }
 
@@ -213,6 +216,14 @@ class KikoeruApi(
         }
         throw lastError ?: IOException("subtitle request failed")
     }
+
+    /**
+     * [cache] overrides the ten minute freshness every other GET gets by default. A pull to
+     * refresh passes [CacheControl.FORCE_NETWORK] so it is answered by the backend rather than
+     * by the copy [AudioCacheInterceptor] put on disk five minutes ago.
+     */
+    private fun get(url: String, cache: CacheControl? = null): Request =
+        if (cache == null) GET(url) else GET(url, cache = cache)
 
     private fun authenticated(request: Request): Request {
         return request.withAudioAuthorization(basePreferences.audioAuthToken.get())

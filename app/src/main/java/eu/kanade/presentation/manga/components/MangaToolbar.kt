@@ -181,17 +181,17 @@ fun MangaToolbar(
                                     },
                                     onClickMigrate?.let { stringResource(MR.strings.action_migrate) to it },
                                     onClickShare?.let { stringResource(MR.strings.action_share) to it },
-                                    onClickChapterTitleTranslations?.let {
-                                        stringResource(MR.strings.chapter_title_translations) to
+                                    (stringResource(MR.strings.action_refresh_all_chapters_short) to onClickRefresh),
+                                    onClickImportLocalChapters?.let {
+                                        stringResource(MR.strings.action_import_local_chapters_short) to
                                             it
                                     },
-                                    onClickImportLocalChapters?.let {
-                                        stringResource(MR.strings.action_import_local_chapters) to
+                                    onClickChapterTitleTranslations?.let {
+                                        stringResource(MR.strings.chapter_title_translations_short) to
                                             it
                                     },
                                     (stringResource(MR.strings.action_notes) to onClickEditNotes),
                                     (stringResource(MR.strings.action_clear_reading_history) to onClickClearHistory),
-                                    (stringResource(MR.strings.action_webview_refresh) to onClickRefresh),
                                 ).forEach { (title, action) ->
                                     androidx.compose.material3.DropdownMenuItem(
                                         text = { androidx.compose.material3.Text(title) },

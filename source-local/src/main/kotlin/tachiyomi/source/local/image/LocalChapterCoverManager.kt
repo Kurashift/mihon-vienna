@@ -228,7 +228,7 @@ class LocalChapterCoverManager(
             .flatMap { mangaDirectory ->
                 fileSystem.getFilesInDirectory(mangaDirectory)
                     .asSequence()
-                    .filter(::isSupportedChapter)
+                    .filter(Archive::isChapterEntry)
                     .map { chapterFile ->
                         "${mangaDirectory.name.orEmpty()}/${chapterFile.name.orEmpty()}" to chapterFile
                     }
@@ -455,7 +455,7 @@ class LocalChapterCoverManager(
         if (parts.size != 2) return null
         return fileSystem.getMangaDirectory(parts[0])
             ?.findFile(parts[1])
-            ?.takeIf(::isSupportedChapter)
+            ?.takeIf(Archive::isChapterEntry)
     }
 
     private fun targetFile(chapterUrl: String, chapterFile: UniFile): File {
@@ -494,11 +494,6 @@ class LocalChapterCoverManager(
             if (file.isFile && file.name !in liveFiles && file.delete()) removed++
         }
         return removed
-    }
-
-    private fun isSupportedChapter(file: UniFile): Boolean {
-        return !file.name.orEmpty().startsWith('.') &&
-            (file.isDirectory || Archive.isSupported(file) || file.name.orEmpty().endsWith(".epub", true))
     }
 
     private fun File.isValidCover(): Boolean {

@@ -197,7 +197,17 @@ class MangaScreen(
                         try {
                             val randomId = viewModel.getRandomLocalMangaId()
                             if (randomId != null) {
-                                navigator.push(MangaScreen(randomId, true))
+                                // Carry the browse list the user came from into the next
+                                // details screen. Without it the second hop onwards would
+                                // fall back to the whole library and leave the search or
+                                // filter the user was browsing in.
+                                navigator.push(
+                                    MangaScreen(
+                                        mangaId = randomId,
+                                        fromSource = true,
+                                        randomCandidates = viewModel.randomCandidates,
+                                    ),
+                                )
                                 // Keep the guard through the transition so a second tap
                                 // cannot push a second random manga.
                                 delay(600)

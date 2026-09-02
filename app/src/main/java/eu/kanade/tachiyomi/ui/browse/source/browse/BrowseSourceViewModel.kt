@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -90,6 +91,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.interactor.GetRemoteManga
 import tachiyomi.domain.source.repository.SourcePagingSource
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.source.local.LocalListingSnapshot
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
@@ -377,6 +379,88 @@ class BrowseSourceViewModel(
     val progressContextState: StateFlow<ProgressContext> = progressContext
 
     /**
+     * url -> manga id for every manga that still has chapters.
+     *
+     * [distinctUntilChanged] is what keeps this cheap: reading a chapter rewrites the progress
+     * rows without changing this mapping, and without it every single read would re-filter the
+     * whole random pool for nothing.
+     */
+    private val mangaIdByUrl: StateFlow<Map<String, Long>> = progressSnapshot
+        .map { list -> list.associate { it.url to it.mangaId } }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val listingAndSnapshot: Flow<Pair<Listing, LocalListingSnapshot?>> = combine(
+        state.map { it.listing }.distinctUntilChanged(),
+        (source as? LocalSource)?.listingSnapshot ?: flowOf(null),
+    ) { listing, snapshot -> listing to snapshot }
+
+    @Immutable
+    private data class RandomPoolArgs(
+        val listing: Listing,
+        val snapshotUrls: List<String>?,
+        val context: ProgressContext,
+        val readingFilter: ReadingFilter,
+        val markFilter: MarkFilter,
+        val idByUrl: Map<String, Long>,
+    )
+
+    /**
+     * Ids of every manga the current listing shows after the reading and mark filters: the whole
+     * result set, not just the pages the pager has already loaded.
+     *
+     * The details screen's random button walks this. It used to be handed only the loaded page,
+     * so the button kept offering the same first PAGE_SIZE entries however far the user had
+     * scrolled and however many entries the filter actually matched.
+     */
+    val filteredMangaIds: StateFlow<List<Long>> = combine(
+        listingAndSnapshot,
+        progressContext,
+        readingFilterInternal,
+        markFilterInternal,
+        mangaIdByUrl,
+    ) { (listing, snapshot), context, readingFilter, markFilter, idByUrl ->
+        RandomPoolArgs(
+            listing = listing,
+            snapshotUrls = when (listing) {
+                is Listing.Popular -> snapshot?.allUrls
+                is Listing.Latest -> snapshot?.latestUrls
+                is Listing.Search -> null
+            },
+            context = context,
+            readingFilter = readingFilter,
+            markFilter = markFilter,
+            idByUrl = idByUrl,
+        )
+    }
+        .distinctUntilChanged()
+        .mapLatest { args ->
+            // Resolving and filtering a library of thousands of urls must not block the main
+            // thread, so the whole pass runs on IO.
+            withIOContext<List<Long>> {
+                val local = source as? LocalSource ?: return@withIOContext emptyList()
+                if (args.idByUrl.isEmpty()) return@withIOContext emptyList()
+                val urls = args.snapshotUrls ?: run {
+                    val listing = args.listing as Listing.Search
+                    local.getSearchMangaUrls(listing.query.orEmpty(), listing.filters)
+                }
+                urls.mapNotNull { url ->
+                    if (!matchesListingFilters(
+                            url = url,
+                            context = args.context,
+                            readingFilter = args.readingFilter,
+                            markFilter = args.markFilter,
+                        )
+                    ) {
+                        return@mapNotNull null
+                    }
+                    args.idByUrl[url]
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
      * Minimal projection of [progressContext] that only carries fields affecting the list
      * FILTERS. Reading a chapter changes progress, but when the reading filter is ALL (and no
      * mark filter is active) that must not invalidate the paged list; edges here only change
@@ -622,12 +706,7 @@ class BrowseSourceViewModel(
     }
 
     private fun matchesReadingFilter(filter: ReadingFilter, progress: MangaProgress): Boolean {
-        return when (filter) {
-            ReadingFilter.ALL -> true
-            ReadingFilter.UNREAD -> !progress.hasFinished
-            ReadingFilter.IN_PROGRESS -> progress.hasBeenRead && !progress.hasFinished
-            ReadingFilter.FINISHED -> progress.hasFinished
-        }
+        return LocalReadingFilter.matches(filter, progress)
     }
 
     private fun matchesMarkFilter(filter: MarkFilter, url: String, context: ProgressContext): Boolean {
@@ -1177,14 +1256,35 @@ class BrowseSourceViewModel(
 
         val context = progressContext.value
         return urls.filter { url ->
-            val progress = context.progressByUrl[url]
-                ?: context.fsChapterCounts[url]
-                    ?.takeIf { it > 0 }
-                    ?.let { MangaProgress(it, 0, 0, 0) }
-                ?: MangaProgress.EMPTY
-            matchesReadingFilter(readingFilterInternal.value, progress) &&
-                matchesMarkFilter(markFilterInternal.value, url, context)
+            matchesListingFilters(
+                url = url,
+                context = context,
+                readingFilter = readingFilterInternal.value,
+                markFilter = markFilterInternal.value,
+            )
         }
+    }
+
+    /**
+     * The one definition of "this URL survives the reading and mark filters".
+     *
+     * The browse list, the toolbar's random pick and the details screen's random pool all go
+     * through here: with two copies the button eventually offers a manga the list would not
+     * show, which is how a fully read manga keeps sneaking into an "Unread" selection.
+     */
+    private fun matchesListingFilters(
+        url: String,
+        context: ProgressContext,
+        readingFilter: ReadingFilter,
+        markFilter: MarkFilter,
+    ): Boolean {
+        val progress = context.progressByUrl[url]
+            ?: context.fsChapterCounts[url]
+                ?.takeIf { it > 0 }
+                ?.let { MangaProgress(it, 0, 0, 0) }
+            ?: MangaProgress.EMPTY
+        return matchesReadingFilter(readingFilter, progress) &&
+            matchesMarkFilter(markFilter, url, context)
     }
 
     fun setDialog(dialog: Dialog?) {
