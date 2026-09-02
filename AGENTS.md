@@ -15,8 +15,7 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 产物目录：`app/build/outputs/apk/vienna/`。
 - 正式交付绝不能保留 `isDebuggable = true`；临时诊断插桩用完后必须删除。
 - 只有用户明确要求时才构建并安装最终 APK。诊断测试包要说明它不是正式交付。
-- 发布 GitHub Release 用 `python scripts/publish_release.py <tag> <abi...>`（例如 `... v2.2.0 arm64-v8a x86_64 universal`）。它从 `secrets.properties` 读 token，正文取 `docs/release-post-<tag>.md`，同名旧附件会先删再传，可重复运行。
-- 发布前先确认 Release 上没有上一次遗留的旧命名附件，发布后回读 API 核对附件清单。
+- 发布走 `docs/release-process.md`（升版本、写文案、构建校验、提交打 tag、传附件）。不要手写 GitHub API 调用，一律用 `python scripts/publish_release.py <tag> <abi...>`。
 
 ## 文档与工作区卫生
 
