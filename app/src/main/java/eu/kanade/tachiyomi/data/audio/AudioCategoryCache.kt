@@ -78,6 +78,36 @@ class AudioCategoryCache(
         return System.currentTimeMillis() - savedAt < MAX_AGE.inWholeMilliseconds
     }
 
+    /**
+     * Resolves a dictionary entry name to its backend id, so a tap on a circle, VA or tag opens
+     * the same filtered page from anywhere in the audio section.
+     *
+     * Returns null when the name is missing from the on-disk dictionaries or matches more than one
+     * entry, in which case the caller keeps the legacy `$name$` route — the fallback never
+     * regresses, it just skips the optimisation.
+     */
+    @Synchronized
+    fun resolveRef(field: AudioCategoryField, name: String): AudioCategoryRef? {
+        val snapshot = read() ?: return null
+        return when (field) {
+            AudioCategoryField.CIRCLE ->
+                snapshot.circles
+                    .filter { it.name == name }
+                    .singleOrNull()
+                    ?.let { AudioCategoryRef(field, it.id.toString(), name) }
+            AudioCategoryField.VA ->
+                snapshot.vas
+                    .filter { it.name == name }
+                    .singleOrNull()
+                    ?.let { AudioCategoryRef(field, it.id, name) }
+            AudioCategoryField.TAG ->
+                snapshot.tags
+                    .filter { it.name == name }
+                    .singleOrNull()
+                    ?.let { AudioCategoryRef(field, it.id.toString(), name) }
+        }
+    }
+
     companion object {
         private const val DIR_NAME = "audio"
         private const val FILE_NAME = "categories.json"

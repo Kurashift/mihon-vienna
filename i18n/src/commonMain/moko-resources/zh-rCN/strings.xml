@@ -43,6 +43,7 @@
     <string name="action_delete">删除</string>
     <string name="action_update_library">更新书架</string>
     <string name="action_refresh_all_chapters">刷新本地篇目</string>
+    <string name="action_refresh_all_chapters_short">刷新</string>
     <string name="local_source_refresh_checking">正在翻阅本地书架…</string>
     <string name="local_source_refresh_checking_progress">正在核对漫画：%1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">正在整理有变化的漫画：%1$d/%2$d</string>
@@ -245,6 +246,7 @@
     <string name="chapter_display_title_section">章节标题</string>
     <string name="chapter_display_layout_section">列表布局</string>
     <string name="chapter_title_translations">导入/导出篇目译名</string>
+    <string name="chapter_title_translations_short">导入导出译名</string>
     <string name="current_manga_chapter_title_translations">当前漫画的章节译名</string>
     <string name="local_library_chapter_title_translations">本地库的章节译名</string>
     <string name="export_current_manga_chapter_titles">导出当前漫画</string>
@@ -496,8 +498,8 @@
     <string name="pref_incognito_mode">无痕模式</string>
     <string name="pref_clear_history">清除历史记录</string>
     <string name="clear_history_confirmation">你确定吗？所有历史记录都会丢失。</string>
-    <string name="action_clear_reading_history">清空观看记录</string>
-    <string name="action_clear_current_list_history">清空当前列表记录</string>
+    <string name="action_clear_reading_history">清空观看进度</string>
+    <string name="action_clear_current_list_history">清空观看进度</string>
     <string name="clear_reading_history_completed">观看记录已清空</string>
     <string name="clear_manga_history_confirmation">确定要清空该漫画的观看记录吗？篇目进度也会一并重置。</string>
     <string name="clear_source_history_confirmation">确定要清空该图源所有漫画的观看记录吗？篇目进度也会一并重置。</string>
@@ -564,6 +566,7 @@
     <string name="unread">未读</string>
     <string name="date">日期</string>
     <string name="local_filter_order_by">排序依据</string>
+    <string name="local_filter_order_by_count">篇数</string>
     <string name="local_invalid_format">篇目格式无效</string>
     <string name="chapter_not_found">未找到篇目</string>
     <string name="restrictions">限制：%s</string>
@@ -1179,7 +1182,7 @@
     <string name="local_read_review_search_hint">按漫画名或篇目名搜索（原名与译名皆可）</string>
     <string name="local_read_review_group_subtitle">%1$d 个篇目 · 最新篇目 %2$s</string>
     <string name="action_import_local_chapters">导入本地本子</string>
-    <string name="action_import_local_chapters_short">导入本地本子</string>
+    <string name="action_import_local_chapters_short">导入本地</string>
     <string name="action_import_target">导入到</string>
     <string name="action_create_local_manga">新建本地漫画</string>
     <string name="action_move_to">移动到</string>

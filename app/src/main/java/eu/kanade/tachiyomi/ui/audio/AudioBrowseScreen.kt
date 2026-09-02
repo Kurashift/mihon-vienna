@@ -5,16 +5,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioBrowseContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
+import eu.kanade.tachiyomi.data.audio.AudioCategoryCache
+import eu.kanade.tachiyomi.data.audio.AudioCategoryField
 import eu.kanade.tachiyomi.data.audio.AudioCategoryRef
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
@@ -26,14 +30,19 @@ import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.audio.WorksResponse
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
+import okhttp3.CacheControl
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
@@ -51,6 +60,10 @@ class AudioBrowseScreen(
     private val initialCategory: AudioCategoryRef? = null,
 ) : Screen() {
 
+    /** True for the whole library, false for a result page narrowed to one keyword or entry. */
+    private val isLibraryScreen: Boolean
+        get() = categoryTitle == null && initialFilter == null && initialCategory == null
+
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
@@ -58,16 +71,26 @@ class AudioBrowseScreen(
         val audioController = remember { Injekt.get<AudioPlayerController>() }
         val state by viewModel.state.collectAsState()
         val sort by viewModel.sort.collectAsState()
+        val workListSort by viewModel.workListSort.collectAsState()
         val auth by viewModel.auth.collectAsState()
+        val onOpenCategory = rememberCategoryNavigator(navigator)
 
         LaunchedEffect(Unit) {
-            viewModel.initialize(initialFilter, initialCategory)
+            viewModel.initialize(
+                initialFilter,
+                initialCategory,
+                // The library keeps the random draw it starts on. A keyword or dictionary result
+                // is one specific set the user just asked for, which reads better in release
+                // order than in a fresh shuffle of it.
+                sort = AudioSort.RELEASE_DESC.takeUnless { isLibraryScreen },
+            )
         }
 
         AudioBrowseContent(
             state = state,
             title = categoryTitle ?: stringResource(MR.strings.audio_title),
             sort = sort,
+            workListSort = workListSort,
             auth = auth,
             audioQuality = audioController.state.audioQuality,
             showTabs = categoryTitle == null,
@@ -75,6 +98,9 @@ class AudioBrowseScreen(
             onClickWork = { work -> navigator.push(AudioDetailScreen(work)) },
             onClickHistory = { navigator.push(AudioHistoryScreen()) },
             onClickCategories = { navigator.push(AudioCategoryScreen()) },
+            // The tag strip is the fastest way from a row that looks promising to more of the
+            // same, so it opens the tag's own results page rather than the work it sits on.
+            onClickTag = { name -> onOpenCategory(AudioCategoryField.TAG, name) },
             navigateUp = navigator::pop,
             onSearch = viewModel::search,
             onExitSearch = viewModel::exitSearch,
@@ -89,13 +115,55 @@ class AudioBrowseScreen(
     }
 }
 
+/**
+ * Opens one dictionary entry's works — a circle, VA or tag — from anywhere in the audio section.
+ *
+ * Shared by the browse list and the work details page so a tap on the same name always lands on
+ * the same page, whichever list it was tapped in. Resolves the name to a backend id first, which
+ * keeps the filter off the URL path and so makes it immune to names containing `$`, spaces or
+ * punctuation; the legacy `$name$` keyword is only used when the on-disk dictionaries cannot pin
+ * the name to a single entry.
+ *
+ * The lookup reads a multi-megabyte snapshot, so it runs on the IO dispatcher and the page is
+ * pushed when it answers.
+ */
+@Composable
+internal fun rememberCategoryNavigator(navigator: Navigator): (AudioCategoryField, String) -> Unit {
+    val scope = rememberCoroutineScope()
+    val cache: AudioCategoryCache = remember { Injekt.get() }
+    return remember(navigator, scope) {
+        { field: AudioCategoryField, name: String ->
+            scope.launch {
+                val ref = withContext(Dispatchers.IO) { cache.resolveRef(field, name) }
+                navigator.push(
+                    if (ref != null) {
+                        AudioBrowseScreen(categoryTitle = name, initialCategory = ref)
+                    } else {
+                        AudioBrowseScreen(categoryTitle = name, initialFilter = field.legacyKeyword(name))
+                    },
+                )
+            }
+        }
+    }
+}
+
 enum class AudioSort(
     val order: String,
     val sort: String,
     val label: StringResource,
     /** Shown on the browse tab while this sort drives the work list. */
     val tabLabel: StringResource,
+    /**
+     * Whether this sort is a one-off selection the user asked for rather than an order maintained
+     * over a catalogue that keeps growing. A draw is pinned once fetched: the same request would
+     * answer differently, so repeating it silently would destroy what the user is looking at
+     * instead of adding to it.
+     */
+    val isDraw: Boolean = false,
 ) {
+    // Listed first because it is what the work-list tab is opened for most often; [AudioSort.entries]
+    // is also the order of the sort sheet, so it sits at the top there too.
+    RANDOM("random", "desc", MR.strings.audio_sort_random, MR.strings.audio_sort_random, isDraw = true),
     RELEASE_DESC("release", "desc", MR.strings.audio_sort_release_desc, MR.strings.audio_tab_latest),
 
     // Backend rejects "rating" and answers with an empty list; the ranking column is this one.
@@ -113,7 +181,6 @@ enum class AudioSort(
         MR.strings.audio_sort_create_desc,
         MR.strings.audio_tab_sort_create,
     ),
-    RANDOM("random", "desc", MR.strings.audio_sort_random, MR.strings.audio_sort_random),
 }
 
 enum class AudioBrowseTab(
@@ -166,8 +233,26 @@ class AudioBrowseViewModel(
     private val _state = MutableStateFlow(AudioBrowseState())
     val state: StateFlow<AudioBrowseState> = _state.asStateFlow()
 
-    private val _sort = MutableStateFlow(AudioSort.RELEASE_DESC)
-    val sort: StateFlow<AudioSort> = _sort.asStateFlow()
+    // One sort per sortable tab rather than a single shared one. The work-list tab is a discovery
+    // surface, opened most often for a fresh random draw; the favorites tab is a lookup list over
+    // works the user already picked, which is useless if it lands in a new order on every visit.
+    // Sharing one value forced whichever was picked last onto both, so a random draw on the work
+    // list also scrambled the favorites. The tab row names the work-list tab after its own sort,
+    // which is how it reads 推荐 / 热门 / 随机 / 收藏.
+    private val workSort = MutableStateFlow(AudioSort.RANDOM)
+    private val favoriteSort = MutableStateFlow(AudioSort.RELEASE_DESC)
+
+    /** Sort of the work-list tab, which is what that tab is named after. */
+    val workListSort: StateFlow<AudioSort> = workSort.asStateFlow()
+
+    /** Sort of the tab on screen, which is what the sort sheet edits. */
+    val sort: StateFlow<AudioSort> = combine(_state, workSort, favoriteSort) { state, work, favorite ->
+        if (state.tab == AudioBrowseTab.FAVORITES) favorite else work
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, AudioSort.RANDOM)
+
+    /** The flow holding [tab]'s sort, so a pick on one tab never reorders the other. */
+    private fun sortOf(tab: AudioBrowseTab): MutableStateFlow<AudioSort> =
+        if (tab == AudioBrowseTab.FAVORITES) favoriteSort else workSort
 
     private val _auth = MutableStateFlow(
         AudioAuthState(
@@ -202,6 +287,12 @@ class AudioBrowseViewModel(
      */
     private var displayedFromCache: List<Work>? = null
 
+    /**
+     * The pinned random order of the local favorites, and the only thing that decides their
+     * position while the draw sort is active. Null until a draw is taken.
+     */
+    private var shuffledFavoriteIds: List<Long>? = null
+
     init {
         if (_auth.value.username != null) {
             viewModelScope.launchIO {
@@ -232,21 +323,24 @@ class AudioBrowseViewModel(
         }
     }
 
-    fun initialize(initialFilter: String?, category: AudioCategoryRef? = null) {
+    fun initialize(initialFilter: String?, category: AudioCategoryRef? = null, sort: AudioSort? = null) {
         if (initialized) return
         initialized = true
+        // Always the work list's sort: a keyword or dictionary result is one specific set, shown
+        // on the list side of the model even when no tab row is on screen to name it.
+        if (sort != null) workSort.value = sort
         categoryRef = category
         if (categoryRef != null) {
             // Not search(): the filter is an id, not a keyword, so there is nothing to put in the
             // search field. The list simply starts narrowed to one dictionary entry.
-            switchTo(_state.value.tab, _sort.value, null)
+            switchTo(_state.value.tab, sortOf(_state.value.tab).value, null)
         } else if (initialFilter != null) {
             search(initialFilter)
         } else {
             // Not refresh(): this runs again whenever the screen is re-entered with a fresh
             // ViewModel, and the point of the page cache is that re-entering inside the TTL
             // repaints the previous rows instead of starting over with a spinner and a request.
-            switchTo(_state.value.tab, _sort.value, null)
+            switchTo(_state.value.tab, sortOf(_state.value.tab).value, null)
         }
     }
 
@@ -260,7 +354,7 @@ class AudioBrowseViewModel(
     fun setTab(tab: AudioBrowseTab) {
         if (_state.value.tab == tab) return
         _state.update { it.copy(tab = tab) }
-        switchTo(tab, _sort.value, _state.value.query)
+        switchTo(tab, sortOf(tab).value, _state.value.query)
     }
 
     fun login(name: String, password: String) {
@@ -299,7 +393,6 @@ class AudioBrowseViewModel(
     }
 
     fun setSort(sort: AudioSort) {
-        _sort.value = sort
         // Only the work-list tab and favorites honor a sort: recommendations and popular are
         // backend feeds without an order parameter, so sorting anything else means moving to the
         // work list. Favorites are sorted locally, so they keep their own tab and content.
@@ -308,6 +401,13 @@ class AudioBrowseViewModel(
         } else {
             _state.value.tab
         }
+        // Re-picking the sort already on screen changes nothing. For a draw that is the whole
+        // point: the list is a handful the user is working through, and a second tap on the
+        // entry — easy to land while flipping through the sheet — would silently replace those
+        // works with a different handful and they would be gone. Pulling the list is the one
+        // deliberate way to ask for another draw, so that is the only thing that rolls one.
+        if (sort == sortOf(tab).value) return
+        sortOf(tab).value = sort
         switchTo(tab, sort, _state.value.query)
     }
 
@@ -318,6 +418,10 @@ class AudioBrowseViewModel(
         // A pull to refresh is an explicit request for the newest rows, so it may replace the
         // list wherever the user happens to be.
         displayedFromCache = null
+        // The one deliberate request for another draw. Dropping the pinned selection is what
+        // separates it from every other reload: without this the pull would fetch a shuffled
+        // page, pin it over the old one and the list would look untouched.
+        if (sortOf(_state.value.tab).value.isDraw) shuffledFavoriteIds = null
         viewModelScope.launchIO {
             _state.update {
                 it.copy(
@@ -329,7 +433,12 @@ class AudioBrowseViewModel(
                     page = 1,
                 )
             }
-            loadPage(1, generation)
+            // A pull to refresh asks for what the backend has right now, so neither cache may
+            // answer it. The work feed is stored on disk for five minutes
+            // ([AudioCacheInterceptor.MAX_AGE_SECONDS]), which is long enough that a refresh
+            // within that window used to come back with the very rows on screen — invisible on a
+            // release-ordered list, and fatal on a random one, whose whole point is a new draw.
+            loadPage(1, generation, forceNetwork = true)
         }
     }
 
@@ -340,7 +449,7 @@ class AudioBrowseViewModel(
         // Measured against what has been requested rather than the deduplicated row count, which
         // lags behind whenever the backend repeats a work across two pages.
         if (current.page * PAGE_SIZE >= current.totalCount) return
-        val baseKey = cacheKeyFor(current.tab, _sort.value, current.query)
+        val baseKey = cacheKeyFor(current.tab, sortOf(current.tab).value, current.query)
         val nextPage = current.page + 1
         // A page warmed up half an hour ago is not worth showing: by the time the user reaches
         // the bottom they expect newer rows than that.
@@ -369,13 +478,13 @@ class AudioBrowseViewModel(
         }
         val normalized = query.ifBlank { null }
         _state.update { it.copy(query = normalized) }
-        switchTo(_state.value.tab, _sort.value, normalized)
+        switchTo(_state.value.tab, sortOf(_state.value.tab).value, normalized)
     }
 
     fun exitSearch() {
         if (_state.value.query != null) {
             _state.update { it.copy(query = null) }
-            switchTo(_state.value.tab, _sort.value, null)
+            switchTo(_state.value.tab, sortOf(_state.value.tab).value, null)
         }
     }
 
@@ -471,17 +580,17 @@ class AudioBrowseViewModel(
 
     private fun isFresh(snapshot: AudioPageSnapshot): Boolean = pageCache.isFresh(snapshot)
 
-    private suspend fun loadPage(page: Int, generation: Int) {
+    private suspend fun loadPage(page: Int, generation: Int, forceNetwork: Boolean = false) {
         val query = _state.value.query
-        val currentSort = _sort.value
         val currentTab = _state.value.tab
+        val currentSort = sortOf(currentTab).value
         if (currentTab == AudioBrowseTab.FAVORITES) {
             loadLocalFavorites()
             return
         }
         val baseKey = cacheKeyFor(currentTab, currentSort, query)
         try {
-            val response = requestPage(currentTab, currentSort, query, page)
+            val response = requestPage(currentTab, currentSort, query, page, forceNetwork)
             _state.update { current ->
                 if (generation != loadGeneration) return@update current
                 // A background refresh of the first page must not yank the list back to the top
@@ -508,7 +617,7 @@ class AudioBrowseViewModel(
                 )
             }
             if (generation == loadGeneration) {
-                cachePage(baseKey, page, response)
+                cachePage(baseKey, page, response, currentSort)
                 if (page == 1) prefetchNextPage(baseKey, currentTab, currentSort, query, generation)
             }
         } catch (e: CancellationException) {
@@ -535,7 +644,11 @@ class AudioBrowseViewModel(
         sort: AudioSort,
         query: String?,
         page: Int,
+        forceNetwork: Boolean = false,
     ): WorksResponse {
+        // Only the two work feeds are ever served from the disk cache; searches already ask for
+        // the network and the recommender endpoints are POSTs, which OkHttp never stores.
+        val cache = if (forceNetwork) CacheControl.FORCE_NETWORK else null
         val effectiveKeyword = query.orEmpty().trim()
         // A keyword typed on a category results page narrows that category instead of escaping it:
         // the entry's filter is combined with the keyword, which the backend parses as an AND.
@@ -543,7 +656,7 @@ class AudioBrowseViewModel(
         // 108 works, all 45 inside it, versus 12164 / 9462 for the bare words catalogue-wide.
         categoryRef?.let { ref ->
             if (effectiveKeyword.isBlank()) {
-                return api.fetchCategoryWorks(ref.field, ref.id, page, PAGE_SIZE, sort.order, sort.sort)
+                return api.fetchCategoryWorks(ref.field, ref.id, page, PAGE_SIZE, sort.order, sort.sort, cache)
             }
             // The id endpoints accept no keyword, so an intersection can only be expressed in the
             // legacy syntax. A name containing `$` would break out of the filter — the price of
@@ -560,7 +673,7 @@ class AudioBrowseViewModel(
             return api.search(effectiveKeyword, page, PAGE_SIZE, sort.order, sort.sort)
         }
         return when (tab) {
-            AudioBrowseTab.LATEST -> api.fetchWorks(page, PAGE_SIZE, sort.order, sort.sort)
+            AudioBrowseTab.LATEST -> api.fetchWorks(page, PAGE_SIZE, sort.order, sort.sort, cache)
             AudioBrowseTab.POPULAR -> api.fetchPopular(page, PAGE_SIZE)
             AudioBrowseTab.FAVORITES -> WorksResponse()
             AudioBrowseTab.RECOMMENDED -> requestRecommended(page)
@@ -588,8 +701,21 @@ class AudioBrowseViewModel(
         }
     }
 
-    private fun cachePage(baseKey: String, page: Int, response: WorksResponse) {
-        pageCache.put(pageKey(baseKey, page), response.works, response.pagination.totalCount)
+    /**
+     * @param sort The sort the page was fetched under, which is what decides whether it is a
+     * draw worth pinning. Read from the request rather than from the current state: a page that
+     * arrives after the user has already moved on to another sort must not be pinned as theirs.
+     */
+    private fun cachePage(baseKey: String, page: Int, response: WorksResponse, sort: AudioSort) {
+        pageCache.put(
+            pageKey(baseKey, page),
+            response.works,
+            response.pagination.totalCount,
+            // A draw is pinned so it is never revalidated behind the user's back, and so it is
+            // the last thing evicted when the cache fills. Every other page is a view onto a
+            // growing catalogue, where a newer copy is always an improvement.
+            pinned = sort.isDraw,
+        )
     }
 
     /**
@@ -612,7 +738,7 @@ class AudioBrowseViewModel(
             try {
                 val response = requestPage(tab, sort, query, nextPage)
                 if (generation == loadGeneration && response.works.isNotEmpty()) {
-                    cachePage(baseKey, nextPage, response)
+                    cachePage(baseKey, nextPage, response, sort)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -636,11 +762,11 @@ class AudioBrowseViewModel(
                 ).any { it.contains(query, ignoreCase = true) }
             }
             .toList()
-        val sorted = when (_sort.value) {
+        val sorted = when (favoriteSort.value) {
             AudioSort.RELEASE_DESC, AudioSort.CREATE_DESC -> filtered.sortedByDescending { it.release.orEmpty() }
             AudioSort.RATING_DESC -> filtered.sortedByDescending { it.rateAverage2dp ?: 0.0 }
             AudioSort.DL_DESC -> filtered
-            AudioSort.RANDOM -> filtered.shuffled()
+            AudioSort.RANDOM -> shuffledFavorites(filtered)
         }
         _state.update {
             it.copy(
@@ -655,6 +781,28 @@ class AudioBrowseViewModel(
                 loadMoreError = false,
             )
         }
+    }
+
+    /**
+     * Applies the pinned random order to the favorites that are still in the list.
+     *
+     * This list is recomputed on every change to the store and to the search field, so shuffling
+     * inline would reorder the works under the user's cursor each time they uncollected one or
+     * typed a letter. Remembering the draw and walking it means the order survives all of that:
+     * works added since the draw go to the front, where they are visible rather than hidden in a
+     * list that has just been rearranged.
+     */
+    private fun shuffledFavorites(works: List<Work>): List<Work> {
+        val order = shuffledFavoriteIds ?: works.shuffled().map { it.id }.also { shuffledFavoriteIds = it }
+        val byId = works.associateBy { it.id }
+        val drawn = order.mapNotNull { byId[it] }
+        // Anything collected after the draw is not in the remembered order yet; appending would
+        // bury it at the bottom, and prepending would repeat this same reordering on every
+        // recompute, so it is merged into the draw from here on.
+        val added = works.filter { it.id !in order }
+        val merged = added + drawn
+        shuffledFavoriteIds = merged.map { it.id }
+        return merged
     }
 
     private companion object {

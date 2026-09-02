@@ -429,7 +429,7 @@ class LocalSource(
             coverManager.find(mangaUrl)?.uri?.toString()?.let { return@withIOContext it }
             val chapterFile = fileSystem.getMangaDirectory(mangaUrl)
                 ?.findFile(chapterFileName)
-                ?.takeIf(::isChapterFile)
+                ?.takeIf(Archive::isChapterEntry)
                 ?: return@withIOContext null
             val manga = SManga.create().apply {
                 title = mangaUrl
@@ -799,7 +799,7 @@ class LocalSource(
     private data class CachedDerivedListing(
         val listing: List<LocalMangaEntry>,
         val query: String,
-        val sortByTitle: Boolean,
+        val orderByIndex: Int,
         val ascending: Boolean,
         val latestWindow: Boolean,
         val mangas: List<SManga>,
@@ -858,11 +858,12 @@ class LocalSource(
     }
 
     private fun currentOrderBy(): OrderBy {
-        val selection = Filter.Sort.Selection(orderByIndexPreference.get(), orderByAscendingPreference.get())
-        return if (orderByIndexPreference.get() == 0) {
-            OrderBy.Popular(context, selection)
-        } else {
-            OrderBy.Latest(context, selection)
+        val index = orderByIndexPreference.get()
+        val selection = Filter.Sort.Selection(index, orderByAscendingPreference.get())
+        return when (index) {
+            ORDER_BY_DATE -> OrderBy.Latest(context, selection)
+            ORDER_BY_CHAPTER_COUNT -> OrderBy.ChapterCount(context, selection)
+            else -> OrderBy.Popular(context, selection)
         }
     }
 
@@ -925,11 +926,7 @@ class LocalSource(
                             val url = entry.url
                             try {
                                 val names = fileSystem.getFilesInMangaDirectory(url)
-                                    .filterNot { it.name.orEmpty().startsWith('.') }
-                                    .filter {
-                                        it.isDirectory || Archive.isSupported(it) ||
-                                            it.extension.equals("epub", true)
-                                    }
+                                    .filter(Archive::isChapterEntry)
                                     .mapNotNull { file ->
                                         val base = if (file.isDirectory) {
                                             file.name.orEmpty()
@@ -1074,7 +1071,7 @@ class LocalSource(
         // Persist the order-by selection chosen in the filter sheet globally
         persistOrderBySelection(filters)
 
-        val sortByTitle = orderByIndexPreference.get() == 0
+        val orderByIndex = orderByIndexPreference.get()
         val ascending = orderByAscendingPreference.get()
 
         val lastModifiedLimit = if (latestWindow) {
@@ -1094,7 +1091,7 @@ class LocalSource(
             cachedPage != null &&
             cachedPage.listing === allEntries &&
             cachedPage.query == query &&
-            cachedPage.sortByTitle == sortByTitle &&
+            cachedPage.orderByIndex == orderByIndex &&
             cachedPage.ascending == ascending &&
             cachedPage.latestWindow == latestWindow
         ) {
@@ -1128,19 +1125,34 @@ class LocalSource(
             mangaEntries = matched.values.toList()
         }
 
-        mangaEntries = if (sortByTitle) {
-            // Same natural comparator used everywhere else by name: digit-leading titles
-            // (e.g. "86", "3月") sort after English/CJK titles.
-            if (ascending) {
-                mangaEntries.sortedWith { a, b -> a.title.compareToCaseInsensitiveNaturalOrder(b.title) }
-            } else {
-                mangaEntries.sortedWith { a, b -> b.title.compareToCaseInsensitiveNaturalOrder(a.title) }
+        mangaEntries = when (orderByIndex) {
+            ORDER_BY_TITLE -> {
+                // Same natural comparator used everywhere else by name: digit-leading titles
+                // (e.g. "86", "3月") sort after English/CJK titles.
+                if (ascending) {
+                    mangaEntries.sortedWith { a, b -> a.title.compareToCaseInsensitiveNaturalOrder(b.title) }
+                } else {
+                    mangaEntries.sortedWith { a, b -> b.title.compareToCaseInsensitiveNaturalOrder(a.title) }
+                }
             }
-        } else {
-            if (ascending) {
-                mangaEntries.sortedBy(LocalMangaEntry::latestChapterModified)
-            } else {
-                mangaEntries.sortedByDescending(LocalMangaEntry::latestChapterModified)
+            ORDER_BY_CHAPTER_COUNT -> {
+                // Ties fall back to the name order so equal counts stay in a readable position.
+                val byTitle = Comparator<LocalMangaEntry> { a, b ->
+                    a.title.compareToCaseInsensitiveNaturalOrder(b.title)
+                }
+                val byCount: Comparator<LocalMangaEntry> = if (ascending) {
+                    compareBy { it.chapterCount }
+                } else {
+                    compareByDescending { it.chapterCount }
+                }
+                mangaEntries.sortedWith(byCount.then(byTitle))
+            }
+            else -> {
+                if (ascending) {
+                    mangaEntries.sortedBy(LocalMangaEntry::latestChapterModified)
+                } else {
+                    mangaEntries.sortedByDescending(LocalMangaEntry::latestChapterModified)
+                }
             }
         }
 
@@ -1165,7 +1177,7 @@ class LocalSource(
             cachedDerivedListing = CachedDerivedListing(
                 listing = allEntries,
                 query = query,
-                sortByTitle = sortByTitle,
+                orderByIndex = orderByIndex,
                 ascending = ascending,
                 latestWindow = latestWindow,
                 mangas = derived,
@@ -1669,7 +1681,7 @@ class LocalSource(
 
     private fun readChapterFiles(dir: UniFile): List<UniFile> {
         return fileSystem.getFilesInDirectory(dir)
-            .filter(::isChapterFile)
+            .filter(Archive::isChapterEntry)
     }
 
     private suspend fun readChapterFilesWithRecovery(
@@ -2098,8 +2110,7 @@ class LocalSource(
         if (!snapshot.isAccessible || snapshot.files.isEmpty()) return@withIOContext emptyMap()
         val chapterFiles = snapshot.files
             // Only keep supported formats
-            .filterNot { it.name.orEmpty().startsWith('.') }
-            .filter { it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true) }
+            .filter(Archive::isChapterEntry)
 
         getChapterIndex(manga, chapterFiles)
             .associate { entry -> "${manga.url}/${entry.name}" to entry.pageCount.toLong() }
@@ -2122,8 +2133,7 @@ class LocalSource(
 
         val currentChapterUrls = snapshot.files
             .asSequence()
-            .filterNot { it.name.orEmpty().startsWith('.') }
-            .filter(::isChapterFile)
+            .filter(Archive::isChapterEntry)
             .mapTo(linkedSetOf()) { "$mangaUrl/${it.name.orEmpty()}" }
 
         chapterFileSetChanged(
@@ -2145,8 +2155,7 @@ class LocalSource(
         }
         val chapterFiles = snapshot.files
             // Only keep supported formats
-            .filterNot { it.name.orEmpty().startsWith('.') }
-            .filter(::isChapterFile)
+            .filter(Archive::isChapterEntry)
 
         if (chapterFiles.isEmpty() && existingChapters.isNotEmpty() && !snapshot.isConfirmedEmpty) {
             logcat(LogPriority.WARN) {
@@ -2204,7 +2213,7 @@ class LocalSource(
                 return snapshot.copy(files = recovered, isConfirmedEmpty = false)
             }
             allReadsAccessibleAndEmpty = allReadsAccessibleAndEmpty && snapshot.isAccessible &&
-                (if (confirmEmptyChapters) snapshot.files.none(::isChapterFile) else snapshot.files.isEmpty())
+                (if (confirmEmptyChapters) snapshot.files.none(Archive::isChapterEntry) else snapshot.files.isEmpty())
         }
         return snapshot.copy(
             // Exact child lookups are repeated along with the empty directory query. Only then is
@@ -2214,7 +2223,7 @@ class LocalSource(
     }
 
     private fun LocalSourceFileSystem.DirectorySnapshot.hasExpectedFiles(confirmEmptyChapters: Boolean): Boolean {
-        return if (confirmEmptyChapters) files.any(::isChapterFile) else files.isNotEmpty()
+        return if (confirmEmptyChapters) files.any(Archive::isChapterEntry) else files.isNotEmpty()
     }
 
     /**
@@ -2232,7 +2241,7 @@ class LocalSource(
                 .asSequence()
                 .mapNotNull { candidate -> runCatching { directory.findFile(candidate) }.getOrNull() }
                 .firstOrNull { candidate ->
-                    runCatching { candidate.exists() && isChapterFile(candidate) }.getOrDefault(false)
+                    runCatching { candidate.exists() && Archive.isChapterEntry(candidate) }.getOrDefault(false)
                 }
         }.distinctBy { it.name }
     }
@@ -2293,11 +2302,6 @@ class LocalSource(
             logcat(LogPriority.ERROR, e) { "Failed to load persisted local chapter names" }
             emptyMap()
         }
-    }
-
-    private fun isChapterFile(file: UniFile): Boolean {
-        return !file.name.orEmpty().startsWith('.') &&
-            (file.isDirectory || Archive.isSupported(file) || file.extension.equals("epub", true))
     }
 
     // Filters
@@ -2383,6 +2387,12 @@ class LocalSource(
         private const val MAX_CONCURRENT_CHAPTER_INDEX_BUILDS = 16
         private const val MAX_CONCURRENT_CHAPTER_CHANGE_SCANS = 16
         private const val CHAPTER_INDEX_SAVE_DEBOUNCE_MILLIS = 750L
+        // Order-by selections of the local source filter sheet. Indices are persisted, so only
+        // append new values.
+        private const val ORDER_BY_TITLE = 0
+        private const val ORDER_BY_DATE = 1
+        private const val ORDER_BY_CHAPTER_COUNT = 2
+
         private const val LISTING_INDEX_VERSION = 4
         private const val CHAPTER_INDEX_VERSION = 4
         private const val CHAPTER_NAMES_INDEX_VERSION = 2

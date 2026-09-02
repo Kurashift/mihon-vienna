@@ -25,6 +25,7 @@ import eu.kanade.tachiyomi.data.saver.Location
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel
+import eu.kanade.tachiyomi.ui.browse.source.browse.LocalReadingFilter
 import eu.kanade.tachiyomi.ui.reader.loader.ArchivePageLoader
 import eu.kanade.tachiyomi.ui.reader.loader.ChapterLoader
 import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
@@ -961,13 +962,13 @@ class ReaderViewModel @JvmOverloads constructor(
         val source = sourceManager.getOrStub(currentManga.source)
         if (source !is LocalSource) return null
 
-        val readingFilter = readReadingFilter(currentManga.source)
+        val readingFilter = LocalReadingFilter.read(currentManga.source)
         val base = withIOContext {
             runCatching {
                 mangaRepository.getMangaProgressBySourceAsFlow(currentManga.source).first()
             }.getOrDefault(emptyList())
         }.filter {
-            matchesReadingFilter(readingFilter, it.progress)
+            LocalReadingFilter.matches(readingFilter, it.progress)
         }
         if (base.isEmpty()) return null
 
@@ -986,28 +987,6 @@ class ReaderViewModel @JvmOverloads constructor(
             chapterId = Chapter::id,
         )
         return resolveRandomJumpTarget(available, chaptersByMangaId)
-    }
-
-    /**
-     * Reads the last-used reading filter for [sourceId] from preferences, matching the
-     * browse list so a random jump stays inside the pool the user was browsing.
-     */
-    private fun readReadingFilter(sourceId: Long): BrowseSourceViewModel.ReadingFilter {
-        val raw = Injekt.get<PreferenceStore>()
-            .getString(READING_FILTER_PREF_PREFIX + sourceId, BrowseSourceViewModel.ReadingFilter.ALL.name)
-            .get()
-        return runCatching { BrowseSourceViewModel.ReadingFilter.valueOf(raw) }
-            .getOrDefault(BrowseSourceViewModel.ReadingFilter.ALL)
-    }
-
-    private fun matchesReadingFilter(
-        filter: BrowseSourceViewModel.ReadingFilter,
-        progress: MangaProgress,
-    ): Boolean = when (filter) {
-        BrowseSourceViewModel.ReadingFilter.ALL -> true
-        BrowseSourceViewModel.ReadingFilter.UNREAD -> !progress.hasFinished
-        BrowseSourceViewModel.ReadingFilter.IN_PROGRESS -> progress.hasBeenRead && !progress.hasFinished
-        BrowseSourceViewModel.ReadingFilter.FINISHED -> progress.hasFinished
     }
 
     /**
@@ -1510,9 +1489,6 @@ class ReaderViewModel @JvmOverloads constructor(
         data class CopyImage(val uri: Uri) : Event
     }
 }
-
-/** Preference key prefix for the browse list reading filter, keyed by source id. */
-private const val READING_FILTER_PREF_PREFIX = "browse_reading_filter_"
 
 private data class RandomJumpPreload(
     val manga: Manga,

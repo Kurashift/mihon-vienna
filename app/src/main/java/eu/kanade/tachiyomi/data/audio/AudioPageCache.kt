@@ -21,11 +21,17 @@ class AudioPageCache {
 
     fun get(key: String): AudioPageSnapshot? = entries[key]
 
-    fun put(key: String, works: List<Work>, totalCount: Int) {
+    /**
+     * @param pinned Marks a page the user drew on purpose and that must be served back unchanged
+     * until they ask for another one. Only the random sort pins pages: a shuffle is a request the
+     * user made, not a feed they are keeping up with.
+     */
+    fun put(key: String, works: List<Work>, totalCount: Int, pinned: Boolean = false) {
         entries[key] = AudioPageSnapshot(
             works = works,
             totalCount = totalCount,
             savedAt = System.currentTimeMillis(),
+            pinned = pinned,
         )
         trim()
     }
@@ -35,6 +41,10 @@ class AudioPageCache {
     }
 
     fun isFresh(snapshot: AudioPageSnapshot): Boolean {
+        // A pinned page answers as fresh for as long as it lives. It is a selection the user is
+        // still working through, and there is no way back to it once an age check discards it —
+        // unlike an ordered list, where a refresh can only ever add newer rows to the same order.
+        if (snapshot.pinned) return true
         return System.currentTimeMillis() - snapshot.savedAt < MAX_AGE.inWholeMilliseconds
     }
 
@@ -42,7 +52,9 @@ class AudioPageCache {
         val excess = entries.size - MAX_CACHED_PAGES
         if (excess <= 0) return
         entries.entries
-            .sortedBy { it.value.savedAt }
+            // Pinned draws go last: evicting one would throw away the user's own selection while
+            // ordinary pages can always be refetched identically.
+            .sortedWith(compareBy({ it.value.pinned }, { it.value.savedAt }))
             .take(excess)
             .forEach { entries.remove(it.key) }
     }
@@ -60,9 +72,13 @@ class AudioPageCache {
     }
 }
 
-/** @property savedAt Epoch millis the page was fetched, used for staleness checks. */
+/**
+ * @property savedAt Epoch millis the page was fetched, used for staleness checks.
+ * @property pinned A user-requested draw that is served back unchanged until it is redrawn.
+ */
 data class AudioPageSnapshot(
     val works: List<Work>,
     val totalCount: Int,
     val savedAt: Long,
+    val pinned: Boolean = false,
 )

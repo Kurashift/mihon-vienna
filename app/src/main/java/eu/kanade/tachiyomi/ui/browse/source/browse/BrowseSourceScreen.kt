@@ -563,14 +563,21 @@ data class BrowseSourceScreen(
                 onWebViewClick = onWebViewClick,
                 onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
                 onLocalSourceHelpClick = onHelpClick,
-                onMangaClick = {
+                onMangaClick = { manga ->
+                    // Hand over the whole filtered result set so random keeps walking what the
+                    // list shows. Fall back to the loaded page only while the pool is still
+                    // being resolved, so the button is never left without candidates.
+                    val candidates = viewModel.filteredMangaIds.value
+                        .ifEmpty {
+                            mangaList.itemSnapshotList.items
+                                .filterIsInstance<BrowseSourceUiModel.Item>()
+                                .map { item -> item.manga.id }
+                        }
                     navigator.push(
                         MangaScreen(
-                            it.id,
+                            manga.id,
                             true,
-                            randomCandidates = mangaList.itemSnapshotList.items
-                                .filterIsInstance<BrowseSourceUiModel.Item>()
-                                .map { manga -> manga.manga.id },
+                            randomCandidates = candidates,
                         ),
                     )
                 },

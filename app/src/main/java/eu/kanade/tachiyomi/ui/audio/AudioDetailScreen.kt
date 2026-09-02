@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,9 +18,7 @@ import eu.kanade.presentation.audio.AudioDetailContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.audio.AudioAccountProgress
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
-import eu.kanade.tachiyomi.data.audio.AudioCategoryCache
 import eu.kanade.tachiyomi.data.audio.AudioCategoryField
-import eu.kanade.tachiyomi.data.audio.AudioCategoryRef
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
@@ -31,13 +28,10 @@ import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
@@ -61,7 +55,6 @@ class AudioDetailScreen(
         val isFavorite by viewModel.isFavorite.collectAsState()
         val addedToPlaylistText = stringResource(MR.strings.audio_added_to_playlist)
         val removedFromPlaylistText = stringResource(MR.strings.audio_removed_from_playlist)
-        val scope = rememberCoroutineScope()
 
         fun toastPlaylistChange(added: Boolean) {
             Toast.makeText(
@@ -80,19 +73,7 @@ class AudioDetailScreen(
             if (finishActivityOnBack) activity?.finish()
         }
 
-        // Resolve the tapped dictionary entry to a backend id (same route as the category screen,
-        // cacheable id endpoint) and only fall back to the legacy $name$ parse when the on-disk
-        // dictionaries cannot pin it down to a single entry.
-        fun navigateCategory(field: AudioCategoryField, name: String) {
-            scope.launch {
-                val ref = withContext(Dispatchers.IO) { viewModel.resolveRef(field, name) }
-                if (ref != null) {
-                    navigator.push(AudioBrowseScreen(categoryTitle = name, initialCategory = ref))
-                } else {
-                    navigator.push(AudioBrowseScreen(categoryTitle = name, initialFilter = field.legacyKeyword(name)))
-                }
-            }
-        }
+        val onOpenCategory = rememberCategoryNavigator(navigator)
 
         if (finishActivityOnBack) {
             BackHandler(onBack = ::navigateBack)
@@ -141,9 +122,9 @@ class AudioDetailScreen(
                 toastPlaylistChange(viewModel.toggleFolderPlaylist(folderPath))
             },
             onToggleFavorite = { viewModel.toggleFavorite(work) },
-            onClickCircle = { name -> navigateCategory(AudioCategoryField.CIRCLE, name) },
-            onClickVa = { name -> navigateCategory(AudioCategoryField.VA, name) },
-            onClickTag = { name -> navigateCategory(AudioCategoryField.TAG, name) },
+            onClickCircle = { name -> onOpenCategory(AudioCategoryField.CIRCLE, name) },
+            onClickVa = { name -> onOpenCategory(AudioCategoryField.VA, name) },
+            onClickTag = { name -> onOpenCategory(AudioCategoryField.TAG, name) },
         )
     }
 }
@@ -162,7 +143,6 @@ class AudioDetailViewModel(
     private val favoriteStore: AudioFavoriteStore = Injekt.get(),
     private val accountSync: AudioAccountSync = Injekt.get(),
     private val basePreferences: BasePreferences = Injekt.get(),
-    private val categoryCache: AudioCategoryCache = Injekt.get(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AudioDetailState())
@@ -276,33 +256,5 @@ class AudioDetailViewModel(
             .filter { it.mediaStreamUrl in storedUrls }
             .map { it.mediaStreamUrl }
             .toSet()
-    }
-
-    /**
-     * Resolves a dictionary entry name to its backend id so the detail page navigates the same way
-     * as the category screen: an id filter on the cacheable endpoint instead of re-parsing the
-     * name server-side. Returns null when the name is missing from the on-disk dictionaries or
-     * matches more than one entry, in which case the caller keeps the legacy `$name$` route — the
-     * fallback never regresses, it just skips the optimisation.
-     */
-    suspend fun resolveRef(field: AudioCategoryField, name: String): AudioCategoryRef? {
-        val snapshot = categoryCache.read() ?: return null
-        return when (field) {
-            AudioCategoryField.CIRCLE ->
-                snapshot.circles
-                    .filter { it.name == name }
-                    .singleOrNull()
-                    ?.let { AudioCategoryRef(field, it.id.toString(), name) }
-            AudioCategoryField.VA ->
-                snapshot.vas
-                    .filter { it.name == name }
-                    .singleOrNull()
-                    ?.let { AudioCategoryRef(field, it.id, name) }
-            AudioCategoryField.TAG ->
-                snapshot.tags
-                    .filter { it.name == name }
-                    .singleOrNull()
-                    ?.let { AudioCategoryRef(field, it.id.toString(), name) }
-        }
     }
 }

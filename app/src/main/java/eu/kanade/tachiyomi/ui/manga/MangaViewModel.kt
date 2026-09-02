@@ -41,6 +41,7 @@ import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.ui.browse.source.browse.LocalReadingFilter
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.util.chapter.getFirstChapter
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
@@ -110,7 +111,7 @@ import uy.kohesive.injekt.api.get
 class MangaViewModel(
     private val context: Context,
     private val mangaId: Long,
-    private val randomCandidates: List<Long> = emptyList(),
+    val randomCandidates: List<Long> = emptyList(),
     private val isFromSource: Boolean,
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val basePreferences: BasePreferences = Injekt.get(),
@@ -768,11 +769,22 @@ class MangaViewModel(
             randomSelectionCooldown.pickManga(randomCandidates, manga.id)?.let { return it }
         }
 
-        // Fallback: pick from the whole local library (e.g. opened from home/updates).
-        // Query the database directly instead of rescanning the archive folders so the
-        // button stays responsive even with hundreds of local series.
+        // Fallback: pick from the whole local library (e.g. opened from home/updates), where
+        // there is no browse list to inherit. Query the database directly instead of rescanning
+        // the archive folders so the button stays responsive even with hundreds of local series.
+        //
+        // The reading filter is still honoured so "Unread" stays unread whichever screen the
+        // user started from. Only rows with chapters come back, so a manga whose files were
+        // deleted leaves no row and cannot be opened into an empty details page.
         val ids = withIOContext {
-            runCatching { mangaRepository.getLocalMangaIds() }.getOrDefault(emptyList())
+            runCatching { mangaRepository.getMangaProgressBySource(LocalSource.ID) }
+                .getOrDefault(emptyList())
+                .let { progress ->
+                    LocalReadingFilter.randomPickIds(
+                        progress,
+                        LocalReadingFilter.read(LocalSource.ID),
+                    )
+                }
         }
         return randomSelectionCooldown.pickManga(ids, manga.id)
     }

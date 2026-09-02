@@ -119,12 +119,12 @@ fun BrowseSourceToolbar(
                             content = { dismiss ->
                                 val actions = buildList {
                                     if (isLocalSource) {
-                                        onImportLocalChapters?.let {
-                                            add(stringResource(MR.strings.action_import_local_chapters) to it)
-                                        }
                                         onFilterClick?.let { add(stringResource(MR.strings.action_sort) to it) }
                                         onRefreshChapters?.let {
-                                            add(stringResource(MR.strings.action_refresh_all_chapters) to it)
+                                            add(stringResource(MR.strings.action_refresh_all_chapters_short) to it)
+                                        }
+                                        onImportLocalChapters?.let {
+                                            add(stringResource(MR.strings.action_import_local_chapters_short) to it)
                                         }
                                     } else {
                                         add(stringResource(MR.strings.action_open_in_web_view) to onWebViewClick)

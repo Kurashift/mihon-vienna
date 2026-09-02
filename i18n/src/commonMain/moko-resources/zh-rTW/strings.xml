@@ -39,6 +39,9 @@
     <string name="action_delete">刪除</string>
     <string name="action_update_library">更新書櫃</string>
     <string name="action_refresh_all_chapters">更新所有篇目</string>
+    <string name="action_refresh_all_chapters_short">重新整理</string>
+    <string name="action_import_local_chapters_short">匯入本地</string>
+    <string name="chapter_title_translations_short">匯入匯出譯名</string>
     <string name="local_source_refresh_checking">正在翻閱本地書架…</string>
     <string name="local_source_refresh_checking_progress">正在核對漫畫：%1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">正在整理有變化的漫畫：%1$d/%2$d</string>
@@ -595,6 +598,7 @@
     <string name="on">開啟</string>
     <string name="restrictions">限制：%s</string>
     <string name="local_filter_order_by">排序</string>
+    <string name="local_filter_order_by_count">篇數</string>
     <string name="local_invalid_format">無效的篇目格式</string>
     <string name="action_display_local_badge">本機來源</string>
     <string name="information_empty_category_dialog">你目前沒有任何類別</string>

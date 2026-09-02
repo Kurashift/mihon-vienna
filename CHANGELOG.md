@@ -10,6 +10,27 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Fixed` - for any bug fixes.
 - `Other` - for technical stuff.
 
+## [v2.2.1] - 2026-09-02
+### Added
+- Local source: a "Chapter count" option in the order-by filter, so a shelf can be sorted by how many chapters a manga has
+- ASMR: tags on a work card are tappable and open that tag's works
+
+### Improved
+- Random manga now walks the whole filtered result instead of only the pages already loaded, so it stops offering the same first entries
+- ASMR: each tab remembers its own sort, and a tab is named after the sort it is using
+- ASMR: pull to refresh now reaches the backend, so a random listing can actually be redrawn
+- Update prompt is now a compact dialog that shows the changelog inline
+- Shorter labels in the manga details and local browse menus, with the refresh entry moved up
+
+### Fixed
+- Fixed local manga whose filename starts with dots being treated as hidden files and never shown, which dropped works whose title begins with an ellipsis
+- Fixed random manga opening a leftover entry whose files were already deleted, landing on a blank details screen
+- Fixed work cards without tags rendering taller than the rest because their tag strip was dropped
+- Fixed ASMR favorites being silently re-shuffled by a background reload
+
+### Other
+- Chapter-recognition rules shared by scanning, page counts, covers and deletion now live in one place, so the four callers cannot disagree about what counts as a chapter
+
 ## [v2.2.0] - 2026-09-01
 ### Added
 - Bottom-left locate button now supports gestures: swipe up for a random good doujin, swipe right for a random manga; it stays visible as a dice fallback when there is nothing to locate
