@@ -1,17 +1,22 @@
-"""发布 GitHub Release：更新说明正文，并上传指定 APK 附件。
+"""发布 GitHub Release：创建或更新 Release，写说明正文，并上传指定 APK 附件。
 
 用法：
-    python scripts/publish_release.py v2.2.0 arm64-v8a x86_64
+    python scripts/publish_release.py v2.2.1 arm64-v8a armeabi-v7a x86_64 universal
 
+- Release 不存在时自动创建（非 draft、非 prerelease），已存在则只更新正文，可重复运行
 - 正文取自 docs/release-post-<tag>.md（去掉一级标题，GitHub 会自己显示标题）
-- APK 取自 app/build/outputs/apk/vienna/MihonVienna-<versionName>-<abi>.apk
+- APK 取自 app/build/outputs/apk/vienna/MihonVienna-<versionName>-<abi>.apk，
+  按语义版本号排序取最新版，不会因 2.10.0 < 2.2.1 的字符串比较而误传旧包
 - 同名的旧附件会先删除再上传，重复运行是幂等的
 - Token 从 secrets.properties 读取，绝不写死在脚本里，也不入库
+
+完整发布流程见 docs/release-process.md。
 """
 
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 import requests
@@ -21,8 +26,20 @@ REPO = "Kurashift/mihon-vienna"
 API = "https://api.github.com"
 APK_DIR = ROOT / "app" / "build" / "outputs" / "apk" / "vienna"
 
-# abi -> 上传时的 Content-Type 与展示名后缀
 APK_MIME = "application/vnd.android.package-archive"
+
+# 文件名里的版本号，如 MihonVienna-2.2.1-arm64-v8a.apk -> (2, 2, 1)
+APK_VERSION = re.compile(r"MihonVienna-(\d+)\.(\d+)\.(\d+)-")
+
+
+def apk_sort_key(apk: pathlib.Path) -> tuple[int, int, int]:
+    """Sort APKs by semantic version rather than by file name.
+
+    A plain string sort would rank 2.10.0 below 2.2.1 ('1' < '2'), which quietly uploads
+    the older build the moment the minor version reaches two digits.
+    """
+    match = APK_VERSION.search(apk.name)
+    return (0, 0, 0) if match is None else tuple(map(int, match.groups()))
 
 
 def read_token() -> str:
@@ -64,10 +81,28 @@ def main() -> None:
     auth = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
 
     release = requests.get(f"{API}/repos/{REPO}/releases/tags/{tag}", headers=auth, timeout=60)
-    if release.status_code != 200:
-        sys.exit(f"找不到 Release {tag}（HTTP {release.status_code}）：{release.text[:300]}")
-    release = release.json()
-    print(f"Release {tag}: {release['html_url']}")
+    if release.status_code == 200:
+        release = release.json()
+        print(f"Release {tag} 已存在：{release['html_url']}")
+    else:
+        # A new version's Release does not exist yet, so create it instead of failing: the tag
+        # is already pushed by this point, and a release page nobody created is the common case.
+        response = requests.post(
+            f"{API}/repos/{REPO}/releases",
+            headers=auth,
+            json={
+                "tag_name": tag,
+                "target_commitish": "main",
+                "name": f"Mihon Vienna {tag.lstrip('v')}",
+                "body": read_body(tag),
+                "draft": False,
+                "prerelease": False,
+            },
+            timeout=120,
+        )
+        response.raise_for_status()
+        release = response.json()
+        print(f"已创建 Release {tag}: {release['html_url']}")
 
     response = requests.patch(
         f"{API}/repos/{REPO}/releases/{release['id']}",
@@ -78,14 +113,22 @@ def main() -> None:
     response.raise_for_status()
     print("  说明正文已更新")
 
+    # Re-read so the asset list reflects the freshly created release too.
+    release = requests.get(
+        f"{API}/repos/{REPO}/releases/tags/{tag}", headers=auth, timeout=60
+    ).json()
     existing = {asset["name"]: asset["id"] for asset in release["assets"]}
     upload_url = release["upload_url"].split("{")[0]
 
     for abi in abis:
-        candidates = sorted(APK_DIR.glob(f"MihonVienna-*-{abi}.apk"))
+        candidates = sorted(
+            APK_DIR.glob(f"MihonVienna-*-{abi}.apk"),
+            key=apk_sort_key,
+        )
         if not candidates:
             sys.exit(f"找不到 {abi} 的 APK，请先执行 gradlew :app:assembleVienna")
         apk = candidates[-1]
+        print(f"  {abi}: {apk.name}")
 
         if apk.name in existing:
             requests.delete(
