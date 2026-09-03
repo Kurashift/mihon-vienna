@@ -119,13 +119,23 @@ class LocalChapterTransferService(
         targetMangaId: Long,
         onProgress: (Progress) -> Unit = {},
     ): MoveResult = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val target = mangaRepository.getMangaById(targetMangaId)
+        // The target is picked moments earlier, but a local directory that disappears takes its
+        // row with it. There is nothing to move into in that case, so fail the transfer instead
+        // of reading a null row.
+        val target = mangaRepository.getMangaByIdOrNull(targetMangaId)
+            ?: error("Target manga $targetMangaId no longer exists")
         require(target.source == LocalSource.ID)
         var moved = 0
         var skipped = 0
         var failed = 0
         chapters.forEachIndexed { index, chapter ->
-            val source = mangaRepository.getMangaById(chapter.mangaId)
+            val source = mangaRepository.getMangaByIdOrNull(chapter.mangaId)
+            if (source == null) {
+                // The source directory of this chapter is gone; the rest of the batch still moves.
+                failed++
+                onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
+                return@forEachIndexed
+            }
             if (source.id == target.id) {
                 skipped++
                 onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
@@ -304,7 +314,8 @@ class LocalChapterTransferService(
         uris: List<Uri>,
         targetMangaId: Long,
     ): ImportPreview = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val target = mangaRepository.getMangaById(targetMangaId)
+        val target = mangaRepository.getMangaByIdOrNull(targetMangaId)
+            ?: error("Target manga $targetMangaId no longer exists")
         require(target.source == LocalSource.ID) { "Target manga is not local" }
         val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
         val existingNames = targetDir?.listFiles().orEmpty()
@@ -344,7 +355,8 @@ class LocalChapterTransferService(
         onProgress: (Progress) -> Unit,
         invalidateListing: Boolean,
     ): Result = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val target = mangaRepository.getMangaById(targetMangaId)
+        val target = mangaRepository.getMangaByIdOrNull(targetMangaId)
+            ?: error("Target manga $targetMangaId no longer exists")
         require(target.source == LocalSource.ID) { "Target manga is not local" }
         val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
             ?: fileSystem.getBaseDirectory()?.createDirectory(target.url)

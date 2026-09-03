@@ -87,6 +87,11 @@ SELECT _id
 FROM mangas
 WHERE source = 0;
 
+getMangaUrlsByIds:
+SELECT _id, url
+FROM mangas
+WHERE _id IN :ids;
+
 getReadMangaNotInLibrary:
 SELECT *
 FROM mangas
@@ -125,6 +130,12 @@ AND source = :sourceId;
 
 getFavoriteIdsBySourceId:
 SELECT _id
+FROM mangas
+WHERE favorite = 1
+AND source = :sourceId;
+
+getFavoriteUrlsBySourceId:
+SELECT url
 FROM mangas
 WHERE favorite = 1
 AND source = :sourceId;

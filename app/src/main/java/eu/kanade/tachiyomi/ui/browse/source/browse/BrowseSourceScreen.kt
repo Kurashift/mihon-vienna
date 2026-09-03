@@ -19,11 +19,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Done
+import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.RemoveDone
@@ -58,6 +62,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,6 +74,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.CreationExtras
@@ -121,12 +127,20 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.source.local.LocalSource
+import eu.kanade.tachiyomi.source.model.Filter as SourceModelFilter
+
+/**
+ * Scroll-to-top requests for a source screen, provided by whoever owns the screen.
+ *
+ * A screen is serialized together with the navigator state, so a flow cannot travel as one of its
+ * arguments: writing it breaks the whole save on the next stop.
+ */
+val LocalScrollToTopRequests = staticCompositionLocalOf<StateFlow<Long>?> { null }
 
 data class BrowseSourceScreen(
     val sourceId: Long,
     private val listingQuery: String?,
     private val isRoot: Boolean = false,
-    private val scrollToTopRequests: StateFlow<Long>? = null,
 ) : Screen(), AssistContentScreen {
 
     private var assistUrl: String? = null
@@ -157,13 +171,16 @@ data class BrowseSourceScreen(
         val markFilter by viewModel.markFilter.collectAsStateWithLifecycle()
         val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
         val refreshProgress by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
+        val localSort by viewModel.localSort.collectAsStateWithLifecycle()
         val localSourceChanged by viewModel.localSourceChanged.collectAsStateWithLifecycle()
         val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
             .collectAsStateWithLifecycle(initialValue = null)
         val activeTransferStatus = transferStatus
             ?.takeUnless { it.state.isFinished }
             ?.takeIf { viewModel.source is LocalSource }
-        val scrollToTopRequest = scrollToTopRequests?.collectAsStateWithLifecycle()?.value ?: 0L
+        val scrollToTopRequest = LocalScrollToTopRequests.current
+            ?.collectAsStateWithLifecycle()
+            ?.value ?: 0L
 
         LaunchedEffect(viewModel) {
             viewModel.onScreenVisible()
@@ -299,7 +316,6 @@ data class BrowseSourceScreen(
                         } else {
                             null
                         },
-                        onFilterClick = viewModel::openFilterSheet,
                         onRefreshChapters = viewModel::refreshAllChapters.takeIf {
                             viewModel.source is LocalSource && activeTransferStatus == null
                         },
@@ -331,7 +347,10 @@ data class BrowseSourceScreen(
                             mangaCount = currentViewMangaCount,
                             readingFilter = readingFilter,
                             browseMode = localBrowseMode,
+                            sort = localSort,
                             onReadingFilterSelected = viewModel::setReadingFilter,
+                            onSelectSortKey = viewModel::setLocalSortKey,
+                            onToggleSortDirection = viewModel::toggleLocalSortDirection,
                             onBrowseModeSelected = { mode ->
                                 when (mode) {
                                     LocalBrowseMode.ALL -> viewModel.setLocalListFilter(MarkFilter.NONE)
@@ -746,7 +765,10 @@ private fun LocalSourceControlBar(
     mangaCount: Int,
     readingFilter: ReadingFilter,
     browseMode: LocalBrowseMode,
+    sort: SourceModelFilter.Sort.Selection?,
     onReadingFilterSelected: (ReadingFilter) -> Unit,
+    onSelectSortKey: (Int) -> Unit,
+    onToggleSortDirection: () -> Unit,
     onBrowseModeSelected: (LocalBrowseMode) -> Unit,
 ) {
     Surface(
@@ -758,18 +780,40 @@ private fun LocalSourceControlBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            BrowseFilterMenuChip(
-                value = readingFilter,
-                options = ReadingFilter.entries,
-                selected = true,
-                imageVector = ReadingFilter::imageVector,
-                label = ReadingFilter::label,
-                onSelect = onReadingFilterSelected,
-            )
-            LocalBrowseModeButtons(
-                value = browseMode,
-                onSelect = onBrowseModeSelected,
-            )
+            // The whole cluster outgrows a narrow phone once the sort chip is in, so it takes the
+            // slack the count leaves and scrolls there instead of pushing the count off screen.
+            // With room to spare the cluster still sits at the start and the gap stays on the right.
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BrowseFilterMenuChip(
+                    value = readingFilter,
+                    options = ReadingFilter.entries,
+                    // 当前筛选项已由标签文案直接表达（全部/剩余/在读/读完），chip 保持中性外观，不再常亮。
+                    selected = false,
+                    imageVector = ReadingFilter::imageVector,
+                    label = ReadingFilter::label,
+                    onSelect = onReadingFilterSelected,
+                    // 与右侧筛选栏的 36dp 等高、同灰色常态，避免“全部”筛选按钮显得突兀。
+                    height = 36.dp,
+                    neutralPill = true,
+                )
+                LocalBrowseModeButtons(
+                    value = browseMode,
+                    onSelect = onBrowseModeSelected,
+                )
+                sort?.let {
+                    LocalSortChip(
+                        sort = it,
+                        onSelectKey = onSelectSortKey,
+                        onToggleDirection = onToggleSortDirection,
+                    )
+                }
+            }
             Text(
                 text = stringResource(MR.strings.label_manga_count, mangaCount),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -777,7 +821,6 @@ private fun LocalSourceControlBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.End,
-                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -789,9 +832,13 @@ private fun LocalBrowseModeButtons(
     onSelect: (LocalBrowseMode) -> Unit,
 ) {
     val options = LocalBrowseMode.entries.filterNot { it == LocalBrowseMode.CUSTOM }
+    // 左右两枚胶囊（阅读筛选、排序）都用 surfaceContainerHighest；这一组四个按钮是同一
+    // 个分段控件的内页，往回退一级到 surfaceContainer，既不跟隔壁胶囊撞成同一种灰，
+    // 又仍比整条筛选栏（surfaceContainerLow）深一点，分段轮廓不会糊掉。
+    val groupBackground = MaterialTheme.colorScheme.surfaceContainer
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = groupBackground,
             shape = RoundedCornerShape(7.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -810,7 +857,7 @@ private fun LocalBrowseModeButtons(
                             color = if (selected) {
                                 MaterialTheme.colorScheme.secondaryContainer
                             } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
+                                groupBackground
                             },
                             contentColor = if (selected) {
                                 MaterialTheme.colorScheme.onSecondaryContainer
@@ -845,19 +892,33 @@ private fun <T> BrowseFilterMenuChip(
     imageVector: (T) -> ImageVector,
     label: (T) -> StringResource,
     onSelect: (T) -> Unit,
+    height: Dp = FilterChipDefaults.Height,
+    neutralPill: Boolean = false,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val colors = FilterChipDefaults.filterChipColors()
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Box {
             Surface(
-                shape = FilterChipDefaults.shape,
-                color = if (selected) colors.selectedContainerColor else colors.containerColor,
-                contentColor = if (selected) colors.selectedLabelColor else colors.labelColor,
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = selected,
-                ),
+                shape = if (neutralPill) RoundedCornerShape(7.dp) else FilterChipDefaults.shape,
+                color = when {
+                    neutralPill -> MaterialTheme.colorScheme.surfaceContainerHighest
+                    selected -> colors.selectedContainerColor
+                    else -> colors.containerColor
+                },
+                contentColor = when {
+                    neutralPill -> MaterialTheme.colorScheme.onSurfaceVariant
+                    selected -> colors.selectedLabelColor
+                    else -> colors.labelColor
+                },
+                border = if (neutralPill) {
+                    null
+                } else {
+                    FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = selected,
+                    )
+                },
                 modifier = Modifier
                     .widthIn(max = 96.dp)
                     .clickable { menuExpanded = true },
@@ -865,7 +926,7 @@ private fun <T> BrowseFilterMenuChip(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .height(FilterChipDefaults.Height)
+                        .height(height)
                         .padding(FilterChipDefaults.ContentPadding),
                 ) {
                     Icon(
@@ -914,6 +975,132 @@ private fun <T> BrowseFilterMenuChip(
             }
         }
     }
+}
+
+/** Sort keys of the local library, in the order they are offered in the menu. */
+private val LOCAL_SORT_KEYS = listOf(
+    LocalSource.ORDER_BY_TITLE,
+    LocalSource.ORDER_BY_CHAPTER_COUNT,
+    LocalSource.ORDER_BY_DATE,
+)
+
+private fun localSortLabel(index: Int): StringResource = when (index) {
+    LocalSource.ORDER_BY_DATE -> MR.strings.date
+    LocalSource.ORDER_BY_CHAPTER_COUNT -> MR.strings.local_filter_order_by_count
+    else -> MR.strings.title
+}
+
+/**
+ * Ordering control for the local library, styled as a segment of the segmented pill used by
+ * [LocalBrowseModeButtons]. Clicking it opens the menu of sort keys; re-selecting the active key
+ * flips the ordering direction. The selected row shows the direction arrow instead of a checkmark,
+ * and the same small arrow accompanies the label on the pill so the current direction stays visible.
+ */
+@Composable
+private fun LocalSortChip(
+    sort: SourceModelFilter.Sort.Selection,
+    onSelectKey: (Int) -> Unit,
+    onToggleDirection: () -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        TooltipBox(
+            positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+            tooltip = {
+                PlainTooltip {
+                    Text(stringResource(MR.strings.action_sort))
+                }
+            },
+            state = rememberTooltipState(),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                shape = RoundedCornerShape(7.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clickable { menuExpanded = true }
+                        .padding(start = 9.dp, end = 7.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.height(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = localSortIcon(sort.index),
+                            contentDescription = stringResource(localSortLabel(sort.index)),
+                            modifier = Modifier.size(19.dp),
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = stringResource(localSortLabel(sort.index)),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 64.dp),
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = if (sort.ascending) {
+                                Icons.Outlined.ArrowUpward
+                            } else {
+                                Icons.Outlined.ArrowDownward
+                            },
+                            contentDescription = stringResource(
+                                if (sort.ascending) MR.strings.action_asc else MR.strings.action_desc,
+                            ),
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        LOCAL_SORT_KEYS.forEach { key ->
+                            DropdownMenuItem(
+                                text = { Text(text = stringResource(localSortLabel(key))) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = localSortIcon(key),
+                                        contentDescription = null,
+                                    )
+                                },
+                                trailingIcon = if (key == sort.index) {
+                                    {
+                                        Icon(
+                                            imageVector = if (sort.ascending) {
+                                                Icons.Outlined.ArrowUpward
+                                            } else {
+                                                Icons.Outlined.ArrowDownward
+                                            },
+                                            contentDescription = null,
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    if (key == sort.index) {
+                                        onToggleDirection()
+                                    } else {
+                                        onSelectKey(key)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun localSortIcon(index: Int): ImageVector = when (index) {
+    LocalSource.ORDER_BY_DATE -> Icons.Outlined.Event
+    LocalSource.ORDER_BY_CHAPTER_COUNT -> Icons.Outlined.FormatListNumbered
+    else -> Icons.Outlined.SortByAlpha
 }
 
 private enum class LocalBrowseMode {

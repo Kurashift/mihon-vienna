@@ -25,8 +25,12 @@ android {
     defaultConfig {
         applicationId = "app.mihon"
 
-        versionCode = 201
-        versionName = "2.2.1"
+        // Must stay above every versionCode ever installed, not just the one in git history:
+        // a device can carry a locally-built package with a higher code than any pushed tag.
+        // 2.2.1 was first published as 201, then re-published as 203 because a local build
+        // installed on the main device used 202.
+        versionCode = 204
+        versionName = "2.2.2"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")

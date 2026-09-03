@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
@@ -166,15 +167,16 @@ class BrowseSourceViewModel(
     val favoriteIds: StateFlow<Set<Long>> = favoriteIdsInternal
     private var hasLoadedFavoriteSnapshot = false
 
-    init {
-        if (source is LocalSource) {
-            when (mutableState.value.listing) {
-                Listing.Popular -> source.resetOrderBy(popular = true)
-                Listing.Latest -> source.resetOrderBy(popular = false)
-                else -> {}
-            }
-        }
+    /**
+     * Urls of the works of this source that are in the library.
+     *
+     * Only read when [hideInLibraryItems] is on: that is the only case where the toolbar count
+     * has to exclude them, and the shelf addresses entries by url, so the count needs the same
+     * key the pager filters on.
+     */
+    private val favoriteUrlsInternal = MutableStateFlow<Set<String>>(emptySet())
 
+    init {
         mutableState.update {
             var query: String? = null
             var listing = it.listing
@@ -205,6 +207,14 @@ class BrowseSourceViewModel(
     private var lastLocalDirectoryCheckAt = Long.MIN_VALUE
     private var visibleSnapshotRefreshJob: Job? = null
     private val screenVisible = MutableStateFlow(false)
+
+    /**
+     * Set when the local listing changed while this screen was covered by a detail page. A
+     * deletion drops the entry from the listing right away, but the pages already served still
+     * carry it, so they have to be rebuilt when the user comes back.
+     */
+    @Volatile
+    private var pendingListingInvalidation = false
     private val progressSnapshot = MutableStateFlow<List<MangaProgressByMangaId>>(emptyList())
     private val localChapterCounts = MutableStateFlow<Map<String, Long>>(emptyMap())
     private val readingFilterPreference = preferenceStore.getString(
@@ -229,6 +239,17 @@ class BrowseSourceViewModel(
         },
     )
     val markFilter: StateFlow<MarkFilter> = markFilterInternal
+
+    /**
+     * Ordering of the local library, null for any other source.
+     *
+     * The paged list reads it while mapping pages, so a sort change reloads the current listing
+     * exactly once with the new order rather than emitting a stale page first. It is deliberately
+     * not part of the pager's [combine]: those flows produce a brand new paging flow, which would
+     * replay the cached page in the old order before the reload lands.
+     */
+    private val localSortInternal = MutableStateFlow((source as? LocalSource)?.orderBySelection)
+    val localSort: StateFlow<SourceModelFilter.Sort.Selection?> = localSortInternal
 
     /** Live phase of the local chapter refresh, null when no pass is running. */
     sealed interface ChapterRefreshProgress {
@@ -261,6 +282,12 @@ class BrowseSourceViewModel(
         screenVisible.value = true
         if (visibleSnapshotRefreshJob?.isActive == true) return
         visibleSnapshotRefreshJob = viewModelScope.launchIO {
+            // Rebuild once on return rather than while this screen is covered, so the list is
+            // never reloaded behind an open detail page.
+            if (pendingListingInvalidation) {
+                pendingListingInvalidation = false
+                invalidatePagingSources()
+            }
             refreshVisibleSnapshots()
         }
     }
@@ -273,6 +300,11 @@ class BrowseSourceViewModel(
     private suspend fun refreshVisibleSnapshots(forceDirectoryCheck: Boolean = false) = coroutineScope {
         val progress = async { getMangaProgress.awaitForSource(sourceId) }
         val favorites = async { mangaRepository.getFavoriteIdsBySourceId(sourceId).toHashSet() }
+        val favoriteUrls = if (hideInLibraryItems) {
+            async { mangaRepository.getFavoriteUrlsBySourceId(sourceId).toHashSet() }
+        } else {
+            null
+        }
         val local = source as? LocalSource
         val directory = local?.let {
             async { refreshLocalDirectorySnapshot(it, forceDirectoryCheck) }
@@ -283,6 +315,7 @@ class BrowseSourceViewModel(
         val favoritesChanged = hasLoadedFavoriteSnapshot && favoriteIdsInternal.value != favoriteIds
         favoriteIdsInternal.value = favoriteIds
         hasLoadedFavoriteSnapshot = true
+        favoriteUrls?.await()?.let { favoriteUrlsInternal.value = it }
         if (hideInLibraryItems && favoritesChanged) {
             invalidatePagingSources()
         }
@@ -338,15 +371,50 @@ class BrowseSourceViewModel(
         localChapterCounts.value = local.getChapterCounts()
     }
 
+    /**
+     * Database id -> url for every work that currently carries a mark, read back from the
+     * database.
+     *
+     * Marks are stored against the database id while the shelf is addressed by url, so a mark
+     * only reaches an entry through a translation. Taking that translation from
+     * [progressSnapshot] makes every mark depend on when that snapshot happened to be read: a
+     * work whose row moved, appeared or was renamed after the read translates either to nothing
+     * or to the url it used to have, and then quietly drops out of the mark filters while still
+     * being listed with no filter at all. Reading the ids back removes that dependency on
+     * timing — the answer is whatever the database says right now, which is exactly what the
+     * listing is built from.
+     *
+     * [progressSnapshot] is only a trigger here: it is the moment a visit refreshes its data,
+     * which is also the moment a moved work would otherwise keep resolving to its old url.
+     */
+    private val markUrlById: StateFlow<Map<Long, String>> = combine(
+        mangaMarkStore.marks,
+        goodDoujinStore.marks,
+        progressSnapshot,
+    ) { marks, doujins, _ ->
+        val ids = HashSet<Long>(marks.size + doujins.size)
+        marks.mapTo(ids) { it.mangaId }
+        doujins.mapTo(ids) { it.mangaId }
+        ids
+    }
+        .mapLatest { ids ->
+            if (ids.isEmpty()) emptyMap() else mangaRepository.getMangaUrlsByIds(ids)
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     private val progressContext: StateFlow<ProgressContext> = combine(
         progressSnapshot,
         localChapterCounts,
         mangaMarkStore.marks,
         goodDoujinStore.marks,
-    ) { progressList, fsChapterCounts, duplicateMarks, goodDoujinMarks ->
-        val urlByMangaId = progressList.associate { it.mangaId to it.url }
-        val flaggedUrls = duplicateMarks.mapNotNullTo(HashSet()) { urlByMangaId[it.mangaId] }
-        val goodDoujinUrls = goodDoujinMarks.mapNotNullTo(HashSet()) { urlByMangaId[it.mangaId] }
+        markUrlById,
+    ) { progressList, fsChapterCounts, duplicateMarks, goodDoujinMarks, markUrls ->
+        // The database answers first; the snapshot built here only covers the window before that
+        // read lands, so a mark never resolves to nothing while it is still in flight.
+        val snapshotUrlByMangaId = progressList.associate { it.mangaId to it.url }
+        val resolveUrl = { mangaId: Long -> markUrls[mangaId] ?: snapshotUrlByMangaId[mangaId] }
+        val flaggedUrls = duplicateMarks.mapNotNullTo(HashSet()) { resolveUrl(it.mangaId) }
+        val goodDoujinUrls = goodDoujinMarks.mapNotNullTo(HashSet()) { resolveUrl(it.mangaId) }
 
         ProgressContext(
             progressByMangaId = progressList.associate { it.mangaId to it.progress },
@@ -442,7 +510,7 @@ class BrowseSourceViewModel(
                 if (args.idByUrl.isEmpty()) return@withIOContext emptyList()
                 val urls = args.snapshotUrls ?: run {
                     val listing = args.listing as Listing.Search
-                    local.getSearchMangaUrls(listing.query.orEmpty(), listing.filters)
+                    local.getSearchMangaUrls(listing.query.orEmpty())
                 }
                 urls.mapNotNull { url ->
                     if (!matchesListingFilters(
@@ -502,6 +570,32 @@ class BrowseSourceViewModel(
         )
 
     /**
+     * URLs the local listing is narrowed to for the active mark filter, null when no mark
+     * filter narrows it.
+     *
+     * Pushed into [LocalSource] so the pager walks the filtered sequence rather than the whole
+     * library. Without it, a selective filter (two marked entries among hundreds) can only be
+     * rediscovered by walking every page, and every reload — most visibly a sort change — drops
+     * the loaded window back to the first page, so the grid goes empty and spins until the walk
+     * reaches the matches.
+     *
+     * An empty set means the marks have not been read yet or there are none; paging then stays
+     * on the full listing, exactly as before, and the list-side filter still hides non-matches.
+     */
+    private val markUrlFilter: StateFlow<Set<String>?> = combine(
+        filterContext,
+        markFilterInternal,
+    ) { context, markFilter ->
+        when (markFilter) {
+            MarkFilter.NONE -> null
+            MarkFilter.FLAGGED -> context.flaggedUrls.takeIf { it.isNotEmpty() }
+            MarkFilter.GOOD_DOUJIN -> context.goodDoujinUrls.takeIf { it.isNotEmpty() }
+        }
+    }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /**
      * Number of manga entries in the currently displayed list, after applying the
      * active listing (popular/latest/search) and the reading filter. Shown next to
      * the source name in the toolbar so it stays in sync with the filter chips.
@@ -511,13 +605,19 @@ class BrowseSourceViewModel(
             state.map { it.listing }.distinctUntilChanged(),
             source.listingSnapshot,
         ) { listing, snapshot -> listing to snapshot }
+        // The two filters are merged so the combine below keeps the typed overload: its arity
+        // limit is five, and going one over leaves every lambda parameter inferred as Any.
+        val filters = combine(
+            readingFilterInternal,
+            markFilterInternal,
+        ) { readingFilter, markFilter -> readingFilter to markFilter }
         combine(
             listingWithSnapshot,
             progressContext,
-            readingFilterInternal,
-            markFilterInternal,
+            filters,
+            favoriteUrlsInternal,
             screenVisible,
-        ) { (listing, snapshot), context, filter, markFilter, visible ->
+        ) { (listing, snapshot), context, (filter, markFilter), favoriteUrls, visible ->
             if (visible) {
                 CountFilterArgs(
                     listing = listing,
@@ -528,6 +628,7 @@ class BrowseSourceViewModel(
                     },
                     readingFilter = filter,
                     context = context.toCountContext(filter, markFilter),
+                    favoriteUrls = favoriteUrls,
                 )
             } else {
                 null
@@ -538,11 +639,17 @@ class BrowseSourceViewModel(
             .mapLatest { args ->
                 val urls = args.listingUrls ?: withIOContext {
                     val listing = args.listing as Listing.Search
-                    source.getSearchMangaUrls(listing.query.orEmpty(), listing.filters)
+                    source.getSearchMangaUrls(listing.query.orEmpty())
                 }
                 urls.count { url ->
-                    args.context.matchesReadingFilter(args.readingFilter, url) &&
-                        args.context.matchesMarkFilter(url)
+                    // Same rule the pager applies to every loaded item, so the number next to
+                    // the source name stays the count of what is actually on the shelf.
+                    if (hideInLibraryItems && url in args.favoriteUrls) {
+                        false
+                    } else {
+                        args.context.matchesReadingFilter(args.readingFilter, url) &&
+                            args.context.matchesMarkFilter(url)
+                    }
                 }
             }
             .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
@@ -550,9 +657,32 @@ class BrowseSourceViewModel(
         MutableStateFlow(0)
     }
 
-    private val pagerCache = ConcurrentHashMap<Listing, Flow<PagingData<Manga>>>()
+    private val pagerCache = ConcurrentHashMap<PagerCacheKey, Flow<PagingData<Manga>>>()
 
     private val pagingSources = ConcurrentHashMap.newKeySet<SourcePagingSource>()
+
+    /**
+     * Identity of a non-search pager: the listing plus the placeholders decision it was built
+     * with. That decision is read at build time, so it is part of the cache key: toggling a
+     * narrowing filter has to swap in a pager built with the matching configuration.
+     */
+    private data class PagerCacheKey(val listing: Listing, val placeholdersEnabled: Boolean)
+
+    /**
+     * Whether the paging pipeline applies a client-side filter that can drop items from loaded
+     * pages: the reading filter, the mark filter, or "hide in-library items". Placeholder slots
+     * are sized by the raw listing total, so while such a filter is active they can never be
+     * filled with matching items: after every listing reload (most visibly a sort change) the
+     * grid would flash gray placeholder cards sized by the unfiltered library, which then only
+     * disappear as the pager crawls through every remaining page. While a filter narrows the
+     * list, placeholders are therefore turned off and the presented list is exactly the
+     * filtered result.
+     */
+    private fun clientFilterNarrows(readingFilter: ReadingFilter, markFilter: MarkFilter): Boolean {
+        return hideInLibraryItems ||
+            readingFilter != ReadingFilter.ALL ||
+            markFilter != MarkFilter.NONE
+    }
 
     /**
      * Invalidates every paging source created so far (current listing, cached Popular/Latest
@@ -565,13 +695,13 @@ class BrowseSourceViewModel(
         pagingSources.forEach { it.invalidate() }
     }
 
-    private fun buildPager(listing: Listing): Flow<PagingData<Manga>> {
+    private fun buildPager(listing: Listing, placeholdersEnabled: Boolean): Flow<PagingData<Manga>> {
         val pageSize = if (source is LocalSource) LocalSource.PAGE_SIZE else 25
         return Pager(
             PagingConfig(
                 pageSize = pageSize,
                 initialLoadSize = pageSize,
-                enablePlaceholders = source is LocalSource,
+                enablePlaceholders = source is LocalSource && placeholdersEnabled,
             ),
         ) {
             getRemoteManga(sourceId, listing.query ?: "", listing.filters).also {
@@ -584,20 +714,60 @@ class BrowseSourceViewModel(
             .cachedIn(viewModelScope)
     }
 
-    private fun pagerFor(listing: Listing): Flow<PagingData<Manga>> {
+    private fun pagerFor(listing: Listing, placeholdersEnabled: Boolean): Flow<PagingData<Manga>> {
         return if (listing is Listing.Search) {
-            buildPager(listing)
+            buildPager(listing, placeholdersEnabled)
         } else {
-            pagerCache.getOrPut(listing) {
-                buildPager(listing)
+            pagerCache.getOrPut(PagerCacheKey(listing, placeholdersEnabled)) {
+                buildPager(listing, placeholdersEnabled)
             }
         }
     }
 
+    init {
+        // A page is a slice of the narrowed listing once the mark filter is pushed down, so
+        // changing it invalidates the pages already on screen: an entry marked after the first
+        // load would otherwise stay invisible until some unrelated reload rebuilt them. The
+        // first value only seeds the source, which has not served a page yet.
+        viewModelScope.launchIO {
+            var seeded = false
+            markUrlFilter.collect { urls ->
+                val local = source as? LocalSource ?: return@collect
+                local.setListingUrlFilter(urls)
+                if (seeded) {
+                    invalidatePagingSources()
+                }
+                seeded = true
+            }
+        }
+
+        // Deleting every chapter of a work takes its directory and its database row with it, and
+        // the listing drops the entry immediately. The pages already served still hold that card,
+        // so the rebuild is deferred to the moment this screen is shown again: a deleted work
+        // then disappears on return instead of lingering as a blank card until the next rescan.
+        viewModelScope.launchIO {
+            val local = source as? LocalSource ?: return@launchIO
+            local.listingSnapshot
+                .map { it.allUrls }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { pendingListingInvalidation = true }
+        }
+    }
+
     val mangaPagerFlowFlow = combine(
-        state.map { it.listing }
-            .distinctUntilChanged()
-            .map { listing -> listing to pagerFor(listing) },
+        // The pager is selected by listing AND by whether a narrowing filter is active: a filter
+        // toggle swaps in a pager built with matching placeholders, so the presented list never
+        // carries phantom slots sized by the unfiltered listing. Sort is deliberately absent
+        // (see [localSortInternal]).
+        combine(
+            state.map { it.listing }.distinctUntilChanged(),
+            readingFilterInternal,
+            markFilterInternal,
+        ) { listing, readingFilter, markFilter ->
+            PagerCacheKey(listing, !clientFilterNarrows(readingFilter, markFilter))
+        }
+            .map { key -> key.listing to pagerFor(key.listing, key.placeholdersEnabled) },
         filterContext,
         readingFilterInternal,
         markFilterInternal,
@@ -634,7 +804,13 @@ class BrowseSourceViewModel(
                 }
                 readingMatch && markMatch
             }
-            if (source is LocalSource && listing is Listing.Latest) {
+            // Date headers group runs of consecutive entries, so they only read as sections while
+            // the list really is ordered by date. Under any other sort the dates jump around and
+            // every entry would open its own header.
+            val orderByIndex = localSortInternal.value?.index
+            if (source is LocalSource && listing is Listing.Latest &&
+                orderByIndex == LocalSource.ORDER_BY_DATE
+            ) {
                 items.insertSeparators<BrowseSourceUiModel.Item, BrowseSourceUiModel> { before, after ->
                     val next = after ?: return@insertSeparators null
                     val startsNewDate = before == null ||
@@ -667,18 +843,10 @@ class BrowseSourceViewModel(
     }
 
     fun setListing(listing: Listing) {
-        if (source is LocalSource) {
-            when (listing) {
-                Listing.Popular -> source.resetOrderBy(popular = true)
-                Listing.Latest -> source.resetOrderBy(popular = false)
-                else -> {}
-            }
-        }
         mutableState.update {
             it.copy(
                 listing = listing,
                 toolbarQuery = null,
-                filters = if (source is LocalSource) source.getFilterList() else it.filters,
             )
         }
     }
@@ -703,6 +871,35 @@ class BrowseSourceViewModel(
         if (source !is LocalSource) return
         setMarkFilter(MarkFilter.NONE)
         setListing(Listing.Latest)
+    }
+
+    /**
+     * Orders the local library by [index], keeping the current direction. Re-picking the key
+     * already in use changes nothing, so it does not reload the list either.
+     */
+    fun setLocalSortKey(index: Int) {
+        val local = source as? LocalSource ?: return
+        val current = localSortInternal.value ?: return
+        if (current.index == index) return
+        applyLocalSort(local, index, current.ascending)
+    }
+
+    /** Flips the local library's ordering between ascending and descending. */
+    fun toggleLocalSortDirection() {
+        val local = source as? LocalSource ?: return
+        val current = localSortInternal.value ?: return
+        applyLocalSort(local, current.index, !current.ascending)
+    }
+
+    /**
+     * Persists the new ordering and reloads the pages that are already on screen. Writing the
+     * preference before invalidating is what makes the reload pick the new order up; the derived
+     * listing cache keys on both fields, so it recomputes instead of serving the old sequence.
+     */
+    private fun applyLocalSort(local: LocalSource, index: Int, ascending: Boolean) {
+        local.setOrderBy(index, ascending)
+        localSortInternal.value = local.orderBySelection
+        invalidatePagingSources()
     }
 
     private fun matchesReadingFilter(filter: ReadingFilter, progress: MangaProgress): Boolean {
@@ -740,9 +937,6 @@ class BrowseSourceViewModel(
     }
 
     fun setFilters(filters: FilterList) {
-        if (source is LocalSource) {
-            source.persistOrderBySelection(filters)
-        }
         mutableState.update {
             it.copy(
                 filters = filters,
@@ -855,6 +1049,9 @@ class BrowseSourceViewModel(
                     if (new.favorite) ids + new.id else ids - new.id
                 }
                 if (hideInLibraryItems) {
+                    favoriteUrlsInternal.update { urls ->
+                        if (new.favorite) urls + new.url else urls - new.url
+                    }
                     invalidatePagingSources()
                 }
             }
@@ -1249,7 +1446,7 @@ class BrowseSourceViewModel(
             when (listing) {
                 is Listing.Popular -> local.getPopularMangaUrls()
                 is Listing.Latest -> local.getLatestMangaUrls()
-                is Listing.Search -> local.getSearchMangaUrls(listing.query.orEmpty(), listing.filters)
+                is Listing.Search -> local.getSearchMangaUrls(listing.query.orEmpty())
             }
         }
         if (urls.isEmpty()) return emptyList()
@@ -1308,8 +1505,8 @@ class BrowseSourceViewModel(
 
     enum class ReadingFilter {
         ALL,
-        IN_PROGRESS,
         UNREAD,
+        IN_PROGRESS,
         FINISHED,
     }
 
@@ -1365,6 +1562,7 @@ class BrowseSourceViewModel(
         val listingUrls: List<String>?,
         val readingFilter: ReadingFilter,
         val context: CountContext,
+        val favoriteUrls: Set<String>,
     )
 
     @Immutable

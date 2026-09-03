@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,7 +24,6 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FileDownloadOff
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
@@ -76,7 +73,6 @@ fun MangaChapterListItem(
     goodDoujinMarked: Boolean = false,
     flagMarked: Boolean = false,
     cover: Any? = null,
-    readProgressFraction: Float? = null,
     onLongClick: (() -> Unit)?,
     onClick: () -> Unit,
     onDownloadClick: ((ChapterDownloadAction) -> Unit)?,
@@ -146,7 +142,8 @@ fun MangaChapterListItem(
                 modifier = Modifier
                     .weight(1f)
                     .let { if (cover != null) it.heightIn(min = 144.dp) else it },
-                verticalArrangement = Arrangement.SpaceBetween,
+                // 本地封面把整列拉高到封面同高，上下撑开；在线无封面时恢复紧凑排列。
+                verticalArrangement = if (cover != null) Arrangement.SpaceBetween else Arrangement.spacedBy(6.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     val metadataStyle = MaterialTheme.typography.bodySmall
@@ -205,23 +202,6 @@ fun MangaChapterListItem(
                         }
                     }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .clip(MaterialTheme.shapes.extraSmall),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (readProgressFraction != null) {
-                        LinearProgressIndicator(
-                            progress = { readProgressFraction },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        )
-                    }
-                }
             }
 
             Column(
@@ -252,12 +232,15 @@ fun MangaChapterListItem(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (flagMarked) {
+                                // 已读的槽位固定不动，这里只把好本子的红心与旗子对调：红心比旗子
+                                // 更醒目，按上层顺序占靠上的位置，旗子挪到已读下方那一排。
+                                if (goodDoujinMarked) {
                                     StatusIcon(
-                                        imageVector = Icons.Filled.Flag,
+                                        imageVector = Icons.Filled.Favorite,
                                         contentDescription = stringResource(
-                                            MR.strings.action_mark_duplicate,
+                                            MR.strings.action_add_to_good_doujin,
                                         ),
+                                        tint = GOOD_DOUJIN_HEART_COLOR,
                                     )
                                 }
                                 if (bookmark) {
@@ -288,11 +271,11 @@ fun MangaChapterListItem(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (goodDoujinMarked) {
+                                if (flagMarked) {
                                     StatusIcon(
-                                        imageVector = Icons.Filled.Favorite,
+                                        imageVector = Icons.Filled.Flag,
                                         contentDescription = stringResource(
-                                            MR.strings.action_add_to_good_doujin,
+                                            MR.strings.action_mark_duplicate,
                                         ),
                                     )
                                 }
@@ -319,6 +302,16 @@ fun MangaChapterListItem(
                                 size = 18.dp,
                             )
                         }
+                        // 顺序按视觉权重排：好本子的红心比旗子更容易被一眼认出，放在已读之后。
+                        if (goodDoujinMarked) {
+                            StatusIcon(
+                                imageVector = Icons.Filled.Favorite,
+                                contentDescription = stringResource(
+                                    MR.strings.action_add_to_good_doujin,
+                                ),
+                                tint = GOOD_DOUJIN_HEART_COLOR,
+                            )
+                        }
                         if (flagMarked) {
                             StatusIcon(
                                 imageVector = Icons.Filled.Flag,
@@ -333,22 +326,13 @@ fun MangaChapterListItem(
                                 ),
                             )
                         }
-                        if (goodDoujinMarked) {
-                            StatusIcon(
-                                imageVector = Icons.Filled.Favorite,
-                                contentDescription = stringResource(
-                                    MR.strings.action_add_to_good_doujin,
-                                ),
-                            )
-                        }
-                        if (downloadIndicatorEnabled) {
-                            ChapterDownloadIndicator(
-                                enabled = true,
-                                downloadStateProvider = downloadStateProvider,
-                                downloadProgressProvider = downloadProgressProvider,
-                                onClick = { onDownloadClick?.invoke(it) },
-                            )
-                        }
+                        // Multi-select only disables the tap; the 40dp slot stays so rows never shrink.
+                        ChapterDownloadIndicator(
+                            enabled = downloadIndicatorEnabled,
+                            downloadStateProvider = downloadStateProvider,
+                            downloadProgressProvider = downloadProgressProvider,
+                            onClick = { onDownloadClick?.invoke(it) },
+                        )
                     }
                 }
 
@@ -370,16 +354,18 @@ private fun StatusIcon(
     imageVector: ImageVector,
     contentDescription: String,
     size: Dp = 16.dp,
+    tint: Color = MaterialTheme.colorScheme.primary,
 ) {
     Icon(
         imageVector = imageVector,
         contentDescription = contentDescription,
         modifier = Modifier.size(size),
-        tint = MaterialTheme.colorScheme.primary,
+        tint = tint,
     )
 }
 
-private fun getSwipeAction(
+// 列表与网格共用的快滑动作装配：网格卡片按同样的偏好生成 √/❤️ 背景，见 MangaChapterGridItem。
+internal fun getSwipeAction(
     action: LibraryPreferences.ChapterSwipeAction,
     read: Boolean,
     bookmark: Boolean,
@@ -405,6 +391,8 @@ private fun getSwipeAction(
             icon = if (goodDoujinMarked) Icons.Outlined.FavoriteBorder else Icons.Filled.Favorite,
             background = background,
             isUndo = goodDoujinMarked,
+            // 默认取底色的前景色，在 primaryContainer 上算出来是近黑的实心心形；神作要红心。
+            tint = GOOD_DOUJIN_HEART_COLOR,
             onSwipe = onSwipe,
         )
         LibraryPreferences.ChapterSwipeAction.Download -> swipeAction(
@@ -420,18 +408,21 @@ private fun getSwipeAction(
     }
 }
 
-private fun swipeAction(
+internal fun swipeAction(
     onSwipe: () -> Unit,
     icon: ImageVector,
     background: Color,
     isUndo: Boolean = false,
+    // 可空而不是给默认值：[contentColorFor] 只能在 Composable 上下文里调用，这个值要到
+    // 下面的 icon lambda 里才算得出来。不传就沿用底色配套的前景色。
+    tint: Color? = null,
 ): me.saket.swipe.SwipeAction {
     return me.saket.swipe.SwipeAction(
         icon = {
             Icon(
                 modifier = Modifier.padding(16.dp),
                 imageVector = icon,
-                tint = contentColorFor(background),
+                tint = tint ?: contentColorFor(background),
                 contentDescription = null,
             )
         },
@@ -441,4 +432,4 @@ private fun swipeAction(
     )
 }
 
-private val swipeActionThreshold = 56.dp
+internal val swipeActionThreshold = 56.dp

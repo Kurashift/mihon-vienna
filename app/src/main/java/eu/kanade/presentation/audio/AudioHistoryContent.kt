@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,6 +21,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -160,6 +162,7 @@ private fun HistoryWorkRow(
     onContinue: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val latest = group.latest
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -187,18 +190,26 @@ private fun HistoryWorkRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = stringResource(MR.strings.audio_history_work_tracks, group.entries.size),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = group.latest.item.trackTitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // The track that was left last and where it was left, so the row says whether there is
+            // anything to pick up without being opened first. The position keeps its own width and
+            // the title takes what is left, so a long title never pushes the position out of view.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = latest.item.trackTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Text(
+                    text = " · ${trackProgress(latest)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            HistoryProgress(latest)
         }
         IconButton(onClick = onContinue) {
             Icon(Icons.Outlined.PlayArrow, contentDescription = stringResource(MR.strings.audio_history_continue))
@@ -272,7 +283,28 @@ private fun HistoryTrackRow(
 }
 
 private fun historyMeta(entry: AudioHistoryEntry): String {
-    val progress = "${formatDuration(entry.positionMs)} / ${formatDuration(entry.item.durationMs)}"
     val date = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(entry.lastPlayedAt))
-    return "$progress · $date"
+    return "${trackProgress(entry)} · $date"
+}
+
+/** Where a track was left, as `23:10 / 45:00`, or as the position alone when its length is unknown. */
+private fun trackProgress(entry: AudioHistoryEntry): String {
+    val position = formatDuration(entry.positionMs)
+    val duration = entry.item.durationMs
+    return if (duration > 0) "$position / ${formatDuration(duration)}" else position
+}
+
+/** How far into the track the position is, for the rows that already say it in words. */
+@Composable
+private fun HistoryProgress(entry: AudioHistoryEntry) {
+    val duration = entry.item.durationMs
+    if (duration <= 0) return
+    LinearProgressIndicator(
+        progress = { (entry.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f) },
+        modifier = Modifier
+            .padding(top = 6.dp)
+            .fillMaxWidth()
+            .height(2.dp),
+        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
 }

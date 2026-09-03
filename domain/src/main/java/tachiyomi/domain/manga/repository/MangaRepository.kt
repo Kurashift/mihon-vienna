@@ -11,6 +11,12 @@ interface MangaRepository {
 
     suspend fun getMangaById(id: Long): Manga
 
+    /**
+     * Same read as [getMangaById] for a caller that can outlive the row: a local directory that
+     * disappears takes its manga with it, and ids kept across an update then point at nothing.
+     */
+    suspend fun getMangaByIdOrNull(id: Long): Manga?
+
     fun getMangaByIdAsFlow(id: Long): Flow<Manga>
 
     suspend fun getMangaByUrlAndSourceId(url: String, sourceId: Long): Manga?
@@ -22,6 +28,12 @@ interface MangaRepository {
     /** Returns the ids of every manga that belongs to the local library. */
     suspend fun getLocalMangaIds(): List<Long>
 
+    /**
+     * Url by id for [ids]. Ids that no longer exist are simply absent from the result, so a
+     * caller holding ids from another source of truth can resolve them without a per-id read.
+     */
+    suspend fun getMangaUrlsByIds(ids: Set<Long>): Map<Long, String>
+
     suspend fun getReadMangaNotInLibrary(): List<Manga>
 
     suspend fun getLibraryManga(): List<LibraryManga>
@@ -31,6 +43,15 @@ interface MangaRepository {
     fun getFavoritesBySourceId(sourceId: Long): Flow<List<Manga>>
 
     suspend fun getFavoriteIdsBySourceId(sourceId: Long): List<Long>
+
+    /**
+     * Urls of the works of this source that are in the library.
+     *
+     * "Hide in-library items" is applied to the shelf by url, so the toolbar count needs the
+     * same view of it; ids would have to be translated back to urls first, and any work the
+     * translation does not cover would be counted while the shelf hides it.
+     */
+    suspend fun getFavoriteUrlsBySourceId(sourceId: Long): List<String>
 
     suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount>
 

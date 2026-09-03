@@ -134,7 +134,9 @@ class AudioPlayerController(
         val latest = historyStore.load().firstOrNull() ?: return
         state = state.copy(
             item = latest.item,
-            positionMs = latest.positionMs.coerceIn(0, latest.item.durationMs),
+            // Where the track would start if it were opened again: one that was heard through is
+            // not waiting at its last second for the rest of the session.
+            positionMs = historyStore.resumePositionMs(latest.item) ?: 0L,
             durationMs = latest.item.durationMs,
             totalCount = 1,
         )
@@ -242,6 +244,12 @@ class AudioPlayerController(
         stopPlaybackRetry()
         playbackRetryCount = 0
         recordHistory()
+        // A caller that knows better keeps the position it asked for: the history screen opening a
+        // specific entry, or a quality switch carrying the live position across. Every other entry
+        // point — playlist, quick sheet, work details, the skip controls — passes 0 and means
+        // "pick this track up where I left it".
+        val resolvedStartPositionMs = startPositionMs.takeIf { it > 0 }
+            ?: resumePositionFor(requestedItems[targetIndex])
 
         if (
             requestedItems[targetIndex].mediaStreamUrl.isLegacyRawStream() ||
@@ -257,7 +265,7 @@ class AudioPlayerController(
             updateCurrentItem(
                 targetIndex,
                 loading = true,
-                positionMs = startPositionMs.coerceAtLeast(0),
+                positionMs = resolvedStartPositionMs.coerceAtLeast(0),
             )
             startProgressLoop()
             scope.launch {
@@ -265,12 +273,33 @@ class AudioPlayerController(
                     resolveLegacyWorkStreams(requestedItems, targetIndex)
                 }.getOrDefault(requestedItems)
                 if (generation != startGeneration) return@launch
-                beginPlayback(resolvedItems, targetIndex, startPositionMs, playWhenReady)
+                beginPlayback(resolvedItems, targetIndex, resolvedStartPositionMs, playWhenReady)
             }
             return
         }
 
-        beginPlayback(requestedItems, targetIndex, startPositionMs, playWhenReady)
+        beginPlayback(requestedItems, targetIndex, resolvedStartPositionMs, playWhenReady)
+    }
+
+    /** Where [item] was last left, or the start of the track when there is nothing to resume. */
+    private fun resumePositionFor(item: AudioPlayItem?): Long {
+        return item?.let { historyStore.resumePositionMs(it) } ?: 0L
+    }
+
+    /**
+     * Moves the track that just became current back to where it was last left.
+     *
+     * Only for playback that moved on by itself: ExoPlayer starts such a track from its beginning,
+     * so a half-heard track would otherwise restart every time the one before it ran out. The skip
+     * controls and [start] place the position themselves, and must not be second-guessed here.
+     */
+    private fun resumeCurrentTrack() {
+        val positionMs = resumePositionFor(state.item)
+        if (positionMs <= 0) return
+        player.seekTo(player.currentMediaItemIndex, positionMs)
+        // ExoPlayer applies the seek on its internal thread, so currentPosition still reads as the
+        // old one here: without this the bar and the notification snap back to 0 for a moment.
+        publish(state.copy(positionMs = positionMs))
     }
 
     fun cycleAudioQuality() {
@@ -427,7 +456,7 @@ class AudioPlayerController(
             ?: state.index
         val target = (current + step + items.size) % items.size
         completionCandidateWorkId = null
-        player.seekTo(target, 0)
+        player.seekTo(target, resumePositionFor(items.getOrNull(target)))
         play()
     }
 
@@ -476,7 +505,7 @@ class AudioPlayerController(
         applyVolumeProtection()
         val current = player.currentMediaItemIndex
         val target = items.indices.filterNot { it == current }.random()
-        player.seekTo(target, 0)
+        player.seekTo(target, resumePositionFor(items.getOrNull(target)))
         player.play()
     }
 
@@ -1031,6 +1060,9 @@ class AudioPlayerController(
                 loading = player.playbackState == Player.STATE_IDLE ||
                     player.playbackState == Player.STATE_BUFFERING,
             )
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                resumeCurrentTrack()
+            }
             val currentItem = state.item
             if (
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&

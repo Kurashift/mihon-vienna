@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- State glyph: the same full-size check every read-status action uses. It used to be
+         shrunk to 0.85, which made this icon's check smaller than the ones next to it. -->
+    <path
+        android:fillColor="#000"
+        android:pathData="M9,16.2L4.8,12l-1.4,1.4L9,19 21,7l-1.4,-1.4L9,16.2z" />
+    <!-- Pencil badge, inside the fixed bottom-right 8x8 box (x 14-22, y 14-22) shared with the
+         direction arrows: graphite tip, then the body, split by a hairline so the nib reads
+         as a nib. -->
+    <path
+        android:fillColor="#000"
+        android:pathData="M15.2,21.1L17.68,20.04L16.26,18.63Z" />
+    <path
+        android:fillColor="#000"
+        android:pathData="M18.17,19.54L21,16.72L19.58,15.3L16.76,18.13Z" />
+</vector>

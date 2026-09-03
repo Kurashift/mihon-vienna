@@ -49,6 +49,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import kotlin.random.Random
 
 class AudioBrowseScreen(
     internal val categoryTitle: String? = null,
@@ -293,6 +294,17 @@ class AudioBrowseViewModel(
      */
     private var shuffledFavoriteIds: List<Long>? = null
 
+    /**
+     * Seed of the random draw the backend was asked for, sent with every page of it.
+     *
+     * The backend reshuffles on a new seed and on nothing else: `order=random` without one answers
+     * the same page every time, so a pull to refresh used to come back with the very rows on
+     * screen. One value has to cover the whole draw — page two has to continue the shuffle page
+     * one started, not open an unrelated one — so it is only rolled when the user asks for another
+     * draw, which is [refresh] and picking the sort itself.
+     */
+    private var drawSeed: Long = Random.nextLong()
+
     init {
         if (_auth.value.username != null) {
             viewModelScope.launchIO {
@@ -404,10 +416,11 @@ class AudioBrowseViewModel(
         // Re-picking the sort already on screen changes nothing. For a draw that is the whole
         // point: the list is a handful the user is working through, and a second tap on the
         // entry — easy to land while flipping through the sheet — would silently replace those
-        // works with a different handful and they would be gone. Pulling the list is the one
-        // deliberate way to ask for another draw, so that is the only thing that rolls one.
+        // works with a different handful and they would be gone. Moving to a draw from another
+        // sort is asking for one, so it rolls a seed; pulling the list is how it is rolled again.
         if (sort == sortOf(tab).value) return
         sortOf(tab).value = sort
+        if (sort.isDraw) drawSeed = Random.nextLong()
         switchTo(tab, sort, _state.value.query)
     }
 
@@ -420,8 +433,13 @@ class AudioBrowseViewModel(
         displayedFromCache = null
         // The one deliberate request for another draw. Dropping the pinned selection is what
         // separates it from every other reload: without this the pull would fetch a shuffled
-        // page, pin it over the old one and the list would look untouched.
-        if (sortOf(_state.value.tab).value.isDraw) shuffledFavoriteIds = null
+        // page, pin it over the old one and the list would look untouched. A new seed is the other
+        // half — the backend repeats the same page for a URL it has already answered, so without
+        // one the fresh request below returns exactly the rows the user is trying to get away from.
+        if (sortOf(_state.value.tab).value.isDraw) {
+            shuffledFavoriteIds = null
+            drawSeed = Random.nextLong()
+        }
         viewModelScope.launchIO {
             _state.update {
                 it.copy(
@@ -435,9 +453,10 @@ class AudioBrowseViewModel(
             }
             // A pull to refresh asks for what the backend has right now, so neither cache may
             // answer it. The work feed is stored on disk for five minutes
-            // ([AudioCacheInterceptor.MAX_AGE_SECONDS]), which is long enough that a refresh
-            // within that window used to come back with the very rows on screen — invisible on a
-            // release-ordered list, and fatal on a random one, whose whole point is a new draw.
+            // ([AudioCacheInterceptor.MAX_AGE_SECONDS]), and a random draw is repeated by the
+            // backend itself unless it is handed a new seed, so either one winning the request
+            // used to come back with the very rows on screen — invisible on a release-ordered
+            // list, and fatal on a random one, whose whole point is a new draw.
             loadPage(1, generation, forceNetwork = true)
         }
     }
@@ -558,6 +577,9 @@ class AudioBrowseViewModel(
      * Identifies what is on screen. The account is part of it because the recommended feed is
      * personalized, and the taste keyword too: without it a newly collected circle would keep
      * serving the list fetched before the user had any history at all.
+     *
+     * A draw carries its seed: two draws are different pages that must not overwrite each other,
+     * and going back to the tab has to repaint the draw the user took rather than an older one.
      */
     private fun cacheKeyFor(tab: AudioBrowseTab, sort: AudioSort, query: String?): String {
         val account = if (basePreferences.audioAuthToken.get().isBlank()) "anon" else "user"
@@ -573,7 +595,8 @@ class AudioBrowseViewModel(
                 ""
             }
         }
-        return "$account|${tab.name}|${sort.name}|$category|$keyword"
+        val draw = if (sort.isDraw) "seed=$drawSeed" else ""
+        return "$account|${tab.name}|${sort.name}|$category|$keyword|$draw"
     }
 
     private fun pageKey(baseKey: String, page: Int) = "$baseKey#$page"
@@ -649,6 +672,8 @@ class AudioBrowseViewModel(
         // Only the two work feeds are ever served from the disk cache; searches already ask for
         // the network and the recommender endpoints are POSTs, which OkHttp never stores.
         val cache = if (forceNetwork) CacheControl.FORCE_NETWORK else null
+        // Only a draw carries a seed, and every page of the same draw carries the same one.
+        val seed = drawSeed.takeIf { sort.isDraw }
         val effectiveKeyword = query.orEmpty().trim()
         // A keyword typed on a category results page narrows that category instead of escaping it:
         // the entry's filter is combined with the keyword, which the backend parses as an AND.
@@ -656,7 +681,7 @@ class AudioBrowseViewModel(
         // 108 works, all 45 inside it, versus 12164 / 9462 for the bare words catalogue-wide.
         categoryRef?.let { ref ->
             if (effectiveKeyword.isBlank()) {
-                return api.fetchCategoryWorks(ref.field, ref.id, page, PAGE_SIZE, sort.order, sort.sort, cache)
+                return api.fetchCategoryWorks(ref.field, ref.id, page, PAGE_SIZE, sort.order, sort.sort, cache, seed)
             }
             // The id endpoints accept no keyword, so an intersection can only be expressed in the
             // legacy syntax. A name containing `$` would break out of the filter — the price of
@@ -667,13 +692,14 @@ class AudioBrowseViewModel(
                 PAGE_SIZE,
                 sort.order,
                 sort.sort,
+                seed,
             )
         }
         if (effectiveKeyword.isNotBlank()) {
-            return api.search(effectiveKeyword, page, PAGE_SIZE, sort.order, sort.sort)
+            return api.search(effectiveKeyword, page, PAGE_SIZE, sort.order, sort.sort, seed)
         }
         return when (tab) {
-            AudioBrowseTab.LATEST -> api.fetchWorks(page, PAGE_SIZE, sort.order, sort.sort, cache)
+            AudioBrowseTab.LATEST -> api.fetchWorks(page, PAGE_SIZE, sort.order, sort.sort, cache, seed)
             AudioBrowseTab.POPULAR -> api.fetchPopular(page, PAGE_SIZE)
             AudioBrowseTab.FAVORITES -> WorksResponse()
             AudioBrowseTab.RECOMMENDED -> requestRecommended(page)

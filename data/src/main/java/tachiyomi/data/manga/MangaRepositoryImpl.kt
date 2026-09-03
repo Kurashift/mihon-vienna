@@ -4,6 +4,7 @@ import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -47,10 +48,19 @@ class MangaRepositoryImpl(
             .awaitAsOne()
     }
 
+    override suspend fun getMangaByIdOrNull(id: Long): Manga? {
+        return database.mangasQueries
+            .getMangaById(id, MangaMapper::mapManga)
+            .awaitAsOneOrNull()
+    }
+
+    // A row that disappears mid-collection (a local directory that vanished takes its manga with
+    // it) has to stop the stream instead of throwing inside every collector.
     override fun getMangaByIdAsFlow(id: Long): Flow<Manga> {
         return database.mangasQueries
             .getMangaById(id, MangaMapper::mapManga)
-            .subscribeToOne()
+            .subscribeToOneOrNull()
+            .filterNotNull()
     }
 
     override suspend fun getMangaByUrlAndSourceId(url: String, sourceId: Long): Manga? {
@@ -75,6 +85,21 @@ class MangaRepositoryImpl(
         return database.mangasQueries
             .getLocalMangaIds()
             .awaitAsList()
+    }
+
+    override suspend fun getMangaUrlsByIds(ids: Set<Long>): Map<Long, String> {
+        if (ids.isEmpty()) return emptyMap()
+        // Bound parameters are a finite resource: a library can carry thousands of marks, and a
+        // single `IN` past the engine's limit fails the whole read instead of returning fewer
+        // rows, which would take the caller's filters down with it.
+        val result = HashMap<Long, String>(ids.size)
+        ids.chunked(ID_LOOKUP_CHUNK).forEach { chunk ->
+            database.mangasQueries
+                .getMangaUrlsByIds(chunk) { id, url -> id to url }
+                .awaitAsList()
+                .toMap(result)
+        }
+        return result
     }
 
     override suspend fun getReadMangaNotInLibrary(): List<Manga> {
@@ -104,6 +129,12 @@ class MangaRepositoryImpl(
     override suspend fun getFavoriteIdsBySourceId(sourceId: Long): List<Long> {
         return database.mangasQueries
             .getFavoriteIdsBySourceId(sourceId)
+            .awaitAsList()
+    }
+
+    override suspend fun getFavoriteUrlsBySourceId(sourceId: Long): List<String> {
+        return database.mangasQueries
+            .getFavoriteUrlsBySourceId(sourceId)
             .awaitAsList()
     }
 
@@ -243,5 +274,9 @@ class MangaRepositoryImpl(
                 )
             }
         }
+    }
+
+    private companion object {
+        const val ID_LOOKUP_CHUNK = 500
     }
 }

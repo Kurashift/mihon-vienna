@@ -59,6 +59,19 @@ private enum class FabDragDirection { RandomManga, RandomGoodDoujin }
 /** Distance the finger must travel along the dominant axis to arm the gesture. */
 private val DragTriggerDistance: Dp = 36.dp
 
+/**
+ * How much steeper than a sideways drag the travel has to be before it counts as the upward
+ * action, as a multiple of the sideways travel.
+ *
+ * The button sits in the bottom corner, so a thumb reaches it from below and to the side and
+ * moves on an arc: a run meant to go right leans upward on the way, and demanding a flat
+ * horizontal line is asking for more precision than a thumb has. The split between the two
+ * actions is therefore pushed past the plain 45° dominant-axis line, so a rightward drag keeps
+ * everything up to this much of an upward lean (1.5 is roughly 56°) instead of handing the
+ * diagonal to the upward action. Anything steeper still reads as a deliberate upward drag.
+ */
+private const val UPWARD_DOMINANCE_RATIO = 1.5f
+
 /** Upper bound for how far the button itself follows the finger. */
 private val MaxVisualOffset: Dp = 28.dp
 
@@ -66,10 +79,10 @@ private val MaxVisualOffset: Dp = 28.dp
 private val IconSwitchDistance: Dp = 12.dp
 
 /** How long the finger must rest before the direction hints appear. */
-private const val LongPressHintDelayMillis = 350L
+private const val LONG_PRESS_HINT_DELAY_MILLIS = 350L
 
 /** Scale applied while the finger rests on the button; the press feedback itself. */
-private const val PressedScale = 0.92f
+private const val PRESSED_SCALE = 0.92f
 
 /**
  * Resting opacity of any floating control that sits on top of a cover: the continue reading
@@ -85,7 +98,7 @@ private const val PressedScale = 0.92f
  * the graphicsLayer in [RandomGestureFab] for why. A plain icon button has no shadow, so fading
  * its container colour is equivalent and keeps the glyph at full strength.
  */
-const val FloatingControlPlateAlpha = 0.82f
+const val FLOATING_CONTROL_PLATE_ALPHA = 0.82f
 
 /**
  * The control turns fully solid for as long as the finger is on it. Pressing and dragging are the
@@ -93,7 +106,7 @@ const val FloatingControlPlateAlpha = 0.82f
  * the drag target are drawn straight onto the cover with no plate of their own, so the control
  * firming up is what anchors them.
  */
-private const val EngagedPlateAlpha = 1f
+private const val ENGAGED_PLATE_ALPHA = 1f
 
 /**
  * Opacity the control drops to once the list behind it has run out of scroll.
@@ -103,11 +116,11 @@ private const val EngagedPlateAlpha = 1f
  * Giving up more of itself is how the button hands that row back, and it stays a plate rather
  * than a bare icon so that it remains findable on a cover of a similar colour.
  */
-private const val EndOfListPlateAlpha = 0.55f
+private const val END_OF_LIST_PLATE_ALPHA = 0.55f
 
 /**
  * Whether the list behind a floating control has run out of downward scroll and came to rest
- * there, which is the case [RandomGestureFab] dims itself past [FloatingControlPlateAlpha] for.
+ * there, which is the case [RandomGestureFab] dims itself past [FLOATING_CONTROL_PLATE_ALPHA] for.
  *
  * `canScrollBackward` is required as well so that content shorter than the viewport does not
  * count: nothing was scrolled into place there, so nothing is trapped under the button either.
@@ -130,7 +143,7 @@ fun rememberAtListEnd(scrollState: ScrollableState): Boolean {
  * [TargetDistance] so the button covers the target icon exactly when the gesture
  * triggers, while still keeping the travelled path short.
  */
-private const val FollowRatio = 0.75f
+private const val FOLLOW_RATIO = 0.75f
 
 /**
  * Where the direction target sits, measured from the button's resting centre. The
@@ -151,7 +164,7 @@ private val TargetIconSize: Dp = 20.dp
  *
  * The gesture has no time gate. The long-press hint timer and the move detection race
  * against each other, so a fast flick is handled on the very first move while a resting
- * finger gets the direction hints after [LongPressHintDelayMillis]. Releasing below
+ * finger gets the direction hints after [LONG_PRESS_HINT_DELAY_MILLIS]. Releasing below
  * [DragTriggerDistance] cancels everything, so a drag can always be reverted by moving
  * back towards the origin.
  *
@@ -166,7 +179,7 @@ fun RandomGestureFab(
     gesturesEnabled: Boolean = false,
     // Set once the list behind the button has run out of downward scroll and came to rest
     // there: the last row is the one row that cannot be slid out from under the button, so
-    // the plate dims past FloatingControlPlateAlpha to hand it back.
+    // the plate dims past FLOATING_CONTROL_PLATE_ALPHA to hand it back.
     atListEnd: Boolean = false,
     idleContentDescription: String? = null,
     onRandomManga: () -> Unit = {},
@@ -202,7 +215,7 @@ fun RandomGestureFab(
     // button's own press state so it keeps working even if the gesture never starts.
     val buttonPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
-        targetValue = if (buttonPressed && !hasMoved) PressedScale else 1f,
+        targetValue = if (buttonPressed && !hasMoved) PRESSED_SCALE else 1f,
         animationSpec = tween(80, easing = FastOutLinearInEasing),
         label = "FabPressScale",
     )
@@ -212,10 +225,10 @@ fun RandomGestureFab(
     // state, so keying off the press alone would let it fade back while the finger is still on
     // it: a translucent control no longer covers the drag target it is sliding over, leaving a
     // second dice visible behind the button. A tap has to feel answered before it settles back.
-    val restingAlpha = if (atListEnd) EndOfListPlateAlpha else FloatingControlPlateAlpha
+    val restingAlpha = if (atListEnd) END_OF_LIST_PLATE_ALPHA else FLOATING_CONTROL_PLATE_ALPHA
     val isEngaged = buttonPressed || isDragging
     val plateAlpha by animateFloatAsState(
-        targetValue = if (isEngaged) EngagedPlateAlpha else restingAlpha,
+        targetValue = if (isEngaged) ENGAGED_PLATE_ALPHA else restingAlpha,
         // Solidifying is the button answering the finger, so it is quick. Everything else is
         // the button drifting back out of the way, which reads better unhurried.
         animationSpec = tween(if (isEngaged) 80 else 160, easing = FastOutLinearInEasing),
@@ -225,7 +238,7 @@ fun RandomGestureFab(
     // Hints are a courtesy for a resting finger. Any movement wins the race and cancels them.
     LaunchedEffect(isPressed, hasMoved) {
         if (!isPressed || hasMoved) return@LaunchedEffect
-        delay(LongPressHintDelayMillis)
+        delay(LONG_PRESS_HINT_DELAY_MILLIS)
         showHints = true
     }
 
@@ -291,9 +304,14 @@ fun RandomGestureFab(
                     // Keep the underlying button from treating this drag as a tap.
                     change.consume()
 
-                    // Dominant axis wins, so a diagonal drag has a stable owner instead
-                    // of flickering between the two actions.
-                    val current = if (abs(delta.y) > abs(delta.x) && delta.y < 0) {
+                    // Whichever action the travel leans towards owns the drag, so a diagonal
+                    // has a stable owner instead of flickering between the two. Upward has to
+                    // win by [UPWARD_DOMINANCE_RATIO] rather than by a hair, which leaves the
+                    // gentle upward lean of a one-handed sideways swipe with the sideways
+                    // action — see the constant for why that matters in the bottom corner.
+                    val upward = -delta.y
+                    val sideways = abs(delta.x)
+                    val current = if (upward > sideways * UPWARD_DOMINANCE_RATIO) {
                         FabDragDirection.RandomGoodDoujin
                     } else {
                         FabDragDirection.RandomManga
@@ -303,7 +321,7 @@ fun RandomGestureFab(
                     val along = if (current == FabDragDirection.RandomGoodDoujin) -delta.y else delta.x
                     direction = if (along >= iconSwitchPx) current else null
 
-                    val applied = (along.coerceAtLeast(0f) * FollowRatio).coerceAtMost(maxOffsetPx)
+                    val applied = (along.coerceAtLeast(0f) * FOLLOW_RATIO).coerceAtMost(maxOffsetPx)
                     liveOffset = if (current == FabDragDirection.RandomGoodDoujin) {
                         Offset(0f, -applied)
                     } else {

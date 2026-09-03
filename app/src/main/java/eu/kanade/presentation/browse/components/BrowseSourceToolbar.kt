@@ -36,7 +36,6 @@ fun BrowseSourceToolbar(
     onSettingsClick: () -> Unit,
     onOpenAudio: () -> Unit,
     onOpenSources: (() -> Unit)? = null,
-    onFilterClick: (() -> Unit)? = null,
     onRefreshChapters: (() -> Unit)? = null,
     onImportLocalChapters: (() -> Unit)? = null,
     onClearHistoryClick: () -> Unit,
@@ -87,6 +86,13 @@ fun BrowseSourceToolbar(
                             },
                             content = { dismiss ->
                                 RadioMenuItem(
+                                    text = { Text(text = stringResource(MR.strings.action_display_grid)) },
+                                    isChecked = displayMode == LibraryDisplayMode.CompactGrid,
+                                ) {
+                                    dismiss()
+                                    onDisplayModeChange(LibraryDisplayMode.CompactGrid)
+                                }
+                                RadioMenuItem(
                                     text = {
                                         Text(text = stringResource(MR.strings.action_display_comfortable_grid))
                                     },
@@ -94,13 +100,6 @@ fun BrowseSourceToolbar(
                                 ) {
                                     dismiss()
                                     onDisplayModeChange(LibraryDisplayMode.ComfortableGrid)
-                                }
-                                RadioMenuItem(
-                                    text = { Text(text = stringResource(MR.strings.action_display_grid)) },
-                                    isChecked = displayMode == LibraryDisplayMode.CompactGrid,
-                                ) {
-                                    dismiss()
-                                    onDisplayModeChange(LibraryDisplayMode.CompactGrid)
                                 }
                                 RadioMenuItem(
                                     text = { Text(text = stringResource(MR.strings.action_display_list)) },
@@ -119,7 +118,6 @@ fun BrowseSourceToolbar(
                             content = { dismiss ->
                                 val actions = buildList {
                                     if (isLocalSource) {
-                                        onFilterClick?.let { add(stringResource(MR.strings.action_sort) to it) }
                                         onRefreshChapters?.let {
                                             add(stringResource(MR.strings.action_refresh_all_chapters_short) to it)
                                         }

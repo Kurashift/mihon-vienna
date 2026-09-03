@@ -53,8 +53,10 @@ class SetReadStatus(
             chaptersToUpdate
                 .groupBy { it.mangaId }
                 .forEach { (mangaId, chapters) ->
+                    // The row can be gone by now; nothing to delete in that case.
+                    val manga = mangaRepository.getMangaByIdOrNull(mangaId) ?: return@forEach
                     deleteDownload.awaitAll(
-                        manga = mangaRepository.getMangaById(mangaId),
+                        manga = manga,
                         chapters = chapters.toTypedArray(),
                     )
                 }

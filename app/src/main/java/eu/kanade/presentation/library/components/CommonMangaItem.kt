@@ -39,7 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import eu.kanade.presentation.components.FloatingControlPlateAlpha
+import eu.kanade.presentation.components.FLOATING_CONTROL_PLATE_ALPHA
 import eu.kanade.presentation.manga.components.MangaCover
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.BadgeGroup
@@ -503,7 +503,7 @@ private fun ContinueReadingButton(
             shape = MaterialTheme.shapes.small,
             colors = IconButtonDefaults.filledIconButtonColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer.copy(
-                    alpha = FloatingControlPlateAlpha,
+                    alpha = FLOATING_CONTROL_PLATE_ALPHA,
                 ),
                 contentColor = contentColorFor(MaterialTheme.colorScheme.primaryContainer),
             ),

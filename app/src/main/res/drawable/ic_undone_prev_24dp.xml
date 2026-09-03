@@ -3,10 +3,17 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- State glyph: the same full-size check every read-status action uses. -->
+    <!-- State glyph: the same full-size check every read-status action uses, struck through to
+         mean "unread". The slash is thinner than the check and runs past the long arm on both
+         sides, so it reads as a cross-out; ending it flush with the arm made it look like a
+         stroke that the check had swallowed. It crosses near the middle of the arm and stays
+         clear of the badge box. -->
     <path
         android:fillColor="#000"
         android:pathData="M9,16.2L4.8,12l-1.4,1.4L9,19 21,7l-1.4,-1.4L9,16.2z" />
+    <path
+        android:fillColor="#000"
+        android:pathData="M13.5,9.1L17.5,13.1L18.5,12.1L14.5,8.1Z" />
     <!-- Direction badge inside the fixed bottom-right 8x8 box (x 14-22, y 14-22): up, standing
          for the chapters listed before the selected one, whichever way the list is sorted. -->
     <path

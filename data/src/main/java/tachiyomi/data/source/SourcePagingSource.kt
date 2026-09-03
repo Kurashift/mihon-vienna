@@ -55,10 +55,25 @@ abstract class BaseSourcePagingSource(
         }
 
         return try {
+            // A refresh asks for the page the reader was last on, carried over through
+            // [getRefreshKey]. That page belongs to the result set as it was before the
+            // invalidation, and a filter can shrink that set far below it: browsing the local
+            // source pushes the mark filter down into the source, so switching to a filter with
+            // three matches turns a 549-entry listing into three entries while the refresh key
+            // still points at page 4. Serving that page as an empty result fails the refresh and
+            // leaves the screen blank even though the filter matched. Fall back to the first
+            // page instead, which is where a list rebuilt from a different result set starts.
+            var servedPage = page
             val mangasPage = withIOContext {
-                requestNextPage(page.toInt())
-                    .takeIf { it.mangas.isNotEmpty() }
-                    ?: throw NoResultsException()
+                val requested = requestNextPage(servedPage.toInt())
+                if (requested.mangas.isNotEmpty()) {
+                    requested
+                } else if (params is LoadParams.Refresh && servedPage > 1L) {
+                    servedPage = 1L
+                    requestNextPage(1).takeIf { it.mangas.isNotEmpty() } ?: throw NoResultsException()
+                } else {
+                    throw NoResultsException()
+                }
             }
 
             val remoteManga = mangasPage.mangas
@@ -72,10 +87,10 @@ abstract class BaseSourcePagingSource(
                     if (local.memo == remote.memo) local else local.copy(memo = remote.memo)
                 }
 
-            val nextKey = if (mangasPage.hasNextPage) page + 1 else null
+            val nextKey = if (mangasPage.hasNextPage) servedPage + 1 else null
             if (mangasPage.itemsBefore >= 0 && mangasPage.itemsAfter >= 0) {
-                val inferredPageSize = if (page > 1L) {
-                    (mangasPage.itemsBefore / (page - 1L)).toInt()
+                val inferredPageSize = if (servedPage > 1L) {
+                    (mangasPage.itemsBefore / (servedPage - 1L)).toInt()
                 } else {
                     manga.size
                 }
@@ -84,7 +99,7 @@ abstract class BaseSourcePagingSource(
                 }
                 LoadResult.Page(
                     data = manga,
-                    prevKey = if (mangasPage.itemsBefore > 0) page - 1 else null,
+                    prevKey = if (mangasPage.itemsBefore > 0) servedPage - 1 else null,
                     nextKey = nextKey,
                     itemsBefore = mangasPage.itemsBefore,
                     itemsAfter = mangasPage.itemsAfter,

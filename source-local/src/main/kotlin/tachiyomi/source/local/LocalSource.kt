@@ -59,7 +59,6 @@ import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.i18n.MR
-import tachiyomi.source.local.filter.OrderBy
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
@@ -196,6 +195,18 @@ class LocalSource(
     @Volatile
     private var cachedDerivedListing: CachedDerivedListing? = null
 
+    /**
+     * URLs the browsing listings are narrowed to, or null when nothing narrows them.
+     *
+     * The local library screen sets this from its mark filter so the pager slices the already
+     * filtered sequence instead of the whole library. Filtering after paging instead means a
+     * selective filter can only be rediscovered by walking every page again: switching the
+     * sort drops the loaded window back to the first page, so two marked entries out of five
+     * hundred leave the grid empty and spinning until the walk happens to reach them.
+     */
+    @Volatile
+    private var listingUrlFilter: Set<String>? = null
+
     @Volatile
     private var cachedChapterNames: Map<String, List<String>>? = null
 
@@ -253,6 +264,35 @@ class LocalSource(
         "local_source_order_by_ascending",
         true,
     )
+
+    /**
+     * The only ordering of the local library. It is persisted directly by [setOrderBy] and read
+     * back on every listing derivation, so there is no second copy to keep in sync.
+     */
+    val orderBySelection: Filter.Sort.Selection
+        get() = Filter.Sort.Selection(orderByIndexPreference.get(), orderByAscendingPreference.get())
+
+    /** Persists [index] and [ascending], skipping the writes when nothing actually changed. */
+    fun setOrderBy(index: Int, ascending: Boolean) {
+        if (orderByIndexPreference.get() != index) {
+            orderByIndexPreference.set(index)
+        }
+        if (orderByAscendingPreference.get() != ascending) {
+            orderByAscendingPreference.set(ascending)
+        }
+    }
+
+    /**
+     * Narrows the browsing listings to [urls], or lifts the restriction when it is null.
+     *
+     * Applied while the listing is derived, so it only affects what the pager walks; it is not
+     * a second filter and never changes which entries survive, which the caller still decides.
+     */
+    fun setListingUrlFilter(urls: Set<String>?) {
+        if (listingUrlFilter == urls) return
+        listingUrlFilter = urls
+        cachedDerivedListing = null
+    }
 
     private fun ensureBaseDirectoryIdentity() {
         val currentBaseUri = fileSystem.getBaseDirectoryIdentityUri()
@@ -802,6 +842,7 @@ class LocalSource(
         val orderByIndex: Int,
         val ascending: Boolean,
         val latestWindow: Boolean,
+        val urlFilter: Set<String>?,
         val mangas: List<SManga>,
     )
 
@@ -817,69 +858,29 @@ class LocalSource(
 
     // Browse related
     override suspend fun getPopularManga(page: Int): MangasPage {
-        return getSearchMangaInternal(page, "", FilterList(currentOrderBy()), latestWindow = false)
+        return getSearchMangaInternal(page, "", latestWindow = false)
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
-        return getSearchMangaInternal(page, "", FilterList(currentOrderBy()), latestWindow = true)
+        return getSearchMangaInternal(page, "", latestWindow = true)
     }
 
+    // The local source has no filters of its own: ordering is [orderBySelection], kept apart from
+    // the filter list so there is only one place that decides the sequence.
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
-        return getSearchMangaInternal(page, query, filters, latestWindow = false)
+        return getSearchMangaInternal(page, query, latestWindow = false)
     }
 
     suspend fun getPopularMangaUrls(): List<String> {
-        return getSearchMangaList("", FilterList(currentOrderBy()), latestWindow = false).map(SManga::url)
+        return getSearchMangaList("", latestWindow = false).map(SManga::url)
     }
 
     suspend fun getLatestMangaUrls(): List<String> {
-        return getSearchMangaList("", FilterList(currentOrderBy()), latestWindow = true).map(SManga::url)
+        return getSearchMangaList("", latestWindow = true).map(SManga::url)
     }
 
-    suspend fun getSearchMangaUrls(query: String, filters: FilterList): List<String> {
-        return getSearchMangaList(query, filters, latestWindow = false).map(SManga::url)
-    }
-
-    /**
-     * Persists the given order-by filter selection so it applies globally to the local source,
-     * even if the filter sheet is closed without applying.
-     */
-    fun persistOrderBySelection(filters: FilterList) {
-        val orderBy = filters.filterIsInstance<OrderBy>().firstOrNull()
-        val selection = orderBy?.state
-        if (selection != null) {
-            if (selection.index != orderByIndexPreference.get()) {
-                orderByIndexPreference.set(selection.index)
-            }
-            if (selection.ascending != orderByAscendingPreference.get()) {
-                orderByAscendingPreference.set(selection.ascending)
-            }
-        }
-    }
-
-    private fun currentOrderBy(): OrderBy {
-        val index = orderByIndexPreference.get()
-        val selection = Filter.Sort.Selection(index, orderByAscendingPreference.get())
-        return when (index) {
-            ORDER_BY_DATE -> OrderBy.Latest(context, selection)
-            ORDER_BY_CHAPTER_COUNT -> OrderBy.ChapterCount(context, selection)
-            else -> OrderBy.Popular(context, selection)
-        }
-    }
-
-    /**
-     * Restores the default order for a listing tab: name ascending for the
-     * popular/browse tab and date descending for the latest tab. This keeps a
-     * leftover sort preference from silently applying to every tab.
-     */
-    fun resetOrderBy(popular: Boolean) {
-        if (popular) {
-            if (orderByIndexPreference.get() != 0) orderByIndexPreference.set(0)
-            if (!orderByAscendingPreference.get()) orderByAscendingPreference.set(true)
-        } else {
-            if (orderByIndexPreference.get() != 1) orderByIndexPreference.set(1)
-            if (orderByAscendingPreference.get()) orderByAscendingPreference.set(false)
-        }
+    suspend fun getSearchMangaUrls(query: String): List<String> {
+        return getSearchMangaList(query, latestWindow = false).map(SManga::url)
     }
 
     /**
@@ -1052,10 +1053,9 @@ class LocalSource(
     private suspend fun getSearchMangaInternal(
         page: Int,
         query: String,
-        filters: FilterList,
         latestWindow: Boolean,
     ): MangasPage {
-        val derived = getSearchMangaList(query, filters, latestWindow)
+        val derived = getSearchMangaList(query, latestWindow)
         val result = derived.localPage(page, PAGE_SIZE)
         return MangasPage(result.items, result.hasNextPage).apply {
             itemsBefore = result.itemsBefore
@@ -1065,12 +1065,8 @@ class LocalSource(
 
     private suspend fun getSearchMangaList(
         query: String,
-        filters: FilterList,
         latestWindow: Boolean,
     ): List<SManga> = withIOContext {
-        // Persist the order-by selection chosen in the filter sheet globally
-        persistOrderBySelection(filters)
-
         val orderByIndex = orderByIndexPreference.get()
         val ascending = orderByAscendingPreference.get()
 
@@ -1080,6 +1076,10 @@ class LocalSource(
             0L
         }
 
+        // Only the browsing listings are narrowed: they are the ones served with a blank query.
+        // A search already defines its own result set, and the same source also answers global
+        // search and smart search, which must never see a filter one screen happens to use.
+        val urlFilter = listingUrlFilter?.takeIf { query.isBlank() }
         val allEntries = getListing()
 
         // Reuse the previously derived page when nothing that feeds it changed. The listing
@@ -1093,13 +1093,15 @@ class LocalSource(
             cachedPage.query == query &&
             cachedPage.orderByIndex == orderByIndex &&
             cachedPage.ascending == ascending &&
-            cachedPage.latestWindow == latestWindow
+            cachedPage.latestWindow == latestWindow &&
+            cachedPage.urlFilter == urlFilter
         ) {
             return@withIOContext cachedPage.mangas
         }
 
         val matchedChapters = mutableMapOf<String, String>()
-        var mangaEntries = allEntries
+        var mangaEntries = urlFilter?.let { allowed -> allEntries.filter { it.url in allowed } }
+            ?: allEntries
 
         // Latest window applies the time filter first (and now also keeps the query).
         if (lastModifiedLimit != 0L) {
@@ -1180,6 +1182,7 @@ class LocalSource(
                 orderByIndex = orderByIndex,
                 ascending = ascending,
                 latestWindow = latestWindow,
+                urlFilter = urlFilter,
                 mangas = derived,
             )
         }
@@ -1321,16 +1324,30 @@ class LocalSource(
         }
     }
 
-    private fun setMangaDetailsFromComicInfoFile(stream: InputStream, manga: SManga) {
-        manga.copyFromComicInfo(parseComicInfo(stream))
+    /**
+     * ComicInfo.xml files written by other tools are not always well formed for our schema. The
+     * metadata is optional, so an unreadable file is skipped instead of failing the whole scan
+     * of the manga (or of every chapter under it).
+     */
+    private fun parseComicInfoOrNull(stream: InputStream): ComicInfo? {
+        return runCatching { parseComicInfo(stream) }
+            .onFailure { logcat(LogPriority.ERROR, it) { "Failed to parse $COMIC_INFO_FILE" } }
+            .getOrNull()
     }
 
-    private fun setChapterDetailsFromComicInfoFile(stream: InputStream, chapter: SChapter) {
-        val comicInfo = parseComicInfo(stream)
+    private fun setMangaDetailsFromComicInfoFile(stream: InputStream, manga: SManga) {
+        val comicInfo = parseComicInfoOrNull(stream) ?: return
+        manga.copyFromComicInfo(comicInfo)
+    }
+
+    /** Returns false when the file could not be read, so callers can keep their fallback names. */
+    private fun setChapterDetailsFromComicInfoFile(stream: InputStream, chapter: SChapter): Boolean {
+        val comicInfo = parseComicInfoOrNull(stream) ?: return false
 
         comicInfo.title?.let { chapter.name = it.value }
         comicInfo.number?.value?.toFloatOrNull()?.let { chapter.chapter_number = it }
         comicInfo.translator?.let { chapter.scanlator = it.value }
+        return true
     }
 
     /**
@@ -1929,11 +1946,12 @@ class LocalSource(
                     scanlator = scanlator
                     date_upload = dateUpload
                 }
-                setChapterDetailsFromComicInfoFile(stream, chapter)
-                hasComicInfo = true
-                displayName = chapter.name
-                chapterNumber = chapter.chapter_number
-                scanlator = chapter.scanlator
+                if (setChapterDetailsFromComicInfoFile(stream, chapter)) {
+                    hasComicInfo = true
+                    displayName = chapter.name
+                    chapterNumber = chapter.chapter_number
+                    scanlator = chapter.scanlator
+                }
             }
             pageCount = when (format) {
                 is Format.Directory -> fileSystem.getFilesInDirectory(chapterFile)
@@ -2304,9 +2322,6 @@ class LocalSource(
         }
     }
 
-    // Filters
-    override fun getFilterList() = FilterList(currentOrderBy())
-
     // Unused stuff
     override suspend fun getPageList(chapter: SChapter): List<Page> = throw UnsupportedOperationException("Unused")
 
@@ -2387,11 +2402,11 @@ class LocalSource(
         private const val MAX_CONCURRENT_CHAPTER_INDEX_BUILDS = 16
         private const val MAX_CONCURRENT_CHAPTER_CHANGE_SCANS = 16
         private const val CHAPTER_INDEX_SAVE_DEBOUNCE_MILLIS = 750L
-        // Order-by selections of the local source filter sheet. Indices are persisted, so only
+        // Order-by selections of the local library. Indices are persisted, so only
         // append new values.
-        private const val ORDER_BY_TITLE = 0
-        private const val ORDER_BY_DATE = 1
-        private const val ORDER_BY_CHAPTER_COUNT = 2
+        const val ORDER_BY_TITLE = 0
+        const val ORDER_BY_DATE = 1
+        const val ORDER_BY_CHAPTER_COUNT = 2
 
         private const val LISTING_INDEX_VERSION = 4
         private const val CHAPTER_INDEX_VERSION = 4
