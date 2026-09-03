@@ -38,7 +38,7 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
                 node.type == "audio" -> {
                     val streamUrl = node.mediaStreamUrl
                     if (!streamUrl.isNullOrBlank()) {
-                        val baseName = node.title.removeAudioExtension().removeSubtitleSuffix()
+                        val baseName = node.title.trackBaseName()
                         audioCandidates += AudioCandidate(
                             ordinal = ordinal++,
                             node = node,
@@ -185,69 +185,12 @@ private fun logicalKey(ancestors: List<String>, baseName: String): String {
         .joinToString("\u0000") { it.normalizedKey() }
 }
 
-private fun String.isVariantContainer(): Boolean {
-    val normalized = normalizedKey()
-    return FORMAT_FOLDER_REGEX.matches(normalized) || SUBTITLE_FOLDER_MARKERS.any { it in normalized }
-}
-
-private fun String.normalizedKey(): String = trim().lowercase()
-
-private fun String.removeSubtitleSuffix(): String {
-    var result = this
-    while (true) {
-        val stripped = result.replace(SUBTITLE_SUFFIX_REGEX, "")
-            .trimEnd(' ', '_', '-', '.', '（', '(', '[', '【')
-        if (stripped == result) return stripped
-        result = stripped
-    }
-}
-
 private fun String.trackNumber(): String? {
     val digits = TRACK_NUMBER_REGEX.find(this)?.groupValues?.getOrNull(1) ?: return null
     return digits.trimStart('0').ifEmpty { "0" }
 }
 
-private fun String.fileExtension(): String = substringAfterLast('.', "").lowercase()
-
-private fun String.removeFileExtension(): String = substringBeforeLast('.', this)
-
-private fun String.removeAudioExtension(): String {
-    val extension = fileExtension()
-    return if (extension in AUDIO_PRIORITY) removeFileExtension() else this
-}
-
-private val FORMAT_FOLDER_REGEX = Regex(
-    pattern = """^\s*\d*\s*[:：_\-－ ]*\s*(mp3|wav|flac|m4a|aac|ogg|opus|mp4|m4b)(?:\s*.*)?$""",
-    option = RegexOption.IGNORE_CASE,
-)
-private val SUBTITLE_FOLDER_MARKERS = listOf(
-    "subtitle",
-    "subtitled",
-    "lyrics",
-    "lyric",
-    "lrc",
-    "字幕",
-    "台词",
-    "歌词",
-    "翻译",
-)
-private val SUBTITLE_SUFFIX_REGEX = Regex(
-    pattern = """(?:[\s._\-]*(?:\(|（|\[|【)?(?:subtitle|subtitles|sub|lyrics?|字幕|台词|歌词|中文|""" +
-        """简中|简体|繁中|繁体|zh(?:-cn|-tw)?|ja|jp)(?:\)|）|\]|】)?)$""",
-    option = RegexOption.IGNORE_CASE,
-)
 private val TRACK_NUMBER_REGEX = Regex("""^(?:track\s*)?0*(\d+)""", RegexOption.IGNORE_CASE)
-private val AUDIO_PRIORITY = setOf(
-    "mp3",
-    "m4a",
-    "aac",
-    "ogg",
-    "opus",
-    "m4b",
-    "flac",
-    "wav",
-    "mp4",
-)
 private val FLUENT_AUDIO_PRIORITY = mapOf(
     "mp3" to 0,
     "m4a" to 1,

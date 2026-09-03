@@ -11,6 +11,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -39,9 +40,10 @@ import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.outlined.SwapCalls
-import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,7 +61,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
@@ -72,6 +73,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.time.Duration.Companion.seconds
@@ -86,8 +88,8 @@ fun MangaBottomActionMenu(
     onRemoveFromGoodDoujinClicked: (() -> Unit)? = null,
     onMarkAsReadClicked: (() -> Unit)? = null,
     onMarkAsUnreadClicked: (() -> Unit)? = null,
-    onMarkPreviousAsReadClicked: (() -> Unit)? = null,
-    onMarkFollowingAsReadClicked: (() -> Unit)? = null,
+    readRanges: ReadRangeActions? = null,
+    onMarkRangeClicked: ((chapters: List<Chapter>, read: Boolean) -> Unit)? = null,
     onDownloadClicked: (() -> Unit)? = null,
     onDeleteClicked: (() -> Unit)? = null,
     onDeleteLocalFilesClicked: (() -> Unit)? = null,
@@ -109,9 +111,7 @@ fun MangaBottomActionMenu(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             val haptic = LocalHapticFeedback.current
-            val confirm = remember {
-                mutableStateListOf(false, false, false, false, false, false, false, false, false, false, false)
-            }
+            val confirm = remember { mutableStateListOf(false, false, false, false, false) }
             var resetJob by remember { mutableStateOf<Job?>(null) }
             val onLongClickItem: (Int) -> Unit = { toConfirmIndex ->
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -131,171 +131,86 @@ fun MangaBottomActionMenu(
                     )
                     .padding(horizontal = 8.dp, vertical = 12.dp),
             ) {
-                if (onBookmarkClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.action_bookmark),
-                        icon = Icons.Outlined.BookmarkAdd,
-                        toConfirm = confirm[0],
-                        onLongClick = { onLongClickItem(0) },
-                        onClick = onBookmarkClicked,
-                    )
-                }
-                if (onRemoveBookmarkClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.action_remove_bookmark),
-                        icon = Icons.Outlined.BookmarkRemove,
-                        toConfirm = confirm[1],
-                        onLongClick = { onLongClickItem(1) },
-                        onClick = onRemoveBookmarkClicked,
-                    )
-                }
-                val hasGoodDoujinAction = onAddToGoodDoujinClicked != null || onRemoveFromGoodDoujinClicked != null
-                if (hasGoodDoujinAction || onToggleMarkClicked != null) {
-                    var marksExpanded by remember { mutableStateOf(false) }
-                    Button(
-                        title = stringResource(MR.strings.action_mark_group),
-                        icon = Icons.AutoMirrored.Outlined.Label,
-                        toConfirm = false,
-                        onLongClick = {},
-                        onClick = { marksExpanded = true },
-                    ) {
-                        DropdownMenu(
-                            expanded = marksExpanded,
-                            onDismissRequest = { marksExpanded = false },
-                            offset = BottomBarMenuDpOffset,
-                        ) {
-                            if (onAddToGoodDoujinClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_add_to_good_doujin)) },
-                                    leadingIcon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
-                                    onClick = {
-                                        marksExpanded = false
-                                        onAddToGoodDoujinClicked()
-                                    },
-                                )
-                            }
-                            if (onRemoveFromGoodDoujinClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_remove_from_good_doujin)) },
-                                    leadingIcon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
-                                    onClick = {
-                                        marksExpanded = false
-                                        onRemoveFromGoodDoujinClicked()
-                                    },
-                                )
-                            }
-                            if (onToggleMarkClicked != null) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            stringResource(
-                                                if (marksSelected) {
-                                                    MR.strings.action_unmark_duplicate
-                                                } else {
-                                                    MR.strings.action_mark_duplicate
-                                                },
-                                            ),
-                                        )
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (marksSelected) Icons.Filled.Flag else Icons.Outlined.Flag,
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {
-                                        marksExpanded = false
-                                        onToggleMarkClicked()
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                val hasReadAction = onMarkAsReadClicked != null ||
-                    onMarkPreviousAsReadClicked != null ||
-                    onMarkFollowingAsReadClicked != null
-                if (hasReadAction) {
-                    var readExpanded by remember { mutableStateOf(false) }
-                    Button(
-                        // Only "read selected" is offered while something unread is picked; once
-                        // everything is read the menu holds just the previous/following entries.
-                        title = if (onMarkAsReadClicked != null) {
-                            stringResource(MR.strings.action_read_selected)
-                        } else {
-                            stringResource(MR.strings.action_mark_as_read)
+                ActionGroup(
+                    // Bookmarking and un-bookmarking are mutually exclusive, so one slot covers
+                    // both instead of reserving two positions in the row.
+                    actions = listOfNotNull(
+                        onBookmarkClicked?.let { onClick ->
+                            BottomBarAction(
+                                title = stringResource(MR.strings.action_bookmark),
+                                icon = Icons.Outlined.BookmarkAdd,
+                                onClick = onClick,
+                            )
                         },
-                        // A single selection gets one check, a multi-selection gets two.
-                        icon = if (selectedCount == 1) Icons.Outlined.Done else Icons.Outlined.DoneAll,
-                        toConfirm = false,
-                        onLongClick = {},
-                        onClick = { readExpanded = true },
-                    ) {
-                        DropdownMenu(
-                            expanded = readExpanded,
-                            onDismissRequest = { readExpanded = false },
-                            offset = BottomBarMenuDpOffset,
-                        ) {
-                            if (onMarkAsReadClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_read_selected)) },
-                                    leadingIcon = {
-                                        Icon(Icons.Outlined.DoneAll, contentDescription = null)
+                        onRemoveBookmarkClicked?.let { onClick ->
+                            BottomBarAction(
+                                title = stringResource(MR.strings.action_remove_bookmark),
+                                icon = Icons.Outlined.BookmarkRemove,
+                                onClick = onClick,
+                            )
+                        },
+                    ),
+                    confirm = confirm,
+                    confirmIndex = CONFIRM_BOOKMARK,
+                    onLongClickItem = onLongClickItem,
+                )
+                ActionGroup(
+                    actions = listOfNotNull(
+                        onAddToGoodDoujinClicked?.let { onClick ->
+                            BottomBarAction(
+                                title = stringResource(MR.strings.action_add_to_good_doujin),
+                                icon = Icons.Outlined.FavoriteBorder,
+                                onClick = onClick,
+                            )
+                        },
+                        onRemoveFromGoodDoujinClicked?.let { onClick ->
+                            BottomBarAction(
+                                title = stringResource(MR.strings.action_remove_from_good_doujin),
+                                icon = Icons.Filled.Favorite,
+                                onClick = onClick,
+                            )
+                        },
+                        onToggleMarkClicked?.let { onClick ->
+                            BottomBarAction(
+                                title = stringResource(
+                                    if (marksSelected) {
+                                        MR.strings.action_unmark_duplicate
+                                    } else {
+                                        MR.strings.action_mark_duplicate
                                     },
-                                    onClick = {
-                                        readExpanded = false
-                                        onMarkAsReadClicked()
-                                    },
-                                )
-                            }
-                            if (onMarkPreviousAsReadClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_read_previous)) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = ImageVector.vectorResource(R.drawable.ic_done_prev_24dp),
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {
-                                        readExpanded = false
-                                        onMarkPreviousAsReadClicked()
-                                    },
-                                )
-                            }
-                            if (onMarkFollowingAsReadClicked != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_read_following)) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = ImageVector.vectorResource(R.drawable.ic_done_next_24dp),
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {
-                                        readExpanded = false
-                                        onMarkFollowingAsReadClicked()
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                if (onMarkAsUnreadClicked != null) {
-                    Button(
-                        title = stringResource(MR.strings.action_mark_as_unread),
-                        icon = Icons.Outlined.RemoveDone,
-                        toConfirm = confirm[5],
-                        onLongClick = { onLongClickItem(5) },
-                        onClick = onMarkAsUnreadClicked,
-                    )
-                }
+                                ),
+                                icon = if (marksSelected) Icons.Filled.Flag else Icons.Outlined.Flag,
+                                onClick = onClick,
+                            )
+                        },
+                    ),
+                    confirm = confirm,
+                    confirmIndex = CONFIRM_MARK,
+                    onLongClickItem = onLongClickItem,
+                    groupTitle = stringResource(MR.strings.action_mark_group),
+                    groupIcon = Icons.AutoMirrored.Outlined.Label,
+                )
+                ReadStatusGroup(
+                    // The self toggle and the before/after shortcuts all act on the same read
+                    // state, so they share one slot. "Read selected" and "mark as unread" never
+                    // coexist: the self row is whichever one applies. The ranges only exist for a
+                    // single selection, and a direction with nothing left to change is dropped, so
+                    // the slot collapses back to a plain button whenever no range has work to do.
+                    onMarkAsReadClicked = onMarkAsReadClicked,
+                    onMarkAsUnreadClicked = onMarkAsUnreadClicked,
+                    selectedCount = selectedCount,
+                    readRanges = readRanges,
+                    onMarkRangeClicked = onMarkRangeClicked,
+                    confirm = confirm,
+                    confirmIndex = CONFIRM_READ,
+                    onLongClickItem = onLongClickItem,
+                )
                 if (onDownloadClicked != null) {
                     Button(
                         title = stringResource(MR.strings.action_download),
                         icon = Icons.Outlined.Download,
-                        toConfirm = confirm[7],
-                        onLongClick = { onLongClickItem(7) },
+                        toConfirm = confirm[CONFIRM_DOWNLOAD],
+                        onLongClick = { onLongClickItem(CONFIRM_DOWNLOAD) },
                         onClick = onDownloadClicked,
                     )
                 }
@@ -315,8 +230,8 @@ fun MangaBottomActionMenu(
                     Button(
                         title = stringResource(MR.strings.edit_chapter_translated_title),
                         icon = Icons.Outlined.Edit,
-                        toConfirm = confirm[10],
-                        onLongClick = { onLongClickItem(10) },
+                        toConfirm = confirm[CONFIRM_TITLE],
+                        onLongClick = { onLongClickItem(CONFIRM_TITLE) },
                         onClick = onEditTranslatedTitleClicked,
                     )
                 }
@@ -336,8 +251,8 @@ fun MangaBottomActionMenu(
                     Button(
                         title = stringResource(MR.strings.action_delete),
                         icon = Icons.Outlined.Delete,
-                        toConfirm = confirm[8],
-                        onLongClick = { onLongClickItem(8) },
+                        toConfirm = confirm[CONFIRM_DELETE],
+                        onLongClick = { onLongClickItem(CONFIRM_DELETE) },
                         onClick = onDeleteClicked,
                     )
                 }
@@ -525,3 +440,261 @@ fun LibraryBottomActionMenu(
 }
 
 private val BottomBarMenuDpOffset = DpOffset(0.dp, 0.dp)
+
+// Slots that a long press can label. Actions sharing a slot share one entry.
+private const val CONFIRM_BOOKMARK = 0
+private const val CONFIRM_MARK = 1
+private const val CONFIRM_READ = 2
+private const val CONFIRM_DOWNLOAD = 3
+private const val CONFIRM_TITLE = 4
+private const val CONFIRM_DELETE = 5
+
+private data class BottomBarAction(
+    val title: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit,
+)
+
+/**
+ * The chapters the before/after entries would change, split by direction and by the state being
+ * applied, and already narrowed to the chapters whose state actually differs. An empty list is
+ * therefore a legitimate answer and simply means "this entry would change nothing" — the menu
+ * leaves such an entry out entirely rather than showing it greyed out.
+ *
+ * Both sides include the selected chapter, so the two directions stay symmetric.
+ */
+data class ReadRangeActions(
+    val beforeToRead: List<Chapter>,
+    val beforeToUnread: List<Chapter>,
+    val afterToRead: List<Chapter>,
+    val afterToUnread: List<Chapter>,
+) {
+    /** Whether any before/after entry still has something to change. */
+    fun hasChanges(): Boolean =
+        beforeToRead.isNotEmpty() ||
+            beforeToUnread.isNotEmpty() ||
+            afterToRead.isNotEmpty() ||
+            afterToUnread.isNotEmpty()
+}
+
+/**
+ * One slot in the bottom action bar holding mutually exclusive or closely related actions.
+ *
+ * With a single action it behaves as a plain button: the label is that action's title and a tap runs
+ * it right away, so the bar never opens a menu holding a lone entry. With several actions it shows
+ * [groupTitle] and [groupIcon], which stay the same whatever the selection is — the point being that
+ * the slot's identity must not flick between the icons of the actions it currently holds.
+ */
+@Composable
+private fun RowScope.ActionGroup(
+    actions: List<BottomBarAction>,
+    confirm: List<Boolean>,
+    confirmIndex: Int,
+    onLongClickItem: (Int) -> Unit,
+    groupTitle: String? = null,
+    groupIcon: ImageVector? = null,
+) {
+    if (actions.isEmpty()) return
+    if (actions.size == 1) {
+        val action = actions.first()
+        Button(
+            title = action.title,
+            icon = action.icon,
+            toConfirm = confirm[confirmIndex],
+            onLongClick = { onLongClickItem(confirmIndex) },
+            onClick = action.onClick,
+        )
+        return
+    }
+    var expanded by remember { mutableStateOf(false) }
+    Button(
+        title = groupTitle ?: actions.first().title,
+        icon = groupIcon ?: actions.first().icon,
+        toConfirm = confirm[confirmIndex],
+        onLongClick = { onLongClickItem(confirmIndex) },
+        onClick = { expanded = true },
+    ) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            offset = BottomBarMenuDpOffset,
+        ) {
+            actions.forEach { action ->
+                DropdownMenuItem(
+                    text = { Text(action.title) },
+                    leadingIcon = { Icon(action.icon, contentDescription = null) },
+                    onClick = {
+                        expanded = false
+                        action.onClick()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The read-status slot of the bottom action bar.
+ *
+ * The slot opens a menu only when it has more than one thing to offer: the selected chapters
+ * themselves, plus — for a single selection — whichever before/after ranges still have chapters
+ * to change. A direction already entirely in the target state is dropped rather than greyed out,
+ * which is what keeps the menu a short single column instead of a wide double one. When no range
+ * has anything left to do the slot collapses back to a plain button that runs the selection
+ * action on tap, so the bar never opens a menu holding a lone entry.
+ */
+@Composable
+private fun RowScope.ReadStatusGroup(
+    onMarkAsReadClicked: (() -> Unit)?,
+    onMarkAsUnreadClicked: (() -> Unit)?,
+    selectedCount: Int,
+    readRanges: ReadRangeActions?,
+    onMarkRangeClicked: ((chapters: List<Chapter>, read: Boolean) -> Unit)?,
+    confirm: List<Boolean>,
+    confirmIndex: Int,
+    onLongClickItem: (Int) -> Unit,
+) {
+    val self = onMarkAsReadClicked?.let { onClick ->
+        BottomBarAction(
+            title = stringResource(MR.strings.action_read_selected),
+            // A single selection gets one check, a multi-selection gets two.
+            icon = if (selectedCount == 1) Icons.Outlined.Done else Icons.Outlined.DoneAll,
+            onClick = onClick,
+        )
+    } ?: onMarkAsUnreadClicked?.let { onClick ->
+        BottomBarAction(
+            title = stringResource(MR.strings.action_mark_as_unread),
+            icon = Icons.Outlined.RemoveDone,
+            onClick = onClick,
+        )
+    }
+    // A multi-selection carries no ranges at all, so it always lands on the plain button.
+    val onRange = onMarkRangeClicked
+    val ranges = readRanges?.takeIf { it.hasChanges() && onRange != null }
+    if (ranges == null || onRange == null) {
+        if (self == null) return
+        Button(
+            title = self.title,
+            icon = self.icon,
+            toConfirm = confirm[confirmIndex],
+            onLongClick = { onLongClickItem(confirmIndex) },
+            onClick = self.onClick,
+        )
+        return
+    }
+    val hasBefore = ranges.beforeToRead.isNotEmpty() || ranges.beforeToUnread.isNotEmpty()
+
+    var expanded by remember { mutableStateOf(false) }
+    Button(
+        title = stringResource(MR.strings.action_read_group),
+        icon = ImageVector.vectorResource(R.drawable.ic_done_edit_24dp),
+        toConfirm = confirm[confirmIndex],
+        onLongClick = { onLongClickItem(confirmIndex) },
+        onClick = { expanded = true },
+    ) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            offset = BottomBarMenuDpOffset,
+        ) {
+            if (self != null) {
+                DropdownMenuItem(
+                    text = { Text(self.title) },
+                    leadingIcon = { Icon(self.icon, contentDescription = null) },
+                    onClick = {
+                        expanded = false
+                        self.onClick()
+                    },
+                )
+            }
+            ReadRangeBlock(
+                heading = stringResource(MR.strings.action_read_range_before),
+                toRead = ranges.beforeToRead,
+                toUnread = ranges.beforeToUnread,
+                readIcon = ImageVector.vectorResource(R.drawable.ic_done_prev_24dp),
+                unreadIcon = ImageVector.vectorResource(R.drawable.ic_undone_prev_24dp),
+                showDivider = self != null,
+                onMarkRangeClicked = onRange,
+                onDone = { expanded = false },
+            )
+            ReadRangeBlock(
+                heading = stringResource(MR.strings.action_read_range_after),
+                toRead = ranges.afterToRead,
+                toUnread = ranges.afterToUnread,
+                readIcon = ImageVector.vectorResource(R.drawable.ic_done_next_24dp),
+                unreadIcon = ImageVector.vectorResource(R.drawable.ic_undone_next_24dp),
+                showDivider = self != null || hasBefore,
+                onMarkRangeClicked = onRange,
+                onDone = { expanded = false },
+            )
+        }
+    }
+}
+
+/**
+ * One before/after block of the read menu: a heading naming the direction, then an entry for each
+ * state that still has chapters to change. A state already applied to every chapter in that
+ * direction is dropped, and the block as a whole disappears when neither state has work to do, so
+ * the menu never carries a row that would do nothing when tapped.
+ */
+@Composable
+private fun ColumnScope.ReadRangeBlock(
+    heading: String,
+    toRead: List<Chapter>,
+    toUnread: List<Chapter>,
+    readIcon: ImageVector,
+    unreadIcon: ImageVector,
+    showDivider: Boolean,
+    onMarkRangeClicked: (chapters: List<Chapter>, read: Boolean) -> Unit,
+    onDone: () -> Unit,
+) {
+    if (toRead.isEmpty() && toUnread.isEmpty()) return
+    if (showDivider) HorizontalDivider()
+    Text(
+        text = heading,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+    ReadRangeEntry(
+        title = stringResource(MR.strings.action_mark_as_read),
+        icon = readIcon,
+        chapters = toRead,
+        read = true,
+        onMarkRangeClicked = onMarkRangeClicked,
+        onDone = onDone,
+    )
+    ReadRangeEntry(
+        title = stringResource(MR.strings.action_mark_as_unread),
+        icon = unreadIcon,
+        chapters = toUnread,
+        read = false,
+        onMarkRangeClicked = onMarkRangeClicked,
+        onDone = onDone,
+    )
+}
+
+/**
+ * A single before/after entry. Empty [chapters] means it would change nothing, so it is dropped
+ * instead of sitting in the menu greyed out: with one entry per row there is no second half that
+ * could swap places, which is the reason the old double column needed the placeholders.
+ */
+@Composable
+private fun ReadRangeEntry(
+    title: String,
+    icon: ImageVector,
+    chapters: List<Chapter>,
+    read: Boolean,
+    onMarkRangeClicked: (chapters: List<Chapter>, read: Boolean) -> Unit,
+    onDone: () -> Unit,
+) {
+    if (chapters.isEmpty()) return
+    DropdownMenuItem(
+        text = { Text(title) },
+        leadingIcon = { Icon(icon, contentDescription = null) },
+        onClick = {
+            onDone()
+            onMarkRangeClicked(chapters, read)
+        },
+    )
+}

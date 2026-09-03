@@ -285,14 +285,14 @@ private fun ColumnScope.DisplayPage(
     if (chapterLayoutAvailable) {
         ListGroupHeader(text = stringResource(MR.strings.chapter_display_layout_section))
         RadioItem(
-            label = stringResource(MR.strings.chapter_layout_list),
-            selected = !chapterCoverGridEnabled,
-            onClick = { onChapterLayoutChanged(false) },
-        )
-        RadioItem(
             label = stringResource(MR.strings.chapter_layout_grid),
             selected = chapterCoverGridEnabled,
             onClick = { onChapterLayoutChanged(true) },
+        )
+        RadioItem(
+            label = stringResource(MR.strings.chapter_layout_list),
+            selected = !chapterCoverGridEnabled,
+            onClick = { onChapterLayoutChanged(false) },
         )
     }
 }

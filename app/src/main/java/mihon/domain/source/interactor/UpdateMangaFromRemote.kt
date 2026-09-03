@@ -108,7 +108,9 @@ class UpdateMangaFromRemote(
             fetchWindow = fetchWindow,
             allowEmptyLocalSource = source is tachiyomi.source.local.LocalSource && fetchChapters,
         )
-        val updatedManga = mangaRepository.getMangaById(manga.id)
+        // A local cleanup can drop the row while this update is running; the source work already
+        // succeeded, so report it against the entry we started from instead of failing it.
+        val updatedManga = mangaRepository.getMangaByIdOrNull(manga.id) ?: manga
 
         return RemoteMangaUpdate(manga = updatedManga, newChapters = newChapters)
     }

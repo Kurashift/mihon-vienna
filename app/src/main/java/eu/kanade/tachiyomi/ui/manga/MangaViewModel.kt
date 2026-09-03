@@ -149,6 +149,10 @@ class MangaViewModel(
     private val _deleteCompleted = MutableSharedFlow<DeleteCompleted>(extraBufferCapacity = 1)
     val deleteCompleted: Flow<DeleteCompleted> = _deleteCompleted.asSharedFlow()
 
+    /** Emitted when the row behind [mangaId] is already gone, so the screen can go back. */
+    private val _mangaMissing = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val mangaMissing: Flow<Unit> = _mangaMissing.asSharedFlow()
+
     /** Outcome of a local file deletion, surfaced once so the screen can report and navigate. */
     data class DeleteCompleted(
         val deleted: Int,
@@ -177,6 +181,17 @@ class MangaViewModel(
 
     private val successState: State.Success?
         get() = state.value as? State.Success
+
+    /**
+     * Reads the row this screen is built on. A row that is gone is reported through
+     * [mangaMissing] so the screen leaves instead of waiting for data that cannot arrive;
+     * the manga flow itself never completes for a missing row.
+     */
+    private suspend fun awaitMangaOrReportMissing(id: Long): Manga? {
+        val manga = getMangaAndChapters.awaitMangaOrNull(id)
+        if (manga == null) _mangaMissing.tryEmit(Unit)
+        return manga
+    }
 
     val manga: Manga?
         get() = successState?.manga
@@ -269,7 +284,13 @@ class MangaViewModel(
         observeDownloads()
 
         viewModelScope.launchIO {
-            var manga = getMangaAndChapters.awaitManga(mangaId)
+            // A local cleanup can drop the row between opening this entry and reading it here.
+            val initialManga = getMangaAndChapters.awaitMangaOrNull(mangaId)
+            if (initialManga == null) {
+                _mangaMissing.tryEmit(Unit)
+                return@launchIO
+            }
+            var manga = initialManga
             val isLocalManga = manga.isLocal()
             val needRefreshInfo = !manga.initialized && !isLocalManga
 
@@ -290,14 +311,14 @@ class MangaViewModel(
             }
 
             if (flagsChanged) {
-                manga = getMangaAndChapters.awaitManga(mangaId)
+                manga = awaitMangaOrReportMissing(mangaId) ?: return@launchIO
             }
 
             // The translated-title shell is a local-library display preference, not per-manga
             // content. Keep every local detail page on the same mode without eagerly rewriting
             // the whole library when the user changes it.
             if (isLocalManga && setMangaDefaultChapterFlags.awaitDisplayModeIfChanged(manga)) {
-                manga = getMangaAndChapters.awaitManga(mangaId)
+                manga = awaitMangaOrReportMissing(mangaId) ?: return@launchIO
             }
 
             val chapters = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = true)
@@ -519,7 +540,7 @@ class MangaViewModel(
                     manga.copy(fetchInterval = -interval),
                 )
             ) {
-                val updatedManga = mangaRepository.getMangaById(manga.id)
+                val updatedManga = awaitMangaOrReportMissing(manga.id) ?: return@launchIO
                 updateSuccessState { it.copy(manga = updatedManga) }
             }
         }
@@ -689,11 +710,13 @@ class MangaViewModel(
     ) {
         val chapter = chapterItem.chapter
         when (swipeAction) {
+            // A swipe acts on the row under the finger, not on the selection, so it leaves the
+            // selection and its bottom bar alone. Only the bar's own buttons dismiss it.
             LibraryPreferences.ChapterSwipeAction.ToggleRead -> {
-                markChaptersRead(listOf(chapter), !chapter.read)
+                markChaptersRead(listOf(chapter), !chapter.read, clearSelection = false)
             }
             LibraryPreferences.ChapterSwipeAction.ToggleBookmark -> {
-                bookmarkChapters(listOf(chapter), !chapter.bookmark)
+                bookmarkChapters(listOf(chapter), !chapter.bookmark, clearSelection = false)
             }
             LibraryPreferences.ChapterSwipeAction.AddToGoodDoujin -> toggleGoodDoujin(chapter)
             LibraryPreferences.ChapterSwipeAction.Download -> {
@@ -895,22 +918,11 @@ class MangaViewModel(
         updateDownloadState(activeDownload.apply { status = Download.State.NOT_DOWNLOADED })
     }
 
-    fun markPreviousChapterRead(pointer: Chapter) {
-        val manga = successState?.manga ?: return
-        val chapters = filteredChapters.orEmpty().map { it.chapter }
-        val prevChapters = if (manga.sortDescending()) chapters.asReversed() else chapters
-        val pointerPos = prevChapters.indexOf(pointer)
-        // Includes the pointer chapter itself so both directions behave symmetrically.
-        if (pointerPos != -1) markChaptersRead(prevChapters.take(pointerPos + 1), true)
-    }
-
-    fun markFollowingChapterRead(pointer: Chapter) {
-        val manga = successState?.manga ?: return
-        val chapters = filteredChapters.orEmpty().map { it.chapter }
-        val orderedChapters = if (manga.sortDescending()) chapters.asReversed() else chapters
-        val pointerPos = orderedChapters.indexOf(pointer)
-        if (pointerPos != -1) markChaptersRead(orderedChapters.drop(pointerPos), true)
-    }
+    // The before/after read entries used to live here and rebuild the chapter order themselves.
+    // They reversed the list whenever the manga carried the descending flag, which is a bit that
+    // has nothing to do with the sort basis: a manual custom order ignores it, so those manga
+    // ended up with both ranges backwards. The entries now cut the already-ordered list where it
+    // is displayed, in MangaScreen, and hand the result to markChaptersRead below.
 
     /**
      * Persists a manual chapter order after the user drags chapters on the detail page.
@@ -923,7 +935,8 @@ class MangaViewModel(
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             withContext(Dispatchers.IO + NonCancellable) {
                 chapterReorderMutex.withLock {
-                    val manga = getMangaAndChapters.awaitManga(mangaId)
+                    val manga = getMangaAndChapters.awaitMangaOrNull(mangaId)
+                        ?: return@withContext
                     val currentIds = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = false)
                         .sortedWith(getChapterSort(manga))
                         .map { it.id }
@@ -953,9 +966,11 @@ class MangaViewModel(
      * Mark the selected chapter list as read/unread.
      * @param chapters the list of selected chapters.
      * @param read whether to mark chapters as read or unread.
+     * @param clearSelection whether the selection is over once the change is applied. The
+     * bottom bar drops the selection after its own action; a swipe on a single row does not.
      */
-    fun markChaptersRead(chapters: List<Chapter>, read: Boolean) {
-        toggleAllSelection(false)
+    fun markChaptersRead(chapters: List<Chapter>, read: Boolean, clearSelection: Boolean = true) {
+        if (clearSelection) toggleAllSelection(false)
         if (chapters.isEmpty()) return
         viewModelScope.launchIO {
             setReadStatus.await(
@@ -1083,7 +1098,13 @@ class MangaViewModel(
             val result = deletionService.deleteChapters(entries)
             toggleAllSelection(false)
             _deleteCompleted.emit(
-                DeleteCompleted(deleted = result.deleted, failed = result.failed.size, mangaDeleted = false),
+                DeleteCompleted(
+                    deleted = result.deleted,
+                    failed = result.failed.size,
+                    // Deleting every chapter empties the directory, which takes the manga row
+                    // with it. The screen has nothing left to show then, so it has to leave.
+                    mangaDeleted = state.manga.id in result.deletedMangaIds,
+                ),
             )
         }
     }
@@ -1105,7 +1126,11 @@ class MangaViewModel(
                 ),
             )
             _deleteCompleted.emit(
-                DeleteCompleted(deleted = result.deleted, failed = result.failed.size, mangaDeleted = true),
+                DeleteCompleted(
+                    deleted = result.deleted,
+                    failed = result.failed.size,
+                    mangaDeleted = state.manga.id in result.deletedMangaIds,
+                ),
             )
         }
     }
@@ -1277,14 +1302,18 @@ class MangaViewModel(
         }
     }
 
-    fun bookmarkChapters(chapters: List<Chapter>, bookmarked: Boolean) {
+    /**
+     * @param clearSelection whether the selection is over once the change is applied. The
+     * bottom bar drops the selection after its own action; a swipe on a single row does not.
+     */
+    fun bookmarkChapters(chapters: List<Chapter>, bookmarked: Boolean, clearSelection: Boolean = true) {
         viewModelScope.launchIO {
             chapters
                 .filterNot { it.bookmark == bookmarked }
                 .map { ChapterUpdate(id = it.id, bookmark = bookmarked) }
                 .let { updateChapter.awaitAll(it) }
         }
-        toggleAllSelection(false)
+        if (clearSelection) toggleAllSelection(false)
     }
 
     fun setCurrentSettingsAsDefault(applyToExisting: Boolean) {

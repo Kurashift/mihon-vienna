@@ -41,6 +41,11 @@ class LocalEntryDeletionService(
     data class Result(
         val deleted: Int,
         val failed: List<String>,
+        /**
+         * Manga rows dropped as a side effect of this deletion: a work that lost its last chapter
+         * loses its row with the directory. Callers holding those ids have nothing left to show.
+         */
+        val deletedMangaIds: Set<Long> = emptySet(),
     )
 
     /**
@@ -101,11 +106,15 @@ class LocalEntryDeletionService(
 
             // Works that just lost their last chapter: drop the directory too so it disappears
             // from the library immediately instead of lingering until the next full refresh.
+            val removedMangaIds = mutableSetOf<Long>()
             deleted.map { (target, _) -> target.mangaId }.distinct().forEach { mangaId ->
                 val dirName = resolved.firstOrNull { (target, _) -> target.mangaId == mangaId }
                     ?.second?.url?.substringBefore('/')
                 when (dirName?.let { removeDirectoryIfEmptied(base, it) }) {
-                    true -> cleanupEmptiedManga(mangaId)
+                    true -> {
+                        cleanupEmptiedManga(mangaId)
+                        removedMangaIds += mangaId
+                    }
                     false -> logcat(LogPriority.INFO) {
                         "Kept non-empty directory $dirName; it still holds unrelated files"
                     }
@@ -113,7 +122,11 @@ class LocalEntryDeletionService(
                 }
             }
 
-            Result(deleted = deleted.size, failed = failed)
+            Result(
+                deleted = deleted.size,
+                failed = failed,
+                deletedMangaIds = removedMangaIds,
+            )
         }
     }
 
@@ -142,7 +155,7 @@ class LocalEntryDeletionService(
             }
 
             cleanupManga(manga)
-            Result(deleted = 1, failed = emptyList())
+            Result(deleted = 1, failed = emptyList(), deletedMangaIds = setOf(manga.id))
         }
     }
 

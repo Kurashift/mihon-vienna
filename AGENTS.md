@@ -5,8 +5,12 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 ## 项目与构建
 
 - 默认在 `main` 分支工作。
-- 唯一交付构建类型是 `vienna`：`:app:assembleVienna`。它保留 applicationId `app.mihon.dev`，以便原位覆盖升级、保留用户数据。
-- 未经明确要求，不要构建或安装 `debug`、`localFirst`、`preview`、`release` 等其他变体。这些变体沿用上游原样保留（删除会影响 `vienna` 继承的混淆签名配置、Baseline Profile 生成与将来合并上游），不要动它们。
+- **交付**只用 `vienna`：`:app:assembleVienna`。它保留 applicationId `app.mihon.dev`，以便原位覆盖升级、保留用户数据。
+- 未经明确要求，不要为交付或安装而构建 `debug`、`localFirst`、`preview`、`release` 等其他变体。这些变体沿用上游原样保留（删除会影响 `vienna` 继承的混淆签名配置、Baseline Profile 生成与将来合并上游），不要动它们。
+- 上面这条只约束**交付产物**，不约束**验证行为**。改完代码后该做的编译检查与单元测试照常执行，不必为此征求同意：
+  - 编译校验优先跑 `:app:compileViennaKotlin`。
+  - 单元测试只有 debug 变体配了任务（`:app:testDebugUnitTest`），跑它必然会连带编译 debug。这是正常的验证开销，不属于「构建其他变体」，直接跑即可。
+  - 反过来，不要为了跑测试去给 `vienna` 补单测任务，也不要改动 `app/build.gradle.kts` 的变体配置。
 - APK 命名规范：`MihonVienna-<versionName>-<abi>.apk`
   - `arm64-v8a`：手机 / 真机，默认选择。
   - `x86_64`：安卓模拟器。
@@ -19,7 +23,8 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 
 ## 文档与工作区卫生
 
-- 长篇设计、方案、交接文档一律放 `docs/`；与 AI 协作过程相关的放 `docs/agent/`。
+- 长篇设计、方案文档一律放 `docs/`；不再维护 AI 交接文档，跨会话记忆写进提交信息或 `CHANGELOG`。
+- 并行 agent 动手前先看 `git status` 确认他人改动范围，一次只碰最小文件集，不留半成品读写链，做完即删临时笔记。
 - 仓库根目录只保留 `README.md`、`CHANGELOG.md`、`AGENTS.md`、`LICENSE` 等通用文件。
 - 不要把构建日志、安装日志、一次性脚本、临时导出、截图、中间数据留在根目录。需要保留的写进 `docs/`，不需要的直接删除。
 - 工具与 IDE 的本地状态目录（`.codebuddy/`、`.dsh/`、`__pycache__/`）由 `.gitignore` 忽略，不要提交。

@@ -490,7 +490,7 @@
     <string name="audio_categories">分類</string>
     <string name="audio_playlist">播放列表</string>
     <string name="audio_playlist_empty">播放列表還是空的</string>
-    <string name="audio_playlist_empty_hint">播放列表還是空的。到 ASMR 頁面把音軌加入播放列表即可。</string>
+    <string name="audio_playlist_empty_hint">播放列表為空。從 ASMR 頁面加入音軌吧</string>
     <string name="audio_playlist_remove">移出播放列表</string>
     <string name="audio_playlist_remove_work">整部移出播放列表</string>
     <string name="audio_playlist_work_tracks">列表中 %1$d 首</string>
@@ -500,7 +500,6 @@
     <string name="audio_add_work_to_playlist">整部加入播放列表</string>
     <string name="audio_add_to_playlist">加入播放列表</string>
     <string name="audio_remove_work_from_history">移除這部作品的記錄</string>
-    <string name="audio_history_work_tracks">聽過 %1$d 首</string>
     <string name="audio_history_continue">繼續收聽</string>
     <string name="audio_quick_open">開啟 ASMR 控制</string>
     <string name="audio_quick_open_work_details">開啟作品詳情</string>
@@ -533,8 +532,8 @@
     <string name="audio_volume_down">降低音量</string>
     <string name="audio_volume_up">提高音量</string>
     <string name="audio_sleep_timer">睡眠定時</string>
-    <string name="audio_quality_fluent">音質：流暢</string>
-    <string name="audio_quality_high">音質：高音質</string>
+    <string name="audio_quality_fluent">流暢</string>
+    <string name="audio_quality_high">高音質</string>
     <string name="audio_sleep_minutes">%1$d 分鐘</string>
     <string name="audio_sleep_off">關閉定時</string>
     <string name="audio_subtitle_display_mode">字幕顯示模式</string>
@@ -1028,4 +1027,9 @@
     <string name="extensionStoresScreen.deleteStore.title">刪除擴充套件商店</string>
     <string name="extensionStoresScreen.deleteStore.body">你是否要刪除擴充套件商店「%1$s」(%2$s)？</string>
     <string name="pref_webtoon_vertical_navigator_on_left">將垂直導航器設於左側</string>
+    <!-- 篇目標記已讀：「之前/之後」指列表（網格）裡的排列位置，不是時間先後。 -->
+    <string name="action_read_group">閱讀狀態</string>
+    <string name="action_read_selected">所選已讀</string>
+    <string name="action_read_range_before">此篇之前</string>
+    <string name="action_read_range_after">此篇之後</string>
 </resources>

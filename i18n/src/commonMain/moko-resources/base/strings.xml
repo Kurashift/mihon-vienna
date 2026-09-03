@@ -1183,7 +1183,7 @@
     <string name="my_lists_export_failed">Couldn\'t export the list</string>
     <string name="my_lists_empty_hint">Lists fill up as you mark works from a manga's work list, swipe to keep good doujins, or finish reading local works.</string>
     <string name="marks_list_title">Marked works</string>
-    <string name="marks_list_empty">No marked works yet. Flag works in the work list to collect them here.</string>
+    <string name="marks_list_empty">No marked works yet. Flag a few from the work list.</string>
     <string name="marks_list_share">Share</string>
     <string name="pref_marks_list_summary">View and export your marked works. Jump back to any manga from here.</string>
     <string name="marks_list_open_manga">Open manga</string>
@@ -1200,7 +1200,7 @@
     <string name="marks_list_clear_manga_confirm">Removes all marks for this manga from the list. Your local files are not touched.</string>
     <string name="pref_good_doujin_list_summary">View and manage works kept as good doujins. Swipe left on a work to add it.</string>
     <string name="good_doujin_list_title">Good doujin list</string>
-    <string name="good_doujin_list_empty">No good doujins yet. Swipe left on a work to add it.</string>
+    <string name="good_doujin_list_empty">No good doujins yet. Swipe left on a work.</string>
     <string name="good_doujin_list_no_others">No other good doujins available</string>
     <string name="good_doujin_list_clear_confirm">Removes all good-doujin entries for this manga from the list. Your local files are not touched.</string>
     <string name="good_doujin_list_chapter_count">%1$d works kept</string>
@@ -1238,7 +1238,7 @@
     <string name="audio_categories">Categories</string>
     <string name="audio_playlist">Playlist</string>
     <string name="audio_playlist_empty">Your playlist is empty</string>
-    <string name="audio_playlist_empty_hint">No tracks in your playlist yet. Open ASMR and add tracks to the list.</string>
+    <string name="audio_playlist_empty_hint">Playlist is empty. Add tracks from the ASMR page.</string>
     <string name="audio_playlist_remove">Remove from playlist</string>
     <string name="audio_playlist_remove_work">Remove work from playlist</string>
     <string name="audio_playlist_work_tracks">%1$d queued tracks</string>
@@ -1249,7 +1249,6 @@
     <string name="audio_add_work_to_playlist">Add entire work to playlist</string>
     <string name="audio_add_to_playlist">Add to playlist</string>
     <string name="audio_remove_work_from_history">Remove work from history</string>
-    <string name="audio_history_work_tracks">%1$d played tracks</string>
     <string name="audio_history_continue">Continue listening</string>
     <string name="audio_quick_open">Open ASMR controls</string>
     <string name="audio_quick_open_work_details">Open work details</string>
@@ -1349,8 +1348,12 @@
     <string name="local_delete_failed">Deletion failed; the file may be in use or corrupted</string>
     <string name="local_delete_unavailable">Local directory unavailable; nothing was deleted</string>
 
-    <!-- Chapter read actions -->
+    <!-- Chapter read actions. "Before"/"after" follow the order the chapters are listed in,
+         not the calendar, so the wording stays right under any sort and in the grid.
+         The range headings sit above the entries they group, so the entries themselves stay
+         short: a direction that has nothing left to change is dropped rather than greyed out. -->
+    <string name="action_read_group">Read status</string>
     <string name="action_read_selected">Read selected</string>
-    <string name="action_read_previous">Read previous</string>
-    <string name="action_read_following">Read following</string>
+    <string name="action_read_range_before">Before this</string>
+    <string name="action_read_range_after">After this</string>
 </resources>

@@ -1044,7 +1044,7 @@
     <string name="my_lists_export_failed">导出清单失败</string>
     <string name="my_lists_empty_hint">在漫画的篇目列表里标记篇目、左滑加入好本子，或者读完整本地篇目，这里就会出现条目。</string>
     <string name="marks_list_title">标记清单</string>
-    <string name="marks_list_empty">还没有标记的篇目。在篇目列表里标记篇目，标记清单会汇总到这里。</string>
+    <string name="marks_list_empty">暂无标记篇目。在篇目列表标记加入吧</string>
     <string name="marks_list_share">分享</string>
     <string name="pref_marks_list_summary">查看并导出已标记的篇目，可从这里直接跳回对应漫画。</string>
     <string name="marks_list_open_manga">打开漫画</string>
@@ -1061,7 +1061,7 @@
     <string name="marks_list_clear_manga_confirm">将该漫画的全部标记从名单中移除，不会删除本地文件。</string>
     <string name="pref_good_doujin_list_summary">查看和管理标记为好本子的篇目，左滑篇目条目即可加入。</string>
     <string name="good_doujin_list_title">好本子清单</string>
-    <string name="good_doujin_list_empty">还没有好本子。在篇目条目上左滑即可加入。</string>
+    <string name="good_doujin_list_empty">暂无好本子。在篇目条目上左滑加入吧</string>
     <string name="good_doujin_list_no_others">没有其他好本子</string>
     <string name="good_doujin_list_clear_confirm">将该漫画的全部好本子记录从清单中移除，不会删除本地文件。</string>
     <string name="good_doujin_list_chapter_count">已收录 %1$d 个篇目</string>
@@ -1099,7 +1099,7 @@
     <string name="audio_categories">分类</string>
     <string name="audio_playlist">播放列表</string>
     <string name="audio_playlist_empty">播放列表还是空的</string>
-    <string name="audio_playlist_empty_hint">播放列表还是空的。到 ASMR 页面把音轨加入播放列表即可。</string>
+    <string name="audio_playlist_empty_hint">播放列表为空。从 ASMR 页面加入音轨吧</string>
     <string name="audio_playlist_remove">移出播放列表</string>
     <string name="audio_playlist_remove_work">整部移出播放列表</string>
     <string name="audio_playlist_work_tracks">列表中 %1$d 首</string>
@@ -1110,7 +1110,6 @@
     <string name="audio_add_work_to_playlist">整部加入播放列表</string>
     <string name="audio_add_to_playlist">加入播放列表</string>
     <string name="audio_remove_work_from_history">移除这部作品的历史</string>
-    <string name="audio_history_work_tracks">听过 %1$d 首</string>
     <string name="audio_history_continue">继续收听</string>
     <string name="audio_quick_open">打开 ASMR 控制</string>
     <string name="audio_quick_open_work_details">打开作品详情</string>
@@ -1143,8 +1142,8 @@
     <string name="audio_volume_down">降低音量</string>
     <string name="audio_volume_up">提高音量</string>
     <string name="audio_sleep_timer">睡眠定时</string>
-    <string name="audio_quality_fluent">音质：流畅</string>
-    <string name="audio_quality_high">音质：高音质</string>
+    <string name="audio_quality_fluent">流畅</string>
+    <string name="audio_quality_high">高音质</string>
     <string name="audio_sleep_minutes">%1$d 分钟</string>
     <string name="audio_sleep_off">关闭定时</string>
     <string name="audio_subtitle_display_mode">字幕显示模式</string>
@@ -1209,8 +1208,10 @@
     <string name="local_delete_failed">删除失败，文件可能已被占用或已损坏</string>
     <string name="local_delete_unavailable">无法访问本地目录，未执行删除</string>
 
-    <!-- 篇目标记已读 -->
+    <!-- 篇目标记已读：「之前/之后」指列表（网格）里的排列位置，不是时间先后。
+         范围标题统管其下的条目，条目本身只说「标记为已读/未读」；某个方向已无可改章节时整块隐藏，不灰显占位。 -->
+    <string name="action_read_group">阅读状态</string>
     <string name="action_read_selected">所选已读</string>
-    <string name="action_read_previous">之前已读</string>
-    <string name="action_read_following">之后已读</string>
+    <string name="action_read_range_before">此篇之前</string>
+    <string name="action_read_range_after">此篇之后</string>
 </resources>

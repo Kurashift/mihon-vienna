@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +23,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
+import eu.kanade.tachiyomi.ui.browse.source.browse.LocalScrollToTopRequests
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -30,15 +32,18 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.LocalSource
 
-data object LocalSourceTab : Tab {
+/**
+ * The tab itself is written into the navigator's saved state, so the request channel cannot be
+ * one of its fields: a flow is not serializable and breaks the whole save on the next stop.
+ */
+private val localSourceScrollToTopRequests = MutableStateFlow(0L)
 
-    private val scrollToTopRequests = MutableStateFlow(0L)
+data object LocalSourceTab : Tab {
 
     private val screen = BrowseSourceScreen(
         sourceId = LocalSource.ID,
         listingQuery = null,
         isRoot = true,
-        scrollToTopRequests = scrollToTopRequests,
     )
 
     override val options: TabOptions
@@ -50,7 +55,7 @@ data object LocalSourceTab : Tab {
         )
 
     override suspend fun onReselect(navigator: Navigator) {
-        scrollToTopRequests.update { it + 1 }
+        localSourceScrollToTopRequests.update { it + 1 }
     }
 
     @Composable
@@ -99,7 +104,9 @@ data object LocalSourceTab : Tab {
                 .fillMaxSize()
                 .nestedScroll(scrollConnection),
         ) {
-            screen.Content()
+            CompositionLocalProvider(LocalScrollToTopRequests provides localSourceScrollToTopRequests) {
+                screen.Content()
+            }
         }
     }
 }

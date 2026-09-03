@@ -33,14 +33,24 @@ class KikoeruApi(
     private val basePreferences: BasePreferences,
 ) {
 
+    /**
+     * @param seed Seed of the random draw, sent as `seed=` when [order] is `random`.
+     *
+     * Measured against the live API: `order=random` without a seed answers the *same* page on every
+     * request — three calls in a row returned byte-identical JSON, and a `Cache-Control: no-cache`
+     * from the client changes nothing because the copy is held upstream of us. Only a new seed
+     * reshuffles it, and the same seed on page two continues the draw of page one instead of
+     * starting an unrelated one.
+     */
     suspend fun fetchWorks(
         page: Int,
         pageSize: Int,
         order: String = "release",
         sort: String = "desc",
         cache: CacheControl? = null,
+        seed: Long? = null,
     ): WorksResponse = withIOContext {
-        val url = "$BASE_URL/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
+        val url = "$BASE_URL/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed)
         with(json) {
             executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
         }
@@ -54,6 +64,9 @@ class KikoeruApi(
      * [fetchWorks] does. They are also requested without `CacheControl.FORCE_NETWORK` unless a
      * caller passes one, so the network interceptor gives them a `max-age` and repeat visits are
      * served from disk.
+     *
+     * @param seed Seed of the random draw, same meaning as in [fetchWorks]: the id endpoints reshuffle
+     * on a new seed and on nothing else.
      */
     suspend fun fetchCategoryWorks(
         field: AudioCategoryField,
@@ -63,10 +76,11 @@ class KikoeruApi(
         order: String = "release",
         sort: String = "desc",
         cache: CacheControl? = null,
+        seed: Long? = null,
     ): WorksResponse = withIOContext {
         val encodedId = URLEncoder.encode(id, "UTF-8")
         val url = "$BASE_URL/api/${field.pathSegment}/$encodedId/works" +
-            "?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
+            "?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed)
         with(json) {
             executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
         }
@@ -78,11 +92,13 @@ class KikoeruApi(
         pageSize: Int,
         order: String = "release",
         sort: String = "desc",
+        seed: Long? = null,
     ): WorksResponse = withIOContext {
         // Keyword goes in the URL path (the backend only parses the advanced
         // "$tag:xxx$" filter syntax there, not via a query parameter).
         val encoded = URLEncoder.encode(keyword, "UTF-8").replace("+", "%20")
-        val url = "$BASE_URL/api/search/$encoded?page=$page&pageSize=$pageSize&order=$order&sort=$sort"
+        val url = "$BASE_URL/api/search/$encoded?page=$page&pageSize=$pageSize&order=$order&sort=$sort" +
+            seedParam(seed)
         with(json) {
             executeWithRetry(url) {
                 client.newCall(authenticated(GET(url, cache = CacheControl.FORCE_NETWORK)))
@@ -228,6 +244,8 @@ class KikoeruApi(
     private fun authenticated(request: Request): Request {
         return request.withAudioAuthorization(basePreferences.audioAuthToken.get())
     }
+
+    private fun seedParam(seed: Long?): String = seed?.let { "&seed=$it" }.orEmpty()
 
     /**
      * Retries transient failures (server 5xx, connection reset) a couple of times with a short

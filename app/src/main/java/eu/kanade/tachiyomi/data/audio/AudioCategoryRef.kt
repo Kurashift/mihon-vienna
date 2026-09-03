@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.audio
 
 import kotlinx.serialization.Serializable
+import java.io.Serializable as JavaSerializable
 
 /**
  * The three dictionary-backed ways the backend can narrow a work list.
@@ -31,10 +32,15 @@ enum class AudioCategoryField(val pathSegment: String, private val legacyPrefix:
  * punctuation, and cacheable because the request does not carry `CacheControl.FORCE_NETWORK`.
  *
  * @property title The display name, kept only so the results page can label itself.
+ *
+ * Held by [eu.kanade.tachiyomi.ui.audio.AudioBrowseScreen], which is written into a Bundle when
+ * the activity stops, so it also has to be [java.io.Serializable] and not only
+ * kotlinx-serializable: without it Android throws
+ * `BadParcelableException ... NotSerializableException` as soon as the browse page is on the stack.
  */
 @Serializable
 data class AudioCategoryRef(
     val field: AudioCategoryField,
     val id: String,
     val title: String,
-)
+) : JavaSerializable

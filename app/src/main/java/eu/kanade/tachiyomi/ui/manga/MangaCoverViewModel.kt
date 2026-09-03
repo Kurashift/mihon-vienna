@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import logcat.LogPriority
@@ -43,6 +44,12 @@ import kotlin.time.Duration.Companion.seconds
 
 class MangaCoverViewModel(
     private val mangaId: Long,
+    /**
+     * What the opening screen already has. Seeding with it keeps the dialog usable even when the
+     * row is gone from the database: the manga flow never emits for a deleted row, so waiting on
+     * it alone would leave the dialog spinning with no way out.
+     */
+    private val initialManga: Manga? = null,
     private val getManga: GetManga = Injekt.get(),
     private val imageSaver: ImageSaver = Injekt.get(),
     private val coverCache: CoverCache = Injekt.get(),
@@ -54,18 +61,22 @@ class MangaCoverViewModel(
     companion object {
         val MANGA_ID_KEY = CreationExtras.Key<Long>()
 
+        val INITIAL_MANGA_KEY = CreationExtras.Key<Manga>()
+
         val Factory = viewModelFactory {
             initializer {
                 MangaCoverViewModel(
                     mangaId = get(MANGA_ID_KEY)!!,
+                    initialManga = get(INITIAL_MANGA_KEY),
                 )
             }
         }
     }
 
     val state: StateFlow<Manga?> = getManga.subscribe(mangaId)
+        .onStart { initialManga?.let { emit(it) } }
         .flowOn(Dispatchers.IO)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5.seconds), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5.seconds), initialManga)
 
     fun saveCover(context: Context) {
         viewModelScope.launch {

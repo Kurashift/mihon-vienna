@@ -63,7 +63,6 @@ import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import mihon.feature.migration.config.MigrationConfigScreen
@@ -90,6 +89,19 @@ class MangaScreen(
 
     override fun onProvideAssistUrl() = assistUrl
 
+    companion object {
+        /**
+         * How many detail pages a run of random hops leaves on the backstack.
+         *
+         * Back has to walk the user through the manga they just came from, so a random hop is a
+         * real push and not a swap. Left unbounded though, every visited manga stays alive with
+         * its ViewModel and its database subscriptions running, and the trip home has to unwind
+         * one screen per hop. This cap keeps that work constant while still leaving far more
+         * history than anyone walks back through.
+         */
+        private const val MAX_DETAIL_HISTORY = 10
+    }
+
     @Composable
     override fun Content() {
         if (!ifSourcesLoaded()) {
@@ -111,6 +123,14 @@ class MangaScreen(
         )
 
         val state by viewModel.state.collectAsStateWithLifecycle()
+
+        // Collected before the loading branch: the row can already be gone while the screen is
+        // still waiting for its first read.
+        LaunchedEffect(Unit) {
+            viewModel.mangaMissing.collect {
+                navigator.pop()
+            }
+        }
 
         if (state is MangaViewModel.State.Loading) {
             LoadingScreen()
@@ -201,16 +221,14 @@ class MangaScreen(
                                 // details screen. Without it the second hop onwards would
                                 // fall back to the whole library and leave the search or
                                 // filter the user was browsing in.
-                                navigator.push(
+                                pushDetail(
+                                    navigator,
                                     MangaScreen(
                                         mangaId = randomId,
                                         fromSource = true,
                                         randomCandidates = viewModel.randomCandidates,
                                     ),
                                 )
-                                // Keep the guard through the transition so a second tap
-                                // cannot push a second random manga.
-                                delay(600)
                             } else {
                                 viewModel.snackbarHostState.showSnackbarReplacing(
                                     context.stringResource(MR.strings.information_no_entries_found),
@@ -238,8 +256,7 @@ class MangaScreen(
                         try {
                             val result = viewModel.getRandomGoodDoujinManga()
                             if (result.mangaId != null) {
-                                navigator.push(MangaScreen(result.mangaId, true))
-                                delay(600)
+                                pushDetail(navigator, MangaScreen(result.mangaId, true))
                             } else if (!result.hasEntries) {
                                 viewModel.snackbarHostState.showSnackbarReplacing(
                                     context.stringResource(MR.strings.good_doujin_list_empty),
@@ -333,8 +350,6 @@ class MangaScreen(
             onMultiBookmarkClicked = viewModel::bookmarkChapters,
             onMultiGoodDoujinClicked = viewModel::setGoodDoujinChapters,
             onMultiMarkAsReadClicked = viewModel::markChaptersRead,
-            onMarkPreviousAsReadClicked = viewModel::markPreviousChapterRead,
-            onMarkFollowingAsReadClicked = viewModel::markFollowingChapterRead,
             onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
             onDeleteLocalChaptersClicked = viewModel::showDeleteLocalChaptersDialog,
             onMoveChaptersClicked = { chapters ->
@@ -506,6 +521,7 @@ class MangaScreen(
                     factory = MangaCoverViewModel.Factory,
                     extras = CreationExtras {
                         set(MangaCoverViewModel.MANGA_ID_KEY, successState.manga.id)
+                        set(MangaCoverViewModel.INITIAL_MANGA_KEY, successState.manga)
                     },
                 )
                 val manga by sm.state.collectAsStateWithLifecycle()
@@ -550,6 +566,25 @@ class MangaScreen(
                 onDismissRequest = { showScanlatorsDialog = false },
                 onConfirm = viewModel::setExcludedScanlators,
             )
+        }
+    }
+
+    /**
+     * Pushes the next random pick onto the backstack, dropping the oldest detail page once the
+     * history is full.
+     *
+     * Voyager can only pop from the top, so trimming the bottom means rewriting the stack in one
+     * go. That rewrite is still a single navigation event: the transition plays and the dropped
+     * page is disposed exactly as it would be after a pop.
+     */
+    private fun pushDetail(navigator: Navigator, screen: MangaScreen) {
+        val items = navigator.items
+        val oldest = items.indexOfFirst { it is MangaScreen }
+        val detailCount = items.count { it is MangaScreen }
+        if (oldest >= 0 && detailCount >= MAX_DETAIL_HISTORY) {
+            navigator.replaceAll(items.toMutableList().apply { removeAt(oldest) } + screen)
+        } else {
+            navigator.push(screen)
         }
     }
 

@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.local
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +39,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,6 +71,55 @@ private enum class ImportTargetMode {
     NEW,
 }
 
+// 来源文件选择状态需要撑过"选择已有合集"的 push/pop：Voyager 离开组合时只有
+// rememberSaveable 会随返回恢复，普通 remember 会被丢弃（表现为选完合集后文件被清空）。
+private val sourcePreviewListSaver = listSaver<List<LocalChapterTransferService.SourcePreview>, Any?>(
+    save = { previews ->
+        previews.flatMapTo(arrayListOf()) { preview ->
+            arrayListOf<Any?>(
+                preview.uri.toString(),
+                preview.displayName,
+                ArrayList(preview.candidateNames),
+                ArrayList(
+                    preview.groups.map { group ->
+                        arrayListOf<Any?>(
+                            group.uri.toString(),
+                            group.name,
+                            ArrayList(group.candidateNames),
+                            ArrayList(group.candidateUris.map { it.toString() }),
+                        )
+                    },
+                ),
+                preview.ignoredGroupCount,
+            )
+        }
+    },
+    restore = { saved ->
+        saved.chunked(5).map { fields ->
+            LocalChapterTransferService.SourcePreview(
+                uri = Uri.parse(fields[0] as String),
+                displayName = fields[1] as String,
+                candidateNames = (fields[2] as List<*>).map { it as String },
+                groups = (fields[3] as List<*>).map { groupFields ->
+                    val group = groupFields as List<*>
+                    LocalChapterTransferService.SourceGroupPreview(
+                        uri = Uri.parse(group[0] as String),
+                        name = group[1] as String,
+                        candidateNames = (group[2] as List<*>).map { it as String },
+                        candidateUris = (group[3] as List<*>).map { Uri.parse(it as String) },
+                    )
+                },
+                ignoredGroupCount = fields[4] as Int,
+            )
+        }
+    },
+)
+
+private val uriListSaver = listSaver<List<Uri>, String>(
+    save = { uris -> uris.mapTo(arrayListOf()) { it.toString() } },
+    restore = { saved -> saved.map { Uri.parse(it) } },
+)
+
 @Composable
 private fun SourceButton(
     icon: ImageVector,
@@ -98,8 +149,12 @@ data class LocalImportScreen(
         val mangaRepository = remember { Injekt.get<MangaRepository>() }
         val transferService = remember { Injekt.get<LocalChapterTransferService>() }
         val networkToLocal = remember { Injekt.get<NetworkToLocalManga>() }
-        var selectedUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
-        var sourcePreviews by remember { mutableStateOf<List<LocalChapterTransferService.SourcePreview>>(emptyList()) }
+        var selectedUris by rememberSaveable(stateSaver = uriListSaver) {
+            mutableStateOf<List<Uri>>(emptyList())
+        }
+        var sourcePreviews by rememberSaveable(stateSaver = sourcePreviewListSaver) {
+            mutableStateOf<List<LocalChapterTransferService.SourcePreview>>(emptyList())
+        }
         var ignoredSourceCount by remember { mutableLongStateOf(0L) }
         var targetId by rememberSaveable { mutableStateOf(fixedTargetMangaId ?: -1L) }
         var mangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
@@ -108,6 +163,7 @@ data class LocalImportScreen(
         var targetMode by rememberSaveable {
             mutableStateOf(if (fixedTargetMangaId != null) ImportTargetMode.EXISTING else ImportTargetMode.NEW)
         }
+        var showMangaPicker by rememberSaveable { mutableStateOf(false) }
         var output by remember { mutableStateOf(LocalChapterTransferService.FolderOutput.DIRECTORY) }
         var deleteSource by remember { mutableStateOf(false) }
         var importing by remember { mutableStateOf(false) }
@@ -261,14 +317,14 @@ data class LocalImportScreen(
                                     SourceButton(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Outlined.FolderOpen,
-                                        label = "从文件夹导入本子",
+                                        label = "从文件夹导入",
                                         enabled = !importing,
                                         onClick = { folderPicker.launch(null) },
                                     )
                                     SourceButton(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Outlined.InsertDriveFile,
-                                        label = "导入单本本子压缩包",
+                                        label = "从文件导入",
                                         enabled = !importing,
                                         onClick = { filePicker.launch(arrayOf("*/*")) },
                                     )
@@ -277,13 +333,13 @@ data class LocalImportScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     SourceButton(
                                         icon = Icons.Outlined.FolderOpen,
-                                        label = "从文件夹导入本子",
+                                        label = "从文件夹导入",
                                         enabled = !importing,
                                         onClick = { folderPicker.launch(null) },
                                     )
                                     SourceButton(
                                         icon = Icons.Outlined.InsertDriveFile,
-                                        label = "导入单本本子压缩包",
+                                        label = "从文件导入",
                                         enabled = !importing,
                                         onClick = { filePicker.launch(arrayOf("*/*")) },
                                     )
@@ -292,7 +348,7 @@ data class LocalImportScreen(
                         }
                         if (selectedUris.isEmpty()) {
                             Text(
-                                text = "可添加多个来源；只会接收图片目录或可识别的单本归档",
+                                text = "可导入合集文件夹，也可单选或多选 CBZ/ZIP/EPUB 等压缩包",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp),
@@ -420,16 +476,7 @@ data class LocalImportScreen(
                                     selected = targetMode == ImportTargetMode.EXISTING,
                                     onClick = {
                                         targetMode = ImportTargetMode.EXISTING
-                                        navigator.push(
-                                            LocalMangaPickerScreen(
-                                                mangas = mangas,
-                                                selectedMangaId = targetId,
-                                                onSelected = {
-                                                    targetId = it
-                                                    targetMode = ImportTargetMode.EXISTING
-                                                },
-                                            ),
-                                        )
+                                        showMangaPicker = true
                                     },
                                     label = { Text("已有合集") },
                                 )
@@ -467,16 +514,7 @@ data class LocalImportScreen(
                                             style = MaterialTheme.typography.bodyLarge,
                                         )
                                     }
-                                    TextButton(
-                                        onClick = {
-                                            navigator.push(
-                                                LocalMangaPickerScreen(mangas) {
-                                                    targetId = it
-                                                    targetMode = ImportTargetMode.EXISTING
-                                                },
-                                            )
-                                        },
-                                    ) { Text("选择") }
+                                    TextButton(onClick = { showMangaPicker = true }) { Text("选择") }
                                 }
                             } else {
                                 OutlinedTextField(
@@ -497,11 +535,6 @@ data class LocalImportScreen(
                 }
                 item {
                     ImportSection(title = "导入设置") {
-                        Text(
-                            "单本压缩包保持原格式；目录来源可选文件夹或 CBZ。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(
                                 selected = output == LocalChapterTransferService.FolderOutput.DIRECTORY,
@@ -635,6 +668,17 @@ data class LocalImportScreen(
                     }
                 }
             }
+        }
+        if (showMangaPicker) {
+            LocalMangaPickerDialog(
+                mangas = mangas,
+                selectedMangaId = targetId,
+                onSelected = {
+                    targetId = it
+                    targetMode = ImportTargetMode.EXISTING
+                },
+                onDismissRequest = { showMangaPicker = false },
+            )
         }
         conflictPreview?.let { preview ->
             AlertDialog(

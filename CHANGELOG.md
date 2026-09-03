@@ -10,6 +10,29 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Fixed` - for any bug fixes.
 - `Other` - for technical stuff.
 
+## [Unreleased]
+
+## [v2.2.2] - 2026-09-04
+### Added
+- Local library: sort (title, chapter count, date) now sits on the filter bar
+- Manga details: chapter covers can be rearranged by dragging in the grid, the same way as in the list
+- ASMR history now shows where a track was left, with a progress bar
+
+### Improved
+- Manga details read-status menu uses one row per scope (this chapter, before, after) with read and unread side by side; a direction with nothing left to change is hidden instead of greyed out
+- Chapter cover grid is now the default layout
+- Local import: choosing an existing collection no longer clears the files already picked
+- Local library: mark and good-doujin filters no longer empty the grid after a sort change, and the count next to the source name matches what is on screen
+- Random dice: a sideways swipe is less likely to be read as the upward action
+- ASMR: pull to refresh actually draws a new random list; playback resumes where you left off, including after switching audio quality
+
+### Fixed
+- Fixed importing into an existing collection wiping the selected files, and the picker crashing the app when it was sent to the background
+- Fixed the ASMR browse page crashing when the app was sent to the background
+- Fixed a ComicInfo.xml that could not be read taking down the whole scan of that manga
+- Fixed a deleted local manga leaving a spinning details screen
+- Fixed ASMR history being lost when switching between fluent and high quality, and finished tracks resuming at the last second
+
 ## [v2.2.1] - 2026-09-02
 ### Added
 - Local source: a "Chapter count" option in the order-by filter, so a shelf can be sorted by how many chapters a manga has

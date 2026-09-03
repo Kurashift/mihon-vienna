@@ -21,8 +21,12 @@ class GetMangaWithChapters(
         }
     }
 
-    suspend fun awaitManga(id: Long): Manga {
-        return mangaRepository.getMangaById(id)
+    /**
+     * Returns null when the row is already gone: the caller keeps ids across a local update, and a
+     * directory that disappears takes its manga with it.
+     */
+    suspend fun awaitMangaOrNull(id: Long): Manga? {
+        return mangaRepository.getMangaByIdOrNull(id)
     }
 
     suspend fun awaitChapters(id: Long, applyScanlatorFilter: Boolean = false): List<Chapter> {
