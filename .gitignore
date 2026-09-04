@@ -38,6 +38,7 @@ secrets.properties
 .dsh/
 __pycache__/
 *.pyc
+gradle/build-logic/bin/
 
 # Throwaway artifacts in the repo root: build/install logs, one-off scripts,
 # scratch exports. Real documentation belongs in docs/.

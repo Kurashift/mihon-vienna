@@ -107,7 +107,12 @@ private fun HistoryScreenContent(
     ) {
         items(
             items = history,
-            key = { "history-${it.hashCode()}" },
+            key = {
+                when (it) {
+                    is HistoryUiModel.Header -> "history-header-${it.date}"
+                    is HistoryUiModel.Item -> "history-item-${it.item.chapterId}"
+                }
+            },
             contentType = {
                 when (it) {
                     is HistoryUiModel.Header -> "header"
@@ -118,14 +123,12 @@ private fun HistoryScreenContent(
             when (item) {
                 is HistoryUiModel.Header -> {
                     ListGroupHeader(
-                        modifier = Modifier.animateItem(),
                         text = relativeDateText(item.date),
                     )
                 }
                 is HistoryUiModel.Item -> {
                     val value = item.item
                     HistoryItem(
-                        modifier = Modifier.animateItem(),
                         history = value,
                         onClickCover = { onClickCover(value) },
                         onClickResume = { onClickResume(value) },

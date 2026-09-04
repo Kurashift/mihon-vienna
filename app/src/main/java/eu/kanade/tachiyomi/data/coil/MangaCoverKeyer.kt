@@ -3,10 +3,7 @@ package eu.kanade.tachiyomi.data.coil
 import coil3.key.Keyer
 import coil3.request.Options
 import eu.kanade.domain.manga.model.hasCustomCover
-import eu.kanade.tachiyomi.data.cache.CoverCache
 import tachiyomi.domain.manga.model.MangaCover
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
 import tachiyomi.domain.manga.model.Manga as DomainManga
 
 class MangaKeyer : Keyer<DomainManga> {
@@ -19,17 +16,14 @@ class MangaKeyer : Keyer<DomainManga> {
     }
 }
 
-class MangaCoverKeyer(
-    private val coverCache: CoverCache = Injekt.get(),
-) : Keyer<MangaCover> {
+class MangaCoverKeyer : Keyer<MangaCover> {
     override fun key(data: MangaCover, options: Options): String {
-        return when {
-            coverCache.getCustomCoverFile(data.mangaId).exists() -> {
-                "${data.mangaId};${data.lastModified}"
-            }
-            else -> {
-                "${data.url};${data.lastModified}"
-            }
+        // Custom covers are only stored for library items, and lastModified already
+        // changes when a custom cover is set. Avoid File.exists() on the scroll path.
+        return if (data.isMangaFavorite) {
+            "${data.mangaId};${data.lastModified}"
+        } else {
+            "${data.url};${data.lastModified}"
         }
     }
 }

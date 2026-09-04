@@ -2,7 +2,6 @@ package eu.kanade.presentation.browse.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,8 +16,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,12 +40,13 @@ import eu.kanade.presentation.library.components.IndexLabel
 import eu.kanade.presentation.library.components.LastReadBadge
 import eu.kanade.presentation.library.components.MangaCompactGridItem
 import eu.kanade.presentation.library.components.ProgressBadge
+import eu.kanade.tachiyomi.data.manga.MangaCoverUpdate
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceUiModel
+import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import tachiyomi.domain.manga.model.Manga
-import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.MangaProgress
 import tachiyomi.presentation.core.util.plus
 
@@ -55,13 +54,19 @@ import tachiyomi.presentation.core.util.plus
 fun BrowseSourceCompactGrid(
     mangaList: LazyPagingItems<BrowseSourceUiModel>,
     columns: GridCells,
+    gridState: LazyGridState,
     contentPadding: PaddingValues,
     showIndex: Boolean = false,
     lastReadMangaId: Long? = null,
     locateMangaId: Long? = null,
     favoriteIds: Set<Long>? = null,
-    progressFor: (mangaId: Long, url: String) -> MangaProgress = { _, _ -> MangaProgress.EMPTY },
-    isLastRead: (mangaId: Long) -> Boolean = { false },
+    progressContext: BrowseSourceViewModel.ProgressContext = BrowseSourceViewModel.ProgressContext(
+        emptyMap(),
+        emptyMap(),
+        emptyMap(),
+    ),
+    coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
+    trailingSlotCount: Int = 0,
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
     onLocateMangaHandled: () -> Unit = {},
@@ -69,15 +74,25 @@ fun BrowseSourceCompactGrid(
     onRandomManga: (() -> Unit)? = null,
     onRandomGoodDoujin: (() -> Unit)? = null,
 ) {
-    val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     val locateTransition = rememberBrowseSourceLocateTransition()
     val leadingItemCount = if (mangaList.loadState.prepend is LoadState.Loading) 1 else 0
+    val headerAwareIndex = showIndex && mangaList.hasDateHeaders()
     var isLocating by remember { mutableStateOf(false) }
     var isThumbDragging by remember { mutableStateOf(false) }
     val isLoadingPaused = isLocating || isThumbDragging
     var handledLocateManga by remember { mutableStateOf<Long?>(null) }
     var handledScrollToTopRequest by remember { mutableStateOf(scrollToTopRequest) }
+
+    // Skeleton slots standing in for the page that has not landed yet. They keep the listing
+    // long enough to drag the scroller from one end to the other in a single gesture, and
+    // reading one is what pulls that page in.
+    val appendEnded = (mangaList.loadState.append as? LoadState.NotLoading)?.endOfPaginationReached == true
+    val trailingSlots = if (appendEnded || mangaList.loadState.refresh is LoadState.Loading) {
+        0
+    } else {
+        trailingSlotCount
+    }
 
     // Brief highlight on the located last-read manga; fades out cleanly on its own.
     var highlightedMangaId by remember { mutableStateOf<Long?>(null) }
@@ -121,6 +136,23 @@ fun BrowseSourceCompactGrid(
         }
     }
     Box(modifier = Modifier.fillMaxSize()) {
+        // The skeleton slots give the scroller room to travel past the last loaded entry, but
+        // nothing in them reads the pager, so Paging never gets the hint on its own - landing
+        // straight on one leaves it a skeleton forever. Fire on the viewport reaching the end
+        // of what is loaded, the cue Paging would follow anyway, so one trip past the end
+        // pulls exactly one more page instead of racing to the end of the list.
+        LaunchedEffect(gridState, mangaList, trailingSlots) {
+            snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+                .collect { lastVisible ->
+                    if (trailingSlots > 0 &&
+                        mangaList.itemCount > 0 &&
+                        lastVisible >= mangaList.itemCount - 1
+                    ) {
+                        mangaList[mangaList.itemCount - 1]
+                    }
+                }
+        }
+
         BrowseSourceLazyVerticalGrid(
             fastScroll = showIndex,
             state = gridState,
@@ -141,19 +173,13 @@ fun BrowseSourceCompactGrid(
             items(
                 count = mangaList.itemCount,
                 span = { index ->
-                    if (mangaList.itemSnapshotList[index] is BrowseSourceUiModel.Header) {
+                    if (mangaList.peek(index) is BrowseSourceUiModel.Header) {
                         GridItemSpan(maxLineSpan)
                     } else {
                         GridItemSpan(1)
                     }
                 },
-                key = { index ->
-                    when (val item = mangaList.itemSnapshotList[index]) {
-                        is BrowseSourceUiModel.Header -> "latest-header-${item.timestamp}"
-                        is BrowseSourceUiModel.Item -> item.manga.id
-                        null -> -index - 1L
-                    }
-                },
+                key = { index -> mangaList.peekKey(index) },
             ) { index ->
                 val item = if (isLoadingPaused) mangaList.peek(index) else mangaList[index]
                 when (item) {
@@ -164,16 +190,18 @@ fun BrowseSourceCompactGrid(
                         val manga = item.manga
                         BrowseSourceCompactGridItem(
                             item = item,
-                            index = if (showIndex) mangaList.mangaNumberAt(index) else null,
+                            index = when {
+                                !showIndex -> null
+                                headerAwareIndex -> mangaList.mangaNumberAt(index)
+                                else -> index + 1
+                            },
                             favoriteIds = favoriteIds,
                             loadCover = !isLoadingPaused,
-                            progressFor = progressFor,
-                            isLastRead = isLastRead,
-                            highlightColor = if (highlightedMangaId == manga.id) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha.value)
-                            } else {
-                                Color.Transparent
-                            },
+                            progress = progressContext.progressFor(manga.id, manga.url),
+                            isLastRead = progressContext.lastReadMangaId == manga.id,
+                            coverUpdates = coverUpdates,
+                            highlightedMangaId = highlightedMangaId,
+                            highlightAlpha = highlightAlpha,
                             onClick = { onMangaClick(manga) },
                             onLongClick = { onMangaLongClick(manga) },
                         )
@@ -184,9 +212,23 @@ fun BrowseSourceCompactGrid(
                 }
             }
 
-            if (mangaList.loadState.refresh is LoadState.Loading || mangaList.loadState.append is LoadState.Loading) {
+            if (mangaList.loadState.refresh is LoadState.Loading) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     BrowseSourceLoadingItem()
+                }
+            }
+
+            // An append in flight is shown on the first slot rather than on a row of its own:
+            // a row that comes and goes on every page load changes the length of the list, and
+            // the scroller reads that as the content moving underneath the thumb.
+            items(
+                count = trailingSlots,
+                key = { index -> BROWSE_SOURCE_TRAILING_SLOT_KEY_PREFIX + index },
+            ) { index ->
+                BrowseSourceTrailingSlot(
+                    showSpinner = index == 0 && mangaList.loadState.append is LoadState.Loading,
+                ) {
+                    BrowseSourceCompactGridItemPlaceholder()
                 }
             }
         }
@@ -241,31 +283,24 @@ private fun BrowseSourceCompactGridItem(
     index: Int? = null,
     favoriteIds: Set<Long>? = null,
     loadCover: Boolean = true,
-    progressFor: (mangaId: Long, url: String) -> MangaProgress = { _, _ -> MangaProgress.EMPTY },
-    isLastRead: (mangaId: Long) -> Boolean = { false },
-    highlightColor: Color = Color.Transparent,
+    progress: MangaProgress = MangaProgress.EMPTY,
+    isLastRead: Boolean = false,
+    coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
+    highlightedMangaId: Long? = null,
+    highlightAlpha: Animatable<Float, *> = Animatable(0f),
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = onClick,
 ) {
     val manga = item.manga
-    val progress = progressFor(manga.id, manga.url)
     val isFavorite = if (favoriteIds != null) manga.id in favoriteIds else manga.favorite
-    Box(
-        modifier = Modifier.border(
-            width = 3.dp,
-            color = highlightColor,
-            shape = RoundedCornerShape(8.dp),
-        ),
+    BrowseSourceHighlightBorder(
+        mangaId = manga.id,
+        highlightedMangaId = highlightedMangaId,
+        highlightAlpha = highlightAlpha,
     ) {
         MangaCompactGridItem(
             title = manga.title,
-            coverData = MangaCover(
-                mangaId = manga.id,
-                sourceId = manga.source,
-                isMangaFavorite = manga.favorite,
-                url = manga.thumbnailUrl,
-                lastModified = manga.coverLastModified,
-            ),
+            coverData = manga.asDisplayedCover(coverUpdates),
             coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
             loadCover = loadCover,
             coverBadgeStart = {
@@ -295,7 +330,7 @@ private fun BrowseSourceCompactGridItem(
                 }
             },
             coverBadgeBottomEnd = {
-                if (isLastRead(manga.id)) {
+                if (isLastRead) {
                     LastReadBadge()
                 }
             },

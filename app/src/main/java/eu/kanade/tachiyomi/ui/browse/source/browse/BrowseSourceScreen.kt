@@ -118,7 +118,6 @@ import tachiyomi.core.common.Constants
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.manga.model.MangaProgress
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
@@ -170,6 +169,8 @@ data class BrowseSourceScreen(
         val readingFilter by viewModel.readingFilter.collectAsStateWithLifecycle()
         val markFilter by viewModel.markFilter.collectAsStateWithLifecycle()
         val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
+        val coverUpdates by viewModel.mangaCoverUpdateStore.covers.collectAsStateWithLifecycle()
+    val trailingSlotCount by viewModel.trailingSlotCount.collectAsStateWithLifecycle()
         val refreshProgress by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
         val localSort by viewModel.localSort.collectAsStateWithLifecycle()
         val localSourceChanged by viewModel.localSourceChanged.collectAsStateWithLifecycle()
@@ -231,7 +232,7 @@ data class BrowseSourceScreen(
                             if (randomId != null) {
                                 navigator.push(MangaScreen(randomId, true))
                                 // Hold the guard through the transition.
-                                delay(600)
+                                delay(150)
                             } else {
                                 snackbarHostState.showSnackbarReplacing(
                                     context.stringResource(MR.strings.information_no_entries_found),
@@ -255,7 +256,7 @@ data class BrowseSourceScreen(
                             val result = viewModel.getRandomGoodDoujinManga()
                             if (result.mangaId != null) {
                                 navigator.push(MangaScreen(result.mangaId, true))
-                                delay(600)
+                                delay(150)
                             } else if (!result.hasEntries) {
                                 snackbarHostState.showSnackbarReplacing(
                                     context.stringResource(MR.strings.good_doujin_list_empty),
@@ -563,20 +564,9 @@ data class BrowseSourceScreen(
                 lastReadMangaId = lastReadMangaId,
                 locateMangaId = null,
                 favoriteIds = favoriteIds,
-                progressFor = { mangaId, url ->
-                    val ctx = progressContext
-                    ctx.progressByMangaId[mangaId] ?: run {
-                        val totalChapters = ctx.fsChapterCounts[url] ?: 0L
-                        if (totalChapters > 0) {
-                            MangaProgress(totalChapters, 0, 0, 0)
-                        } else {
-                            MangaProgress.EMPTY
-                        }
-                    }
-                },
-                isLastRead = { mangaId ->
-                    progressContext.lastReadMangaId == mangaId
-                },
+                progressContext = progressContext,
+                coverUpdates = coverUpdates,
+                trailingSlotCount = trailingSlotCount,
                 snackbarHostState = snackbarHostState,
                 contentPadding = paddingValues,
                 onWebViewClick = onWebViewClick,

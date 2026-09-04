@@ -94,15 +94,49 @@ class MangaCoverFetcher(
     }
 
     private fun fileUriLoader(uri: String): FetchResult {
-        val source = UniFile.fromUri(options.context, uri.toUri())!!
-            .openInputStream()
-            .source()
-            .buffer()
+        val cached = readFromDiskCache()
+        if (cached != null) {
+            return SourceFetchResult(
+                source = cached.toImageSource(),
+                mimeType = "image/*",
+                dataSource = DataSource.DISK,
+            )
+        }
+        val file = UniFile.fromUri(options.context, uri.toUri())!!
+        val snapshot = writeUriToDiskCache(file)
+        if (snapshot != null) {
+            return SourceFetchResult(
+                source = snapshot.toImageSource(),
+                mimeType = "image/*",
+                dataSource = DataSource.DISK,
+            )
+        }
+        val source = file.openInputStream().source().buffer()
         return SourceFetchResult(
             source = ImageSource(source = source, fileSystem = FileSystem.SYSTEM),
             mimeType = "image/*",
             dataSource = DataSource.DISK,
         )
+    }
+
+    private fun writeUriToDiskCache(file: UniFile): DiskCache.Snapshot? {
+        if (!options.diskCachePolicy.writeEnabled) return null
+        val diskCache = imageLoader.diskCache
+        val editor = diskCache?.openEditor(diskCacheKey) ?: return null
+        try {
+            diskCache.fileSystem.write(editor.data) {
+                file.openInputStream().source().use { input ->
+                    writeAll(input)
+                }
+            }
+            return editor.commitAndOpenSnapshot()
+        } catch (e: Exception) {
+            try {
+                editor.abort()
+            } catch (_: Exception) {
+            }
+            throw e
+        }
     }
 
     private suspend fun httpLoader(): FetchResult {

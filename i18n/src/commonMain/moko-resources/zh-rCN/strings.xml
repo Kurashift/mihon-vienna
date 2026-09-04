@@ -1067,6 +1067,8 @@
     <string name="good_doujin_list_chapter_count">已收录 %1$d 个篇目</string>
     <string name="good_doujin_added">已加入好本子</string>
     <string name="good_doujin_removed">已从好本子移除</string>
+    <string name="chapter_marked_read">已标记为已读</string>
+    <string name="chapter_marked_unread">已标记为未读</string>
     <string name="action_add_to_good_doujin">加入好本子</string>
     <string name="action_remove_from_good_doujin">移出好本子</string>
     <string name="action_open_manga_details">打开漫画详情</string>

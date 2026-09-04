@@ -44,6 +44,9 @@ internal fun BrowseSourceLazyColumn(
             state = state,
             alwaysVisible = true,
             showEndMarker = true,
+            // This listing grows a page at a time, so the thumb needs to hold its ground when
+            // one lands instead of sliding back up the track.
+            stickyThumb = true,
             onThumbDraggedChanged = onThumbDraggedChanged,
             contentPadding = contentPadding,
             content = content,
@@ -81,6 +84,9 @@ internal fun BrowseSourceLazyVerticalGrid(
             columns = columns,
             alwaysVisible = true,
             showEndMarker = true,
+            // This listing grows a page at a time, so the thumb needs to hold its ground when
+            // one lands instead of sliding back up the track.
+            stickyThumb = true,
             onThumbDraggedChanged = onThumbDraggedChanged,
             contentPadding = contentPadding,
             endContentPadding = scrollerEndPadding,
