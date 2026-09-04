@@ -29,7 +29,7 @@ android {
         // a device can carry a locally-built package with a higher code than any pushed tag.
         // 2.2.1 was first published as 201, then re-published as 203 because a local build
         // installed on the main device used 202.
-        versionCode = 204
+        versionCode = 212
         versionName = "2.2.2"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
