@@ -321,7 +321,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         val position = adapter.items.indexOf(page)
         if (position != -1) {
             val currentPosition = pager.currentItem
-            pager.setCurrentItem(position, true)
+            pager.setCurrentItem(position, !activity.isScrollingThroughPages)
             // manually call onPageChange since ViewPager listener is not triggered in this case
             if (currentPosition == position) {
                 onPageChange(position)

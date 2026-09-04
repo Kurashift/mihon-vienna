@@ -129,7 +129,7 @@ class BrowseSourceViewModel(
     private val updateMangaFromRemote: UpdateMangaFromRemote = Injekt.get(),
     private val basePreferences: BasePreferences = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
-    private val mangaCoverUpdateStore: MangaCoverUpdateStore = Injekt.get(),
+    val mangaCoverUpdateStore: MangaCoverUpdateStore = Injekt.get(),
 ) : StateViewModel<BrowseSourceViewModel.State>(State(Listing.valueOf(listingQuery))) {
 
     companion object {
@@ -209,12 +209,17 @@ class BrowseSourceViewModel(
     private val screenVisible = MutableStateFlow(false)
 
     /**
-     * Set when the local listing changed while this screen was covered by a detail page. A
-     * deletion drops the entry from the listing right away, but the pages already served still
-     * carry it, so they have to be rebuilt when the user comes back.
+     * Urls of the local listing as it was when the pages currently on screen were built, null
+     * before the first build.
+     *
+     * Compared against the live snapshot on return to decide whether the listing really lost or
+     * gained an entry. A plain "something changed" flag is not enough: the listing re-publishes
+     * an equivalent snapshot after every rebuild, and rebuilding then invalidates every loaded
+     * page for a listing that did not actually change - the grid is served one page again and a
+     * list scrolled to the middle visibly collapses and re-expands.
      */
     @Volatile
-    private var pendingListingInvalidation = false
+    private var servedListingUrls: Set<String>? = null
     private val progressSnapshot = MutableStateFlow<List<MangaProgressByMangaId>>(emptyList())
     private val localChapterCounts = MutableStateFlow<Map<String, Long>>(emptyMap())
     private val readingFilterPreference = preferenceStore.getString(
@@ -284,10 +289,7 @@ class BrowseSourceViewModel(
         visibleSnapshotRefreshJob = viewModelScope.launchIO {
             // Rebuild once on return rather than while this screen is covered, so the list is
             // never reloaded behind an open detail page.
-            if (pendingListingInvalidation) {
-                pendingListingInvalidation = false
-                invalidatePagingSources()
-            }
+            rebuildIfListingChanged()
             refreshVisibleSnapshots()
         }
     }
@@ -323,8 +325,17 @@ class BrowseSourceViewModel(
     }
 
     private suspend fun refreshLocalDirectorySnapshot(local: LocalSource, force: Boolean) {
+        // Ordinary tab entry only needs the last confirmed listing. Walking the tree here
+        // (find -maxdepth 2) stalls the shelf and can invalidate pages on a partial SAF
+        // read. Confirmed scans stay on pull-to-refresh / refresh-all-chapters.
+        if (!force) {
+            if (localChapterCounts.value.isEmpty()) {
+                localChapterCounts.value = local.getChapterCounts()
+            }
+            return
+        }
         val now = SystemClock.elapsedRealtime()
-        if (!force && observedLocalDirectorySignature != null &&
+        if (observedLocalDirectorySignature != null &&
             now - lastLocalDirectoryCheckAt < LOCAL_DIRECTORY_POLL_MILLIS
         ) {
             return
@@ -435,6 +446,7 @@ class BrowseSourceViewModel(
         .combine(isRefreshingChapters) { context, progress -> (progress != null) to context }
         .filter { (refreshing, _) -> !refreshing }
         .map { (_, context) -> context }
+        .distinctUntilChanged()
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
@@ -570,8 +582,8 @@ class BrowseSourceViewModel(
         )
 
     /**
-     * URLs the local listing is narrowed to for the active mark filter, null when no mark
-     * filter narrows it.
+     * URLs the local listing is narrowed to for the active reading and mark filters, null when
+     * neither filter narrows it.
      *
      * Pushed into [LocalSource] so the pager walks the filtered sequence rather than the whole
      * library. Without it, a selective filter (two marked entries among hundreds) can only be
@@ -582,18 +594,36 @@ class BrowseSourceViewModel(
      * An empty set means the marks have not been read yet or there are none; paging then stays
      * on the full listing, exactly as before, and the list-side filter still hides non-matches.
      */
-    private val markUrlFilter: StateFlow<Set<String>?> = combine(
-        filterContext,
-        markFilterInternal,
-    ) { context, markFilter ->
-        when (markFilter) {
-            MarkFilter.NONE -> null
-            MarkFilter.FLAGGED -> context.flaggedUrls.takeIf { it.isNotEmpty() }
-            MarkFilter.GOOD_DOUJIN -> context.goodDoujinUrls.takeIf { it.isNotEmpty() }
+    private val listingUrlFilter: StateFlow<Set<String>?> = if (source is LocalSource) {
+        combine(
+            filterContext,
+            readingFilterInternal,
+            markFilterInternal,
+            source.listingSnapshot,
+        ) { context, readingFilter, markFilter, snapshot ->
+            val markUrls = when (markFilter) {
+                MarkFilter.NONE -> null
+                MarkFilter.FLAGGED -> context.flaggedUrls
+                MarkFilter.GOOD_DOUJIN -> context.goodDoujinUrls
+            }
+            val readingUrls = when (readingFilter) {
+                ReadingFilter.ALL -> null
+                ReadingFilter.UNREAD -> snapshot.allUrls.filterNotTo(HashSet()) { it in context.finishedUrls }
+                ReadingFilter.IN_PROGRESS -> context.startedUrls - context.finishedUrls
+                ReadingFilter.FINISHED -> context.finishedUrls
+            }
+            when {
+                markUrls == null && readingUrls == null -> null
+                markUrls == null -> readingUrls?.takeIf { it.isNotEmpty() }
+                readingUrls == null -> markUrls.takeIf { it.isNotEmpty() }
+                else -> markUrls.intersect(readingUrls).takeIf { it.isNotEmpty() }
+            }
         }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    } else {
+        MutableStateFlow(null)
     }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
      * Number of manga entries in the currently displayed list, after applying the
@@ -693,10 +723,76 @@ class BrowseSourceViewModel(
         // Pager instances for cached listings are created once, so keep their sources registered
         // for later directory, favorite-filter, and manual-refresh invalidations.
         pagingSources.forEach { it.invalidate() }
+        // The pages served from now on reflect the listing as it stands at this moment, so this
+        // is what any later comparison has to measure against.
+        currentListingUrls()?.let { servedListingUrls = it }
     }
 
+    /** Urls of the local listing right now, null for any other source or before the first scan. */
+    private fun currentListingUrls(): Set<String>? {
+        val local = source as? LocalSource ?: return null
+        return local.listingSnapshot.value.allUrls.toSet().takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Rebuilds the loaded pages only when the local listing really gained or lost an entry since
+     * the pages currently on screen were built.
+     *
+     * Deleting every chapter of a work takes its directory and its database row with it and the
+     * listing drops the entry immediately, while the pages already served still hold that card -
+     * without a rebuild it lingers as a blank entry until the next rescan. The rebuild is deferred
+     * to the moment this screen is shown again so the list is never reloaded behind an open detail
+     * page.
+     */
+    private fun rebuildIfListingChanged() {
+        val currentUrls = currentListingUrls() ?: return
+        val served = servedListingUrls
+        servedListingUrls = currentUrls
+        // Nothing has been served yet, so there is nothing to rebuild - the first pages are being
+        // built from this very listing.
+        if (served != null && served != currentUrls) {
+            invalidatePagingSources()
+        }
+    }
+
+    private val pageSize = if (source is LocalSource) LocalSource.PAGE_SIZE else 25
+
+    /**
+     * Whether the pager fills unloaded positions with placeholders, which fixes the presented
+     * list length at the full result count. Off while a client-side filter can drop items out
+     * of loaded pages, because the slots are then sized by the unfiltered listing and never
+     * fill - see [clientFilterNarrows].
+     */
+    private val pagingPlaceholdersEnabled: StateFlow<Boolean> = combine(
+        readingFilterInternal,
+        markFilterInternal,
+    ) { readingFilter, markFilter -> !clientFilterNarrows(readingFilter, markFilter) }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            !clientFilterNarrows(readingFilterInternal.value, markFilterInternal.value),
+        )
+
+    /**
+     * Skeleton slots the listing keeps past the last loaded page so the scroller can be
+     * dragged from one end of the list to the other in a single gesture.
+     *
+     * With placeholders on, the pager already reports the full count and the list is that long
+     * from the start, so nothing has to be kept. With them off, the presented list is only
+     * ever as long as the pages loaded so far, and the thumb stops dead at the last loaded
+     * entry until the finger lets go and the next page arrives.
+     *
+     * Deliberately one page, not the whole remaining listing: reading one of these slots is
+     * what pulls the next page in, and a page-sized run is exactly the range Paging treats as
+     * "the next page". Sizing it by the unfiltered total instead is the behaviour that used to
+     * flash a screenful of grey cards after every listing reload.
+     */
+    val trailingSlotCount: StateFlow<Int> = pagingPlaceholdersEnabled
+        .map { enabled -> if (enabled) 0 else pageSize }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
     private fun buildPager(listing: Listing, placeholdersEnabled: Boolean): Flow<PagingData<Manga>> {
-        val pageSize = if (source is LocalSource) LocalSource.PAGE_SIZE else 25
         return Pager(
             PagingConfig(
                 pageSize = pageSize,
@@ -731,7 +827,7 @@ class BrowseSourceViewModel(
         // first value only seeds the source, which has not served a page yet.
         viewModelScope.launchIO {
             var seeded = false
-            markUrlFilter.collect { urls ->
+            listingUrlFilter.collect { urls ->
                 val local = source as? LocalSource ?: return@collect
                 local.setListingUrlFilter(urls)
                 if (seeded) {
@@ -745,21 +841,16 @@ class BrowseSourceViewModel(
         // the listing drops the entry immediately. The pages already served still hold that card,
         // so the rebuild is deferred to the moment this screen is shown again: a deleted work
         // then disappears on return instead of lingering as a blank card until the next rescan.
-        viewModelScope.launchIO {
-            val local = source as? LocalSource ?: return@launchIO
-            local.listingSnapshot
-                .map { it.allUrls }
-                .distinctUntilChanged()
-                .drop(1)
-                .collect { pendingListingInvalidation = true }
-        }
+        // That comparison lives in [rebuildIfListingChanged], not in a collector here - watching
+        // the snapshot continuously is what made an unchanged listing rebuild itself.
     }
 
     val mangaPagerFlowFlow = combine(
         // The pager is selected by listing AND by whether a narrowing filter is active: a filter
         // toggle swaps in a pager built with matching placeholders, so the presented list never
         // carries phantom slots sized by the unfiltered listing. Sort is deliberately absent
-        // (see [localSortInternal]).
+        // (see [localSortInternal]). Cover overlays stay off this combine: publishing one cover
+        // used to allocate a new inner Flow and reconnect LazyPagingItems.
         combine(
             state.map { it.listing }.distinctUntilChanged(),
             readingFilterInternal,
@@ -771,20 +862,13 @@ class BrowseSourceViewModel(
         filterContext,
         readingFilterInternal,
         markFilterInternal,
-        mangaCoverUpdateStore.covers,
-    ) { (listing, pagerFlow), filterCtx, filter, markFilter, coverUpdates ->
+    ) { (listing, pagerFlow), filterCtx, filter, markFilter ->
         pagerFlow.map { pagingData ->
             val items = pagingData.map { manga ->
-                val currentManga = coverUpdates[manga.id]?.let { cover ->
-                    manga.copy(
-                        thumbnailUrl = cover.url,
-                        coverLastModified = cover.lastModified,
-                    )
-                } ?: manga
                 BrowseSourceUiModel.Item(
-                    manga = currentManga,
-                    matchedChapter = currentManga.memo[LocalSource.MATCHED_CHAPTER_KEY]?.jsonPrimitive?.contentOrNull,
-                    latestChapterAddedAt = currentManga.memo[LocalSource.LATEST_CHAPTER_TIME_KEY]
+                    manga = manga,
+                    matchedChapter = manga.memo[LocalSource.MATCHED_CHAPTER_KEY]?.jsonPrimitive?.contentOrNull,
+                    latestChapterAddedAt = manga.memo[LocalSource.LATEST_CHAPTER_TIME_KEY]
                         ?.jsonPrimitive
                         ?.longOrNull
                         ?: 0L,
@@ -822,6 +906,7 @@ class BrowseSourceViewModel(
             }
         }
     }
+        .distinctUntilChanged { old, new -> old === new }
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
@@ -1589,7 +1674,13 @@ class BrowseSourceViewModel(
         val lastReadMangaId: Long? = null,
         val flaggedUrls: Set<String> = emptySet(),
         val goodDoujinUrls: Set<String> = emptySet(),
-    )
+    ) {
+        fun progressFor(mangaId: Long, url: String): MangaProgress {
+            return progressByMangaId[mangaId] ?: fsChapterCounts[url]?.takeIf { it > 0 }?.let {
+                MangaProgress(it, 0, 0, 0)
+            } ?: MangaProgress.EMPTY
+        }
+    }
 
     @Immutable
     data class State(

@@ -2,7 +2,11 @@ package eu.kanade.presentation.browse
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Public
@@ -21,13 +25,14 @@ import eu.kanade.presentation.browse.components.BrowseSourceCompactGrid
 import eu.kanade.presentation.browse.components.BrowseSourceList
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.util.formattedMessage
+import eu.kanade.tachiyomi.data.manga.MangaCoverUpdate
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceUiModel
+import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.manga.model.Manga
-import tachiyomi.domain.manga.model.MangaProgress
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -48,8 +53,13 @@ fun BrowseSourceContent(
     lastReadMangaId: Long? = null,
     locateMangaId: Long? = null,
     favoriteIds: Set<Long>? = null,
-    progressFor: (mangaId: Long, url: String) -> MangaProgress = { _, _ -> MangaProgress.EMPTY },
-    isLastRead: (mangaId: Long) -> Boolean = { false },
+    progressContext: BrowseSourceViewModel.ProgressContext = BrowseSourceViewModel.ProgressContext(
+        emptyMap(),
+        emptyMap(),
+        emptyMap(),
+    ),
+    coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
+    trailingSlotCount: Int = 0,
     onWebViewClick: () -> Unit,
     onHelpClick: () -> Unit,
     onLocalSourceHelpClick: () -> Unit,
@@ -133,18 +143,25 @@ fun BrowseSourceContent(
         return
     }
 
+    // Held here rather than inside the branch so switching the display mode keeps the offset
+    // instead of dropping the reader back to the top of the listing.
+    val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
+
     when (displayMode) {
         LibraryDisplayMode.ComfortableGrid -> {
             BrowseSourceComfortableGrid(
                 mangaList = mangaList,
                 columns = columns,
+                gridState = gridState,
                 contentPadding = contentPadding,
                 showIndex = source is LocalSource,
                 lastReadMangaId = lastReadMangaId,
                 locateMangaId = locateMangaId,
                 favoriteIds = favoriteIds,
-                progressFor = progressFor,
-                isLastRead = isLastRead,
+                progressContext = progressContext,
+                coverUpdates = coverUpdates,
+                trailingSlotCount = trailingSlotCount,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
                 onLocateMangaHandled = onLocateMangaHandled,
@@ -156,13 +173,15 @@ fun BrowseSourceContent(
         LibraryDisplayMode.List -> {
             BrowseSourceList(
                 mangaList = mangaList,
+                listState = listState,
                 contentPadding = contentPadding,
                 showIndex = source is LocalSource,
                 lastReadMangaId = lastReadMangaId,
                 locateMangaId = locateMangaId,
                 favoriteIds = favoriteIds,
-                progressFor = progressFor,
-                isLastRead = isLastRead,
+                progressContext = progressContext,
+                coverUpdates = coverUpdates,
+                trailingSlotCount = trailingSlotCount,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
                 onLocateMangaHandled = onLocateMangaHandled,
@@ -175,13 +194,15 @@ fun BrowseSourceContent(
             BrowseSourceCompactGrid(
                 mangaList = mangaList,
                 columns = columns,
+                gridState = gridState,
                 contentPadding = contentPadding,
                 showIndex = source is LocalSource,
                 lastReadMangaId = lastReadMangaId,
                 locateMangaId = locateMangaId,
                 favoriteIds = favoriteIds,
-                progressFor = progressFor,
-                isLastRead = isLastRead,
+                progressContext = progressContext,
+                coverUpdates = coverUpdates,
+                trailingSlotCount = trailingSlotCount,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
                 onLocateMangaHandled = onLocateMangaHandled,

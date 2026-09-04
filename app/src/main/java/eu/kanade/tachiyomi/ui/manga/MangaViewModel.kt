@@ -713,7 +713,19 @@ class MangaViewModel(
             // A swipe acts on the row under the finger, not on the selection, so it leaves the
             // selection and its bottom bar alone. Only the bar's own buttons dismiss it.
             LibraryPreferences.ChapterSwipeAction.ToggleRead -> {
-                markChaptersRead(listOf(chapter), !chapter.read, clearSelection = false)
+                val markAsRead = !chapter.read
+                markChaptersRead(listOf(chapter), markAsRead, clearSelection = false)
+                viewModelScope.launch {
+                    snackbarHostState.showSnackbarReplacing(
+                        context.stringResource(
+                            if (markAsRead) {
+                                MR.strings.chapter_marked_read
+                            } else {
+                                MR.strings.chapter_marked_unread
+                            },
+                        ),
+                    )
+                }
             }
             LibraryPreferences.ChapterSwipeAction.ToggleBookmark -> {
                 bookmarkChapters(listOf(chapter), !chapter.bookmark, clearSelection = false)

@@ -265,7 +265,7 @@ data object LibraryTab : Tab {
             }
         }
 
-        LaunchedEffect(state.selectionMode, state.dialog) {
+        LaunchedEffect(state.selectionMode) {
             HomeScreen.showBottomNav(!state.selectionMode)
         }
 

@@ -1032,4 +1032,6 @@
     <string name="action_read_selected">所選已讀</string>
     <string name="action_read_range_before">此篇之前</string>
     <string name="action_read_range_after">此篇之後</string>
+    <string name="chapter_marked_read">已標示為已讀</string>
+    <string name="chapter_marked_unread">已標示為未讀</string>
 </resources>

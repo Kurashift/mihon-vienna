@@ -23,7 +23,6 @@ import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.presentation.core.components.material.PullRefresh
-import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun LibraryContent(
@@ -56,7 +55,7 @@ fun LibraryContent(
         val pagerState = rememberPagerState(currentPage) { categories.size }
 
         val scope = rememberCoroutineScope()
-        var isRefreshing by remember(pagerState.currentPage) { mutableStateOf(false) }
+        var isRefreshing by remember { mutableStateOf(false) }
 
         if (showPageTabs && categories.isNotEmpty() && (categories.size > 1 || !categories.first().isSystemCategory)) {
             LaunchedEffect(categories) {
@@ -83,9 +82,8 @@ fun LibraryContent(
                 val started = onRefresh()
                 if (!started) return@PullRefresh
                 scope.launch {
-                    // Fake refresh status but hide it after a second as it's a long running task
                     isRefreshing = true
-                    delay(1.seconds)
+                    delay(300)
                     isRefreshing = false
                 }
             },

@@ -2,7 +2,9 @@ package tachiyomi.presentation.core.components
 
 import android.view.ViewConfiguration
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -77,6 +79,7 @@ fun VerticalFastScroller(
     onThumbDraggedChanged: ((Boolean) -> Unit)? = null,
     alwaysVisible: Boolean = false,
     showEndMarker: Boolean = false,
+    stickyThumb: Boolean = false,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     topContentPadding: Dp = Dp.Hairline,
     bottomContentPadding: Dp = Dp.Hairline,
@@ -95,6 +98,8 @@ fun VerticalFastScroller(
 
             val thumbTopPadding = with(LocalDensity.current) { topContentPadding.toPx() }
             var thumbOffsetY by remember(thumbTopPadding) { mutableFloatStateOf(thumbTopPadding) }
+            val thumbAnchor = remember { ThumbAnchor() }
+            var targetProgress by remember { mutableFloatStateOf(0f) }
 
             val dragInteractionSource = remember { MutableInteractionSource() }
             val isThumbDragged by dragInteractionSource.collectIsDraggedAsState()
@@ -202,10 +207,43 @@ fun VerticalFastScroller(
                 scrolled.tryEmit(Unit)
             }
 
-            // When list scrolled
-            if (layoutInfo.totalItemsCount != 0 && !isThumbDragged) {
-                val proportion = 1f - remainingSections / maxRemainingSections
-                thumbOffsetY = trackHeightPx * proportion + thumbTopPadding
+            // Where the list really sits on the track, before the anchor has its say.
+            val measuredProgress = (1f - remainingSections / maxRemainingSections).coerceIn(0f, 1f)
+            val thumbProgress = ((thumbOffsetY - thumbTopPadding) / trackHeightPx.coerceAtLeast(1f))
+                .coerceIn(0f, 1f)
+
+            if (isThumbDragged) {
+                // Dragging re-anchors too: letting go has to leave the thumb where the finger
+                // left it, not wherever the next page load thinks it belongs.
+                targetProgress = thumbProgress
+                thumbAnchor.snapped = false
+                thumbAnchor.reset(measuredProgress, layoutInfo.totalItemsCount, thumbProgress)
+            } else if (layoutInfo.totalItemsCount != 0) {
+                targetProgress = thumbAnchor.resolve(
+                    sticky = stickyThumb,
+                    measured = measuredProgress,
+                    itemCount = layoutInfo.totalItemsCount,
+                    canScrollBackward = listState.canScrollBackward,
+                    canScrollForward = listState.canScrollForward,
+                    fallbackProgress = thumbProgress,
+                )
+            }
+
+            val animatedProgress by animateFloatAsState(
+                targetValue = targetProgress,
+                animationSpec = tween(
+                    durationMillis = if (thumbAnchor.snapped) ThumbSnapDurationMillis else 0,
+                    easing = FastOutSlowInEasing,
+                ),
+                label = "listThumbProgress",
+            )
+            if (!isThumbDragged) {
+                thumbOffsetY = trackHeightPx * animatedProgress + thumbTopPadding
+            }
+
+            // Keeps the thumb alight while the list moves. Recomposition alone must not emit,
+            // or the bar would never fade out again.
+            LaunchedEffect(listState.firstVisibleItemScrollOffset, layoutInfo.totalItemsCount) {
                 if (stableScrollInProgress) scrolled.tryEmit(Unit)
             }
 
@@ -378,6 +416,7 @@ fun VerticalGridFastScroller(
     onThumbDraggedChanged: ((Boolean) -> Unit)? = null,
     alwaysVisible: Boolean = false,
     showEndMarker: Boolean = false,
+    stickyThumb: Boolean = false,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     topContentPadding: Dp = Dp.Hairline,
     bottomContentPadding: Dp = Dp.Hairline,
@@ -404,6 +443,8 @@ fun VerticalGridFastScroller(
             if (!showScroller) return@subcompose
             val thumbTopPadding = with(LocalDensity.current) { topContentPadding.toPx() }
             var thumbOffsetY by remember(thumbTopPadding) { mutableFloatStateOf(thumbTopPadding) }
+            val thumbAnchor = remember { ThumbAnchor() }
+            var targetProgress by remember { mutableFloatStateOf(0f) }
 
             val dragInteractionSource = remember { MutableInteractionSource() }
             val isThumbDragged by dragInteractionSource.collectIsDraggedAsState()
@@ -430,10 +471,15 @@ fun VerticalGridFastScroller(
             // track and the thumb still while the bar animates.
             val restingHeightPx = contentHeight.toFloat() -
                 with(LocalDensity.current) { LocalFastScrollerBottomInset.current.toPx() }
+            // The grid is handed its bottom padding through [bottomContentPadding], which is the
+            // very same span the lazy grid reports as afterContentPadding. Subtracting both
+            // shortens the track by a whole bottom padding, so the thumb stops short of the end
+            // marker and never reaches the divider above the navigation bar. The list variant is
+            // not handed [bottomContentPadding] and keeps measuring its bottom from
+            // afterContentPadding.
             val heightPx = restingHeightPx -
                 thumbTopPadding -
-                thumbBottomPadding -
-                state.layoutInfo.afterContentPadding
+                thumbBottomPadding
             val thumbHeightPx = with(LocalDensity.current) { ThumbLength.toPx() }
             val trackHeightPx = heightPx - thumbHeightPx
             val endMarkerGapPx = with(LocalDensity.current) { EndMarkerGap.toPx() }
@@ -462,24 +508,61 @@ fun VerticalGridFastScroller(
                 scrolled.tryEmit(Unit)
             }
 
-            // When list scrolled
-            LaunchedEffect(state.firstVisibleItemScrollOffset) {
-                if (state.layoutInfo.totalItemsCount == 0 || isThumbDragged) return@LaunchedEffect
-                val scrollOffset = computeGridScrollOffset(state = state, columnCount = columnCount)
+            // Where the list really sits on the track, before the anchor has its say.
+            val measuredProgress = if (layoutInfo.totalItemsCount == 0) {
+                0f
+            } else {
                 // Both sides have to come from the same measurement. Caching the range against
                 // the column count froze it at whatever rows happened to be visible when it was
                 // built, while the offset kept tracking the live rows; pages streaming in swap
                 // filled items for loading placeholders, which are not the same height, so the
                 // stale range no longer matches the live offset and the thumb stops short of the
                 // end. Sharing one average row height cancels it out of the ratio.
+                val scrollOffset = computeGridScrollOffset(state = state, columnCount = columnCount)
                 val scrollRange = computeGridScrollRange(state = state, columnCount = columnCount)
                 /*
                     LazyGridItemInfo doesn't always give the accurate height of the object, so we clamp the proportion
                     at 1 to ensure that there are no issues due to this -- ideally we would correctly compute the value
                  */
                 val extraScrollRange = (scrollRange.toFloat() - heightPx).coerceAtLeast(1f)
-                val proportion = (scrollOffset.toFloat() / extraScrollRange).coerceAtMost(1f)
-                thumbOffsetY = trackHeightPx * proportion + thumbTopPadding
+                (scrollOffset.toFloat() / extraScrollRange).coerceIn(0f, 1f)
+            }
+            val thumbProgress = ((thumbOffsetY - thumbTopPadding) / trackHeightPx.coerceAtLeast(1f))
+                .coerceIn(0f, 1f)
+
+            if (isThumbDragged) {
+                // Dragging re-anchors too: letting go has to leave the thumb where the finger
+                // left it, not wherever the next page load thinks it belongs.
+                targetProgress = thumbProgress
+                thumbAnchor.snapped = false
+                thumbAnchor.reset(measuredProgress, layoutInfo.totalItemsCount, thumbProgress)
+            } else if (layoutInfo.totalItemsCount != 0) {
+                targetProgress = thumbAnchor.resolve(
+                    sticky = stickyThumb,
+                    measured = measuredProgress,
+                    itemCount = layoutInfo.totalItemsCount,
+                    canScrollBackward = state.canScrollBackward,
+                    canScrollForward = state.canScrollForward,
+                    fallbackProgress = thumbProgress,
+                )
+            }
+
+            val animatedProgress by animateFloatAsState(
+                targetValue = targetProgress,
+                animationSpec = tween(
+                    durationMillis = if (thumbAnchor.snapped) ThumbSnapDurationMillis else 0,
+                    easing = FastOutSlowInEasing,
+                ),
+                label = "gridThumbProgress",
+            )
+            if (!isThumbDragged) {
+                thumbOffsetY = trackHeightPx * animatedProgress + thumbTopPadding
+            }
+
+            // Keeps the thumb alight while the list moves. Recomposition alone must not emit,
+            // or the bar would never fade out again.
+            LaunchedEffect(state.firstVisibleItemScrollOffset, layoutInfo.totalItemsCount) {
+                if (layoutInfo.totalItemsCount == 0 || isThumbDragged) return@LaunchedEffect
                 scrolled.tryEmit(Unit)
             }
 
@@ -604,6 +687,92 @@ private fun computeGridScrollRange(state: LazyGridState, columnCount: Int): Int 
 
 private class MutableData<T>(var value: T)
 
+/**
+ * Holds the thumb still while a paged list grows underneath it.
+ *
+ * Mapping the thumb straight onto `scrolled / total` walks it backwards every time a page
+ * lands: the denominator grows while the scrolled distance stays put, so a thumb parked at
+ * the middle of the first page is shoved back to a quarter of the track the moment the
+ * second page arrives. The jump is worst right at the top, where a single page doubles the
+ * total, and shrinks as the list grows - which is why it reads as random rather than as
+ * "more content arrived".
+ *
+ * Holding the thumb where it is says what actually happened: the content came to you, you
+ * did not move. The distance held back is paid back at the ends, where the real scroll
+ * position is known exactly and snapping onto the end of the track costs nothing.
+ */
+private class ThumbAnchor {
+    var initialized = false
+    var itemCount = 0
+    var measured = 0f
+    var progress = 0f
+    var snapped = false
+
+    fun reset(measured: Float, itemCount: Int, progress: Float) {
+        this.measured = measured
+        this.itemCount = itemCount
+        this.progress = progress
+        this.initialized = true
+    }
+}
+
+/**
+ * Item-count steps the pager makes on its own: a trailing load indicator appearing or
+ * leaving. Anything larger is the list really gaining or losing entries.
+ */
+private const val THUMB_ANCHOR_COUNT_TOLERANCE = 1
+
+private fun ThumbAnchor.resolve(
+    sticky: Boolean,
+    measured: Float,
+    itemCount: Int,
+    canScrollBackward: Boolean,
+    canScrollForward: Boolean,
+    fallbackProgress: Float,
+): Float {
+    snapped = false
+    if (!sticky || !initialized) {
+        reset(measured, itemCount, measured)
+        return measured
+    }
+    // The list was swapped rather than appended to - a refresh, or a different listing.
+    if (itemCount < this.itemCount - THUMB_ANCHOR_COUNT_TOLERANCE) {
+        reset(measured, itemCount, measured)
+        return measured
+    }
+    // A page landed: hold the thumb exactly where it stands and re-anchor from there.
+    if (itemCount > this.itemCount + THUMB_ANCHOR_COUNT_TOLERANCE) {
+        // Unless it is parked on the end of the track. There the reader asked for the end of
+        // the list and there is still more to come, so holding still would claim the list is
+        // finished and leave the thumb stuck on the end with nowhere left to drag. Fall back
+        // to where the list really is - visibly, so it reads as "still loading" - and let the
+        // next drag carry it further down.
+        if (this.progress >= 1f) {
+            snapped = true
+            reset(measured, itemCount, measured)
+            return measured
+        }
+        reset(measured, itemCount, fallbackProgress)
+        return fallbackProgress
+    }
+    // The ends are the only places the real position is known, so that is where the distance
+    // held back gets paid back.
+    if (!canScrollBackward) {
+        snapped = true
+        reset(measured, itemCount, 0f)
+        return 0f
+    }
+    if (!canScrollForward) {
+        snapped = true
+        reset(measured, itemCount, 1f)
+        return 1f
+    }
+    // Ordinary scrolling: advance by however far the list actually moved since the anchor.
+    val moved = (progress + (measured - this.measured)).coerceIn(0f, 1f)
+    reset(measured, itemCount, moved)
+    return moved
+}
+
 object Scroller {
     const val STICKY_HEADER_KEY_PREFIX = "sticky:"
 }
@@ -634,6 +803,9 @@ private val ThumbEndMargin = 2.dp
 private val ThumbTouchWidth = 40.dp
 private val ThumbStartPadding = ThumbTouchWidth - ThumbThickness - ThumbEndMargin
 private val ThumbShape = RoundedCornerShape(ThumbThickness / 2)
+// Only ever spent on the end-of-track snap: the thumb catching up with a distance it held
+// back while pages were loading. Everything else tracks the finger or the scroll instantly.
+private const val ThumbSnapDurationMillis = 180
 private val ScrollBarVisibilityDuration = 2.seconds
 private val ImmediateFadeOutAnimationSpec = tween<Float>(
     durationMillis = ViewConfiguration.getScrollBarFadeDuration(),

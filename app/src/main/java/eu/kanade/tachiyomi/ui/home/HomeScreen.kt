@@ -86,7 +86,7 @@ object HomeScreen : Screen() {
     private val showBottomNavEvent = Channel<Boolean>()
 
     @Suppress("ConstPropertyName")
-    private const val TabFadeDuration = 200
+    private const val TabFadeDuration = 90
 
     @Suppress("ConstPropertyName")
     private const val TabNavigatorKey = "HomeTabs"

@@ -88,8 +88,14 @@ fun ChapterNavigator(
 
     val interactionSource = remember { MutableInteractionSource() }
     val sliderDragged by interactionSource.collectIsDraggedAsState()
-    LaunchedEffect(currentPage) {
-        if (sliderDragged) {
+    var lastHapticPage by remember { mutableIntStateOf(currentPage) }
+    LaunchedEffect(currentPage, sliderDragged) {
+        if (!sliderDragged) {
+            lastHapticPage = currentPage
+            return@LaunchedEffect
+        }
+        if (currentPage != lastHapticPage) {
+            lastHapticPage = currentPage
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
     }

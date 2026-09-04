@@ -42,7 +42,6 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.presentation.core.theme.active
-import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun UpdateScreen(
@@ -108,9 +107,8 @@ fun UpdateScreen(
                         val started = onUpdateLibrary()
                         if (!started) return@PullRefresh
                         scope.launch {
-                            // Fake refresh status but hide it after a second as it's a long running task
                             isRefreshing = true
-                            delay(1.seconds)
+                            delay(300)
                             isRefreshing = false
                         }
                     },

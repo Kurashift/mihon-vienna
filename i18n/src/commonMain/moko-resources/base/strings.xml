@@ -1206,6 +1206,8 @@
     <string name="good_doujin_list_chapter_count">%1$d works kept</string>
     <string name="good_doujin_added">Added to good doujins</string>
     <string name="good_doujin_removed">Removed from good doujins</string>
+    <string name="chapter_marked_read">Marked as read</string>
+    <string name="chapter_marked_unread">Marked as unread</string>
     <string name="action_add_to_good_doujin">Add to good doujin</string>
     <string name="action_remove_from_good_doujin">Remove from good doujins</string>
     <string name="action_open_manga_details">Open work details</string>
