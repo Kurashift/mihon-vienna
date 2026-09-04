@@ -4,32 +4,43 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 
 ## 项目与构建
 
-- 默认在 `main` 分支工作。
+- 默认在 `main` 分支工作。动手前先 `git fetch` 并看 `git status`：远端可能已有别人的提交（例如网页改 README），本地脏工作区也不要假设只有自己的改动。
 - **交付**只用 `vienna`：`:app:assembleVienna`。它保留 applicationId `app.mihon.dev`，以便原位覆盖升级、保留用户数据。
 - 未经明确要求，不要为交付或安装而构建 `debug`、`localFirst`、`preview`、`release` 等其他变体。这些变体沿用上游原样保留（删除会影响 `vienna` 继承的混淆签名配置、Baseline Profile 生成与将来合并上游），不要动它们。
 - 上面这条只约束**交付产物**，不约束**验证行为**。改完代码后该做的编译检查与单元测试照常执行，不必为此征求同意：
   - 编译校验优先跑 `:app:compileViennaKotlin`。
   - 单元测试只有 debug 变体配了任务（`:app:testDebugUnitTest`），跑它必然会连带编译 debug。这是正常的验证开销，不属于「构建其他变体」，直接跑即可。
   - 反过来，不要为了跑测试去给 `vienna` 补单测任务，也不要改动 `app/build.gradle.kts` 的变体配置。
+- **装到设备上验证时，默认装单 ABI 的 `vienna`，不要装 `debug`**：
+  ```
+  .\gradlew --init-script .gradle\no-abi-split.gradle :app:installVienna
+  ```
+  `debug` 没有 R8 和资源压缩，滚动、动画这类改动在它上面的手感明显偏差，拿来验收会误判成没修好。`debug` 只在确实需要它的场合才装：调试器断点、非混淆堆栈、依赖 `isDebuggable` 的行为。
+- `.gradle/no-abi-split.gradle` 是本地 init script，用 `androidComponents.finalizeDsl` 把 ABI 分包收窄到只剩 `arm64-v8a`，省掉其余 ABI 和 `universal` 的打包开销。它在 `.gitignore` 覆盖的 `.gradle/` 下，不进版本库，也不要为它改 `app/build.gradle.kts` 的 `splits`（那部分沿用上游原样）。被清掉就按同样机制重建：`reset()` + `include('arm64-v8a')` + `universalApk = false`，并且只能在 `finalizeDsl` 里改——`projectsEvaluated` 时 AGP 已经把 splits 读完了，再改会报 "too late"。
+- 四个 ABI 加 `universal` 的全套只在**正式发布**时构建。日常验证和诊断包只出 `arm64-v8a` 一个。
 - APK 命名规范：`MihonVienna-<versionName>-<abi>.apk`
   - `arm64-v8a`：手机 / 真机，默认选择。
   - `x86_64`：安卓模拟器。
   - `armeabi-v7a`：老旧 32 位设备。
   - `universal`：全架构包，体积最大，仅在其他包都不合适时使用。
-- 产物目录：`app/build/outputs/apk/vienna/`。
+- 四个 ABI 是一套，不是「常用三个加一个可选」。正式发布四个都传；发布正文下载表也要四行都写，不要漏 `armeabi-v7a`。
+- 产物目录：`app/build/outputs/apk/vienna/`。该目录会累积历次 APK，Gradle 报 `UP-TO-DATE` 不等于这次已经打出目标版本。发之前必须核对 `output-metadata.json` 里每个元素的 `versionCode` / `versionName`，以及文件名是不是 `MihonVienna-<目标版本>-<abi>.apk`。对不上就重新 assemble，不要把上一版的包传上去。
+- **版本号只在正式发布时提升。** 未经用户明确要求发版，不要改 `app/build.gradle.kts` 里的 `versionCode` / `versionName`。日常功能、修 bug、编译校验、构建或安装诊断包都沿用当前版本，不要为了装测试包先 +1。用户只说构建 / 安装 APK、没有说发布时，同样不升版本。
+- 真正发版时再按 `docs/release-process.md` 同时改 `versionCode` 与 `versionName`。那时 `versionCode` 必须高于这台设备上曾经装过的每一个包，不只是 git 里的上一个 tag；本地诊断包若占用过某个数字，只在这一步检查并决定加多少，不要提前占用。
 - 正式交付绝不能保留 `isDebuggable = true`；临时诊断插桩用完后必须删除。
 - 只有用户明确要求时才构建并安装最终 APK。诊断测试包要说明它不是正式交付。
-- 发布走 `docs/release-process.md`（升版本、写文案、构建校验、提交打 tag、传附件）。不要手写 GitHub API 调用，一律用 `python scripts/publish_release.py <tag> <abi...>`。
+- 发布走 `docs/release-process.md`（升版本、写文案、构建校验、提交打 tag、传附件）。不要手写 GitHub API 调用，一律用 `python scripts/publish_release.py <tag> <abi...>`。用户说「上传 git 并发布」即视为要求提交、推送和发 Release。
 
 ## 文档与工作区卫生
 
 - 长篇设计、方案文档一律放 `docs/`；不再维护 AI 交接文档，跨会话记忆写进提交信息或 `CHANGELOG`。
 - 并行 agent 动手前先看 `git status` 确认他人改动范围，一次只碰最小文件集，不留半成品读写链，做完即删临时笔记。
 - 仓库根目录只保留 `README.md`、`CHANGELOG.md`、`AGENTS.md`、`LICENSE` 等通用文件。
-- 不要把构建日志、安装日志、一次性脚本、临时导出、截图、中间数据留在根目录。需要保留的写进 `docs/`，不需要的直接删除。
-- 工具与 IDE 的本地状态目录（`.codebuddy/`、`.dsh/`、`__pycache__/`）由 `.gitignore` 忽略，不要提交。
+- 不要把构建日志、安装日志、一次性脚本、临时导出、截图、中间数据留在根目录。需要保留的写进 `docs/`，不需要的直接删除。提交信息文件（`git commit -F` 用的）用完即删，不要入库。
+- 工具与 IDE 的本地状态目录（`.codebuddy/`、`.dsh/`、`__pycache__/`、`gradle/build-logic/bin/`）由 `.gitignore` 忽略，不要提交。
 - **密钥绝不入库**：token、密码、签名密钥一律放 `secrets.properties`（已在 `.gitignore` 中忽略），从文件里读取。不得写进源码、文档、提交信息、构建脚本或对话里。新增同类文件必须同步登记进 `.gitignore`。一旦误提交，立刻在 GitHub Settings 里吊销并重新签发，不要只删文件。
-- Windows 上 PowerShell 对部分中文路径会编码损坏，处理文件时优先用 Python（`pathlib` / `__file__`）而不是 shell 传路径。
+- Windows 上 PowerShell 对部分中文路径和中文参数会编码损坏。处理文件、写提交信息时优先用 Python（`pathlib` / `__file__`）或 `git commit -F <UTF-8 文件>`，不要把中文直接写在命令行参数里。
+- `git status` 里一长串 i18n 语言文件显示 modified、但 `git diff` 为空，多半是行尾或索引噪音。不要把空 diff 推进去；新文案只保证 `base`、`zh-rCN`、`zh-rTW` 同步即可，其余语言留给上游。
 
 ## 改动原则
 
@@ -59,6 +70,8 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 任何跨模块改动在实现前和交付前都要做影响面审计，不能因为当前页面正常或定向测试通过就忽略共享调用方和相邻功能。
 - 新增缓存、重试、阈值或异常保护时，必须同时验证它不会阻断正常的新增、删除、批量移动、目录重命名、冷启动、缓存恢复和大库操作。保护逻辑不能用固定数量上限永久遮蔽真实磁盘变化。
 - 不能只凭编译或单元测试就宣称设备上的问题已经修复；条件允许时应在已连接设备上验证实际页面状态和相关联动。
+- **真机验证由用户操作，agent 看日志。** 需要验证界面状态时，不要让 agent 用桌面控制或无障碍去点手机——来回截图加坐标点击太慢且不可靠。做法是：agent 负责准备构建、安装并挂上 `adb logcat`，然后把要点的步骤明确列给用户执行，agent 在后台读日志、看状态与崩溃；需要截图或补充信息时请用户提供。只有用户明确要求 agent 接管操作时才自己动手。
 - 验收现场统计时，需明确排除少量已知损坏且在未 Root 状态下无法删除的文件，不得把它们计入对数或误报为回归。
 - 未经用户明确同意，不得把清除应用数据、撤销存储权限、重建整个本地库、删除索引或重新导入文件当作修复捷径。
 - 除非用户明确要求，否则不要提交或推送。保留工作区中无关的既有改动，不要擅自回退用户修改。
+- 推送前再 `git fetch`。若 `origin/main` 已超前，先 rebase 再推；已经打好的 annotated tag 必须删掉按新 commit 重打，否则 tag 会停在 rebase 前的提交上。`git ls-remote --tags` 和 `git rev-parse vX.Y.Z` 返回的是 tag object，核对指向必须用 `vX.Y.Z^{commit}`。
