@@ -1149,8 +1149,9 @@
     <string name="audio_sleep_minutes">%1$d 分钟</string>
     <string name="audio_sleep_off">关闭定时</string>
     <string name="audio_subtitle_display_mode">字幕显示模式</string>
-    <string name="audio_loop_on">单曲循环：开</string>
-    <string name="audio_loop_off">单曲循环：关</string>
+    <string name="audio_repeat_off">顺序播放</string>
+    <string name="audio_repeat_one">单曲循环</string>
+    <string name="audio_repeat_all">列表循环</string>
     <string name="audio_floating_subtitle_short">词</string>
     <string name="audio_floating_subtitle_permission_title">需要「显示在其他应用上层」权限</string>
     <string name="audio_floating_subtitle_permission_message">悬浮字幕需要这项权限，请到系统设置中为 Mihon 开启。</string>
@@ -1196,9 +1197,9 @@
 
     <!-- 删除本地资源 -->
     <string name="action_delete_local_files">删除本地文件</string>
-    <string name="action_delete_all_chapters">删除全部篇目</string>
+    <string name="action_delete_all_chapters">删除该合集</string>
     <string name="local_delete_warning">文件会从磁盘上直接删除，不会进入回收站，无法恢复。</string>
-    <string name="local_delete_manga_title">删除《%1$s》的本地文件？</string>
+    <string name="local_delete_manga_title">删除《%1$s》合集的本地文件？</string>
     <string name="local_delete_chapters_title">删除 %1$d 个篇目的本地文件？</string>
     <string name="local_delete_marked_chapters_title">将删除《%1$s》下已标记的 %2$d 个篇目</string>
     <string name="local_delete_unmarked_safe">未标记的篇目不会受影响。</string>

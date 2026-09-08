@@ -1288,8 +1288,9 @@
     <string name="audio_sleep_minutes">%1$d minutes</string>
     <string name="audio_sleep_off">Turn off timer</string>
     <string name="audio_subtitle_display_mode">Subtitle display mode</string>
-    <string name="audio_loop_on">Repeat: on</string>
-    <string name="audio_loop_off">Repeat: off</string>
+    <string name="audio_repeat_off">Repeat: off</string>
+    <string name="audio_repeat_one">Repeat: this track</string>
+    <string name="audio_repeat_all">Repeat: whole queue</string>
     <!-- One glyph shown inside the circular floating-subtitle toggle; screen readers read audio_subtitle instead. -->
     <string name="audio_floating_subtitle_short">L</string>
     <string name="audio_floating_subtitle_permission_title">Permission to draw over other apps</string>
@@ -1336,9 +1337,9 @@
 
     <!-- Delete local files -->
     <string name="action_delete_local_files">Delete local files</string>
-    <string name="action_delete_all_chapters">Delete all chapters</string>
+    <string name="action_delete_all_chapters">Delete this collection</string>
     <string name="local_delete_warning">Files will be erased from disk directly, not moved to a trash folder. This cannot be undone.</string>
-    <string name="local_delete_manga_title">Delete local files of %1$s?</string>
+    <string name="local_delete_manga_title">Delete local files of collection %1$s?</string>
     <string name="local_delete_chapters_title">Delete local files of %1$d chapters?</string>
     <string name="local_delete_marked_chapters_title">This will delete %2$d marked chapters under %1$s</string>
     <string name="local_delete_unmarked_safe">Unmarked chapters will not be affected.</string>

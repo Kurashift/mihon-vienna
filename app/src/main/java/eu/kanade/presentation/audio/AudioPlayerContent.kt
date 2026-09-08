@@ -25,7 +25,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RepeatOne
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
@@ -71,6 +74,7 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.presentation.util.marqueeTitle
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
+import eu.kanade.tachiyomi.data.audio.AudioRepeatMode
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleDisplayMode
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleState
 import eu.kanade.tachiyomi.data.audio.LyricLine
@@ -101,7 +105,7 @@ fun AudioPlayerContent(
     onSeekBy: (Long) -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    onToggleLoop: () -> Unit,
+    onCycleRepeatMode: () -> Unit,
     onCyclePlaybackSpeed: () -> Unit,
     onCycleAudioQuality: () -> Unit,
     onSetSleepTimer: (Int?) -> Unit,
@@ -372,29 +376,33 @@ fun AudioPlayerContent(
                             ),
                         )
                     }
-                    IconButton(onClick = onToggleLoop) {
-                        // Both states carry the "1": the control is only ever about repeating the
-                        // current track, and the plain repeat glyph reads as repeating the queue
-                        // for everyone who has used another player. Off and on are told apart by
-                        // outline vs. fill and by the tint, the same way the sleep timer beside it
-                        // does it, so the two neighbours stay one matched pair.
+                    IconButton(onClick = onCycleRepeatMode) {
+                        // A shape of its own per mode, so the state is legible at a glance rather
+                        // than by reading the "1" on a ring the other mode also draws. Off is the
+                        // outline of the ring the single-track mode fills, which keeps those two
+                        // one matched pair the way the sleep timer beside it works.
                         Icon(
-                            imageVector = if (state.isLooping) {
-                                Icons.Filled.RepeatOne
-                            } else {
-                                Icons.Outlined.RepeatOne
+                            imageVector = when (state.repeatMode) {
+                                AudioRepeatMode.OFF -> Icons.Outlined.Repeat
+                                AudioRepeatMode.ONE -> Icons.Filled.RepeatOne
+                                // Three bars for the whole queue, against the rings the other two
+                                // draw: no second ring to tell apart by the "1" on it, and no
+                                // play glyph hanging off it, which read as a transport control
+                                // rather than as a mode. Filled while the queue repeats, so the
+                                // shape alone says which mode is on.
+                                AudioRepeatMode.ALL -> Icons.Filled.Menu
                             },
                             contentDescription = stringResource(
-                                if (state.isLooping) {
-                                    MR.strings.audio_loop_on
-                                } else {
-                                    MR.strings.audio_loop_off
+                                when (state.repeatMode) {
+                                    AudioRepeatMode.OFF -> MR.strings.audio_repeat_off
+                                    AudioRepeatMode.ONE -> MR.strings.audio_repeat_one
+                                    AudioRepeatMode.ALL -> MR.strings.audio_repeat_all
                                 },
                             ),
-                            tint = if (state.isLooping) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
+                            tint = if (state.repeatMode == AudioRepeatMode.OFF) {
                                 LocalContentColor.current
+                            } else {
+                                MaterialTheme.colorScheme.primary
                             },
                         )
                     }

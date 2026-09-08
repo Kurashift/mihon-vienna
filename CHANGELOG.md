@@ -12,6 +12,13 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [v2.2.3] - 2026-09-08
+### Added
+- ASMR player: repeat now cycles through off, repeat track and repeat queue, each with its own icon
+
+### Improved
+- Manga details: the delete entry and its confirmation now say collection instead of chapters, matching what is actually deleted
+
 ## [v2.2.2] - 2026-09-04
 ### Added
 - Local library: sort (title, chapter count, date) now sits on the filter bar
