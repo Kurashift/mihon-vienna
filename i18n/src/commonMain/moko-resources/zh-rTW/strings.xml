@@ -537,8 +537,9 @@
     <string name="audio_sleep_minutes">%1$d 分鐘</string>
     <string name="audio_sleep_off">關閉定時</string>
     <string name="audio_subtitle_display_mode">字幕顯示模式</string>
-    <string name="audio_loop_on">單曲循環：開</string>
-    <string name="audio_loop_off">單曲循環：關</string>
+    <string name="audio_repeat_off">順序播放</string>
+    <string name="audio_repeat_one">單曲循環</string>
+    <string name="audio_repeat_all">列表循環</string>
     <string name="audio_floating_subtitle_short">詞</string>
     <string name="audio_floating_subtitle_permission_title">需要「顯示在其他應用上層」權限</string>
     <string name="audio_floating_subtitle_permission_message">懸浮字幕需要這項權限，請到系統設定中為 Mihon 開啟。</string>
@@ -1034,4 +1035,6 @@
     <string name="action_read_range_after">此篇之後</string>
     <string name="chapter_marked_read">已標示為已讀</string>
     <string name="chapter_marked_unread">已標示為未讀</string>
+    <string name="action_delete_all_chapters">刪除該合集</string>
+    <string name="local_delete_manga_title">刪除《%1$s》合集的本地檔案？</string>
 </resources>

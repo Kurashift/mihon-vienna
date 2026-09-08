@@ -34,6 +34,7 @@ import eu.kanade.tachiyomi.data.audio.AudioHistoryEntry
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
+import eu.kanade.tachiyomi.data.audio.AudioRepeatMode
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleState
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.LyricLine
@@ -70,7 +71,7 @@ data class AudioPlayerState(
     val hasNext: Boolean = false,
     val index: Int = 0,
     val totalCount: Int = 0,
-    val isLooping: Boolean = false,
+    val repeatMode: AudioRepeatMode = AudioRepeatMode.OFF,
     val playbackSpeed: Float = 1f,
     val sleepTimerRemainingMs: Long = 0,
     val mediaVolume: Int = 0,
@@ -352,7 +353,7 @@ class AudioPlayerController(
             startIndex == newItems.indexOfFirst { it.workId == workId }
         }
         applyVolumeProtection()
-        player.repeatMode = if (state.isLooping) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        applyRepeatMode()
         player.setMediaItems(
             items.map { MediaItem.fromUri(it.mediaStreamUrl) },
             startIndex,
@@ -509,10 +510,18 @@ class AudioPlayerController(
         player.play()
     }
 
-    fun toggleLoop() {
-        val looping = !state.isLooping
-        player.repeatMode = if (looping) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-        publish(state.copy(isLooping = looping))
+    fun cycleRepeatMode() {
+        publish(state.copy(repeatMode = state.repeatMode.next()))
+        applyRepeatMode()
+    }
+
+    /** Hands the current mode to ExoPlayer, which is what actually replays a track. */
+    private fun applyRepeatMode() {
+        player.repeatMode = when (state.repeatMode) {
+            AudioRepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            AudioRepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            AudioRepeatMode.ALL -> Player.REPEAT_MODE_ALL
+        }
     }
 
     fun cyclePlaybackSpeed() {
@@ -796,14 +805,14 @@ class AudioPlayerController(
      * Whether playback is allowed to move on to a *different* track of the queue.
      *
      * ExoPlayer's own hasNextMediaItem() answers from the repeat mode rather than from the queue,
-     * so under single-track repeat it is permanently true even though the "next" item is the one
-     * already playing. That is right for a transport control and wrong for a give-up path: both
-     * callers here have to end somewhere, and would otherwise re-enter themselves forever on the
-     * same broken track — a buffer timeout restarting the track that just timed out, every
-     * twenty seconds, with the error never reaching the screen.
+     * so it is true under either repeat mode even though the "next" item is one the player is
+     * already going to come back to. That is right for a transport control and wrong for a
+     * give-up path: both callers here have to end somewhere, and would otherwise re-enter
+     * themselves forever on the same broken track — a buffer timeout restarting the track that
+     * just timed out, every twenty seconds, with the error never reaching the screen.
      */
     private fun canAdvanceToAnotherTrack(): Boolean {
-        if (player.repeatMode == Player.REPEAT_MODE_ONE) return false
+        if (player.repeatMode != Player.REPEAT_MODE_OFF) return false
         return player.mediaItemCount > 1 && player.currentMediaItemIndex < player.mediaItemCount - 1
     }
 

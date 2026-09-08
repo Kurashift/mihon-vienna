@@ -204,7 +204,7 @@ class AudioPlayerScreen(
             onSeekBy = controller::seekBy,
             onNext = controller::next,
             onPrevious = controller::previous,
-            onToggleLoop = controller::toggleLoop,
+            onCycleRepeatMode = controller::cycleRepeatMode,
             onCyclePlaybackSpeed = controller::cyclePlaybackSpeed,
             onCycleAudioQuality = controller::cycleAudioQuality,
             onSetSleepTimer = controller::setSleepTimer,
