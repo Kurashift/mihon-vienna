@@ -136,6 +136,9 @@ data object LibraryTab : Tab {
                             }
                         }
                     },
+                    // Same screen the library settings reach, surfaced here because managing
+                    // bookshelves is a library action, not a setting.
+                    onClickEditCategories = { navigator.push(CategoryScreen()) },
                     searchQuery = state.searchQuery,
                     onSearchQueryChange = viewModel::search,
                     // For scroll overlay when no tab

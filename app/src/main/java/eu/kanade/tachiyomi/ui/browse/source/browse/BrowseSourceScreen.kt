@@ -170,7 +170,7 @@ data class BrowseSourceScreen(
         val markFilter by viewModel.markFilter.collectAsStateWithLifecycle()
         val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
         val coverUpdates by viewModel.mangaCoverUpdateStore.covers.collectAsStateWithLifecycle()
-    val trailingSlotCount by viewModel.trailingSlotCount.collectAsStateWithLifecycle()
+        val trailingSlotCount by viewModel.trailingSlotCount.collectAsStateWithLifecycle()
         val refreshProgress by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
         val localSort by viewModel.localSort.collectAsStateWithLifecycle()
         val localSourceChanged by viewModel.localSourceChanged.collectAsStateWithLifecycle()

@@ -15,11 +15,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.RemoveDone
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,6 +36,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
+import eu.kanade.presentation.components.ConfirmDialog
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.mylists.MY_LIST_COVER_ASPECT_RATIO
 import eu.kanade.presentation.mylists.MY_LIST_MANGA_COVER_ASPECT_RATIO
@@ -572,30 +571,6 @@ private fun exportTextOf(
                     titleByChapterId[chapter.chapterId]?.primary ?: chapter.chapterName
                 },
             )
-        },
-    )
-}
-
-@Composable
-private fun ConfirmDialog(
-    text: String,
-    confirmText: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(MR.strings.are_you_sure)) },
-        text = { Text(text) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(confirmText)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(MR.strings.action_cancel))
-            }
         },
     )
 }

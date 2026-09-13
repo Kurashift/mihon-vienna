@@ -2402,6 +2402,7 @@ class LocalSource(
         private const val MAX_CONCURRENT_CHAPTER_INDEX_BUILDS = 16
         private const val MAX_CONCURRENT_CHAPTER_CHANGE_SCANS = 16
         private const val CHAPTER_INDEX_SAVE_DEBOUNCE_MILLIS = 750L
+
         // Order-by selections of the local library. Indices are persisted, so only
         // append new values.
         const val ORDER_BY_TITLE = 0

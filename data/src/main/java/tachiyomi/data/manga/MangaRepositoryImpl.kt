@@ -87,6 +87,16 @@ class MangaRepositoryImpl(
             .awaitAsList()
     }
 
+    override suspend fun getLocalMangaIdsOnSameShelf(
+        categoryIds: List<Long>,
+        includeDefault: Boolean,
+    ): List<Long> {
+        if (categoryIds.isEmpty() && !includeDefault) return emptyList()
+        return database.mangasQueries
+            .getLocalMangaIdsOnSameShelf(categoryIds, includeDefault)
+            .awaitAsList()
+    }
+
     override suspend fun getMangaUrlsByIds(ids: Set<Long>): Map<Long, String> {
         if (ids.isEmpty()) return emptyMap()
         // Bound parameters are a finite resource: a library can carry thousands of marks, and a

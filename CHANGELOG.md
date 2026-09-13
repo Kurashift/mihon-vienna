@@ -12,6 +12,39 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [v2.2.4] - 2026-09-13
+### Added
+- Reader: previous and next chapter buttons are back, above the seek bar and draggable left and right
+- Library: an "Edit categories" entry in the shelf menu, reaching the same screen as the library settings
+- Local import: a source that contributes nothing now says why — unreadable, no content, already in the library, or a different layout
+
+### Improved
+- Local import: importing a folder inside the local library is refused instead of copying the library onto itself
+- Local import: a folder the provider refuses to list is reported as unreadable rather than as empty
+- Local import: sources that cannot join the current batch are listed by name instead of being dropped silently
+- Reader seek bar: a drag moves relative to the current page, so a stray press on a long chapter no longer skips dozens of pages
+- Reader seek bar: lifting the finger off the bar slows the scrub for page-by-page adjustment, with a halo showing it is active
+- Reader seek bar: tapping the bar still jumps to that position
+- Random manga now stays inside the shelves of the work it was started from, instead of drawing from the whole local source
+- Delete confirmation: spacing between the warning, the list and the notes, so the three no longer run together
+- Delete confirmation: reassurances are no longer coloured as warnings
+
+### Fixed
+- Fixed the reader seek bar thumb shaking while dragging a long chapter: the page label changed width across a digit boundary, which shifted the bar under the finger
+- Fixed a seek drag writing reading progress for every page it passed through, instead of only where it ended
+- Fixed the menu no longer hiding and page transitions stopping after using the seek bar once
+- Fixed a dragged seek thumb fighting the asynchronously reported page
+- Fixed fine seeking flickering on and off during an ordinary drag
+- Fixed the chapter jump pad covering the ASMR playback bar, which made the audio bar look like it had vanished
+- Fixed the chapter jump pad not moving when dragged
+- Fixed long work titles overflowing the delete confirmation title
+- Fixed the delete confirmation repeating the work title when only one work is deleted
+
+### Other
+- Reader: removed the dead bottom bar, the unreachable horizontal chapter navigator and six unused app bar parameters
+- Deduplicated the two identical confirmation dialogs into one shared component
+- Repaired pre-existing spotless violations in the fast scroller, audio player, local browse and local source
+
 ## [v2.2.3] - 2026-09-08
 ### Added
 - ASMR player: repeat now cycles through off, repeat track and repeat queue, each with its own icon

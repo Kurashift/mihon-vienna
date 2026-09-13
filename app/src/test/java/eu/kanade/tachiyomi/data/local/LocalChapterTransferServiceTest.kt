@@ -7,7 +7,9 @@ import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -53,6 +55,71 @@ class LocalChapterTransferServiceTest {
         val root = directory("local", image("cover.jpg"), author)
 
         assertEquals(listOf("Author"), service.expandGrouped(root)?.map { it.name })
+    }
+
+    @Test
+    fun `picking the library folder itself clashes`() {
+        assertTrue(
+            service.overlapsPath(
+                a = listOf("primary:Mihon", "local"),
+                b = listOf("primary:Mihon", "local"),
+            ),
+        )
+    }
+
+    @Test
+    fun `picking a folder inside the library clashes`() {
+        assertTrue(
+            service.overlapsPath(
+                a = listOf("primary:Mihon", "local"),
+                b = listOf("primary:Mihon", "local", "Some Book"),
+            ),
+        )
+        assertTrue(
+            service.overlapsPath(
+                a = listOf("primary:Mihon", "local", "Some Book", "Ch 1"),
+                b = listOf("primary:Mihon", "local"),
+            ),
+        )
+    }
+
+    @Test
+    fun `picking an ancestor of the library clashes`() {
+        assertTrue(
+            service.overlapsPath(
+                a = listOf("primary:Mihon", "local"),
+                b = listOf("primary:Mihon"),
+            ),
+        )
+    }
+
+    @Test
+    fun `a sibling folder does not clash`() {
+        assertFalse(
+            service.overlapsPath(
+                a = listOf("primary:Mihon", "local"),
+                b = listOf("primary:Mihon", "downloads"),
+            ),
+        )
+    }
+
+    @Test
+    fun `a folder whose name merely shares a prefix does not clash`() {
+        // "local2" must not be treated as living inside "local" just because the text starts
+        // the same; only whole segments count.
+        assertFalse(
+            service.overlapsPath(
+                a = listOf("primary:Mihon", "local"),
+                b = listOf("primary:Mihon", "local2", "Book"),
+            ),
+        )
+    }
+
+    @Test
+    fun `an unusable document id never clashes`() {
+        assertFalse(service.overlapsPath(a = null, b = listOf("primary:Mihon", "local")))
+        assertFalse(service.overlapsPath(a = emptyList(), b = listOf("primary:Mihon", "local")))
+        assertFalse(service.overlapsPath(a = listOf("primary:Mihon", "local"), b = null))
     }
 
     private fun directory(name: String, vararg children: UniFile): UniFile {

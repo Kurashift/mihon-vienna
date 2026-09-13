@@ -232,7 +232,7 @@ fun VerticalFastScroller(
             val animatedProgress by animateFloatAsState(
                 targetValue = targetProgress,
                 animationSpec = tween(
-                    durationMillis = if (thumbAnchor.snapped) ThumbSnapDurationMillis else 0,
+                    durationMillis = if (thumbAnchor.snapped) THUMB_SNAP_DURATION_MILLIS else 0,
                     easing = FastOutSlowInEasing,
                 ),
                 label = "listThumbProgress",
@@ -550,7 +550,7 @@ fun VerticalGridFastScroller(
             val animatedProgress by animateFloatAsState(
                 targetValue = targetProgress,
                 animationSpec = tween(
-                    durationMillis = if (thumbAnchor.snapped) ThumbSnapDurationMillis else 0,
+                    durationMillis = if (thumbAnchor.snapped) THUMB_SNAP_DURATION_MILLIS else 0,
                     easing = FastOutSlowInEasing,
                 ),
                 label = "gridThumbProgress",
@@ -793,24 +793,28 @@ val LocalFastScrollerBottomInset: ProvidableCompositionLocal<Dp> = staticComposi
 
 private val ThumbLength = 48.dp
 private val ThumbThickness = 12.dp
+
 // Gap between the thumb and the edge the content itself stops at. The scroller box is laid out
 // flush against the content's end, so this - not the start padding - is what decides how close
 // the bar sits to the screen edge: a bar's trailing gap always equals its own end padding.
 private val ThumbEndMargin = 2.dp
+
 // Width of the strip that grabs the thumb, held constant. Moving the bar closer to the edge only
 // converts outer margin into grab room on its leading side ([ThumbStartPadding] absorbs the
 // difference), so retuning the margin never shrinks the touch target.
 private val ThumbTouchWidth = 40.dp
 private val ThumbStartPadding = ThumbTouchWidth - ThumbThickness - ThumbEndMargin
 private val ThumbShape = RoundedCornerShape(ThumbThickness / 2)
+
 // Only ever spent on the end-of-track snap: the thumb catching up with a distance it held
 // back while pages were loading. Everything else tracks the finger or the scroll instantly.
-private const val ThumbSnapDurationMillis = 180
+private const val THUMB_SNAP_DURATION_MILLIS = 180
 private val ScrollBarVisibilityDuration = 2.seconds
 private val ImmediateFadeOutAnimationSpec = tween<Float>(
     durationMillis = ViewConfiguration.getScrollBarFadeDuration(),
 )
 private val EndMarkerLength = 3.dp
+
 // Spans exactly the thumb's width and both of its edges. Insetting the leading side made the
 // marker a narrower stub that stopped short of where the thumb starts, which read as the two
 // bars being out of line; matching the thumb on both sides reads as one bar with its last
@@ -820,9 +824,11 @@ private val EndMarkerStartPadding = ThumbStartPadding
 private val EndMarkerEndPadding = ThumbEndMargin
 private val EndMarkerGap = 2.dp
 private val EndMarkerShape = RoundedCornerShape(EndMarkerLength / 2)
+
 // Sits at a fraction of the thumb's opacity: present enough to close off the track, quiet
 // enough not to compete with the thumb itself.
 private val EndMarkerMaxAlpha = 0.4f
+
 // Grace period after the last scroll pulse. Flings keep emitting while they coast, so this
 // only starts counting once the list has really stopped.
 private val EndMarkerHoldDuration = 500.milliseconds

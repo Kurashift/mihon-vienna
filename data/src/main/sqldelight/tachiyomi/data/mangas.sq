@@ -87,6 +87,32 @@ SELECT _id
 FROM mangas
 WHERE source = 0;
 
+-- Local manga on the same shelf as an anchor work, for keeping random selection inside it.
+--
+-- A local work is either filed into one or more explicit categories, or sits on the implicit
+-- default shelf. The default shelf is never written to mangas_categories — a work is on it
+-- precisely by having no row — so the two cases are matched separately. Callers pass
+-- :includeDefault when the anchor itself is uncategorized, and must never pass the system
+-- category id in :categoryIds.
+getLocalMangaIdsOnSameShelf:
+SELECT DISTINCT M._id
+FROM mangas M
+WHERE M.source = 0
+AND (
+    EXISTS (
+        SELECT 1 FROM mangas_categories MC
+        WHERE MC.manga_id = M._id
+        AND MC.category_id IN :categoryIds
+    )
+    OR (
+        :includeDefault
+        AND NOT EXISTS (
+            SELECT 1 FROM mangas_categories MC
+            WHERE MC.manga_id = M._id
+        )
+    )
+);
+
 getMangaUrlsByIds:
 SELECT _id, url
 FROM mangas

@@ -29,6 +29,20 @@ interface MangaRepository {
     suspend fun getLocalMangaIds(): List<Long>
 
     /**
+     * Ids of the local manga sitting on the same shelf as an anchor work, used to keep random
+     * selection inside the shelf the reader started from.
+     *
+     * Every local work is either filed into the explicit categories in [categoryIds] or on the
+     * implicit default shelf, so exactly one of the two inputs selects anything: pass the
+     * anchor's real category ids, or pass [includeDefault] when the anchor has none. The system
+     * category id must never appear in [categoryIds] — the default shelf is not stored as a row.
+     */
+    suspend fun getLocalMangaIdsOnSameShelf(
+        categoryIds: List<Long>,
+        includeDefault: Boolean,
+    ): List<Long>
+
+    /**
      * Url by id for [ids]. Ids that no longer exist are simply absent from the result, so a
      * caller holding ids from another source of truth can resolve them without a per-id read.
      */

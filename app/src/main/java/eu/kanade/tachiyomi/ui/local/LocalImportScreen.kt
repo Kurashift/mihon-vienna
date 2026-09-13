@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -52,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.condensedBulletList
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferJob
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferService
@@ -155,7 +158,10 @@ data class LocalImportScreen(
         var sourcePreviews by rememberSaveable(stateSaver = sourcePreviewListSaver) {
             mutableStateOf<List<LocalChapterTransferService.SourcePreview>>(emptyList())
         }
-        var ignoredSourceCount by remember { mutableLongStateOf(0L) }
+        var rejectedSourceCount by remember { mutableLongStateOf(0L) }
+        var rejectedSourceDetails by remember {
+            mutableStateOf<List<Pair<String, LocalChapterTransferService.SourceRejection>>>(emptyList())
+        }
         var targetId by rememberSaveable { mutableStateOf(fixedTargetMangaId ?: -1L) }
         var mangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
         var allLocalMangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
@@ -255,12 +261,32 @@ data class LocalImportScreen(
                         )
                     }
                 }
-                val inspected = uniqueUris.mapNotNull { transferService.inspectSource(it) }
+                val inspected = uniqueUris.map { transferService.inspectSource(it) }
+                val inspectedPreviews = inspected.mapNotNull { it.preview }
                 val expectedGrouped = sourcePreviews.firstOrNull()?.groups?.isNotEmpty()
-                    ?: inspected.firstOrNull()?.groups?.isNotEmpty()
-                val previews = inspected.filter { it.groups.isNotEmpty() == expectedGrouped }
-                ignoredSourceCount += (uniqueUris.size - previews.size)
-                val mergedPreviews = (sourcePreviews + previews).distinctBy { it.uri }
+                    ?: inspectedPreviews.firstOrNull()?.groups?.isNotEmpty()
+                // Layout mismatch is a rejection too, so a source that *was* readable is not
+                // reported to the user as "nothing found" — it simply cannot join this batch.
+                val usable = inspectedPreviews.filter { it.groups.isNotEmpty() == expectedGrouped }
+                val usableUris = usable.mapTo(hashSetOf()) { it.uri }
+                val rejected = inspected.map { inspection ->
+                    when {
+                        inspection.preview == null -> inspection
+                        inspection.preview.uri !in usableUris -> inspection.copy(
+                            preview = null,
+                            rejection = LocalChapterTransferService.SourceRejection.MismatchedLayout,
+                        )
+                        else -> inspection
+                    }
+                }
+                // Both accumulate across picks so the count and the listed reasons never drift
+                // apart: a user who tries several folders sees every rejection, not only the last
+                // batch's.
+                rejectedSourceDetails = rejectedSourceDetails + rejected.mapNotNull { inspection ->
+                    inspection.rejection?.let { rejection -> inspection.displayName to rejection }
+                }
+                rejectedSourceCount += rejected.count { it.rejection != null }
+                val mergedPreviews = (sourcePreviews + usable).distinctBy { it.uri }
                 sourcePreviews = mergedPreviews
                 selectedUris = if (fixedTargetMangaId != null) {
                     mergedPreviews.flatMap { preview ->
@@ -307,7 +333,7 @@ data class LocalImportScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    ImportSection(title = "添加来源") {
+                    ImportSection(title = "导入来源") {
                         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                             if (maxWidth >= 520.dp) {
                                 Row(
@@ -317,14 +343,14 @@ data class LocalImportScreen(
                                     SourceButton(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Outlined.FolderOpen,
-                                        label = "从文件夹导入",
+                                        label = "选择文件夹",
                                         enabled = !importing,
                                         onClick = { folderPicker.launch(null) },
                                     )
                                     SourceButton(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Outlined.InsertDriveFile,
-                                        label = "从文件导入",
+                                        label = "选择文件",
                                         enabled = !importing,
                                         onClick = { filePicker.launch(arrayOf("*/*")) },
                                     )
@@ -333,13 +359,13 @@ data class LocalImportScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     SourceButton(
                                         icon = Icons.Outlined.FolderOpen,
-                                        label = "从文件夹导入",
+                                        label = "选择文件夹",
                                         enabled = !importing,
                                         onClick = { folderPicker.launch(null) },
                                     )
                                     SourceButton(
                                         icon = Icons.Outlined.InsertDriveFile,
-                                        label = "从文件导入",
+                                        label = "选择文件",
                                         enabled = !importing,
                                         onClick = { filePicker.launch(arrayOf("*/*")) },
                                     )
@@ -348,7 +374,8 @@ data class LocalImportScreen(
                         }
                         if (selectedUris.isEmpty()) {
                             Text(
-                                text = "可导入合集文件夹，也可单选或多选 CBZ/ZIP/EPUB 等压缩包",
+                                text = "文件夹：整个文件夹作为一个来源导入\n" +
+                                    "文件：支持 CBZ、ZIP、RAR、7Z、TAR 等压缩包与 EPUB",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp),
@@ -410,24 +437,35 @@ data class LocalImportScreen(
                                 }
                                 if (preview.ignoredGroupCount > 0) {
                                     Text(
-                                        text = "已忽略 ${preview.ignoredGroupCount} 个不属于作者合集的项目",
+                                        text = "已忽略 ${preview.ignoredGroupCount} 个无法识别为合集的一级文件夹",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
-                            if (ignoredSourceCount > 0) {
+                        }
+                        // Rendered outside the branches above: when every pick is rejected nothing
+                        // else on screen changes, so this is the only thing telling the user their
+                        // pick was seen and why it produced nothing.
+                        if (rejectedSourceCount > 0) {
+                            Text(
+                                text = "有 $rejectedSourceCount 个来源未被导入：",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                            rejectedSourceDetails.forEach { (name, rejection) ->
                                 Text(
-                                    text = "已忽略 $ignoredSourceCount 个不兼容当前结构或不包含本子内容的来源",
+                                    text = "· $name：${rejection.reasonText()}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                             }
                         }
                     }
                 }
                 item {
-                    ImportSection(title = "归属合集") {
+                    ImportSection(title = "目标合集") {
                         if (isGroupedImport) {
                             Text("将按一级文件夹名称自动复用或创建合集")
                             Text(
@@ -470,7 +508,7 @@ data class LocalImportScreen(
                                 FilterChip(
                                     selected = targetMode == ImportTargetMode.NEW,
                                     onClick = { targetMode = ImportTargetMode.NEW },
-                                    label = { Text("新建合集") },
+                                    label = { Text("新建") },
                                 )
                                 FilterChip(
                                     selected = targetMode == ImportTargetMode.EXISTING,
@@ -478,7 +516,7 @@ data class LocalImportScreen(
                                         targetMode = ImportTargetMode.EXISTING
                                         showMangaPicker = true
                                     },
-                                    label = { Text("已有合集") },
+                                    label = { Text("选已有的") },
                                 )
                             }
                             if (targetMode == ImportTargetMode.EXISTING) {
@@ -514,7 +552,7 @@ data class LocalImportScreen(
                                             style = MaterialTheme.typography.bodyLarge,
                                         )
                                     }
-                                    TextButton(onClick = { showMangaPicker = true }) { Text("选择") }
+                                    TextButton(onClick = { showMangaPicker = true }) { Text("选择合集") }
                                 }
                             } else {
                                 OutlinedTextField(
@@ -535,22 +573,37 @@ data class LocalImportScreen(
                 }
                 item {
                     ImportSection(title = "导入设置") {
+                        Text("篇目保存方式", style = MaterialTheme.typography.bodyMedium)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(
                                 selected = output == LocalChapterTransferService.FolderOutput.DIRECTORY,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.DIRECTORY },
                             )
-                            Text("文件夹")
+                            Text("保留文件夹")
                             RadioButton(
                                 selected = output == LocalChapterTransferService.FolderOutput.CBZ,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.CBZ },
                             )
-                            Text("CBZ（压缩后再导入）")
+                            Text("打包成 CBZ")
                         }
+                        Text(
+                            text = if (output == LocalChapterTransferService.FolderOutput.CBZ) {
+                                "文件夹来源导入时打包成 CBZ；文件来源原样保存"
+                            } else {
+                                "文件夹来源保持文件夹结构；文件来源原样保存"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Switch(checked = deleteSource, onCheckedChange = { deleteSource = it })
                             Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text("成功后删除源文件")
+                                Text("导入成功后删除来源")
+                                Text(
+                                    "删除本次导入的来源文件夹或文件",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
@@ -688,12 +741,24 @@ data class LocalImportScreen(
                 },
                 title = { Text(stringResource(MR.strings.local_transfer_conflict_title)) },
                 text = {
-                    Text(
-                        stringResource(
-                            MR.strings.local_transfer_conflict_message,
-                            preview.conflicts.size,
-                        ),
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                MR.strings.local_transfer_conflict_message,
+                                preview.conflicts.size,
+                            ),
+                        )
+                        // The names are what decides whether continuing is safe: "12 items will be
+                        // skipped" cannot be checked, but the list can.
+                        Text(
+                            text = condensedBulletList(preview.conflicts),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(
@@ -754,5 +819,25 @@ private fun ImportSection(
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()
         }
+    }
+}
+
+/**
+ * What to tell the user about a rejected source.
+ *
+ * Each reason names a different fix, so they are never collapsed into one "could not import"
+ * message: an unreadable folder is a permission problem, an empty one is a wrong-folder problem,
+ * and a library folder is a "you do not need to import this" problem.
+ */
+private fun LocalChapterTransferService.SourceRejection.reasonText(): String {
+    return when (this) {
+        LocalChapterTransferService.SourceRejection.Unreadable ->
+            "无法读取，可能是权限不足或系统限制的目录"
+        LocalChapterTransferService.SourceRejection.NoContent ->
+            "没有找到可导入的本子或压缩包"
+        LocalChapterTransferService.SourceRejection.InsideLibrary ->
+            "已经在本地库中，无需重复导入"
+        LocalChapterTransferService.SourceRejection.MismatchedLayout ->
+            "结构与本次已选的来源不一致，已跳过"
     }
 }

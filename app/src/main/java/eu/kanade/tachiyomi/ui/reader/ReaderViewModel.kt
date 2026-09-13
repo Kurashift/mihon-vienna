@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
+import eu.kanade.tachiyomi.data.manga.LocalRandomScope
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.data.saver.Image
@@ -121,6 +122,7 @@ class ReaderViewModel @JvmOverloads constructor(
     private val mangaRepository: MangaRepository = Injekt.get(),
     private val goodDoujinStore: GoodDoujinStore = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
+    private val localRandomScope: LocalRandomScope = Injekt.get(),
 ) : ViewModel() {
 
     private val mutableState = MutableStateFlow(State())
@@ -944,6 +946,17 @@ class ReaderViewModel @JvmOverloads constructor(
     fun getCurrentPageIndex(): Int = (state.value.currentPage - 1).coerceAtLeast(0)
 
     /**
+     * The page the reader is currently showing, used to commit a finished seek.
+     *
+     * Resolved through the page index the reader already tracks, so it is the page the drag ended
+     * on rather than whichever page a viewer last reported.
+     */
+    fun currentReaderPageForSeek(): ReaderPage? {
+        val chapter = getCurrentChapter() ?: return null
+        return chapter.pages?.getOrNull(getCurrentPageIndex())
+    }
+
+    /**
      * Applies the current local-source reading filter, then selects manga uniformly and a chapter
      * within that manga uniformly.
      */
@@ -972,7 +985,19 @@ class ReaderViewModel @JvmOverloads constructor(
         }
         if (base.isEmpty()) return null
 
-        val chaptersByMangaId = loadRandomPoolChapters(base.map { it.mangaId })
+        // Keep the jump inside the shelf this work sits on, including the implicit default shelf
+        // for works that were never filed into a category. A null scope means nothing could be
+        // derived, and the whole local source stays the pool.
+        val scopedMangaIds = localRandomScope.resolveLocalMangaIds(currentManga.id)
+        val scoped = if (scopedMangaIds != null) {
+            val allowed = scopedMangaIds.toHashSet()
+            base.filter { it.mangaId in allowed }
+        } else {
+            base
+        }
+        if (scoped.isEmpty()) return null
+
+        val chaptersByMangaId = loadRandomPoolChapters(scoped.map { it.mangaId })
         if (chaptersByMangaId.isEmpty()) return null
         val currentChapterId = getCurrentChapterId()
         val candidates = readingRandomPoolCandidates(
