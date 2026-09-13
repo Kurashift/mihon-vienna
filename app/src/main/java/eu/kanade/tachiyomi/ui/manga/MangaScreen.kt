@@ -467,7 +467,10 @@ class MangaScreen(
                         MR.strings.local_delete_manga_title,
                         dialog.manga.title,
                     ),
+                    // The title already names the single work, so listing it again says nothing
+                    // new. The dialog still needs a non-empty list to enable its confirm button.
                     entryNames = listOf(dialog.manga.title),
+                    showEntryList = false,
                     onDismissRequest = onDismissRequest,
                     onConfirm = { viewModel.deleteLocalManga() },
                 )

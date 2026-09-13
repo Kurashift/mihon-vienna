@@ -36,6 +36,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
+import eu.kanade.tachiyomi.data.manga.LocalRandomScope
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
@@ -140,6 +141,7 @@ class MangaViewModel(
     private val mangaRepository: MangaRepository = Injekt.get(),
     private val goodDoujinStore: GoodDoujinStore = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
+    private val localRandomScope: LocalRandomScope = Injekt.get(),
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
     private val updateMangaFromRemote: UpdateMangaFromRemote = Injekt.get(),
     private val deletionService: LocalEntryDeletionService = Injekt.get(),
@@ -798,10 +800,19 @@ class MangaViewModel(
         val manga = state.manga
         if (!manga.isLocal()) return null
 
+        // Narrow every candidate pool below to the shelf this work sits on, including the
+        // implicit default shelf for works that were never filed into a category. A null scope
+        // means nothing could be derived, and the whole local source remains the pool.
+        val scopedIds = withIOContext { localRandomScope.resolveLocalMangaIds(manga.id) }
+        val allowed = scopedIds?.toHashSet()
+        fun List<Long>.withinScope(): List<Long> {
+            return if (allowed == null) this else filter { it in allowed }
+        }
+
         // Prefer the filtered list the user came from (local source browse page), so
         // random keeps opening manga within the same search/filter result.
         if (randomCandidates.isNotEmpty()) {
-            randomSelectionCooldown.pickManga(randomCandidates, manga.id)?.let { return it }
+            randomSelectionCooldown.pickManga(randomCandidates.withinScope(), manga.id)?.let { return it }
         }
 
         // Fallback: pick from the whole local library (e.g. opened from home/updates), where
@@ -820,6 +831,7 @@ class MangaViewModel(
                         LocalReadingFilter.read(LocalSource.ID),
                     )
                 }
+                .withinScope()
         }
         return randomSelectionCooldown.pickManga(ids, manga.id)
     }

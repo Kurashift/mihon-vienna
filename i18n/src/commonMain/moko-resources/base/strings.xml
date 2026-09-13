@@ -1341,10 +1341,10 @@
     <string name="local_delete_warning">Files will be erased from disk directly, not moved to a trash folder. This cannot be undone.</string>
     <string name="local_delete_manga_title">Delete local files of collection %1$s?</string>
     <string name="local_delete_chapters_title">Delete local files of %1$d chapters?</string>
-    <string name="local_delete_marked_chapters_title">This will delete %2$d marked chapters under %1$s</string>
+    <string name="local_delete_marked_chapters_title">Delete %1$d marked chapters?</string>
     <string name="local_delete_unmarked_safe">Unmarked chapters will not be affected.</string>
     <string name="local_delete_group_remains">This manga still has non-local entries and will remain in the list after deletion.</string>
-    <string name="local_delete_and_more">…and %1$d more</string>
+    <string name="list_and_more">…and %1$d more</string>
     <string name="local_delete_progress">Deleting local files…</string>
     <string name="local_delete_success">Deleted %1$d item(s)</string>
     <string name="local_delete_partial">Deleted %1$d item(s), %2$d failed</string>
@@ -1359,4 +1359,6 @@
     <string name="action_read_selected">Read selected</string>
     <string name="action_read_range_before">Before this</string>
     <string name="action_read_range_after">After this</string>
+
+    <string name="local_delete_scope_marked">Affects %1$d works: %2$s</string>
 </resources>

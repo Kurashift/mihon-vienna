@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.local
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.core.net.toUri
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
@@ -93,25 +94,133 @@ class LocalChapterTransferService(
 
     data class MoveResult(val moved: Int, val skipped: Int, val failed: Int)
 
-    suspend fun inspectSource(uri: Uri): SourcePreview? = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val file = UniFile.fromUri(context, uri) ?: return@withContext null
+    /** Why a picked source contributed nothing to the import. */
+    enum class SourceRejection {
+        /** The provider refused to list the folder: permissions, or a restricted location. */
+        Unreadable,
+
+        /** Listed fine, but nothing inside is a book or a supported archive. */
+        NoContent,
+
+        /** The folder is the local library, so importing it would copy the library onto itself. */
+        InsideLibrary,
+
+        /** A usable source, but its layout does not match the sources already selected. */
+        MismatchedLayout,
+    }
+
+    /**
+     * Outcome of inspecting one picked source.
+     *
+     * A rejected source carries [rejection] rather than simply being absent, because "nothing was
+     * imported" and "nothing could be read" need different answers from the user, and a bare null
+     * cannot tell them apart.
+     */
+    data class SourceInspection(
+        val displayName: String,
+        val preview: SourcePreview? = null,
+        val rejection: SourceRejection? = null,
+    )
+
+    suspend fun inspectSource(uri: Uri): SourceInspection = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val file = UniFile.fromUri(context, uri)
+            ?: return@withContext SourceInspection(
+                displayName = uri.lastPathSegment.orEmpty(),
+                rejection = SourceRejection.Unreadable,
+            )
+        val displayName = file.name.orEmpty().ifBlank { uri.lastPathSegment.orEmpty() }
+
+        // The local source already reads that folder in place, so importing it would copy the
+        // library onto itself. Reported rather than silently skipped: the user picked this path
+        // deliberately and needs to know why it did nothing.
+        if (overlapsLocalLibrary(file)) {
+            return@withContext SourceInspection(displayName, rejection = SourceRejection.InsideLibrary)
+        }
+
+        // A provider can decline to list a folder it will not grant access to. Treating that as
+        // "empty" sends the user looking for content that is already there, so it stays distinct.
+        if (file.isDirectory && file.listFiles() == null) {
+            return@withContext SourceInspection(displayName, rejection = SourceRejection.Unreadable)
+        }
+
         val grouped = expandGrouped(file)
         if (grouped != null) {
-            return@withContext SourcePreview(
-                uri = uri,
-                displayName = file.name.orEmpty().ifBlank { uri.lastPathSegment.orEmpty() },
-                candidateNames = grouped.flatMap { it.candidateNames },
-                groups = grouped,
-                ignoredGroupCount = (file.listFiles().orEmpty().size - grouped.size).coerceAtLeast(0),
+            return@withContext SourceInspection(
+                displayName = displayName,
+                preview = SourcePreview(
+                    uri = uri,
+                    displayName = displayName,
+                    candidateNames = grouped.flatMap { it.candidateNames },
+                    groups = grouped,
+                    ignoredGroupCount = (file.listFiles().orEmpty().size - grouped.size).coerceAtLeast(0),
+                ),
             )
         }
         val candidates = expand(file)
-        if (candidates.isEmpty()) return@withContext null
-        SourcePreview(
-            uri = uri,
-            displayName = file.name.orEmpty().ifBlank { uri.lastPathSegment.orEmpty() },
-            candidateNames = candidates.map { it.name },
+        if (candidates.isEmpty()) {
+            return@withContext SourceInspection(displayName, rejection = SourceRejection.NoContent)
+        }
+        SourceInspection(
+            displayName = displayName,
+            preview = SourcePreview(
+                uri = uri,
+                displayName = displayName,
+                candidateNames = candidates.map { it.name },
+            ),
         )
+    }
+
+    /**
+     * Whether [file] is the local library folder or one of its ancestors.
+     *
+     * Importing either copies the library onto itself, which the picker never means: the local
+     * source already indexes that folder in place. A folder *inside* the library is refused too,
+     * because its contents are already local manga — importing one would only add a duplicate.
+     *
+     * Comparison is by document-id segments and only within one provider. Document ids are
+     * provider-defined, and cloud providers often use ids without separators; those collapse to a
+     * single segment, so the check degrades to exact equality instead of guessing at a prefix.
+     */
+    private fun overlapsLocalLibrary(file: UniFile): Boolean {
+        val picked = documentSegments(file.uri)
+        val library = listOfNotNull(
+            documentSegments(fileSystem.getBaseDirectory()?.uri),
+            documentSegments(fileSystem.getBaseDirectoryIdentityUri()?.toUri()),
+        )
+        return library.any { overlapsPath(it, picked) }
+    }
+
+    /**
+     * Document id split into path segments, or null when [uri] is not a document URI.
+     *
+     * The external-storage provider encodes a volume plus a slash-separated path
+     * (`primary:Mihon/local`), and splitting on that slash is what makes an ancestor comparable
+     * to its descendants.
+     */
+    private fun documentSegments(uri: Uri?): List<String>? {
+        uri ?: return null
+        val id = runCatching {
+            when {
+                DocumentsContract.isTreeUri(uri) -> DocumentsContract.getTreeDocumentId(uri)
+                DocumentsContract.isDocumentUri(context, uri) -> DocumentsContract.getDocumentId(uri)
+                else -> null
+            }
+        }.getOrNull() ?: return null
+        return id.split('/')
+    }
+
+    /**
+     * True when the two document-id segment paths contain one another.
+     *
+     * Both directions count as a clash: picking the library folder would copy the library onto
+     * itself, and picking something inside it would re-import works the local source already
+     * reads in place. Either way the pick is refused rather than silently duplicated.
+     */
+    internal fun overlapsPath(a: List<String>?, b: List<String>?): Boolean {
+        if (a.isNullOrEmpty() || b.isNullOrEmpty()) return false
+        val shorter = if (a.size <= b.size) a else b
+        val longer = if (a.size <= b.size) b else a
+        return longer.subList(0, shorter.size) == shorter
     }
 
     suspend fun moveChapters(

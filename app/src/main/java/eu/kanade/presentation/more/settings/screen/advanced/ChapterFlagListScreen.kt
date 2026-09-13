@@ -21,11 +21,9 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.PlaylistRemove
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +46,7 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
+import eu.kanade.presentation.components.ConfirmDialog
 import eu.kanade.presentation.components.DeleteLocalEntriesDialog
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.mylists.MY_LIST_COVER_ASPECT_RATIO
@@ -423,23 +422,23 @@ class ChapterFlagListScreen(
             val groupRemains = affectedGroups.any { (mangaId, groupMarks) ->
                 groupMarks.size < (grouped.firstOrNull { it.mangaId == mangaId }?.marks?.size ?: 0)
             }
-            val extraWarning = buildString {
-                appendLine(stringResource(MR.strings.local_delete_unmarked_safe))
-                if (groupRemains) {
-                    append(stringResource(MR.strings.local_delete_group_remains))
-                }
-            }.trim()
             DeleteLocalEntriesDialog(
-                title = stringResource(
-                    MR.strings.local_delete_marked_chapters_title,
+                // 标题只报数量：受影响的作品名可能横跨多部，塞进标题会折行并撑大弹窗。
+                title = stringResource(MR.strings.local_delete_marked_chapters_title, marks.size),
+                entryNames = marks.map { it.chapterName },
+                subtitle = stringResource(
+                    MR.strings.local_delete_scope_marked,
+                    affectedGroups.size,
                     affectedGroups.keys
                         .mapNotNull { mangaId -> grouped.firstOrNull { it.mangaId == mangaId }?.mangaTitle }
                         .joinToString("、")
                         .ifBlank { listTitle },
-                    marks.size,
                 ),
-                entryNames = marks.map { it.chapterName },
-                extraWarning = extraWarning,
+                // 安抚句与真正的提醒分开传，前者不该被涂成红色。
+                notices = buildList {
+                    add(stringResource(MR.strings.local_delete_unmarked_safe))
+                    if (groupRemains) add(stringResource(MR.strings.local_delete_group_remains))
+                },
                 inProgress = deletionInProgress,
                 onDismissRequest = { if (!deletionInProgress) pendingDeletion = null },
                 onConfirm = {
@@ -760,33 +759,6 @@ private fun StickyGroupHeaderOverlay(
             modifier = Modifier.padding(start = 4.dp),
         )
     }
-}
-
-/**
- * 两个清单共用的二次确认弹窗。危险操作一律先确认。
- */
-@Composable
-private fun ConfirmDialog(
-    text: String,
-    confirmText: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(MR.strings.are_you_sure)) },
-        text = { Text(text) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(confirmText)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(MR.strings.action_cancel))
-            }
-        },
-    )
 }
 
 /**

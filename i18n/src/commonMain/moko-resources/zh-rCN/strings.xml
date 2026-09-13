@@ -1201,10 +1201,10 @@
     <string name="local_delete_warning">文件会从磁盘上直接删除，不会进入回收站，无法恢复。</string>
     <string name="local_delete_manga_title">删除《%1$s》合集的本地文件？</string>
     <string name="local_delete_chapters_title">删除 %1$d 个篇目的本地文件？</string>
-    <string name="local_delete_marked_chapters_title">将删除《%1$s》下已标记的 %2$d 个篇目</string>
+    <string name="local_delete_marked_chapters_title">删除已标记的 %1$d 个篇目？</string>
     <string name="local_delete_unmarked_safe">未标记的篇目不会受影响。</string>
     <string name="local_delete_group_remains">该漫画下仍有非本地条目，删除后仍会留在清单中。</string>
-    <string name="local_delete_and_more">等 %1$d 项</string>
+    <string name="list_and_more">等 %1$d 项</string>
     <string name="local_delete_progress">正在删除本地文件…</string>
     <string name="local_delete_success">已删除 %1$d 项</string>
     <string name="local_delete_partial">已删除 %1$d 项，%2$d 项失败</string>
@@ -1217,4 +1217,6 @@
     <string name="action_read_selected">所选已读</string>
     <string name="action_read_range_before">此篇之前</string>
     <string name="action_read_range_after">此篇之后</string>
+
+    <string name="local_delete_scope_marked">涉及 %1$d 部作品：%2$s</string>
 </resources>

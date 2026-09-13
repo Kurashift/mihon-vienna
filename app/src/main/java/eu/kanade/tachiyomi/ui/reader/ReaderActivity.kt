@@ -250,6 +250,13 @@ class ReaderActivity : BaseActivity() {
         private set
 
     /**
+     * Set while a seek bar drag is in flight. The viewport follows the finger, but reading progress
+     * is only persisted once the drag ends, so scrubbing across a long chapter does not write
+     * hundreds of intermediate positions.
+     */
+    private var isSeekingThroughPages = false
+
+    /**
      * Called when the activity is created. Initializes the presenter and configuration.
      */
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -850,17 +857,17 @@ class ReaderActivity : BaseActivity() {
 
         val isHttpSource = viewModel.getSource() is HttpSource
 
-        val cropBorderPaged by readerPreferences.cropBorders.collectAsState()
-        val cropBorderWebtoon by readerPreferences.cropBordersWebtoon.collectAsState()
-        val isPagerType = ReadingMode.isPagerType(viewModel.getMangaReadingMode())
-        val cropEnabled = if (isPagerType) cropBorderPaged else cropBorderWebtoon
-
         val verticalNavigatorModes by readerPreferences.verticalNavigator.collectAsState()
         val verticalNavigator = verticalNavigatorModes.contains(
             ReadingMode.fromPreference(viewModel.getMangaReadingMode()),
         )
         val verticalNavigatorOnLeft by readerPreferences.verticalNavigatorOnLeft.collectAsState()
         val verticalNavigatorHeight by readerPreferences.verticalNavigatorHeight.collectAsState()
+
+        // Horizontal position of the chapter jump pad. Hoisted out of the bars because the reader
+        // hides its menu on every page turn: state inside the bar would reset the pad to the left
+        // edge each time the menu came back.
+        var chapterPadOffsetX by remember { mutableStateOf(0f) }
 
         // The top bar chapter name follows the same display mode as the chapter list: translated
         // title modes show the translation and only fall back to the original name when missing.
@@ -901,6 +908,8 @@ class ReaderActivity : BaseActivity() {
                 }
             },
             verticalNavigatorHeight = verticalNavigatorHeight / 100f,
+            chapterPadOffsetX = chapterPadOffsetX,
+            onChapterPadOffsetXChange = { chapterPadOffsetX = it },
             onNextChapter = ::loadNextChapter,
             enabledNext = state.viewerChapters?.nextChapter != null,
             onPreviousChapter = ::loadPreviousChapter,
@@ -909,26 +918,22 @@ class ReaderActivity : BaseActivity() {
             totalPages = state.totalPages,
             onPageIndexChange = {
                 isScrollingThroughPages = true
+                // Jump the viewport immediately so the pages are visible while scrubbing, but hold
+                // off persisting: a drag across a long chapter lands on hundreds of intermediate
+                // pages, and each one used to write reading progress. The final position is
+                // committed once below, so the stored progress and read state are the same as if
+                // the user had paged there.
+                isSeekingThroughPages = true
                 moveToPageIndex(it)
             },
             onPageIndexChangeFinished = {
                 isScrollingThroughPages = false
+                if (isSeekingThroughPages) {
+                    isSeekingThroughPages = false
+                    onSeekSettled()
+                }
             },
 
-            readingMode = ReadingMode.fromPreference(
-                viewModel.getMangaReadingMode(resolveDefault = false),
-            ),
-            onClickReadingMode = viewModel::openReadingModeSelectDialog,
-            orientation = ReaderOrientation.fromPreference(
-                viewModel.getMangaOrientation(resolveDefault = false),
-            ),
-            onClickOrientation = viewModel::openOrientationModeSelectDialog,
-            cropEnabled = cropEnabled,
-            onClickCropBorder = {
-                val enabled = viewModel.toggleCropBorders()
-                menuToggleToast?.cancel()
-                menuToggleToast = toast(if (enabled) MR.strings.on else MR.strings.off)
-            },
             audioAvailable = audioAvailable,
             audioVisible = audioVisible,
             onClickAudio = onToggleAudio,
@@ -1254,9 +1259,28 @@ class ReaderActivity : BaseActivity() {
     /**
      * Called from the viewer once the scroll has settled on [page] (webtoon) or a page has been
      * fully displayed (pager). The presenter persists the reading progress at this point.
+     *
+     * While a seek drag is in flight the viewport still moves, but the write is skipped: a scrub
+     * across a long chapter passes through hundreds of pages and each one would otherwise be
+     * persisted. [onSeekSettled] commits the single final position instead.
      */
     fun onScrollSettled(page: ReaderPage, userInitiated: Boolean = false) {
+        if (isSeekingThroughPages) return
         viewModel.onScrollSettled(page, userInitiated)
+    }
+
+    /**
+     * Commits the reading position a seek drag ended on, once the finger is lifted.
+     *
+     * The pages passed through during the drag were shown but never persisted, so this is the only
+     * write for the whole gesture. It goes through the same path as a normal settle, which means
+     * the read/completion rules still decide everything: landing on the last page marks the
+     * chapter read, landing near the start of an already-read chapter keeps its read state, and no
+     * intermediate position is ever stored.
+     */
+    private fun onSeekSettled() {
+        val page = viewModel.currentReaderPageForSeek() ?: return
+        viewModel.onScrollSettled(page)
     }
 
     /**

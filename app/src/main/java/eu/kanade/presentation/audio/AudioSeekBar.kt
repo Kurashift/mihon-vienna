@@ -1,7 +1,6 @@
 package eu.kanade.presentation.audio
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.components.seekBarGestures
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 
 @Composable
@@ -87,42 +86,31 @@ private fun AudioSlimProgress(
 ) {
     val progressColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
-    // Read the live values from inside the pointer-input coroutine instead of using them as
-    // pointerInput keys: restarting the coroutine mid-drag would cancel the gesture before
-    // onSeekFinished runs, which is exactly how the seek used to get dropped.
+    // The gesture reads these instead of using them as pointerInput keys: restarting the coroutine
+    // mid-press would cancel it before onSeekFinished runs, which is exactly how the seek used to
+    // get dropped. It is also what lets the preview position update under a running drag.
     val currentDuration by rememberUpdatedState(durationMs)
     val currentSeekEnabled by rememberUpdatedState(seekEnabled)
+    val currentPosition by rememberUpdatedState(positionMs)
     val currentOnSeek by rememberUpdatedState(onSeek)
     val currentOnSeekFinished by rememberUpdatedState(onSeekFinished)
 
     Box(
-        modifier = modifier
-            .pointerInput(Unit) {
-                fun seekAt(px: Float) {
-                    val widthPx = size.width.toFloat()
-                    if (widthPx <= 0f) return
-                    val fraction = (px / widthPx).coerceIn(0f, 1f)
-                    currentOnSeek((fraction * currentDuration).toLong())
-                }
-                awaitPointerEventScope {
-                    while (true) {
-                        val down = awaitFirstDown()
-                        if (!currentSeekEnabled || currentDuration <= 0) continue
-                        // Claim the gesture, otherwise the parent handler that drags the whole
-                        // floating bar around steals it.
-                        down.consume()
-                        seekAt(down.position.x)
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            change.consume()
-                            if (!change.pressed) break
-                            seekAt(change.position.x)
-                        }
-                        currentOnSeekFinished()
-                    }
+        modifier = modifier.seekBarGestures(
+            enabled = { currentSeekEnabled && currentDuration > 0 },
+            thumbFraction = {
+                if (currentDuration > 0) {
+                    currentPosition.toFloat() / currentDuration.toFloat()
+                } else {
+                    0f
                 }
             },
+            valueAt = { fraction -> (fraction * currentDuration).toLong() },
+            // Drag reports the preview position; the caller only forwards it to the player when
+            // the gesture ends, so scrubbing a long track does not issue a seek per frame.
+            onValue = currentOnSeek,
+            onFinished = currentOnSeekFinished,
+        ),
     ) {
         val fraction = if (durationMs > 0) {
             positionMs.toFloat() / durationMs.toFloat()
