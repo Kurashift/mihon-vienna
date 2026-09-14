@@ -1,6 +1,5 @@
 package eu.kanade.presentation.more.settings.screen
 
-import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -20,18 +19,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import eu.kanade.presentation.manga.LocalLibraryChapterTitleTranslationDialog
+import eu.kanade.presentation.manga.LocalLibraryChapterTitleTranslationsHost
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.export.LibraryExporter
 import eu.kanade.tachiyomi.data.export.LibraryExporter.ExportOptions
-import eu.kanade.tachiyomi.ui.manga.ChapterTitleTranslationFormat
-import eu.kanade.tachiyomi.ui.manga.LocalLibraryChapterTitleTranslations
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import logcat.LogPriority
-import tachiyomi.core.common.i18n.stringResource
-import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
@@ -56,117 +50,11 @@ object SettingsImportExportScreen : SearchableSettings {
 
     @Composable
     private fun getChapterTitleTranslationsGroup(): Preference.PreferenceGroup {
-        val context = LocalContext.current
-        val scope = rememberCoroutineScope()
-        val translations = remember { LocalLibraryChapterTitleTranslations(context = context) }
         var showDialog by remember { mutableStateOf(false) }
-        // Remembered between the format dialog and the document picker result so the launcher
-        // callbacks can forward the "only untranslated" choice to the exporter.
-        var pendingExportOnlyUntranslated by remember { mutableStateOf(false) }
-
-        val exportJsonLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.JSON.mimeType),
-        ) { uri ->
-            uri ?: return@rememberLauncherForActivityResult
-            scope.launch {
-                runCatching {
-                    translations.export(uri, ChapterTitleTranslationFormat.JSON, pendingExportOnlyUntranslated)
-                }
-                    .onSuccess { (mangaCount, chapterCount) ->
-                        context.toast(
-                            context.stringResource(
-                                MR.strings.local_library_chapter_title_translations_exported,
-                                mangaCount,
-                                chapterCount,
-                            ),
-                        )
-                    }
-                    .onFailure { error ->
-                        logcat(LogPriority.ERROR, error)
-                        context.toast(MR.strings.chapter_title_translation_export_failed)
-                    }
-            }
-        }
-        val exportCsvLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument(ChapterTitleTranslationFormat.CSV.mimeType),
-        ) { uri ->
-            uri ?: return@rememberLauncherForActivityResult
-            scope.launch {
-                runCatching {
-                    translations.export(uri, ChapterTitleTranslationFormat.CSV, pendingExportOnlyUntranslated)
-                }
-                    .onSuccess { (mangaCount, chapterCount) ->
-                        context.toast(
-                            context.stringResource(
-                                MR.strings.local_library_chapter_title_translations_exported,
-                                mangaCount,
-                                chapterCount,
-                            ),
-                        )
-                    }
-                    .onFailure { error ->
-                        logcat(LogPriority.ERROR, error)
-                        context.toast(MR.strings.chapter_title_translation_export_failed)
-                    }
-            }
-        }
-        val importLibraryLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent(),
-        ) { uri ->
-            uri ?: return@rememberLauncherForActivityResult
-            scope.launch {
-                runCatching { translations.importLibrary(uri) }
-                    .onSuccess { plan -> showTranslationImportResult(context, plan.updates.size, plan.ignoredCount) }
-                    .onFailure { error ->
-                        logcat(LogPriority.ERROR, error)
-                        context.toast(MR.strings.chapter_title_translation_import_failed)
-                    }
-            }
-        }
-        val importMangaFilesLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetMultipleContents(),
-        ) { uris ->
-            if (uris.isEmpty()) return@rememberLauncherForActivityResult
-            scope.launch {
-                runCatching { translations.importMangaFiles(uris) }
-                    .onSuccess { plan -> showTranslationImportResult(context, plan.updates.size, plan.ignoredCount) }
-                    .onFailure { error ->
-                        logcat(LogPriority.ERROR, error)
-                        context.toast(MR.strings.chapter_title_translation_import_failed)
-                    }
-            }
-        }
-
-        if (showDialog) {
-            LocalLibraryChapterTitleTranslationDialog(
-                onDismissRequest = { showDialog = false },
-                onExport = { format, onlyUntranslated ->
-                    showDialog = false
-                    pendingExportOnlyUntranslated = onlyUntranslated
-                    val scopeSuffix = if (onlyUntranslated) "_未译名" else ""
-                    when (format) {
-                        ChapterTitleTranslationFormat.JSON -> {
-                            exportJsonLauncher.launch(
-                                "mihon_local_library_chapter_translations$scopeSuffix.${format.fileExtension}",
-                            )
-                        }
-                        ChapterTitleTranslationFormat.CSV -> {
-                            exportCsvLauncher.launch(
-                                "mihon_local_library_chapter_translations$scopeSuffix.${format.fileExtension}",
-                            )
-                        }
-                    }
-                },
-                onImport = {
-                    showDialog = false
-                    importLibraryLauncher.launch("*/*")
-                },
-                onImportMangaFiles = {
-                    showDialog = false
-                    importMangaFilesLauncher.launch("*/*")
-                },
-            )
-        }
+        LocalLibraryChapterTitleTranslationsHost(
+            visible = showDialog,
+            onDismissRequest = { showDialog = false },
+        )
 
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.chapter_title_translations),
@@ -175,16 +63,6 @@ object SettingsImportExportScreen : SearchableSettings {
                     title = stringResource(MR.strings.local_library_chapter_title_translations),
                     onClick = { showDialog = true },
                 ),
-            ),
-        )
-    }
-
-    private fun showTranslationImportResult(context: Context, imported: Int, ignored: Int) {
-        context.toast(
-            context.stringResource(
-                MR.strings.local_library_chapter_title_translations_imported,
-                imported,
-                ignored,
             ),
         )
     }
