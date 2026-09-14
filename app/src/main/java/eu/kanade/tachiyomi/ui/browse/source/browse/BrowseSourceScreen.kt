@@ -90,6 +90,7 @@ import eu.kanade.presentation.browse.components.RemoveMangaDialog
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
 import eu.kanade.presentation.manga.DuplicateMangaDialog
+import eu.kanade.presentation.manga.LocalLibraryChapterTitleTranslationsHost
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferJob
@@ -219,6 +220,8 @@ data class BrowseSourceScreen(
 
         val onHelpClick = { uriHandler.openUri(LocalSource.HELP_URL) }
 
+        var showChapterTitleTranslations by remember { mutableStateOf(false) }
+
         // Random entry points from the bottom-start button. A guard keeps a stray
         // double trigger from pushing two detail screens on top of each other.
         var randomInProgress by remember { mutableStateOf(false) }
@@ -323,6 +326,8 @@ data class BrowseSourceScreen(
                         onImportLocalChapters = {
                             if (viewModel.source is LocalSource) navigator.push(LocalImportScreen())
                         }.takeIf { viewModel.source is LocalSource && activeTransferStatus == null },
+                        onChapterTitleTranslations = { showChapterTitleTranslations = true }
+                            .takeIf { viewModel.source is LocalSource },
                         onClearHistoryClick = { viewModel.setDialog(BrowseSourceViewModel.Dialog.ClearHistory) },
                         onSearch = viewModel::search,
                     )
@@ -734,6 +739,15 @@ data class BrowseSourceScreen(
                         is SearchType.Text -> viewModel.search(it.txt)
                     }
                 }
+        }
+
+        // The settings screen offers the same import/export. Only the local source has a local
+        // library to translate, so the host is skipped entirely for online sources.
+        if (viewModel.source is LocalSource) {
+            LocalLibraryChapterTitleTranslationsHost(
+                visible = showChapterTitleTranslations,
+                onDismissRequest = { showChapterTitleTranslations = false },
+            )
         }
     }
 

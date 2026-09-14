@@ -1,10 +1,12 @@
 package eu.kanade.tachiyomi.ui.manga
 
+import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.source.local.chapterBaseName
 
 @Serializable
 internal data class ChapterTitleTranslationDocument(
@@ -36,10 +38,27 @@ internal data class ChapterTitleImportPlan(
     val ignoredCount: Int,
 )
 
+/**
+ * A translation for a chapter the database has no row for, together with the folder it belongs
+ * to. Local works the user never opened have no chapter rows at all, so an exported template can
+ * only be written back after those rows exist. The row itself is created by the normal source
+ * update, so page counts, dates and chapter numbers come from the same code the scanner uses.
+ */
+internal data class LocalLibraryPendingTranslation(
+    val mangaUrl: String,
+    val fileName: String,
+    val translatedName: String,
+)
+
 internal data class LocalLibraryChapterTitleImportPlan(
     val updates: List<ChapterUpdate>,
     val ignoredCount: Int,
-)
+    /** Folders that need a real chapter scan before their translations can be stored. */
+    val pendingByMangaUrl: Map<String, List<LocalLibraryPendingTranslation>> = emptyMap(),
+) {
+    val importedCount: Int
+        get() = updates.size + pendingByMangaUrl.values.sumOf(List<LocalLibraryPendingTranslation>::size)
+}
 
 /**
  * Shared predicate between export filtering and import planning: a translation counts as
@@ -138,10 +157,43 @@ internal object ChapterTitleTranslationCodec {
         }
     }
 
+    /**
+     * Chapters to export for one confirmed folder: the database rows that still match a file on
+     * disk, plus an entry per file the database has never seen. A work the user never opened has
+     * no chapter rows at all, and exporting only database rows silently dropped those works from
+     * the template.
+     *
+     * Chapters without a row carry id 0, the same "no identity" value a missing key decodes to,
+     * so a template can never point at an unrelated record.
+     */
+    fun diskBackedChapters(
+        mangaId: Long,
+        mangaUrl: String,
+        dbChapters: List<Chapter>,
+        diskFileNames: Set<String>,
+    ): List<Chapter> {
+        val currentUrls = diskFileNames.mapTo(hashSetOf()) { fileName -> "$mangaUrl/$fileName" }
+        val known = dbChapters.filter { it.url in currentUrls }
+        val knownFileNames = known.mapTo(hashSetOf()) { it.url.substringAfterLast('/') }
+        val missing = diskFileNames
+            .filterNot { it in knownFileNames }
+            .sortedWith { a, b -> chapterBaseName(a).compareToCaseInsensitiveNaturalOrder(chapterBaseName(b)) }
+            .map { fileName ->
+                Chapter.create().copy(
+                    id = 0,
+                    mangaId = mangaId.coerceAtLeast(0),
+                    url = "$mangaUrl/$fileName",
+                    name = chapterBaseName(fileName),
+                )
+            }
+        return known + missing
+    }
+
     fun planLocalLibraryImport(
         document: LocalLibraryChapterTitleTranslationDocument,
         currentMangas: List<Pair<Manga, List<Chapter>>>,
         currentInstanceId: String? = null,
+        diskChapterFileNamesByMangaUrl: Map<String, Set<String>> = emptyMap(),
     ): LocalLibraryChapterTitleImportPlan {
         require(document.formatVersion == 1) { "Unsupported local library title translation format" }
 
@@ -152,6 +204,8 @@ internal object ChapterTitleTranslationCodec {
         val allChaptersByUrl = allChapters.groupBy(Chapter::url)
         val allChaptersByName = allChapters.groupBy(Chapter::name)
         val claimedChapterIds = mutableSetOf<Long>()
+        val claimedPendingKeys = mutableSetOf<String>()
+        val pendingByMangaUrl = linkedMapOf<String, MutableList<LocalLibraryPendingTranslation>>()
         var ignoredCount = 0
 
         val updates = document.mangas.flatMap { mangaDocument ->
@@ -161,6 +215,10 @@ internal object ChapterTitleTranslationCodec {
                 ?.takeIf { (manga, _) -> manga.url == mangaDocument.mangaUrl }
             val urlMatch = byUrl[mangaDocument.mangaUrl]?.singleOrNull()
             val current = idMatch ?: urlMatch
+            // The folder name is the identity every local record is keyed by, so a document that
+            // names a folder the scan confirmed is accepted even when the database has no row yet.
+            val mangaUrl = current?.first?.url ?: mangaDocument.mangaUrl
+            val diskFileNames = diskChapterFileNamesByMangaUrl[mangaUrl].orEmpty()
             val currentChaptersById = current?.second.orEmpty().associateBy(Chapter::id)
             val currentChaptersByUrl = current?.second.orEmpty().groupBy(Chapter::url)
             val currentChaptersByName = current?.second.orEmpty().groupBy(Chapter::name)
@@ -193,16 +251,43 @@ internal object ChapterTitleTranslationCodec {
                 val chapter = localUrlMatch ?: localNameMatch ?: globalUrlMatch ?: globalNameMatch ?: localIdMatch
                     ?: movedIdMatch
 
-                if (chapter == null || !claimedChapterIds.add(chapter.id)) {
-                    ignoredCount++
-                    null
-                } else {
-                    ChapterUpdate(id = chapter.id, translatedName = translatedTitle)
+                when {
+                    chapter != null -> {
+                        if (!claimedChapterIds.add(chapter.id)) {
+                            ignoredCount++
+                            null
+                        } else {
+                            ChapterUpdate(id = chapter.id, translatedName = translatedTitle)
+                        }
+                    }
+                    else -> {
+                        // No row yet. Only a file the scan confirmed in this very folder may be
+                        // materialized, so a hand-edited template cannot invent chapters.
+                        val fileName = entry.originalUrl.substringAfterLast('/')
+                        val folder = entry.originalUrl.substringBeforeLast('/', "")
+                        val onDisk = fileName.isNotEmpty() && folder == mangaUrl && fileName in diskFileNames
+                        if (!onDisk || !claimedPendingKeys.add("$mangaUrl/$fileName")) {
+                            ignoredCount++
+                            null
+                        } else {
+                            pendingByMangaUrl.getOrPut(mangaUrl, ::mutableListOf) +=
+                                LocalLibraryPendingTranslation(
+                                    mangaUrl = mangaUrl,
+                                    fileName = fileName,
+                                    translatedName = translatedTitle,
+                                )
+                            null
+                        }
+                    }
                 }
             }
         }
 
-        return LocalLibraryChapterTitleImportPlan(updates, ignoredCount)
+        return LocalLibraryChapterTitleImportPlan(
+            updates = updates,
+            ignoredCount = ignoredCount,
+            pendingByMangaUrl = pendingByMangaUrl,
+        )
     }
 
     fun planImport(

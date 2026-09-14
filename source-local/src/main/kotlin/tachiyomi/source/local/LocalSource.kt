@@ -2488,7 +2488,12 @@ internal fun chapterFileNameCandidates(knownName: String): List<String> {
     }
 }
 
-internal fun chapterBaseName(fileName: String): String {
+/**
+ * Strips a supported chapter-file extension so a file name and the chapter name the scanner
+ * derives from it can be compared. Also used by the translation export, which builds the same
+ * names for files the database has not learned about yet.
+ */
+fun chapterBaseName(fileName: String): String {
     val extension = fileName.substringAfterLast('.', missingDelimiterValue = "")
     return if (extension.lowercase() in LOCAL_CHAPTER_FILE_EXTENSIONS) {
         fileName.removeSuffix(".$extension")

@@ -790,6 +790,238 @@ class ChapterTitleTranslationTest {
         plan.ignoredCount shouldBe 0
     }
 
+    @Test
+    fun `local library export keeps chapters the database has never seen`() {
+        // A work the user never opened has no chapter rows at all. The export must still list the
+        // files the scan confirmed, otherwise those works silently vanish from the template.
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+
+        val chapters = ChapterTitleTranslationCodec.diskBackedChapters(
+            mangaId = 7,
+            mangaUrl = "Author",
+            dbChapters = emptyList(),
+            diskFileNames = setOf("10 - Second.cbz", "2 - First.cbz"),
+        )
+
+        chapters.map { it.url } shouldBe listOf("Author/2 - First.cbz", "Author/10 - Second.cbz")
+        chapters.map { it.name } shouldBe listOf("2 - First", "10 - Second")
+        chapters.forEach { it.mangaId shouldBe 7L }
+
+        val json = ChapterTitleTranslationCodec.encodeLocalLibrary(
+            mangas = listOf(manga to chapters),
+        )
+        ChapterTitleTranslationCodec.decodeLocalLibrary(json).mangas.single().chapters.size shouldBe 2
+    }
+
+    @Test
+    fun `local library export keeps database ids for files the scan still sees`() {
+        val existing = chapter(10, "Author/A.cbz", "A")
+        val deleted = chapter(11, "Author/Deleted.cbz", "Deleted")
+
+        val chapters = ChapterTitleTranslationCodec.diskBackedChapters(
+            mangaId = 1,
+            mangaUrl = "Author",
+            dbChapters = listOf(existing, deleted),
+            diskFileNames = setOf("A.cbz", "B.cbz"),
+        )
+
+        chapters.map { it.url to it.id } shouldBe listOf(
+            "Author/A.cbz" to 10L,
+            "Author/B.cbz" to 0L,
+        )
+        chapters.map { it.name } shouldBe listOf("A", "B")
+    }
+
+    @Test
+    fun `import creates rows for an unopened work confirmed on disk`() {
+        val document = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = -1,
+                        originalTitle = "A",
+                        originalUrl = "Author/A.cbz",
+                        translatedTitle = "甲",
+                    ),
+                    ChapterTitleTranslationEntry(
+                        chapterId = -1,
+                        originalTitle = "B",
+                        originalUrl = "Author/B.cbz",
+                        translatedTitle = "乙",
+                    ),
+                ).copy(mangaId = 0, mangaTitle = "Author", mangaUrl = "Author"),
+            ),
+        )
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = document,
+            currentMangas = emptyList(),
+            diskChapterFileNamesByMangaUrl = mapOf("Author" to setOf("A.cbz", "B.cbz")),
+        )
+
+        plan.updates shouldBe emptyList()
+        plan.ignoredCount shouldBe 0
+        plan.importedCount shouldBe 2
+        plan.pendingByMangaUrl.keys shouldBe setOf("Author")
+        plan.pendingByMangaUrl.getValue("Author").map { it.fileName to it.translatedName } shouldBe listOf(
+            "A.cbz" to "甲",
+            "B.cbz" to "乙",
+        )
+        plan.pendingByMangaUrl.getValue("Author").forEach { it.mangaUrl shouldBe "Author" }
+    }
+
+    @Test
+    fun `import never creates a chapter the scan did not confirm`() {
+        val document = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = -1,
+                        originalTitle = "Invented",
+                        originalUrl = "Author/Invented.cbz",
+                        translatedTitle = "凭空",
+                    ),
+                ).copy(mangaId = 0, mangaTitle = "Author", mangaUrl = "Author"),
+            ),
+        )
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = document,
+            currentMangas = emptyList(),
+            diskChapterFileNamesByMangaUrl = mapOf("Author" to setOf("A.cbz")),
+        )
+
+        plan.pendingByMangaUrl shouldBe emptyMap()
+        plan.ignoredCount shouldBe 1
+    }
+
+    @Test
+    fun `import still updates an existing row instead of creating a duplicate`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val existing = chapter(10, "Author/A.cbz", "A")
+        val document = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = 10,
+                        originalTitle = "A",
+                        originalUrl = "Author/A.cbz",
+                        translatedTitle = "甲",
+                    ),
+                ).copy(mangaId = 7, mangaTitle = "Author", mangaUrl = "Author"),
+            ),
+        )
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = document,
+            currentMangas = listOf(manga to listOf(existing)),
+            diskChapterFileNamesByMangaUrl = mapOf("Author" to setOf("A.cbz")),
+        )
+
+        plan.updates.single().id shouldBe 10L
+        plan.pendingByMangaUrl shouldBe emptyMap()
+    }
+
+    @Test
+    fun `pending translations keep their folder and file names`() {
+        val document = LocalLibraryChapterTitleTranslationDocument(
+            mangas = listOf(
+                document(
+                    ChapterTitleTranslationEntry(
+                        chapterId = -1,
+                        originalTitle = "First",
+                        originalUrl = "Author/First.cbz",
+                        translatedTitle = "一",
+                    ),
+                    ChapterTitleTranslationEntry(
+                        chapterId = -1,
+                        originalTitle = "Second",
+                        originalUrl = "Author/Second.cbz",
+                        translatedTitle = "二",
+                    ),
+                ).copy(mangaId = 0, mangaTitle = "Author", mangaUrl = "Author"),
+            ),
+        )
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = document,
+            currentMangas = emptyList(),
+            diskChapterFileNamesByMangaUrl = mapOf("Author" to setOf("First.cbz", "Second.cbz")),
+        )
+
+        plan.pendingByMangaUrl.getValue("Author").map { it.fileName } shouldBe listOf("First.cbz", "Second.cbz")
+    }
+
+    @Test
+    fun `unopened work round trips from export back to created rows`() {
+        // The reported symptom: a work that was never opened had no chapter rows, so the export
+        // left it out entirely and there was no way to ever add a translation for it.
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val exported = ChapterTitleTranslationCodec.encodeLocalLibrary(
+            mangas = listOf(
+                manga to ChapterTitleTranslationCodec.diskBackedChapters(
+                    mangaId = 7,
+                    mangaUrl = "Author",
+                    dbChapters = emptyList(),
+                    diskFileNames = setOf("A.cbz"),
+                ),
+            ),
+        )
+        val filled = exported.replace("\"translatedTitle\": \"\"", "\"translatedTitle\": \"甲\"")
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = ChapterTitleTranslationCodec.decodeLocalLibrary(filled),
+            currentMangas = emptyList(),
+            diskChapterFileNamesByMangaUrl = mapOf("Author" to setOf("A.cbz")),
+        )
+
+        plan.updates shouldBe emptyList()
+        plan.importedCount shouldBe 1
+        plan.pendingByMangaUrl.getValue("Author").single().fileName shouldBe "A.cbz"
+        plan.pendingByMangaUrl.getValue("Author").single().translatedName shouldBe "甲"
+    }
+
+    @Test
+    fun `unopened work round trips through csv as well`() {
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val exported = ChapterTitleTranslationCodec.encodeLocalLibrary(
+            mangas = listOf(
+                manga to ChapterTitleTranslationCodec.diskBackedChapters(
+                    mangaId = 7,
+                    mangaUrl = "Author",
+                    dbChapters = emptyList(),
+                    diskFileNames = setOf("A.cbz"),
+                ),
+            ),
+            format = ChapterTitleTranslationFormat.CSV,
+        )
+        val filled = exported.replace("Author/A.cbz,,", "Author/A.cbz,甲,")
+
+        val plan = ChapterTitleTranslationCodec.planLocalLibraryImport(
+            document = ChapterTitleTranslationCodec.decodeLocalLibrary(filled),
+            currentMangas = emptyList(),
+            diskChapterFileNamesByMangaUrl = mapOf("Author" to setOf("A.cbz")),
+        )
+
+        plan.importedCount shouldBe 1
+        plan.pendingByMangaUrl.getValue("Author").single().translatedName shouldBe "甲"
+    }
+
+    @Test
+    fun `export counts every work whose chapters were written`() {
+        // The file and the reported count are produced from one list, so a folder without chapter
+        // files can no longer be counted while being absent from the file.
+        val manga = Manga.create().copy(id = 7, title = "Author", url = "Author")
+        val empty = Manga.create().copy(id = 8, title = "Empty", url = "Empty")
+        val printed = listOf(
+            manga to ChapterTitleTranslationCodec.diskBackedChapters(7, "Author", emptyList(), setOf("A.cbz")),
+            empty to ChapterTitleTranslationCodec.diskBackedChapters(8, "Empty", emptyList(), emptySet()),
+        ).filter { (_, chapters) -> chapters.isNotEmpty() }
+
+        printed.size shouldBe 1
+        printed.sumOf { (_, chapters) -> chapters.size } shouldBe 1
+    }
+
     private fun document(vararg entries: ChapterTitleTranslationEntry) = ChapterTitleTranslationDocument(
         mangaId = 1,
         mangaTitle = "Author",

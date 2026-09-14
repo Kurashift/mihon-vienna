@@ -38,6 +38,7 @@ fun BrowseSourceToolbar(
     onOpenSources: (() -> Unit)? = null,
     onRefreshChapters: (() -> Unit)? = null,
     onImportLocalChapters: (() -> Unit)? = null,
+    onChapterTitleTranslations: (() -> Unit)? = null,
     onClearHistoryClick: () -> Unit,
     onSearch: (String) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior? = null,
@@ -123,6 +124,9 @@ fun BrowseSourceToolbar(
                                         }
                                         onImportLocalChapters?.let {
                                             add(stringResource(MR.strings.action_import_local_chapters_short) to it)
+                                        }
+                                        onChapterTitleTranslations?.let {
+                                            add(stringResource(MR.strings.chapter_title_translations_short) to it)
                                         }
                                     } else {
                                         add(stringResource(MR.strings.action_open_in_web_view) to onWebViewClick)

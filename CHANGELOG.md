@@ -10,6 +10,15 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Fixed` - for any bug fixes.
 - `Other` - for technical stuff.
 
+## [v2.2.5] - 2026-09-14
+### Added
+- Local library: the toolbar menu now offers "Import/export title translations", reaching the same screen as the entry in Data and storage
+
+### Fixed
+- Fixed the local library translation export dropping works that were never opened. Those folders have no database rows, and the export used to skip them entirely, so a library of hundreds could export only a fraction. The export now lists every chapter file the scan confirms
+- Fixed the export reading a narrower set than the count it reported, so it could promise more chapters than the file contained
+- Fixed importing a template for an unopened work: its chapters are now registered from disk first, so the filled-in translations are stored instead of being discarded as unmatched
+
 ## [Unreleased]
 
 ## [v2.2.4] - 2026-09-13
