@@ -76,6 +76,13 @@
     <string name="action_filter_in_progress">Reading</string>
     <string name="action_filter_good_doujin">Good doujins</string>
     <string name="action_filter_marks">Marks</string>
+    <string name="action_filter_not_in_library">Not on a shelf</string>
+    <string name="action_remove_from_library">Remove from shelf</string>
+    <string name="filter_toast_applied">Showing: %1$s</string>
+    <string name="filter_toast_cleared">Showing everything</string>
+    <string name="mark_selection_read_confirmation">Mark all %1$d selected collections as read? Every chapter in them is marked.</string>
+    <string name="mark_selection_unread_confirmation">Mark all %1$d selected collections as unread? Every chapter in them is marked.</string>
+    <string name="local_delete_selection_title">Delete local files of %1$d collections?</string>
     <string name="action_set_interval">Set interval</string>
     <string name="action_filter_bookmarked">Bookmarked</string>
     <string name="action_filter_tracked">Tracked</string>
@@ -744,6 +751,8 @@
     <string name="updating_category">Updating category</string>
     <string name="manga_from_library">From library</string>
     <string name="downloaded_chapters">Downloaded works</string>
+    <string name="delete_downloaded_chapters_title">Delete downloaded chapters?</string>
+    <string name="delete_downloaded_chapters_confirmation">The downloaded chapters of the selected works are erased from the device. The works stay on your shelf, and can be downloaded again later.</string>
     <string name="intervals_header">Intervals</string>
     <!-- For badges/buttons on library covers. -->
     <string name="overlay_header">Overlay</string>

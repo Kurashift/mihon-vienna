@@ -166,6 +166,11 @@ FROM mangas
 WHERE favorite = 1
 AND source = :sourceId;
 
+getDateAddedBySourceId:
+SELECT url, date_added
+FROM mangas
+WHERE source = :sourceId;
+
 getDuplicateLibraryManga:
 WITH
 track_dupes AS (

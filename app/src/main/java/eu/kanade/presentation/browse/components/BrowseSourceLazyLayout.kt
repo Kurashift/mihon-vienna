@@ -16,7 +16,11 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -35,6 +39,7 @@ internal fun BrowseSourceLazyColumn(
     state: LazyListState,
     contentPadding: PaddingValues,
     onThumbDraggedChanged: ((Boolean) -> Unit)? = null,
+    listKey: Any? = null,
     modifier: Modifier = Modifier,
     content: LazyListScope.() -> Unit,
 ) {
@@ -47,6 +52,7 @@ internal fun BrowseSourceLazyColumn(
             // This listing grows a page at a time, so the thumb needs to hold its ground when
             // one lands instead of sliding back up the track.
             stickyThumb = true,
+            listKey = listKey,
             onThumbDraggedChanged = onThumbDraggedChanged,
             contentPadding = contentPadding,
             content = content,
@@ -68,6 +74,7 @@ internal fun BrowseSourceLazyVerticalGrid(
     columns: GridCells,
     contentPadding: PaddingValues,
     onThumbDraggedChanged: ((Boolean) -> Unit)? = null,
+    listKey: Any? = null,
     verticalArrangement: Arrangement.Vertical,
     horizontalArrangement: Arrangement.Horizontal,
     modifier: Modifier = Modifier,
@@ -87,6 +94,7 @@ internal fun BrowseSourceLazyVerticalGrid(
             // This listing grows a page at a time, so the thumb needs to hold its ground when
             // one lands instead of sliding back up the track.
             stickyThumb = true,
+            listKey = listKey,
             onThumbDraggedChanged = onThumbDraggedChanged,
             contentPadding = contentPadding,
             endContentPadding = scrollerEndPadding,
@@ -104,6 +112,30 @@ internal fun BrowseSourceLazyVerticalGrid(
             horizontalArrangement = horizontalArrangement,
             content = content,
         )
+    }
+}
+
+/**
+ * Runs an external scroll-to-top request once per token. The jump goes through the locate
+ * transition and pauses content resolution while it plays, so it reads the same as every
+ * other locate on this listing.
+ */
+@Composable
+internal fun ScrollToTopRequestEffect(
+    request: Long,
+    setLocating: (Boolean) -> Unit,
+    scrollToTop: suspend () -> Unit,
+) {
+    var handled by remember { mutableStateOf(request) }
+    LaunchedEffect(request) {
+        if (request == handled) return@LaunchedEffect
+        handled = request
+        setLocating(true)
+        try {
+            scrollToTop()
+        } finally {
+            setLocating(false)
+        }
     }
 }
 

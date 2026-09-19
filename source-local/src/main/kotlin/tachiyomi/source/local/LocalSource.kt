@@ -57,6 +57,7 @@ import tachiyomi.core.metadata.tachiyomi.MangaDetails
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.image.LocalCoverManager
@@ -147,6 +148,13 @@ class LocalSource(
      * source stays constructible before the database module is registered.
      */
     private val chapterRepository: ChapterRepository by injectLazy()
+
+    /**
+     * Only consulted to read import dates for the date sort, with the same degrade-to-empty
+     * contract as [chapterRepository]: the listing itself always comes from the file system, so
+     * a failed lookup falls back to a name-ordered listing rather than failing it.
+     */
+    private val mangaRepository: MangaRepository by injectLazy()
 
     @Volatile
     private var cachedListing: List<LocalMangaEntry>? = null
@@ -1150,10 +1158,42 @@ class LocalSource(
                 mangaEntries.sortedWith(byCount.then(byTitle))
             }
             else -> {
-                if (ascending) {
-                    mangaEntries.sortedBy(LocalMangaEntry::latestChapterModified)
+                // The date is the import date (date_added: when the work's row was created, i.e.
+                // when it first showed up in the local library) - neither the folder's nor the
+                // chapters' file times, which move on every content change. An entry whose row
+                // does not exist yet is by definition being imported right now, so it sorts as
+                // the newest; the page load that follows creates the row with that very same
+                // timestamp, which keeps its position stable across reloads. Rows created before
+                // the import date was recorded carry 0 and read as the oldest.
+                //
+                // The "recently updated" listing is the one view whose native order is the
+                // chapters' own recency, so it keeps sorting by that whatever the sort key.
+                if (latestWindow) {
+                    if (ascending) {
+                        mangaEntries.sortedBy(LocalMangaEntry::latestChapterModified)
+                    } else {
+                        mangaEntries.sortedByDescending(LocalMangaEntry::latestChapterModified)
+                    }
                 } else {
-                    mangaEntries.sortedByDescending(LocalMangaEntry::latestChapterModified)
+                    val datesAdded = try {
+                        mangaRepository.getDateAddedBySourceId(ID)
+                    } catch (e: Exception) {
+                        logcat(LogPriority.ERROR, e) { "Failed to load local source import dates" }
+                        emptyMap()
+                    }
+                    val byImportDate = Comparator<LocalMangaEntry> { a, b ->
+                        val aDate = datesAdded[a.url] ?: Long.MAX_VALUE
+                        val bDate = datesAdded[b.url] ?: Long.MAX_VALUE
+                        aDate.compareTo(bDate)
+                    }
+                    val byTitle = Comparator<LocalMangaEntry> { a, b ->
+                        a.title.compareToCaseInsensitiveNaturalOrder(b.title)
+                    }
+                    if (ascending) {
+                        mangaEntries.sortedWith(byImportDate.then(byTitle))
+                    } else {
+                        mangaEntries.sortedWith(byImportDate.reversed().then(byTitle))
+                    }
                 }
             }
         }
@@ -1163,12 +1203,6 @@ class LocalSource(
                 title = entry.title
                 url = entry.url
                 entry.coverUri?.let { thumbnail_url = it }
-                if (entry.latestChapterModified > 0) {
-                    memo = JsonObject(
-                        memo.toMap() +
-                            (LATEST_CHAPTER_TIME_KEY to JsonPrimitive(entry.latestChapterModified)),
-                    )
-                }
                 matchedChapters[entry.url]?.let { chapter ->
                     memo = JsonObject(memo.toMap() + (MATCHED_CHAPTER_KEY to JsonPrimitive(chapter)))
                 }
@@ -1955,10 +1989,12 @@ class LocalSource(
             }
             pageCount = when (format) {
                 is Format.Directory -> fileSystem.getFilesInDirectory(chapterFile)
-                    .count { !it.isDirectory && ImageUtil.isImage(it.name) }
+                    .count { !it.isDirectory && ImageUtil.isImagePage(it.name) }
                 is Format.Archive -> chapterFile.archiveReader(context).use { reader ->
                     reader.useEntries { entries ->
-                        entries.count { it.isFile && ImageUtil.isImage(it.name) }
+                        entries.count {
+                            Archive.isPageEntry(it.name, it.isFile) && ImageUtil.isImagePage(it.name)
+                        }
                     }
                 }
             }
@@ -2351,7 +2387,7 @@ class LocalSource(
                             )
                         }
                         .find {
-                            !it.isDirectory && ImageUtil.isImage(it.name) { it.openInputStream() }
+                            !it.isDirectory && ImageUtil.isImagePage(it.name) { it.openInputStream() }
                         }
 
                     entry?.let { coverManager.update(manga, it.openInputStream()) }
@@ -2360,10 +2396,11 @@ class LocalSource(
                     format.file.archiveReader(context).use { reader ->
                         val entry = reader.useEntries { entries ->
                             entries
+                                .filter { Archive.isPageEntry(it.name, it.isFile) }
                                 .sortedWith { f1, f2 ->
                                     f1.name.compareToCaseInsensitiveNaturalPageOrder(f2.name)
                                 }
-                                .find { it.isFile && ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
+                                .find { ImageUtil.isImagePage(it.name) { reader.getInputStream(it.name)!! } }
                         }
 
                         entry?.let { coverManager.update(manga, reader.getInputStream(it.name)!!) }
@@ -2410,7 +2447,8 @@ class LocalSource(
         const val ORDER_BY_CHAPTER_COUNT = 2
 
         private const val LISTING_INDEX_VERSION = 4
-        private const val CHAPTER_INDEX_VERSION = 4
+        // 5: page counts no longer include leftover thumbnail files such as `.thumb`.
+        private const val CHAPTER_INDEX_VERSION = 5
         private const val CHAPTER_NAMES_INDEX_VERSION = 2
 
         /**
@@ -2418,7 +2456,6 @@ class LocalSource(
          * from the source to the browse UI (not user-visible).
          */
         const val MATCHED_CHAPTER_KEY = "mihon.matchedChapter"
-        const val LATEST_CHAPTER_TIME_KEY = "mihon.latestChapterTime"
     }
 }
 

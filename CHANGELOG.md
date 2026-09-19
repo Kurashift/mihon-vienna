@@ -20,6 +20,36 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Fixed importing a template for an unopened work: its chapters are now registered from disk first, so the filled-in translations are stored instead of being discarded as unmatched
 
 ## [Unreleased]
+### Added
+- Local library: the filter row can show only the works that are not on a shelf yet, so a batch of newly added folders can be sorted into shelves in one pass
+- Local library: a long press now starts a selection. Several works can be put on a shelf, marked read, taken off the shelf or deleted at once
+- Shelf picker: the default shelf is offered as an explicit choice, so a work can be put on a shelf without also being filed under a category
+
+- History: each entry now shows how far into the chapter you left off — the same x/y page progress the reader shows, next to the date, and only for an unfinished chapter that was actually opened, matching the updates list
+
+### Changed
+- Local library: the filter row's "recent" button is gone. It selected the same works the date sort already orders by, and the slot now carries the "not on a shelf" filter
+- Local library: the filter buttons can be turned off again by tapping the active one, which is what returns the list to showing everything
+- Local library: deleting a selection now reports how many works went and names the ones that failed
+- Local library: the date separators now follow the date sort instead of the "recent" view, so sorting by date shows "Today" / "3 days ago" headings directly. Days older than a week are grouped by month, so a library spanning years does not turn into one heading per day
+- Local library: taking works off the shelf is now part of the shelf picker — unchecking every shelf and confirming does it — instead of a separate button, and the picker's own icon is the library mark rather than the tag that the chapter menus use
+- Local library: the "not on a shelf" filter uses the crossed-out bookmark rather than an empty one, which read as "on a shelf" to anyone who never saw the two side by side
+- Local library: marking a selection read or unread now asks first and says how many works it covers, because one tap moves every chapter of every picked work
+- Local library: picking a filter says which one is active in a short notice, since the controls are icons only
+- Local library: covers of works already on a shelf are no longer dimmed. Everything here is browsed to be read, so graying most of the grid only made it harder to read; the shelf badge still marks them
+- Shelf picker: the shelf's own picker now offers the default shelf too, so a work that is on the shelf but filed nowhere shows as such instead of looking like nothing is selected
+- Bottom action rows: the destructive action is filled, set apart by a rule and sized to its icon, so it cannot be hit while aiming at its neighbour
+- Bottom action rows: the read-status slot always opens its menu, whatever the selection. A selection with only one direction left used to run on the first tap while a mixed one asked, so the same button behaved two ways depending on what was picked
+- Notices: the filter notice is a short capsule now, sized to its text and gone in about a second and a half, instead of a bar stretched across the screen
+- Notices: a new filter notice replaces the one still on screen and restarts its timer, instead of queueing behind it — tapping through the filter controls reads as one message changing rather than as a backlog played out one after another
+
+### Fixed
+- Fixed the crash when importing local books, and the repeated "importing" banner that followed it. A work order above 10 KB — a folder import of a few dozen books with long paths, or a move of a thousand chapters — was passed through WorkManager, which rejects input data that large, so the app died the moment the import started and retried at the same spot on every relaunch. The job now writes its work order to a file and hands WorkManager only the file name, so import and move sizes are no longer capped
+- Reader: a download client's leftover `.thumb` thumbnail is no longer shown as the last page of a local chapter. It is a JPEG with no image extension, so the header sniff accepted it; a name that carries an extension now has to match the image whitelist, and archive entries under a dot-prefixed folder are skipped
+- Fixed the page count and the generated cover disagreeing with the reader for the same chapters: they now apply the same page rule, so a work whose last page was a thumbnail no longer reports a page more than it can open
+- Local import: a `.thumb` folder is no longer staged as a chapter, which also stops a folder of loose images from being mistaken for a container
+
+- Fixed History crashing on launch for installs upgraded from earlier versions (since 2.2.5): the reading-progress columns were added to the historyView definition without a migration, so existing databases kept the old view and the history query failed with a missing column; a migration now recreates the view
 
 ## [v2.2.4] - 2026-09-13
 ### Added

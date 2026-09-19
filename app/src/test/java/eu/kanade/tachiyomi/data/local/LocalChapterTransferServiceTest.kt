@@ -58,6 +58,23 @@ class LocalChapterTransferServiceTest {
     }
 
     @Test
+    fun `a download client thumbnail folder is not imported as a chapter`() {
+        // EHViewer leaves a `.thumb` folder of images next to the pages. Counting it as a child
+        // folder would also make a book of loose images look like a container, so the book itself
+        // would stop importing as a single chapter.
+        val book = directory("Book", image("001.jpg"), image("002.jpg"), directory(".thumb", image("001.jpg")))
+
+        assertEquals(listOf("Book"), service.expand(book).map { it.name })
+    }
+
+    @Test
+    fun `an ordinary child folder is still a chapter`() {
+        val book = directory("Book", directory("Chapter 1", image("001.jpg")))
+
+        assertEquals(listOf("Chapter 1"), service.expand(book).map { it.name })
+    }
+
+    @Test
     fun `picking the library folder itself clashes`() {
         assertTrue(
             service.overlapsPath(

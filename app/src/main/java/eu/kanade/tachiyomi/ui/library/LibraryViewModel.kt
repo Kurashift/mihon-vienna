@@ -576,31 +576,17 @@ class LibraryViewModel(
     }
 
     /**
-     * Remove the selected manga.
+     * Clears the downloaded chapters of [mangas] from the device.
      *
-     * @param mangas the list of manga to delete.
-     * @param deleteFromLibrary whether to delete manga from library.
-     * @param deleteChapters whether to delete downloaded chapters.
+     * Only works whose source owns the files are affected: a local library entry is not managed by
+     * the download manager, and its own screen is where its files are erased.
      */
-    fun removeMangas(mangas: List<Manga>, deleteFromLibrary: Boolean, deleteChapters: Boolean) {
+    fun deleteDownloadedChapters(mangas: List<Manga>) {
         viewModelScope.launchNonCancellable {
-            if (deleteFromLibrary) {
-                val toDelete = mangas.map {
-                    it.removeCovers(coverCache)
-                    MangaUpdate(
-                        favorite = false,
-                        id = it.id,
-                    )
-                }
-                updateManga.awaitAll(toDelete)
-            }
-
-            if (deleteChapters) {
-                mangas.forEach { manga ->
-                    val source = sourceManager.get(manga.source) as? HttpSource
-                    if (source != null) {
-                        downloadManager.deleteManga(manga, source)
-                    }
+            mangas.forEach { manga ->
+                val source = sourceManager.get(manga.source) as? HttpSource
+                if (source != null) {
+                    downloadManager.deleteManga(manga, source)
                 }
             }
         }
@@ -625,6 +611,30 @@ class LibraryViewModel(
                 setMangaCategories.await(manga.id, categoryIds)
             }
         }
+    }
+
+    /**
+     * Takes the selection off the shelf, the same outcome the picker produces when every shelf is
+     * left unchecked.
+     *
+     * Only the library entry goes: downloaded chapters and local files are untouched, so this is
+     * not the same action as the trash button, which clears downloads.
+     */
+    fun removeFromLibrary() {
+        val selected = state.value.selectedManga
+        if (selected.isEmpty()) return
+        viewModelScope.launchNonCancellable {
+            updateManga.awaitAll(
+                selected.map {
+                    it.removeCovers(coverCache)
+                    MangaUpdate(favorite = false, id = it.id)
+                },
+            )
+            // Shelf membership belongs to being in the library: rows left behind would resurface
+            // as pre-checked shelves when the work is added again.
+            selected.forEach { setMangaCategories.await(it.id, emptyList()) }
+        }
+        clearSelection()
     }
 
     fun getDisplayMode(): PreferenceMutableState<LibraryDisplayMode> {
@@ -733,21 +743,44 @@ class LibraryViewModel(
             // Create a copy of selected manga
             val mangaList = state.value.selectedManga
 
-            // Hide the default category because it has a different behavior than the ones from db.
-            val categories = state.value.displayedCategories.filter { it.id != 0L }
+            // Read the categories instead of taking the shelf grouping: that grouping drops the
+            // default shelf unless the user turned the system category on, and the picker needs
+            // it either way.
+            val allCategories = getCategories.await()
+            val named = allCategories.filterNot { it.isSystemCategory }
+            val defaultShelf = allCategories.firstOrNull { it.isSystemCategory }
 
             // Get indexes of the common categories to preselect.
             val common = getCommonCategories(mangaList)
             // Get indexes of the mix categories to preselect.
             val mix = getMixCategories(mangaList)
-            val preselected = categories
-                .map {
-                    when (it) {
-                        in common -> CheckboxState.State.Checked(it)
-                        in mix -> CheckboxState.TriState.Exclude(it)
-                        else -> CheckboxState.State.None(it)
-                    }
+            val onDefaultShelf = mangaList.isNotEmpty() && mangaList.all {
+                getCategories.await(it.id).isEmpty()
+            }
+
+            val preselected = buildList {
+                // The default shelf leads the list: "on the shelf, filed nowhere" is a real
+                // answer, and without it a picker whose rows are all unchecked reads as if
+                // confirming would do nothing — while it actually files everything there.
+                defaultShelf?.let {
+                    add(
+                        if (onDefaultShelf) {
+                            CheckboxState.State.Checked(it)
+                        } else {
+                            CheckboxState.State.None(it)
+                        },
+                    )
                 }
+                named.forEach {
+                    add(
+                        when (it) {
+                            in common -> CheckboxState.State.Checked(it)
+                            in mix -> CheckboxState.TriState.Exclude(it)
+                            else -> CheckboxState.State.None(it)
+                        },
+                    )
+                }
+            }
 
             mutableState.update { it.copy(dialog = Dialog.ChangeCategory(mangaList, preselected)) }
         }

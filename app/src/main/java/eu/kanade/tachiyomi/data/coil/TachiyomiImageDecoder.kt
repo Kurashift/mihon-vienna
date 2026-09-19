@@ -11,6 +11,7 @@ import coil3.fetch.SourceFetchResult
 import coil3.request.Options
 import coil3.request.bitmapConfig
 import okio.BufferedSource
+import tachiyomi.core.common.util.system.ImageType
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.decoder.ImageDecoder
 
@@ -74,7 +75,7 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                 ImageUtil.findImageType(it)
             }
             return when (type) {
-                ImageUtil.ImageType.AVIF, ImageUtil.ImageType.JXL, ImageUtil.ImageType.HEIF -> true
+                ImageType.AVIF, ImageType.JXL, ImageType.HEIF -> true
                 else -> false
             }
         }

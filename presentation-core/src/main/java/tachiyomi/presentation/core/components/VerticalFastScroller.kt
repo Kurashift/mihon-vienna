@@ -80,6 +80,7 @@ fun VerticalFastScroller(
     alwaysVisible: Boolean = false,
     showEndMarker: Boolean = false,
     stickyThumb: Boolean = false,
+    listKey: Any? = null,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     topContentPadding: Dp = Dp.Hairline,
     bottomContentPadding: Dp = Dp.Hairline,
@@ -97,9 +98,9 @@ fun VerticalFastScroller(
             if (layoutInfo.visibleItemsInfo.isEmpty() || layoutInfo.totalItemsCount == 0) return@subcompose
 
             val thumbTopPadding = with(LocalDensity.current) { topContentPadding.toPx() }
-            var thumbOffsetY by remember(thumbTopPadding) { mutableFloatStateOf(thumbTopPadding) }
-            val thumbAnchor = remember { ThumbAnchor() }
-            var targetProgress by remember { mutableFloatStateOf(0f) }
+            var thumbOffsetY by remember(listKey, thumbTopPadding) { mutableFloatStateOf(thumbTopPadding) }
+            val thumbAnchor = remember(listKey) { ThumbAnchor() }
+            var targetProgress by remember(listKey) { mutableFloatStateOf(0f) }
 
             val dragInteractionSource = remember { MutableInteractionSource() }
             val isThumbDragged by dragInteractionSource.collectIsDraggedAsState()
@@ -156,7 +157,7 @@ fun VerticalFastScroller(
             val previousSections = topHiddenProportion + topItem.index
             val remainingSections = bottomHiddenProportion + (layoutInfo.totalItemsCount - (bottomItem.index + 1))
             val scrollableSections = previousSections + remainingSections
-            val itemCountTracker = remember { MutableData(layoutInfo.totalItemsCount) }
+            val itemCountTracker = remember(listKey) { MutableData(layoutInfo.totalItemsCount) }
 
             // Recalibrate the estimate only when the list content was really replaced. Watching
             // the measured scrollable span instead fires whenever the viewport merely resizes -
@@ -178,7 +179,7 @@ fun VerticalFastScroller(
             val layoutChanged = !isThumbDragged &&
                 abs(layoutInfo.totalItemsCount - previousItemCount) > 1
 
-            val estimateConfidence = remember { MutableData(remainingSections) }
+            val estimateConfidence = remember(listKey) { MutableData(remainingSections) }
             if (layoutChanged) estimateConfidence.value = remainingSections
             val maxRemainingSections = remember(estimateConfidence.value) { scrollableSections }
             estimateConfidence.value = max(estimateConfidence.value, remainingSections)
@@ -417,6 +418,7 @@ fun VerticalGridFastScroller(
     alwaysVisible: Boolean = false,
     showEndMarker: Boolean = false,
     stickyThumb: Boolean = false,
+    listKey: Any? = null,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     topContentPadding: Dp = Dp.Hairline,
     bottomContentPadding: Dp = Dp.Hairline,
@@ -442,9 +444,9 @@ fun VerticalGridFastScroller(
             }
             if (!showScroller) return@subcompose
             val thumbTopPadding = with(LocalDensity.current) { topContentPadding.toPx() }
-            var thumbOffsetY by remember(thumbTopPadding) { mutableFloatStateOf(thumbTopPadding) }
-            val thumbAnchor = remember { ThumbAnchor() }
-            var targetProgress by remember { mutableFloatStateOf(0f) }
+            var thumbOffsetY by remember(listKey, thumbTopPadding) { mutableFloatStateOf(thumbTopPadding) }
+            val thumbAnchor = remember(listKey) { ThumbAnchor() }
+            var targetProgress by remember(listKey) { mutableFloatStateOf(0f) }
 
             val dragInteractionSource = remember { MutableInteractionSource() }
             val isThumbDragged by dragInteractionSource.collectIsDraggedAsState()

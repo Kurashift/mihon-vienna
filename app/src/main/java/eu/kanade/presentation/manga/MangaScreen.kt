@@ -1209,7 +1209,7 @@ private fun SharedMangaBottomActionMenu(
     val actedOn = if (selected.isNotEmpty()) selected else lastSelection.items
     // The before/after entries follow the order the chapters are listed in, so they mean the
     // same thing in the grid and under every sort. They are a single-selection affordance: a
-    // multi-selection gets none, which leaves the read slot a plain button instead of a menu.
+    // multi-selection gets none, and its read slot still opens a menu over the directions left.
     val ranges = remember(actedOn, chapterList) {
         if (actedOn.size == 1) readRangeActions(chapterList, actedOn[0]) else null
     }
@@ -1232,9 +1232,11 @@ private fun SharedMangaBottomActionMenu(
         onMarkAsReadClicked = {
             onMultiMarkAsReadClicked(actedOn.fastMap { it.chapter }, true)
         }.takeIf { actedOn.fastAny { !it.chapter.read } },
+        // Unread stays offered whenever any selected chapter has read state to clear, so a mixed
+        // selection reaches the read menu with BOTH directions instead of collapsing into read.
         onMarkAsUnreadClicked = {
             onMultiMarkAsReadClicked(actedOn.fastMap { it.chapter }, false)
-        }.takeIf { actedOn.fastAll { it.chapter.read } },
+        }.takeIf { actedOn.fastAny { it.chapter.read } },
         readRanges = ranges,
         onMarkRangeClicked = onMultiMarkAsReadClicked,
         onDownloadClicked = {

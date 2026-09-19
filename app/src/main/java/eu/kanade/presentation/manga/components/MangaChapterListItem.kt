@@ -38,11 +38,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -82,7 +80,6 @@ fun MangaChapterListItem(
     onTitleBoundsChanged: ((LayoutCoordinates) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
     val start = getSwipeAction(
         action = chapterSwipeStartAction,
         read = read,
@@ -158,10 +155,7 @@ fun MangaChapterListItem(
                         modifier = when {
                             onCopyTitle != null && copyTitleOnLongPress -> Modifier.combinedClickable(
                                 onClick = onClick,
-                                onLongClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onCopyTitle()
-                                },
+                                onLongClick = onCopyTitle,
                                 // 波纹仍由外层整行的 clickable 提供，这里不要再叠一层。
                                 indication = null,
                                 interactionSource = null,

@@ -65,6 +65,7 @@ fun FastScrollLazyColumn(
     onScrollingChanged: ((Boolean) -> Unit)? = null,
     onThumbDraggedChanged: ((Boolean) -> Unit)? = null,
     stickyThumb: Boolean = false,
+    listKey: Any? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     reverseLayout: Boolean = false,
     verticalArrangement: Arrangement.Vertical =
@@ -79,6 +80,7 @@ fun FastScrollLazyColumn(
         alwaysVisible = alwaysVisible,
         showEndMarker = showEndMarker,
         stickyThumb = stickyThumb,
+        listKey = listKey,
         onScrollingChanged = onScrollingChanged,
         onThumbDraggedChanged = onThumbDraggedChanged,
         topContentPadding = contentPadding.calculateTopPadding(),

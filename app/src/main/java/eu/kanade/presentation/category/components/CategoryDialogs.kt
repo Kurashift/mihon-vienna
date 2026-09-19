@@ -191,6 +191,8 @@ fun ChangeCategoryDialog(
     onDismissRequest: () -> Unit,
     onEditCategories: () -> Unit,
     onConfirm: (List<Long>, List<Long>) -> Unit,
+    includeDefaultCategory: Boolean = false,
+    onRemoveFromLibrary: (() -> Unit)? = null,
 ) {
     if (initialSelection.isEmpty()) {
         AlertDialog(
@@ -215,6 +217,13 @@ fun ChangeCategoryDialog(
         return
     }
     var selection by remember { mutableStateOf(initialSelection) }
+    val checkedIds = selection
+        .filter { it is CheckboxState.State.Checked || it is CheckboxState.TriState.Include }
+        .map { it.value.id }
+    val uncheckedIds = selection
+        .filter { it is CheckboxState.State.None || it is CheckboxState.TriState.None }
+        .map { it.value.id }
+    val leavesLibrary = onRemoveFromLibrary != null && selectionLeavesLibrary(selection)
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
@@ -232,17 +241,20 @@ fun ChangeCategoryDialog(
                 tachiyomi.presentation.core.components.material.TextButton(
                     onClick = {
                         onDismissRequest()
-                        onConfirm(
-                            selection
-                                .filter { it is CheckboxState.State.Checked || it is CheckboxState.TriState.Include }
-                                .map { it.value.id },
-                            selection
-                                .filter { it is CheckboxState.State.None || it is CheckboxState.TriState.None }
-                                .map { it.value.id },
-                        )
+                        if (leavesLibrary) {
+                            // The works end up on no shelf at all, which is what taking them off
+                            // the library means; the picker is the one place that can say it.
+                            onRemoveFromLibrary?.invoke()
+                        } else {
+                            onConfirm(checkedIds, uncheckedIds)
+                        }
                     },
                 ) {
-                    Text(text = stringResource(MR.strings.action_ok))
+                    Text(
+                        text = stringResource(
+                            if (leavesLibrary) MR.strings.action_remove_from_library else MR.strings.action_ok,
+                        ),
+                    )
                 }
             }
         },
@@ -253,43 +265,97 @@ fun ChangeCategoryDialog(
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
-                selection.forEach { checkbox ->
+                if (includeDefaultCategory) {
+                    val defaultCategory = selection.firstOrNull { it.value.isSystemCategory }
+                    if (defaultCategory != null) {
+                        // The default shelf excludes every named one, and picking any named one
+                        // leaves the default shelf, so the two cannot be on at the same time.
+                        val onDefaultChange: (CheckboxState<Category>) -> Unit = {
+                            val turningOn = it is CheckboxState.State.None
+                            selection = selection.map { checkbox ->
+                                when {
+                                    checkbox.value.isSystemCategory -> checkbox.next()
+                                    turningOn -> CheckboxState.State.None(checkbox.value)
+                                    else -> checkbox
+                                }
+                            }
+                        }
+                        CategoryRow(checkbox = defaultCategory, onChange = onDefaultChange)
+                    }
+                }
+                selection.filterNot { it.value.isSystemCategory }.forEach { checkbox ->
                     val onChange: (CheckboxState<Category>) -> Unit = {
                         val index = selection.indexOf(it)
                         if (index != -1) {
                             val mutableList = selection.toMutableList()
                             mutableList[index] = it.next()
-                            selection = mutableList.toList()
-                        }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onChange(checkbox) },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        when (checkbox) {
-                            is CheckboxState.TriState -> {
-                                TriStateCheckbox(
-                                    state = checkbox.asToggleableState(),
-                                    onClick = { onChange(checkbox) },
-                                )
-                            }
-                            is CheckboxState.State -> {
-                                Checkbox(
-                                    checked = checkbox.isChecked,
-                                    onCheckedChange = { onChange(checkbox) },
-                                )
+                            // A named category and the default shelf are mutually exclusive:
+                            // turning one on takes the work out of the other.
+                            selection = if (it is CheckboxState.State.None) {
+                                mutableList.map { current ->
+                                    if (current.value.isSystemCategory) {
+                                        CheckboxState.State.None(current.value)
+                                    } else {
+                                        current
+                                    }
+                                }.toList()
+                            } else {
+                                mutableList.toList()
                             }
                         }
-
-                        Text(
-                            text = checkbox.value.visualName,
-                            modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
-                        )
                     }
+                    CategoryRow(checkbox = checkbox, onChange = onChange)
                 }
             }
         },
     )
+}
+
+/**
+ * Whether confirming [selection] means "take these works off the library".
+ *
+ * Leaving every shelf unchecked is the only way the picker can express that a work belongs to no
+ * shelf at all, and it is what the local library uses instead of a separate button. It counts
+ * only when every row is unchecked outright: a batch of works filed differently opens with
+ * half-checked rows, and reading that as "no shelf" would drop them off the library on a bare
+ * confirm.
+ */
+internal fun selectionLeavesLibrary(selection: List<CheckboxState<Category>>): Boolean {
+    if (selection.isEmpty()) return false
+    return selection.all {
+        it is CheckboxState.State.None || it is CheckboxState.TriState.None
+    }
+}
+
+@Composable
+private fun CategoryRow(
+    checkbox: CheckboxState<Category>,
+    onChange: (CheckboxState<Category>) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(checkbox) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when (checkbox) {
+            is CheckboxState.TriState -> {
+                TriStateCheckbox(
+                    state = checkbox.asToggleableState(),
+                    onClick = { onChange(checkbox) },
+                )
+            }
+            is CheckboxState.State -> {
+                Checkbox(
+                    checked = checkbox.isChecked,
+                    onCheckedChange = { onChange(checkbox) },
+                )
+            }
+        }
+
+        Text(
+            text = checkbox.value.visualName,
+            modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
+        )
+    }
 }

@@ -6,6 +6,7 @@ import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
 import mihon.core.archive.ArchiveReader
 import tachiyomi.core.common.util.system.ImageUtil
+import tachiyomi.source.local.io.Archive
 
 /**
  * Loader used to load a chapter from an archive file.
@@ -26,7 +27,8 @@ internal class ArchivePageLoader(
         ) {
             reader.useEntries { entries ->
                 entries
-                    .filter { it.isFile && ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
+                    .filter { Archive.isPageEntry(it.name, it.isFile) }
+                    .filter { ImageUtil.isImagePage(it.name) { reader.getInputStream(it.name)!! } }
                     .map { it.name }
                     .sortedWith { a, b -> a.compareToCaseInsensitiveNaturalPageOrder(b) }
                     .toList()

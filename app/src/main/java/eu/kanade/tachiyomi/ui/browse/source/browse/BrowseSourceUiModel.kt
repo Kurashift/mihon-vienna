@@ -5,8 +5,15 @@ import tachiyomi.domain.manga.model.Manga
 
 @Immutable
 sealed interface BrowseSourceUiModel {
+    /**
+     * A separator between runs of entries under the date ordering.
+     *
+     * The bucket says whether it stands for one recent day or a whole older month; carrying it
+     * rather than a formatted label keeps the formatting in the UI layer, where the user's date
+     * format and locale are available.
+     */
     @Immutable
-    data class Header(val timestamp: Long) : BrowseSourceUiModel
+    data class Header(val bucket: DateHeaderBucket) : BrowseSourceUiModel
 
     /**
      * Immutable list entry. Progress and last-read state are intentionally NOT stored here:
@@ -18,6 +25,5 @@ sealed interface BrowseSourceUiModel {
     data class Item(
         val manga: Manga,
         val matchedChapter: String? = null,
-        val latestChapterAddedAt: Long = 0L,
     ) : BrowseSourceUiModel
 }

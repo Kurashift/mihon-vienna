@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.util.storage.getUriCompat
 import logcat.LogPriority
 import okio.IOException
 import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.core.common.util.system.ImageType
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
@@ -62,7 +63,7 @@ class ImageSaver(
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun saveApi29(
         image: Image,
-        type: ImageUtil.ImageType,
+        type: ImageType,
         filename: String,
         data: () -> InputStream,
     ): Uri {

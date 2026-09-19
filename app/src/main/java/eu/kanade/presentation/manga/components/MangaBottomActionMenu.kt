@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -25,10 +26,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Label
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.BookmarkRemove
+import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.DoneAll
@@ -47,6 +50,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,8 +63,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
@@ -110,11 +112,9 @@ fun MangaBottomActionMenu(
             shape = MaterialTheme.shapes.large.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            val haptic = LocalHapticFeedback.current
             val confirm = remember { mutableStateListOf(false, false, false, false, false) }
             var resetJob by remember { mutableStateOf<Job?>(null) }
             val onLongClickItem: (Int) -> Unit = { toConfirmIndex ->
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 confirm.indices.forEach { i -> confirm[i] = i == toConfirmIndex }
                 resetJob?.cancel()
                 resetJob = scope.launch {
@@ -129,7 +129,7 @@ fun MangaBottomActionMenu(
                             .only(WindowInsetsSides.Bottom)
                             .asPaddingValues(),
                     )
-                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
                 ActionGroup(
                     // Bookmarking and un-bookmarking are mutually exclusive, so one slot covers
@@ -237,15 +237,24 @@ fun MangaBottomActionMenu(
                 }
                 // The trailing delete slot is either "remove the download" for sourced manga or
                 // "erase the local files" for local manga. The two never coexist, so the row keeps
-                // a single destructive action at the end and stays a contiguous group.
+                // a single destructive action at the end.
+                //
+                // Only the one that erases files is set apart: a rule separates it and it takes
+                // just the width its icon needs, so it cannot be hit by aiming at a neighbour.
                 if (onDeleteLocalFilesClicked != null) {
+                    VerticalDivider(
+                        modifier = Modifier
+                            .align(Alignment.CenterVertically)
+                            .height(24.dp),
+                    )
                     Button(
                         title = stringResource(MR.strings.action_delete_local_files),
-                        icon = Icons.Outlined.Delete,
+                        icon = Icons.Filled.Delete,
                         toConfirm = false,
                         onLongClick = {},
                         onClick = onDeleteLocalFilesClicked,
                         tint = MaterialTheme.colorScheme.error,
+                        fill = false,
                     )
                 } else if (onDeleteClicked != null) {
                     Button(
@@ -269,6 +278,9 @@ private fun RowScope.Button(
     onLongClick: () -> Unit,
     onClick: () -> Unit,
     tint: Color = LocalContentColor.current,
+    // A trailing destructive action keeps its own narrow slot instead of an equal share, so it
+    // reads as set apart from the group rather than as one more peer of it.
+    fill: Boolean = true,
     content: (@Composable () -> Unit)? = null,
 ) {
     val animatedWeight by animateFloatAsState(
@@ -277,8 +289,8 @@ private fun RowScope.Button(
     )
     Box(
         modifier = Modifier
-            .size(48.dp)
-            .weight(animatedWeight)
+            .size(44.dp)
+            .then(if (fill) Modifier.weight(animatedWeight) else Modifier)
             .combinedClickable(
                 interactionSource = null,
                 indication = ripple(bounded = false),
@@ -320,9 +332,12 @@ fun LibraryBottomActionMenu(
     onMarkAsReadClicked: () -> Unit,
     onMarkAsUnreadClicked: () -> Unit,
     onDownloadClicked: ((DownloadAction) -> Unit)?,
-    onDeleteClicked: () -> Unit,
-    onMigrateClicked: () -> Unit,
+    onDeleteClicked: (() -> Unit)?,
+    onMigrateClicked: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    // Set only by a caller whose delete erases files from disk; that is the one destructive action
+    // the row paints red and sets apart, matching how the detail screen marks its own.
+    deleteTint: Color? = null,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -335,11 +350,9 @@ fun LibraryBottomActionMenu(
             shape = MaterialTheme.shapes.large.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            val haptic = LocalHapticFeedback.current
-            val confirm = remember { mutableStateListOf(false, false, false, false, false, false) }
+            val confirm = remember { mutableStateListOf(false, false, false, false, false) }
             var resetJob by remember { mutableStateOf<Job?>(null) }
             val onLongClickItem: (Int) -> Unit = { toConfirmIndex ->
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 confirm.indices.forEach { i -> confirm[i] = i == toConfirmIndex }
                 resetJob?.cancel()
                 resetJob = scope.launch {
@@ -347,6 +360,8 @@ fun LibraryBottomActionMenu(
                     if (isActive) confirm[toConfirmIndex] = false
                 }
             }
+            // Downloading is the one action that always has to fold the trailing pair into an
+            // overflow menu; without it the row still fits every action inline.
             val itemOverflow = onDownloadClicked != null
             Row(
                 modifier = Modifier
@@ -354,36 +369,58 @@ fun LibraryBottomActionMenu(
                         WindowInsets.navigationBars
                             .only(WindowInsetsSides.Bottom),
                     )
-                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
                 Button(
+                    // The shelf is what this action edits, so it carries the library's own mark
+                    // rather than the plain label tag that the chapter menus use.
                     title = stringResource(MR.strings.action_move_category),
-                    icon = Icons.AutoMirrored.Outlined.Label,
+                    icon = Icons.Outlined.CollectionsBookmark,
                     toConfirm = confirm[0],
                     onLongClick = { onLongClickItem(0) },
                     onClick = onChangeCategoryClicked,
                 )
+                // The read toggles share one slot that opens a menu, the same pattern as the
+                // detail screen's read-status entry: the pair is one tap deeper, and the row
+                // keeps fewer icons to parse.
+                var readExpanded by remember { mutableStateOf(false) }
                 Button(
-                    title = stringResource(MR.strings.action_mark_as_read),
-                    icon = Icons.Outlined.DoneAll,
+                    title = stringResource(MR.strings.action_read_group),
+                    icon = ImageVector.vectorResource(R.drawable.ic_done_edit_24dp),
                     toConfirm = confirm[1],
                     onLongClick = { onLongClickItem(1) },
-                    onClick = onMarkAsReadClicked,
-                )
-                Button(
-                    title = stringResource(MR.strings.action_mark_as_unread),
-                    icon = Icons.Outlined.RemoveDone,
-                    toConfirm = confirm[2],
-                    onLongClick = { onLongClickItem(2) },
-                    onClick = onMarkAsUnreadClicked,
-                )
+                    onClick = { readExpanded = !readExpanded },
+                ) {
+                    DropdownMenu(
+                        expanded = readExpanded,
+                        onDismissRequest = { readExpanded = false },
+                        offset = BottomBarMenuDpOffset,
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(MR.strings.action_mark_as_read)) },
+                            leadingIcon = { Icon(Icons.Outlined.DoneAll, contentDescription = null) },
+                            onClick = {
+                                readExpanded = false
+                                onMarkAsReadClicked()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(MR.strings.action_mark_as_unread)) },
+                            leadingIcon = { Icon(Icons.Outlined.RemoveDone, contentDescription = null) },
+                            onClick = {
+                                readExpanded = false
+                                onMarkAsUnreadClicked()
+                            },
+                        )
+                    }
+                }
                 if (onDownloadClicked != null) {
                     var downloadExpanded by remember { mutableStateOf(false) }
                     Button(
                         title = stringResource(MR.strings.action_download),
                         icon = Icons.Outlined.Download,
-                        toConfirm = confirm[3],
-                        onLongClick = { onLongClickItem(3) },
+                        toConfirm = confirm[2],
+                        onLongClick = { onLongClickItem(2) },
                         onClick = { downloadExpanded = !downloadExpanded },
                     ) {
                         DownloadDropdownMenu(
@@ -395,20 +432,37 @@ fun LibraryBottomActionMenu(
                     }
                 }
                 if (!itemOverflow) {
-                    Button(
-                        title = stringResource(MR.strings.migrate),
-                        icon = Icons.Outlined.SwapCalls,
-                        toConfirm = confirm[4],
-                        onLongClick = { onLongClickItem(4) },
-                        onClick = onMigrateClicked,
-                    )
-                    Button(
-                        title = stringResource(MR.strings.action_delete),
-                        icon = Icons.Outlined.Delete,
-                        toConfirm = confirm[5],
-                        onLongClick = { onLongClickItem(5) },
-                        onClick = onDeleteClicked,
-                    )
+                    if (onMigrateClicked != null) {
+                        Button(
+                            title = stringResource(MR.strings.migrate),
+                            icon = Icons.Outlined.SwapCalls,
+                            toConfirm = confirm[3],
+                            onLongClick = { onLongClickItem(3) },
+                            onClick = onMigrateClicked,
+                        )
+                    }
+                    if (onDeleteClicked != null) {
+                        // Red, filled and set apart only when the action erases files from the
+                        // device - a local library's directories, or downloaded chapters. A delete
+                        // that merely drops a list entry keeps the ordinary look. Either way the
+                        // long press guard applies.
+                        if (deleteTint != null) {
+                            VerticalDivider(
+                                modifier = Modifier
+                                    .align(Alignment.CenterVertically)
+                                    .height(24.dp),
+                            )
+                        }
+                        Button(
+                            title = stringResource(MR.strings.action_delete),
+                            icon = if (deleteTint != null) Icons.Filled.Delete else Icons.Outlined.Delete,
+                            toConfirm = confirm[4],
+                            onLongClick = { onLongClickItem(4) },
+                            onClick = onDeleteClicked,
+                            tint = deleteTint ?: LocalContentColor.current,
+                            fill = deleteTint == null,
+                        )
+                    }
                 } else {
                     var overflowMenuOpen by remember { mutableStateOf(false) }
                     Button(
@@ -423,14 +477,18 @@ fun LibraryBottomActionMenu(
                             onDismissRequest = { overflowMenuOpen = false },
                             offset = BottomBarMenuDpOffset,
                         ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(MR.strings.migrate)) },
-                                onClick = onMigrateClicked,
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(MR.strings.action_delete)) },
-                                onClick = onDeleteClicked,
-                            )
+                            if (onMigrateClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.migrate)) },
+                                    onClick = onMigrateClicked,
+                                )
+                            }
+                            if (onDeleteClicked != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(MR.strings.action_delete)) },
+                                    onClick = onDeleteClicked,
+                                )
+                            }
                         }
                     }
                 }
@@ -536,12 +594,13 @@ private fun RowScope.ActionGroup(
 /**
  * The read-status slot of the bottom action bar.
  *
- * The slot opens a menu only when it has more than one thing to offer: the selected chapters
- * themselves, plus — for a single selection — whichever before/after ranges still have chapters
- * to change. A direction already entirely in the target state is dropped rather than greyed out,
- * which is what keeps the menu a short single column instead of a wide double one. When no range
- * has anything left to do the slot collapses back to a plain button that runs the selection
- * action on tap, so the bar never opens a menu holding a lone entry.
+ * The slot always opens its menu, whatever the selection is. Marking read and marking unread are
+ * two directions of one state, so a selection with only one direction left used to run on the
+ * first tap while a mixed one asked — the same button behaving two ways depending on what was
+ * picked. Every direction that still has work to do is offered instead: marking the selection
+ * read, marking it unread, and — for a single selection — the before/after ranges. A direction
+ * already entirely in the target state is dropped rather than greyed out, which keeps the menu a
+ * short single column instead of a wide double one.
  */
 @Composable
 private fun RowScope.ReadStatusGroup(
@@ -554,35 +613,27 @@ private fun RowScope.ReadStatusGroup(
     confirmIndex: Int,
     onLongClickItem: (Int) -> Unit,
 ) {
-    val self = onMarkAsReadClicked?.let { onClick ->
+    val selfRead = onMarkAsReadClicked?.let { onClick ->
         BottomBarAction(
             title = stringResource(MR.strings.action_read_selected),
             // A single selection gets one check, a multi-selection gets two.
             icon = if (selectedCount == 1) Icons.Outlined.Done else Icons.Outlined.DoneAll,
             onClick = onClick,
         )
-    } ?: onMarkAsUnreadClicked?.let { onClick ->
+    }
+    val selfUnread = onMarkAsUnreadClicked?.let { onClick ->
         BottomBarAction(
             title = stringResource(MR.strings.action_mark_as_unread),
             icon = Icons.Outlined.RemoveDone,
             onClick = onClick,
         )
     }
-    // A multi-selection carries no ranges at all, so it always lands on the plain button.
     val onRange = onMarkRangeClicked
     val ranges = readRanges?.takeIf { it.hasChanges() && onRange != null }
-    if (ranges == null || onRange == null) {
-        if (self == null) return
-        Button(
-            title = self.title,
-            icon = self.icon,
-            toConfirm = confirm[confirmIndex],
-            onLongClick = { onLongClickItem(confirmIndex) },
-            onClick = self.onClick,
-        )
-        return
-    }
-    val hasBefore = ranges.beforeToRead.isNotEmpty() || ranges.beforeToUnread.isNotEmpty()
+    val selfs = listOfNotNull(selfRead, selfUnread)
+
+    if (selfs.isEmpty() && ranges == null) return
+    val hasBefore = ranges?.let { it.beforeToRead.isNotEmpty() || it.beforeToUnread.isNotEmpty() } == true
 
     var expanded by remember { mutableStateOf(false) }
     Button(
@@ -597,7 +648,7 @@ private fun RowScope.ReadStatusGroup(
             onDismissRequest = { expanded = false },
             offset = BottomBarMenuDpOffset,
         ) {
-            if (self != null) {
+            selfs.forEach { self ->
                 DropdownMenuItem(
                     text = { Text(self.title) },
                     leadingIcon = { Icon(self.icon, contentDescription = null) },
@@ -607,26 +658,29 @@ private fun RowScope.ReadStatusGroup(
                     },
                 )
             }
-            ReadRangeBlock(
-                heading = stringResource(MR.strings.action_read_range_before),
-                toRead = ranges.beforeToRead,
-                toUnread = ranges.beforeToUnread,
-                readIcon = ImageVector.vectorResource(R.drawable.ic_done_prev_24dp),
-                unreadIcon = ImageVector.vectorResource(R.drawable.ic_undone_prev_24dp),
-                showDivider = self != null,
-                onMarkRangeClicked = onRange,
-                onDone = { expanded = false },
-            )
-            ReadRangeBlock(
-                heading = stringResource(MR.strings.action_read_range_after),
-                toRead = ranges.afterToRead,
-                toUnread = ranges.afterToUnread,
-                readIcon = ImageVector.vectorResource(R.drawable.ic_done_next_24dp),
-                unreadIcon = ImageVector.vectorResource(R.drawable.ic_undone_next_24dp),
-                showDivider = self != null || hasBefore,
-                onMarkRangeClicked = onRange,
-                onDone = { expanded = false },
-            )
+            val rangeHandler = onRange
+            if (ranges != null && rangeHandler != null) {
+                ReadRangeBlock(
+                    heading = stringResource(MR.strings.action_read_range_before),
+                    toRead = ranges.beforeToRead,
+                    toUnread = ranges.beforeToUnread,
+                    readIcon = ImageVector.vectorResource(R.drawable.ic_done_prev_24dp),
+                    unreadIcon = ImageVector.vectorResource(R.drawable.ic_undone_prev_24dp),
+                    showDivider = selfs.isNotEmpty(),
+                    onMarkRangeClicked = rangeHandler,
+                    onDone = { expanded = false },
+                )
+                ReadRangeBlock(
+                    heading = stringResource(MR.strings.action_read_range_after),
+                    toRead = ranges.afterToRead,
+                    toUnread = ranges.afterToUnread,
+                    readIcon = ImageVector.vectorResource(R.drawable.ic_done_next_24dp),
+                    unreadIcon = ImageVector.vectorResource(R.drawable.ic_undone_next_24dp),
+                    showDivider = selfs.isNotEmpty() || hasBefore,
+                    onMarkRangeClicked = rangeHandler,
+                    onDone = { expanded = false },
+                )
+            }
         }
     }
 }

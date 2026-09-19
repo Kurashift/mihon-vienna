@@ -1,6 +1,8 @@
 package eu.kanade.presentation.browse.components
 
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceUiModel
+import eu.kanade.tachiyomi.ui.browse.source.browse.DateHeaderBucket
+import kotlinx.datetime.LocalDate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.manga.model.Manga
@@ -18,10 +20,10 @@ class BrowseSourceMangaNumberTest {
     @Test
     fun `date headers do not count as manga`() {
         val items = listOf(
-            BrowseSourceUiModel.Header(1),
+            BrowseSourceUiModel.Header(DateHeaderBucket.Day(LocalDate(2026, 9, 19))),
             item(1),
             null,
-            BrowseSourceUiModel.Header(2),
+            BrowseSourceUiModel.Header(DateHeaderBucket.Month(LocalDate(2026, 8, 1))),
             item(2),
         )
 

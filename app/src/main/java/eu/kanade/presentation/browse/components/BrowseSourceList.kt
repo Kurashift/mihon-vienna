@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import eu.kanade.presentation.components.LocalBottomNavFabPadding
-import eu.kanade.presentation.components.relativeDateText
+import eu.kanade.presentation.components.dateHeaderText
 import eu.kanade.presentation.library.components.CommonMangaItemDefaults
 import eu.kanade.presentation.library.components.IndexLabel
 import eu.kanade.presentation.library.components.LastReadBadge
@@ -54,6 +54,8 @@ fun BrowseSourceList(
     lastReadMangaId: Long? = null,
     locateMangaId: Long? = null,
     favoriteIds: Set<Long>? = null,
+    selectedIds: Set<Long> = emptySet(),
+    dimInLibraryCovers: Boolean = true,
     progressContext: BrowseSourceViewModel.ProgressContext = BrowseSourceViewModel.ProgressContext(
         emptyMap(),
         emptyMap(),
@@ -61,6 +63,7 @@ fun BrowseSourceList(
     ),
     coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
     trailingSlotCount: Int = 0,
+    listKey: Any? = null,
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
     onLocateMangaHandled: () -> Unit = {},
@@ -76,7 +79,6 @@ fun BrowseSourceList(
     var isThumbDragging by remember { mutableStateOf(false) }
     val isLoadingPaused = isLocating || isThumbDragging
     var handledLocateManga by remember { mutableStateOf<Long?>(null) }
-    var handledScrollToTopRequest by remember { mutableStateOf(scrollToTopRequest) }
 
     // Skeleton slots standing in for the page that has not landed yet. They keep the listing
     // long enough to drag the scroller from one end to the other in a single gesture, and
@@ -118,17 +120,11 @@ fun BrowseSourceList(
         onLocateMangaHandled()
     }
 
-    LaunchedEffect(scrollToTopRequest) {
-        if (scrollToTopRequest != handledScrollToTopRequest) {
-            handledScrollToTopRequest = scrollToTopRequest
-            isLocating = true
-            try {
-                listState.smoothLocateToItem(0, locateTransition)
-            } finally {
-                isLocating = false
-            }
-        }
-    }
+    ScrollToTopRequestEffect(
+        request = scrollToTopRequest,
+        setLocating = { isLocating = it },
+        scrollToTop = { listState.smoothLocateToItem(0, locateTransition) },
+    )
     Box(modifier = Modifier.fillMaxSize()) {
         // The skeleton slots give the scroller room to travel past the last loaded entry, but
         // nothing in them reads the pager, so Paging never gets the hint on its own - landing
@@ -150,6 +146,7 @@ fun BrowseSourceList(
         BrowseSourceLazyColumn(
             fastScroll = showIndex,
             state = listState,
+            listKey = listKey,
             modifier = Modifier.browseSourceLocateTransition(locateTransition),
             onThumbDraggedChanged = { isThumbDragging = it },
             contentPadding = contentPadding + PaddingValues(vertical = 8.dp),
@@ -167,7 +164,7 @@ fun BrowseSourceList(
                 val item = if (isLoadingPaused) mangaList.peek(index) else mangaList[index]
                 when (item) {
                     is BrowseSourceUiModel.Header -> {
-                        BrowseSourceDateHeader(text = relativeDateText(item.timestamp))
+                        BrowseSourceDateHeader(text = dateHeaderText(item.bucket))
                     }
                     is BrowseSourceUiModel.Item -> {
                         val manga = item.manga
@@ -185,6 +182,8 @@ fun BrowseSourceList(
                             coverUpdates = coverUpdates,
                             highlightedMangaId = highlightedMangaId,
                             highlightAlpha = highlightAlpha,
+                            isSelected = manga.id in selectedIds,
+                            dimInLibraryCovers = dimInLibraryCovers,
                             onClick = { onMangaClick(manga) },
                             onLongClick = { onMangaLongClick(manga) },
                         )
@@ -265,6 +264,8 @@ private fun BrowseSourceListItem(
     item: BrowseSourceUiModel.Item,
     index: Int? = null,
     favoriteIds: Set<Long>? = null,
+    isSelected: Boolean = false,
+    dimInLibraryCovers: Boolean = true,
     loadCover: Boolean = true,
     progress: MangaProgress = MangaProgress.EMPTY,
     isLastRead: Boolean = false,
@@ -282,9 +283,14 @@ private fun BrowseSourceListItem(
         highlightAlpha = highlightAlpha,
     ) {
         MangaListItem(
+            isSelected = isSelected,
             title = manga.title,
             coverData = manga.asDisplayedCover(coverUpdates),
-            coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
+            coverAlpha = if (dimInLibraryCovers && isFavorite) {
+                CommonMangaItemDefaults.BrowseFavoriteCoverAlpha
+            } else {
+                1f
+            },
             loadCover = loadCover,
             leading = {
                 if (index != null) {

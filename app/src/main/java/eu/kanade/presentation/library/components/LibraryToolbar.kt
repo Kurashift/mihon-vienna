@@ -4,8 +4,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
-import androidx.compose.material.icons.outlined.FlipToBack
-import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.SearchToolbar
+import eu.kanade.presentation.components.SelectionToolbar
 import eu.kanade.tachiyomi.data.search.SearchHistoryScope
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.Pill
@@ -42,7 +41,7 @@ fun LibraryToolbar(
     onSearchQueryChange: (String?) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior?,
 ) = when {
-    selectedCount > 0 -> LibrarySelectionToolbar(
+    selectedCount > 0 -> SelectionToolbar(
         selectedCount = selectedCount,
         onClickUnselectAll = onClickUnselectAll,
         onClickSelectAll = onClickSelectAll,
@@ -127,36 +126,6 @@ private fun LibraryRegularToolbar(
             )
         },
         scrollBehavior = scrollBehavior,
-    )
-}
-
-@Composable
-private fun LibrarySelectionToolbar(
-    selectedCount: Int,
-    onClickUnselectAll: () -> Unit,
-    onClickSelectAll: () -> Unit,
-    onClickInvertSelection: () -> Unit,
-) {
-    AppBar(
-        titleContent = { Text(text = "$selectedCount") },
-        actions = {
-            AppBarActions(
-                listOf(
-                    AppBar.Action(
-                        title = stringResource(MR.strings.action_select_all),
-                        icon = Icons.Outlined.SelectAll,
-                        onClick = onClickSelectAll,
-                    ),
-                    AppBar.Action(
-                        title = stringResource(MR.strings.action_select_inverse),
-                        icon = Icons.Outlined.FlipToBack,
-                        onClick = onClickInvertSelection,
-                    ),
-                ),
-            )
-        },
-        isActionMode = true,
-        onCancelActionMode = onClickUnselectAll,
     )
 }
 

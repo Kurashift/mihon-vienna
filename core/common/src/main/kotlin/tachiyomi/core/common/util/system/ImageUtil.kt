@@ -39,12 +39,21 @@ object ImageUtil {
     fun isImage(name: String?, openStream: (() -> InputStream)? = null): Boolean {
         if (name == null) return false
 
-        // Match extensions case-insensitively, and treat the long ".jpeg" form as ".jpg" so
-        // page counting and cover picking don't miss common uppercase / long-form file names.
-        val extension = name.substringAfterLast('.', "").lowercase()
-        val normalizedExtension = if (extension == "jpeg") "jpg" else extension
-        return ImageType.entries.any { it.extension == normalizedExtension } ||
+        return PageImageName.hasImageExtension(name) ||
             openStream?.let { findImageType(it) } != null
+    }
+
+    /**
+     * Whether [name] can be one page of a chapter. Stricter than [isImage] on purpose.
+     *
+     * A download client's leftover thumbnail is stored as a plain file called `.thumb`, and its
+     * bytes are a JPEG, so the content sniff in [isImage] accepts it and it shows up as an extra
+     * page at the end of the chapter. A name carrying an extension therefore has to match the
+     * whitelist outright; only a name with no dot at all - where there is no extension to trust -
+     * still falls back to sniffing the header.
+     */
+    fun isImagePage(name: String?, openStream: (() -> InputStream)? = null): Boolean {
+        return PageImageName.isPage(name) { openStream?.let { findImageType(it) } != null }
     }
 
     fun findImageType(openStream: () -> InputStream): ImageType? {
@@ -107,14 +116,9 @@ object ImageUtil {
         return ImageDecoder.findType(bytes)
     }
 
-    enum class ImageType(val mime: String, val extension: String) {
-        AVIF("image/avif", "avif"),
-        GIF("image/gif", "gif"),
-        HEIF("image/heif", "heif"),
-        JPEG("image/jpeg", "jpg"),
-        JXL("image/jxl", "jxl"),
-        PNG("image/png", "png"),
-        WEBP("image/webp", "webp"),
+    enum class Side {
+        RIGHT,
+        LEFT,
     }
 
     /**
@@ -209,11 +213,6 @@ object ImageUtil {
         val output = Buffer()
         result.compress(Bitmap.CompressFormat.JPEG, 100, output.outputStream())
         return output
-    }
-
-    enum class Side {
-        RIGHT,
-        LEFT,
     }
 
     /**

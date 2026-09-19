@@ -15,6 +15,7 @@ import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.RadioMenuItem
 import eu.kanade.presentation.components.SearchToolbar
+import eu.kanade.presentation.components.SelectionToolbar
 import eu.kanade.tachiyomi.data.search.SearchHistoryScope
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
@@ -42,7 +43,21 @@ fun BrowseSourceToolbar(
     onClearHistoryClick: () -> Unit,
     onSearch: (String) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior? = null,
+    selectedCount: Int = 0,
+    onUnselectAll: () -> Unit = {},
+    onSelectAll: () -> Unit = {},
+    onInvertSelection: () -> Unit = {},
 ) {
+    if (selectedCount > 0) {
+        SelectionToolbar(
+            selectedCount = selectedCount,
+            onClickUnselectAll = onUnselectAll,
+            onClickSelectAll = onSelectAll,
+            onClickInvertSelection = onInvertSelection,
+        )
+        return
+    }
+
     // Avoid capturing unstable source in actions lambda
     val toolbarTitle = title ?: source?.name
     val isLocalSource = source is LocalSource

@@ -67,6 +67,13 @@ interface MangaRepository {
      */
     suspend fun getFavoriteUrlsBySourceId(sourceId: Long): List<String>
 
+    /**
+     * Import date (date_added) of every manga row of the source, keyed by url. A work whose row
+     * has not been created yet is simply absent, which is how the local source's date sort can
+     * still treat a freshly imported folder as new instead of as the oldest entry.
+     */
+    suspend fun getDateAddedBySourceId(sourceId: Long): Map<String, Long>
+
     suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount>
 
     fun getMangaProgressBySourceAsFlow(sourceId: Long): Flow<List<MangaProgressByMangaId>>

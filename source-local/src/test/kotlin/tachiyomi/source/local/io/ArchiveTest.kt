@@ -48,6 +48,30 @@ class ArchiveTest {
         assertFalse(Archive.isChapterEntry(entry("cover.jpg")))
     }
 
+    @Test
+    fun `an entry under a dot-prefixed folder is not a page`() {
+        assertFalse(Archive.isPageEntry(".thumb/001.jpg", isFile = true))
+        assertFalse(Archive.isPageEntry("book/.thumb/cover.png", isFile = true))
+    }
+
+    @Test
+    fun `dot-prefixed page file names stay pages`() {
+        // Page files are commonly named like this, so only the parent folder is the signal.
+        assertTrue(Archive.isPageEntry(".001.webp", isFile = true))
+        assertTrue(Archive.isPageEntry("chapter/.001.webp", isFile = true))
+    }
+
+    @Test
+    fun `ordinary archive entries are pages`() {
+        assertTrue(Archive.isPageEntry("001.jpg", isFile = true))
+        assertTrue(Archive.isPageEntry("folder/002.png", isFile = true))
+    }
+
+    @Test
+    fun `archive directories are not pages`() {
+        assertFalse(Archive.isPageEntry("folder", isFile = false))
+    }
+
     private fun entry(name: String, directory: Boolean = false): UniFile = mockk {
         every { this@mockk.name } returns name
         every { isDirectory } returns directory

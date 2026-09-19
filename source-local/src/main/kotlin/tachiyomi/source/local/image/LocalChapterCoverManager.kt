@@ -355,7 +355,7 @@ class LocalChapterCoverManager(
     private fun decodeDirectoryCover(directory: UniFile): Bitmap? {
         val images = fileSystem.getFreshFilesInDirectory(directory)
             .filter { !it.isDirectory }
-            .filter { ImageUtil.isImage(it.name) { it.openInputStream() } }
+            .filter { ImageUtil.isImagePage(it.name) { it.openInputStream() } }
             .sortedWith(
                 compareBy<UniFile> { !it.name.orEmpty().equals(COVER_FILE_NAME, ignoreCase = true) }
                     .thenComparator { first, second ->
@@ -371,8 +371,8 @@ class LocalChapterCoverManager(
         return archive.archiveReader(context).use { reader ->
             val entry = reader.useEntries { entries ->
                 entries
-                    .filter { it.isFile }
-                    .filter { ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
+                    .filter { Archive.isPageEntry(it.name, it.isFile) }
+                    .filter { ImageUtil.isImagePage(it.name) { reader.getInputStream(it.name)!! } }
                     .sortedWith(
                         compareBy<ArchiveEntry> {
                             !it.name.substringAfterLast('/').equals(COVER_FILE_NAME, ignoreCase = true)
@@ -534,7 +534,8 @@ class LocalChapterCoverManager(
     }
 }
 
-const val LOCAL_CHAPTER_COVER_CACHE_VERSION = 2
+// 3: cover picking no longer considers leftover thumbnail files such as `.thumb`.
+const val LOCAL_CHAPTER_COVER_CACHE_VERSION = 3
 
 internal fun localCustomChapterCoverFileName(chapterId: Long): String = "chapter-$chapterId.webp"
 

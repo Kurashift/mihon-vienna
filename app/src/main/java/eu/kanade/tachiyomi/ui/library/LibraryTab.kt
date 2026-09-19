@@ -7,6 +7,7 @@ import androidx.compose.animation.graphics.vector.AnimatedImageVector
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -16,9 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.util.fastAll
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -86,7 +85,6 @@ data object LibraryTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
-        val haptic = LocalHapticFeedback.current
 
         val viewModel = viewModel<LibraryViewModel>()
         val settingsViewModel = viewModel<LibrarySettingsViewModel>()
@@ -153,12 +151,16 @@ data object LibraryTab : Tab {
                     onMarkAsUnreadClicked = { viewModel.markReadSelection(false) },
                     onDownloadClicked = viewModel::performDownloadAction
                         .takeIf { state.selectedManga.fastAll { !it.isLocal() } },
+                    // Downloaded chapters are files on the device, so this erase action is painted
+                    // like the others. Taking works off the shelf is the picker's job now — every
+                    // shelf unchecked does it — so the button no longer carries that too.
                     onDeleteClicked = viewModel::openDeleteMangaDialog,
                     onMigrateClicked = {
                         val selection = state.selection
                         viewModel.clearSelection()
                         navigator.push(MigrationConfigScreen(selection))
                     },
+                    deleteTint = MaterialTheme.colorScheme.error,
                 )
             },
             snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
@@ -208,10 +210,7 @@ data object LibraryTab : Tab {
                             Unit
                         }.takeIf { state.showMangaContinueButton },
                         onToggleSelection = viewModel::toggleSelection,
-                        onToggleRangeSelection = { category, manga ->
-                            viewModel.toggleRangeSelection(category, manga)
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
+                        onToggleRangeSelection = viewModel::toggleRangeSelection,
                         onRefresh = { onClickRefresh(state.activeCategory) },
                         onGlobalSearchClicked = {
                             navigator.push(GlobalSearchScreen(viewModel.state.value.searchQuery ?: ""))
@@ -246,14 +245,19 @@ data object LibraryTab : Tab {
                         viewModel.clearSelection()
                         viewModel.setMangaCategories(dialog.manga, include, exclude)
                     },
+                    // Same picker as the local library's, reachable the same way: the default
+                    // shelf is a row rather than an invisible fallback, and leaving every row
+                    // unchecked takes the works off the shelf. That is what the trash button used
+                    // to do, so the row no longer needs one.
+                    includeDefaultCategory = true,
+                    onRemoveFromLibrary = viewModel::removeFromLibrary,
                 )
             }
             is LibraryViewModel.Dialog.DeleteManga -> {
                 DeleteLibraryMangaDialog(
-                    containsLocalManga = dialog.manga.any(Manga::isLocal),
                     onDismissRequest = onDismissRequest,
-                    onConfirm = { deleteManga, deleteChapter ->
-                        viewModel.removeMangas(dialog.manga, deleteManga, deleteChapter)
+                    onConfirm = {
+                        viewModel.deleteDownloadedChapters(dialog.manga)
                         viewModel.clearSelection()
                     },
                 )

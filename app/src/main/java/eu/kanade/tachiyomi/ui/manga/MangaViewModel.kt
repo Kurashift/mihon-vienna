@@ -468,6 +468,9 @@ class MangaViewModel(
                     if (manga.removeCovers() != manga) {
                         updateManga.awaitUpdateCoverLastModified(manga.id)
                     }
+                    // Shelf membership belongs to being in the library: rows left behind would
+                    // resurface as pre-checked shelves when the manga is added again.
+                    setMangaCategories.await(manga.id, emptyList())
                     withUIContext { onRemoved() }
                 }
             } else {

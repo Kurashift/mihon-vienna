@@ -1,6 +1,6 @@
 package eu.kanade.tachiyomi
 
-import tachiyomi.core.common.util.system.ImageUtil
+import tachiyomi.core.common.util.system.ImageType
 
 /**
  * Used by extensions.
@@ -29,5 +29,5 @@ object AppInfo {
      *
      * @since extension-lib 1.5
      */
-    fun getSupportedImageMimeTypes(): List<String> = ImageUtil.ImageType.entries.map { it.mime }
+    fun getSupportedImageMimeTypes(): List<String> = ImageType.entries.map { it.mime }
 }

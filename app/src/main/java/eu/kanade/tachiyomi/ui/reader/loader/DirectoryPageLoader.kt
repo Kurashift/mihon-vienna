@@ -21,7 +21,7 @@ internal class DirectoryPageLoader(
 
     override suspend fun getPages(): List<ReaderPage> {
         return fileSystem.getFreshFilesInDirectory(file)
-            .filter { !it.isDirectory && ImageUtil.isImage(it.name) { it.openInputStream() } }
+            .filter { !it.isDirectory && ImageUtil.isImagePage(it.name) { it.openInputStream() } }
             .sortedWith { f1, f2 ->
                 f1.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(f2.name.orEmpty())
             }

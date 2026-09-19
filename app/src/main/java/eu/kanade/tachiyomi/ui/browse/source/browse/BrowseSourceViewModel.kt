@@ -21,11 +21,13 @@ import androidx.paging.insertSeparators
 import androidx.paging.map
 import eu.kanade.core.preference.asState
 import eu.kanade.domain.base.BasePreferences
+import eu.kanade.domain.chapter.interactor.SetReadStatus
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.source.interactor.GetIncognitoState
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.tachiyomi.data.cache.CoverCache
+import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
@@ -41,9 +43,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -59,6 +63,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -69,6 +75,7 @@ import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.mapAsCheckboxState
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.interactor.GetCategories
@@ -115,6 +122,8 @@ class BrowseSourceViewModel(
     private val getCategories: GetCategories = Injekt.get(),
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
     private val setMangaDefaultChapterFlags: SetMangaDefaultChapterFlags = Injekt.get(),
+    private val setReadStatus: SetReadStatus = Injekt.get(),
+    private val deletionService: LocalEntryDeletionService = Injekt.get(),
     private val getMangaProgress: GetMangaProgress = Injekt.get(),
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get(),
     private val historyRepository: HistoryRepository = Injekt.get(),
@@ -158,6 +167,18 @@ class BrowseSourceViewModel(
     val source = sourceManager.getOrStub(sourceId)
 
     private val favoriteIdsInternal = MutableStateFlow<Set<Long>>(emptySet())
+
+    /**
+     * Ids picked in the local library's selection mode.
+     *
+     * Selection exists so several works can be put on a shelf in one pass; the long press that
+     * used to add a single work to the library now opens this instead.
+     */
+    private val selectionInternal = MutableStateFlow<Set<Long>>(emptySet())
+    val selection: StateFlow<Set<Long>> = selectionInternal
+    val selectionMode: StateFlow<Boolean> = selectionInternal
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
      * Latest set of favorited manga ids for this source. The list UI subscribes to
@@ -302,7 +323,9 @@ class BrowseSourceViewModel(
     private suspend fun refreshVisibleSnapshots(forceDirectoryCheck: Boolean = false) = coroutineScope {
         val progress = async { getMangaProgress.awaitForSource(sourceId) }
         val favorites = async { mangaRepository.getFavoriteIdsBySourceId(sourceId).toHashSet() }
-        val favoriteUrls = if (hideInLibraryItems) {
+        // Needed both to exclude in-library entries from the count when that setting is on, and
+        // to drive the "not in library" filter, so the local source always reads it.
+        val favoriteUrls = if (hideInLibraryItems || source is LocalSource) {
             async { mangaRepository.getFavoriteUrlsBySourceId(sourceId).toHashSet() }
         } else {
             null
@@ -318,7 +341,11 @@ class BrowseSourceViewModel(
         favoriteIdsInternal.value = favoriteIds
         hasLoadedFavoriteSnapshot = true
         favoriteUrls?.await()?.let { favoriteUrlsInternal.value = it }
-        if (hideInLibraryItems && favoritesChanged) {
+        // A favorite that just changed also changes what the "not in library" filter matches, so
+        // the loaded pages have to be rebuilt for it as well.
+        if (favoritesChanged &&
+            (hideInLibraryItems || markFilterInternal.value == MarkFilter.NOT_IN_LIBRARY)
+        ) {
             invalidatePagingSources()
         }
         directory?.await()
@@ -482,6 +509,7 @@ class BrowseSourceViewModel(
         val context: ProgressContext,
         val readingFilter: ReadingFilter,
         val markFilter: MarkFilter,
+        val favoriteUrls: Set<String>,
         val idByUrl: Map<String, Long>,
     )
 
@@ -496,10 +524,14 @@ class BrowseSourceViewModel(
     val filteredMangaIds: StateFlow<List<Long>> = combine(
         listingAndSnapshot,
         progressContext,
-        readingFilterInternal,
-        markFilterInternal,
+        // Merged so the combine below keeps the typed overload: its arity limit is five, and
+        // going one over leaves every lambda parameter inferred as Any.
+        combine(readingFilterInternal, markFilterInternal) { readingFilter, markFilter ->
+            readingFilter to markFilter
+        },
+        favoriteUrlsInternal,
         mangaIdByUrl,
-    ) { (listing, snapshot), context, readingFilter, markFilter, idByUrl ->
+    ) { (listing, snapshot), context, (readingFilter, markFilter), favoriteUrls, idByUrl ->
         RandomPoolArgs(
             listing = listing,
             snapshotUrls = when (listing) {
@@ -510,6 +542,7 @@ class BrowseSourceViewModel(
             context = context,
             readingFilter = readingFilter,
             markFilter = markFilter,
+            favoriteUrls = favoriteUrls,
             idByUrl = idByUrl,
         )
     }
@@ -530,6 +563,7 @@ class BrowseSourceViewModel(
                             context = args.context,
                             readingFilter = args.readingFilter,
                             markFilter = args.markFilter,
+                            favoriteUrls = args.favoriteUrls,
                         )
                     ) {
                         return@mapNotNull null
@@ -550,6 +584,7 @@ class BrowseSourceViewModel(
     private data class FilterContext(
         val flaggedUrls: Set<String> = emptySet(),
         val goodDoujinUrls: Set<String> = emptySet(),
+        val favoriteUrls: Set<String> = emptySet(),
         val finishedUrls: Set<String> = emptySet(),
         val startedUrls: Set<String> = emptySet(),
     )
@@ -558,10 +593,12 @@ class BrowseSourceViewModel(
         progressContext,
         readingFilterInternal,
         markFilterInternal,
-    ) { context, readingFilter, markFilter ->
+        favoriteUrlsInternal,
+    ) { context, readingFilter, markFilter, favoriteUrls ->
         FilterContext(
             flaggedUrls = if (markFilter == MarkFilter.FLAGGED) context.flaggedUrls else emptySet(),
             goodDoujinUrls = if (markFilter == MarkFilter.GOOD_DOUJIN) context.goodDoujinUrls else emptySet(),
+            favoriteUrls = if (markFilter == MarkFilter.NOT_IN_LIBRARY) favoriteUrls else emptySet(),
             finishedUrls = if (readingFilter != ReadingFilter.ALL) {
                 context.progressByUrl.filterValues(MangaProgress::hasFinished).keys.toSet()
             } else {
@@ -605,6 +642,9 @@ class BrowseSourceViewModel(
                 MarkFilter.NONE -> null
                 MarkFilter.FLAGGED -> context.flaggedUrls
                 MarkFilter.GOOD_DOUJIN -> context.goodDoujinUrls
+                // Every url the library does not hold. Built from the snapshot rather than left
+                // null so the pager walks only the matches instead of the whole library.
+                MarkFilter.NOT_IN_LIBRARY -> snapshot.allUrls.filterNotTo(HashSet()) { it in context.favoriteUrls }
             }
             val readingUrls = when (readingFilter) {
                 ReadingFilter.ALL -> null
@@ -657,7 +697,8 @@ class BrowseSourceViewModel(
                         is Listing.Search -> null
                     },
                     readingFilter = filter,
-                    context = context.toCountContext(filter, markFilter),
+                    markFilter = markFilter,
+                    context = context.toCountContext(filter, markFilter, favoriteUrls),
                     favoriteUrls = favoriteUrls,
                 )
             } else {
@@ -678,7 +719,7 @@ class BrowseSourceViewModel(
                         false
                     } else {
                         args.context.matchesReadingFilter(args.readingFilter, url) &&
-                            args.context.matchesMarkFilter(url)
+                            args.context.matchesMarkFilter(args.markFilter, url)
                     }
                 }
             }
@@ -868,10 +909,6 @@ class BrowseSourceViewModel(
                 BrowseSourceUiModel.Item(
                     manga = manga,
                     matchedChapter = manga.memo[LocalSource.MATCHED_CHAPTER_KEY]?.jsonPrimitive?.contentOrNull,
-                    latestChapterAddedAt = manga.memo[LocalSource.LATEST_CHAPTER_TIME_KEY]
-                        ?.jsonPrimitive
-                        ?.longOrNull
-                        ?: 0L,
                 )
             }.filter { model ->
                 val url = model.manga.url
@@ -885,21 +922,32 @@ class BrowseSourceViewModel(
                     MarkFilter.NONE -> true
                     MarkFilter.FLAGGED -> url in filterCtx.flaggedUrls
                     MarkFilter.GOOD_DOUJIN -> url in filterCtx.goodDoujinUrls
+                    MarkFilter.NOT_IN_LIBRARY -> url !in filterCtx.favoriteUrls
                 }
                 readingMatch && markMatch
             }
             // Date headers group runs of consecutive entries, so they only read as sections while
             // the list really is ordered by date. Under any other sort the dates jump around and
-            // every entry would open its own header.
+            // every entry would open its own header. The "recently updated" listing is excluded
+            // the same way: it orders by the chapters' recency, not by the import date.
+            //
+            // The ordering is what decides this, not which listing is shown: the separators used
+            // to be tied to the "recent" listing, which meant picking the date sort on its own
+            // showed no dates at all. The buckets follow the sort's own notion of the date - the
+            // import date - so a heading names when the works under it entered the library.
+            // Recent days stay separate and read relatively; older ones collapse into their month
+            // so a library spanning years does not become all headings.
             val orderByIndex = localSortInternal.value?.index
-            if (source is LocalSource && listing is Listing.Latest &&
-                orderByIndex == LocalSource.ORDER_BY_DATE
+            if (source is LocalSource &&
+                orderByIndex == LocalSource.ORDER_BY_DATE &&
+                listing !is Listing.Latest
             ) {
+                val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
                 items.insertSeparators<BrowseSourceUiModel.Item, BrowseSourceUiModel> { before, after ->
                     val next = after ?: return@insertSeparators null
-                    val startsNewDate = before == null ||
-                        before.latestChapterAddedAt.toLocalDate() != next.latestChapterAddedAt.toLocalDate()
-                    if (startsNewDate) BrowseSourceUiModel.Header(next.latestChapterAddedAt) else null
+                    val nextBucket = dateHeaderBucket(next.manga.dateAdded, today)
+                    val beforeBucket = before?.let { dateHeaderBucket(it.manga.dateAdded, today) }
+                    if (nextBucket != beforeBucket) BrowseSourceUiModel.Header(nextBucket) else null
                 }
             } else {
                 items.map<BrowseSourceUiModel.Item, BrowseSourceUiModel> { it }
@@ -952,12 +1000,6 @@ class BrowseSourceViewModel(
         setListing(Listing.Popular)
     }
 
-    fun showLocalLatest() {
-        if (source !is LocalSource) return
-        setMarkFilter(MarkFilter.NONE)
-        setListing(Listing.Latest)
-    }
-
     /**
      * Orders the local library by [index], keeping the current direction. Re-picking the key
      * already in use changes nothing, so it does not reload the list either.
@@ -996,12 +1038,14 @@ class BrowseSourceViewModel(
             MarkFilter.NONE -> true
             MarkFilter.FLAGGED -> url in context.flaggedUrls
             MarkFilter.GOOD_DOUJIN -> url in context.goodDoujinUrls
+            MarkFilter.NOT_IN_LIBRARY -> true
         }
     }
 
     private fun ProgressContext.toCountContext(
         readingFilter: ReadingFilter,
         markFilter: MarkFilter,
+        favoriteUrls: Set<String>,
     ): CountContext {
         val startedUrls = if (readingFilter == ReadingFilter.IN_PROGRESS) {
             progressByUrl.filterValues(MangaProgress::hasBeenRead).keys.toSet()
@@ -1017,8 +1061,9 @@ class BrowseSourceViewModel(
             MarkFilter.NONE -> null
             MarkFilter.FLAGGED -> flaggedUrls
             MarkFilter.GOOD_DOUJIN -> goodDoujinUrls
+            MarkFilter.NOT_IN_LIBRARY -> null
         }
-        return CountContext(startedUrls, finishedUrls, markedUrls)
+        return CountContext(startedUrls, finishedUrls, markedUrls, favoriteUrls)
     }
 
     fun setFilters(filters: FilterList) {
@@ -1133,10 +1178,15 @@ class BrowseSourceViewModel(
                 favoriteIdsInternal.update { ids ->
                     if (new.favorite) ids + new.id else ids - new.id
                 }
-                if (hideInLibraryItems) {
-                    favoriteUrlsInternal.update { urls ->
-                        if (new.favorite) urls + new.url else urls - new.url
-                    }
+                favoriteUrlsInternal.update { urls ->
+                    if (new.favorite) urls + new.url else urls - new.url
+                }
+                // Shelf membership belongs to being in the library: rows left behind would
+                // resurface as pre-checked shelves the next time the work is added again.
+                if (!new.favorite) {
+                    setMangaCategories.await(new.id, emptyList())
+                }
+                if (hideInLibraryItems || markFilterInternal.value == MarkFilter.NOT_IN_LIBRARY) {
                     invalidatePagingSources()
                 }
             }
@@ -1185,7 +1235,12 @@ class BrowseSourceViewModel(
     }
 
     private suspend fun showChangeCategoryDialog(manga: Manga, categories: List<Category>) {
-        val preselectedIds = getCategories.await(manga.id).map { it.id }
+        // The pager item's favorite flag can be stale (see [changeMangaFavorite]), so read the
+        // state from the database: a work being added holds no shelves, whatever an older
+        // build's unfavorite left behind in the shelf rows.
+        val isFavorited = runCatching { mangaRepository.getMangaByIdOrNull(manga.id)?.favorite }
+            .getOrNull() ?: manga.favorite
+        val preselectedIds = if (isFavorited) getCategories.await(manga.id).map { it.id } else emptyList()
         setDialog(
             Dialog.ChangeMangaCategory(
                 manga,
@@ -1193,6 +1248,273 @@ class BrowseSourceViewModel(
             ),
         )
     }
+
+    fun toggleSelection(mangaId: Long) {
+        selectionInternal.update { ids ->
+            if (mangaId in ids) ids - mangaId else ids + mangaId
+        }
+    }
+
+    fun toggleRangeSelection(mangaId: Long, mangaList: List<Manga>) {
+        viewModelScope.launchIO {
+            val ids = fullListingMangaIds() ?: mangaList.map { it.id }
+            val lastSelected = selectionInternal.value.lastOrNull { it in ids } ?: return@launchIO
+            val lastIndex = ids.indexOf(lastSelected)
+            val currentIndex = ids.indexOf(mangaId)
+            if (lastIndex == -1 || currentIndex == -1) return@launchIO
+            val range = if (lastIndex < currentIndex) {
+                ids.subList(lastIndex, currentIndex + 1)
+            } else {
+                ids.subList(currentIndex, lastIndex + 1)
+            }
+            selectionInternal.update { it + range }
+        }
+    }
+
+    fun selectAll(mangaList: List<Manga>) {
+        viewModelScope.launchIO {
+            val ids = fullListingMangaIds() ?: mangaList.map { it.id }
+            selectionInternal.value = ids.toHashSet()
+        }
+    }
+
+    fun invertSelection(mangaList: List<Manga>) {
+        viewModelScope.launchIO {
+            val ids = (fullListingMangaIds() ?: mangaList.map { it.id }).toHashSet()
+            selectionInternal.update { current -> (ids - current) + (current - ids) }
+        }
+    }
+
+    /**
+     * Ids of every manga the current listing shows once the reading and mark filters are applied,
+     * in the order the list presents them — the whole result set, not just the pages the pager has
+     * loaded so far.
+     *
+     * Selection built on the loaded pages alone caps select-all at a couple of pages' worth and
+     * only reaches the real total after the user has scrolled the whole list once. The local
+     * source can enumerate its full listing from the directory index, so selection runs on that;
+     * a remote source has no such set short of walking every network page, so it returns null and
+     * the callers keep the loaded pages as the selection universe.
+     */
+    private suspend fun fullListingMangaIds(): List<Long>? {
+        val local = source as? LocalSource ?: return null
+        val idByUrl = mangaIdByUrl.value
+        if (idByUrl.isEmpty()) return emptyList()
+        val favoriteUrls = favoriteUrlsInternal.value
+        return currentFilteredMangaUrls(local).mapNotNull { url ->
+            // Same rule the pager applies to every loaded item, so what gets picked matches what
+            // the list and the toolbar count show.
+            if (hideInLibraryItems && url in favoriteUrls) null else idByUrl[url]
+        }
+    }
+
+    fun clearSelection() {
+        selectionInternal.value = emptySet()
+    }
+
+    /**
+     * Categories offered when setting the shelf of the picked works, plus the default shelf.
+     *
+     * The default shelf is only offered here: it is the absence of a category row, so the caller
+     * that knows how to express that (the local library) asks for it explicitly, while the
+     * upstream screens keep their existing behaviour.
+     */
+    suspend fun getSelectableCategories(includeDefault: Boolean): List<Category> {
+        val categories = getCategories.await()
+        return if (includeDefault) categories else categories.filterNot { it.isSystemCategory }
+    }
+
+    /** Opens the shelf picker for everything currently selected. */
+    fun openChangeCategoryDialogForSelection() {
+        val selected = selectionInternal.value
+        if (selected.isEmpty()) return
+        viewModelScope.launchIO {
+            // A single work keeps the duplicate guard the long press used to run: shelving a
+            // second copy of something already in the library is worth asking about. Asking once
+            // per work in a batch would just be noise.
+            if (selected.size == 1) {
+                val manga = runCatching { mangaRepository.getMangaByIdOrNull(selected.first()) }
+                    .getOrNull()
+                if (manga != null) {
+                    val duplicates = getDuplicateLibraryManga(manga)
+                    if (duplicates.isNotEmpty()) {
+                        setDialog(Dialog.AddDuplicateManga(manga, duplicates))
+                        return@launchIO
+                    }
+                }
+            }
+
+            val categories = getSelectableCategories(includeDefault = source is LocalSource)
+            val perManga = selected.associateWith { mangaId ->
+                val manga = runCatching { mangaRepository.getMangaByIdOrNull(mangaId) }.getOrNull()
+                // A work that is not in the library holds no shelves. Rows left behind by an
+                // older build's unfavorite must not come back here as pre-checked picks.
+                if (manga?.favorite == true) {
+                    getCategories.await(mangaId).map { it.id }.toSet()
+                } else {
+                    emptySet()
+                }
+            }
+            // Every category the selection already shares is checked; the ones only some of them
+            // hold show as mixed, exactly like the upstream library's batch picker.
+            val initialSelection = categories.map { category ->
+                val holders = if (category.isSystemCategory) {
+                    // The default shelf holds exactly the works with no category row at all, so
+                    // it is not "the works holding category 0" - that id is never in the table.
+                    perManga.values.count { it.isEmpty() }
+                } else {
+                    perManga.values.count { category.id in it }
+                }
+                when (holders) {
+                    0 -> CheckboxState.State.None(category)
+                    perManga.size -> CheckboxState.State.Checked(category)
+                    else -> CheckboxState.TriState.Exclude(category)
+                }
+            }
+            setDialog(Dialog.ChangeSelectionCategory(initialSelection))
+        }
+    }
+
+    /** Asks for confirmation before the selected directories are erased. */
+    fun requestDeleteSelectedManga() {
+        val selected = selectionInternal.value
+        if (selected.isEmpty()) return
+        viewModelScope.launchIO {
+            val titles = selected.mapNotNull { mangaId ->
+                runCatching { mangaRepository.getMangaByIdOrNull(mangaId)?.title }.getOrNull()
+            }
+            setDialog(Dialog.DeleteSelection(titles))
+        }
+    }
+
+    /**
+     * Applies the picked shelf to every selected work at once.
+     *
+     * [include] are the shelves that should hold them and [exclude] the ones that should not, the
+     * same pair the upstream library's picker produces. Picking a shelf also puts the work on the
+     * shelf itself: the entries that were not in the library yet have to become favorites, or the
+     * choice would have no effect.
+     */
+    fun setSelectedMangaCategories(include: List<Long>, exclude: List<Long>) {
+        val selected = selectionInternal.value
+        if (selected.isEmpty()) return
+        // The default shelf is the absence of a row, so its id is a signal rather than something
+        // to write; storing it would name a category that does not exist.
+        val writable = include.filter { it != Category.UNCATEGORIZED_ID }
+        viewModelScope.launchNonCancellable {
+            val selectedUrls = mutableSetOf<String>()
+            selected.forEach { mangaId ->
+                val manga = runCatching { mangaRepository.getMangaByIdOrNull(mangaId) }.getOrNull()
+                    ?: return@forEach
+                selectedUrls += manga.url
+                val categoryIds = if (manga.favorite) {
+                    getCategories.await(mangaId)
+                        .map { it.id }
+                        .subtract(exclude.toSet())
+                        .plus(writable)
+                        .toList()
+                } else {
+                    // The work is being added fresh: what the user picked is all it holds, so
+                    // rows left by an older build's unfavorite are dropped instead of merged in.
+                    writable
+                }
+                setMangaCategories.await(mangaId, categoryIds)
+                if (!manga.favorite) {
+                    updateManga.await(
+                        manga.copy(
+                            favorite = true,
+                            dateAdded = Clock.System.now().toEpochMilliseconds(),
+                        ).toMangaUpdate(),
+                    )
+                }
+            }
+            favoriteIdsInternal.update { it + selected }
+            favoriteUrlsInternal.update { it + selectedUrls }
+            invalidatePagingSources()
+            clearSelection()
+        }
+    }
+
+    /** Takes the selected works off the shelf without touching their files. */
+    fun removeSelectedFromLibrary() {
+        val selected = selectionInternal.value
+        if (selected.isEmpty()) return
+        viewModelScope.launchNonCancellable {
+            val removedUrls = mutableSetOf<String>()
+            selected.forEach { mangaId ->
+                val manga = runCatching { mangaRepository.getMangaByIdOrNull(mangaId) }.getOrNull()
+                    ?: return@forEach
+                removedUrls += manga.url
+                updateManga.await(
+                    manga.copy(favorite = false, dateAdded = 0).removeCovers(coverCache).toMangaUpdate(),
+                )
+                // Same rule as the single toggle: leaving the library drops the shelf rows, so
+                // re-adding later does not resurrect the old shelves as pre-checked picks.
+                setMangaCategories.await(mangaId, emptyList())
+            }
+            favoriteIdsInternal.update { it - selected }
+            favoriteUrlsInternal.update { it - removedUrls }
+            invalidatePagingSources()
+            clearSelection()
+        }
+    }
+
+    /**
+     * Asks before flipping the read status of a selection.
+     *
+     * A batch marks every chapter of every picked work, so a stray tap can move thousands of
+     * chapters at once. The count is what makes the size of that visible before it happens.
+     */
+    fun requestMarkSelectedRead(read: Boolean) {
+        val selected = selectionInternal.value
+        if (selected.isEmpty()) return
+        setDialog(Dialog.MarkSelectionRead(read = read, count = selected.size))
+    }
+
+    fun markSelectedRead(read: Boolean) {
+        val selected = selectionInternal.value
+        if (selected.isEmpty()) return
+        viewModelScope.launchNonCancellable {
+            selected.forEach { mangaId ->
+                val manga = runCatching { mangaRepository.getMangaByIdOrNull(mangaId) }.getOrNull()
+                    ?: return@forEach
+                setReadStatus.await(manga = manga, read = read)
+            }
+            clearSelection()
+        }
+    }
+
+    /** Deletes the selected works' directories one by one, reporting whatever could not go. */
+    fun deleteSelectedLocalManga() {
+        val selected = selectionInternal.value
+        if (selected.isEmpty()) return
+        viewModelScope.launchNonCancellable {
+            val failed = mutableListOf<String>()
+            var deleted = 0
+            selected.forEach { mangaId ->
+                val manga = runCatching { mangaRepository.getMangaByIdOrNull(mangaId) }.getOrNull()
+                    ?: return@forEach
+                val result = deletionService.deleteManga(
+                    LocalEntryDeletionService.MangaEntry(
+                        id = manga.id,
+                        url = manga.url,
+                        title = manga.title,
+                        manga = manga,
+                    ),
+                )
+                deleted += result.deleted
+                failed += result.failed
+            }
+            favoriteIdsInternal.update { it - selected }
+            clearSelection()
+            _deleteCompleted.emit(LocalDeleteCompleted(deleted = deleted, failed = failed))
+        }
+    }
+
+    data class LocalDeleteCompleted(val deleted: Int, val failed: List<String>)
+
+    private val _deleteCompleted = MutableSharedFlow<LocalDeleteCompleted>(extraBufferCapacity = 1)
+    val deleteCompleted: Flow<LocalDeleteCompleted> = _deleteCompleted.asSharedFlow()
 
     /**
      * Get user categories.
@@ -1543,6 +1865,7 @@ class BrowseSourceViewModel(
                 context = context,
                 readingFilter = readingFilterInternal.value,
                 markFilter = markFilterInternal.value,
+                favoriteUrls = favoriteUrlsInternal.value,
             )
         }
     }
@@ -1559,14 +1882,19 @@ class BrowseSourceViewModel(
         context: ProgressContext,
         readingFilter: ReadingFilter,
         markFilter: MarkFilter,
+        favoriteUrls: Set<String>,
     ): Boolean {
         val progress = context.progressByUrl[url]
             ?: context.fsChapterCounts[url]
                 ?.takeIf { it > 0 }
                 ?.let { MangaProgress(it, 0, 0, 0) }
             ?: MangaProgress.EMPTY
-        return matchesReadingFilter(readingFilter, progress) &&
+        val markMatch = if (markFilter == MarkFilter.NOT_IN_LIBRARY) {
+            url !in favoriteUrls
+        } else {
             matchesMarkFilter(markFilter, url, context)
+        }
+        return matchesReadingFilter(readingFilter, progress) && markMatch
     }
 
     fun setDialog(dialog: Dialog?) {
@@ -1599,6 +1927,7 @@ class BrowseSourceViewModel(
         NONE,
         FLAGGED,
         GOOD_DOUJIN,
+        NOT_IN_LIBRARY,
     }
 
     sealed class Listing(open val query: String?, open val filters: FilterList) {
@@ -1630,7 +1959,14 @@ class BrowseSourceViewModel(
             val manga: Manga,
             val initialSelection: List<CheckboxState.State<Category>>,
         ) : Dialog
+        data class ChangeSelectionCategory(
+            val initialSelection: List<CheckboxState<Category>>,
+        ) : Dialog
+        data class DeleteSelection(val titles: List<String>) : Dialog
         data class Migrate(val target: Manga, val current: Manga) : Dialog
+
+        /** Confirms a read-status change across a selection, which can touch every chapter at once. */
+        data class MarkSelectionRead(val read: Boolean, val count: Int) : Dialog
     }
 
     @Immutable
@@ -1646,6 +1982,7 @@ class BrowseSourceViewModel(
         val listing: Listing,
         val listingUrls: List<String>?,
         val readingFilter: ReadingFilter,
+        val markFilter: MarkFilter,
         val context: CountContext,
         val favoriteUrls: Set<String>,
     )
@@ -1655,6 +1992,7 @@ class BrowseSourceViewModel(
         val startedUrls: Set<String>,
         val finishedUrls: Set<String>,
         val markedUrls: Set<String>?,
+        val favoriteUrls: Set<String>,
     ) {
         fun matchesReadingFilter(filter: ReadingFilter, url: String): Boolean = when (filter) {
             ReadingFilter.ALL -> true
@@ -1663,7 +2001,10 @@ class BrowseSourceViewModel(
             ReadingFilter.FINISHED -> url in finishedUrls
         }
 
-        fun matchesMarkFilter(url: String): Boolean = markedUrls?.contains(url) ?: true
+        fun matchesMarkFilter(filter: MarkFilter, url: String): Boolean = when (filter) {
+            MarkFilter.NOT_IN_LIBRARY -> url !in favoriteUrls
+            else -> markedUrls?.contains(url) ?: true
+        }
     }
 
     @Immutable

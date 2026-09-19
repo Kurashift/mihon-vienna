@@ -60,11 +60,14 @@ fun BrowseSourceContent(
     ),
     coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
     trailingSlotCount: Int = 0,
+    listKey: Any? = null,
     onWebViewClick: () -> Unit,
     onHelpClick: () -> Unit,
     onLocalSourceHelpClick: () -> Unit,
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
+    selectedIds: Set<Long> = emptySet(),
+    dimInLibraryCovers: Boolean = true,
     onRefreshChapters: (() -> Unit)? = null,
     onLocateMangaHandled: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
@@ -148,6 +151,15 @@ fun BrowseSourceContent(
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
 
+    // A listing or filter swap replaces the result set, so the reader starts from its top. The
+    // swapped-in paging generation is born serving its first page, and holding the old index
+    // across the swap only makes the grid flash that first page before paging catches up to the
+    // anchor — a reset is the one behavior that reads the same on every transition.
+    LaunchedEffect(listKey) {
+        gridState.scrollToItem(0)
+        listState.scrollToItem(0)
+    }
+
     when (displayMode) {
         LibraryDisplayMode.ComfortableGrid -> {
             BrowseSourceComfortableGrid(
@@ -162,8 +174,11 @@ fun BrowseSourceContent(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                listKey = listKey,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
+                selectedIds = selectedIds,
+                dimInLibraryCovers = dimInLibraryCovers,
                 onLocateMangaHandled = onLocateMangaHandled,
                 scrollToTopRequest = scrollToTopRequest,
                 onRandomManga = onRandomManga,
@@ -182,8 +197,11 @@ fun BrowseSourceContent(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                listKey = listKey,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
+                selectedIds = selectedIds,
+                dimInLibraryCovers = dimInLibraryCovers,
                 onLocateMangaHandled = onLocateMangaHandled,
                 scrollToTopRequest = scrollToTopRequest,
                 onRandomManga = onRandomManga,
@@ -203,8 +221,11 @@ fun BrowseSourceContent(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                listKey = listKey,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
+                selectedIds = selectedIds,
+                dimInLibraryCovers = dimInLibraryCovers,
                 onLocateMangaHandled = onLocateMangaHandled,
                 scrollToTopRequest = scrollToTopRequest,
                 onRandomManga = onRandomManga,

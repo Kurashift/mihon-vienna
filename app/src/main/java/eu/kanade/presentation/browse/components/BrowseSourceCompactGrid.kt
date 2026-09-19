@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import eu.kanade.presentation.components.LocalBottomNavFabPadding
-import eu.kanade.presentation.components.relativeDateText
+import eu.kanade.presentation.components.dateHeaderText
 import eu.kanade.presentation.library.components.CommonMangaItemDefaults
 import eu.kanade.presentation.library.components.IndexLabel
 import eu.kanade.presentation.library.components.LastReadBadge
@@ -60,6 +60,8 @@ fun BrowseSourceCompactGrid(
     lastReadMangaId: Long? = null,
     locateMangaId: Long? = null,
     favoriteIds: Set<Long>? = null,
+    selectedIds: Set<Long> = emptySet(),
+    dimInLibraryCovers: Boolean = true,
     progressContext: BrowseSourceViewModel.ProgressContext = BrowseSourceViewModel.ProgressContext(
         emptyMap(),
         emptyMap(),
@@ -67,6 +69,7 @@ fun BrowseSourceCompactGrid(
     ),
     coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
     trailingSlotCount: Int = 0,
+    listKey: Any? = null,
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
     onLocateMangaHandled: () -> Unit = {},
@@ -82,7 +85,6 @@ fun BrowseSourceCompactGrid(
     var isThumbDragging by remember { mutableStateOf(false) }
     val isLoadingPaused = isLocating || isThumbDragging
     var handledLocateManga by remember { mutableStateOf<Long?>(null) }
-    var handledScrollToTopRequest by remember { mutableStateOf(scrollToTopRequest) }
 
     // Skeleton slots standing in for the page that has not landed yet. They keep the listing
     // long enough to drag the scroller from one end to the other in a single gesture, and
@@ -124,17 +126,11 @@ fun BrowseSourceCompactGrid(
         onLocateMangaHandled()
     }
 
-    LaunchedEffect(scrollToTopRequest) {
-        if (scrollToTopRequest != handledScrollToTopRequest) {
-            handledScrollToTopRequest = scrollToTopRequest
-            isLocating = true
-            try {
-                gridState.smoothLocateToItem(0, locateTransition)
-            } finally {
-                isLocating = false
-            }
-        }
-    }
+    ScrollToTopRequestEffect(
+        request = scrollToTopRequest,
+        setLocating = { isLocating = it },
+        scrollToTop = { gridState.smoothLocateToItem(0, locateTransition) },
+    )
     Box(modifier = Modifier.fillMaxSize()) {
         // The skeleton slots give the scroller room to travel past the last loaded entry, but
         // nothing in them reads the pager, so Paging never gets the hint on its own - landing
@@ -157,6 +153,7 @@ fun BrowseSourceCompactGrid(
             fastScroll = showIndex,
             state = gridState,
             columns = columns,
+            listKey = listKey,
             modifier = Modifier.browseSourceLocateTransition(locateTransition),
             onThumbDraggedChanged = { isThumbDragging = it },
             contentPadding = contentPadding + PaddingValues(8.dp),
@@ -184,7 +181,7 @@ fun BrowseSourceCompactGrid(
                 val item = if (isLoadingPaused) mangaList.peek(index) else mangaList[index]
                 when (item) {
                     is BrowseSourceUiModel.Header -> {
-                        BrowseSourceDateHeader(text = relativeDateText(item.timestamp))
+                        BrowseSourceDateHeader(text = dateHeaderText(item.bucket))
                     }
                     is BrowseSourceUiModel.Item -> {
                         val manga = item.manga
@@ -202,6 +199,8 @@ fun BrowseSourceCompactGrid(
                             coverUpdates = coverUpdates,
                             highlightedMangaId = highlightedMangaId,
                             highlightAlpha = highlightAlpha,
+                            isSelected = manga.id in selectedIds,
+                            dimInLibraryCovers = dimInLibraryCovers,
                             onClick = { onMangaClick(manga) },
                             onLongClick = { onMangaLongClick(manga) },
                         )
@@ -282,6 +281,8 @@ private fun BrowseSourceCompactGridItem(
     item: BrowseSourceUiModel.Item,
     index: Int? = null,
     favoriteIds: Set<Long>? = null,
+    isSelected: Boolean = false,
+    dimInLibraryCovers: Boolean = true,
     loadCover: Boolean = true,
     progress: MangaProgress = MangaProgress.EMPTY,
     isLastRead: Boolean = false,
@@ -299,9 +300,14 @@ private fun BrowseSourceCompactGridItem(
         highlightAlpha = highlightAlpha,
     ) {
         MangaCompactGridItem(
+            isSelected = isSelected,
             title = manga.title,
             coverData = manga.asDisplayedCover(coverUpdates),
-            coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
+            coverAlpha = if (dimInLibraryCovers && isFavorite) {
+                CommonMangaItemDefaults.BrowseFavoriteCoverAlpha
+            } else {
+                1f
+            },
             loadCover = loadCover,
             coverBadgeStart = {
                 if (index != null) {

@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.Event
@@ -66,11 +67,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,11 +85,15 @@ import eu.kanade.core.util.ifSourcesLoaded
 import eu.kanade.presentation.browse.BrowseSourceContent
 import eu.kanade.presentation.browse.MissingSourceScreen
 import eu.kanade.presentation.browse.components.BrowseSourceToolbar
-import eu.kanade.presentation.browse.components.RemoveMangaDialog
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
+import eu.kanade.presentation.components.ConfirmDialog
+import eu.kanade.presentation.components.DeleteLocalEntriesDialog
+import eu.kanade.presentation.components.TransientNoticeHost
+import eu.kanade.presentation.components.rememberTransientNoticeState
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.manga.LocalLibraryChapterTitleTranslationsHost
+import eu.kanade.presentation.manga.components.LibraryBottomActionMenu
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferJob
@@ -117,7 +120,6 @@ import mihon.feature.migration.dialog.MigrateMangaDialog
 import mihon.presentation.core.util.collectAsLazyPagingItems
 import tachiyomi.core.common.Constants
 import tachiyomi.core.common.i18n.stringResource
-import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.i18n.MR
@@ -170,6 +172,8 @@ data class BrowseSourceScreen(
         val readingFilter by viewModel.readingFilter.collectAsStateWithLifecycle()
         val markFilter by viewModel.markFilter.collectAsStateWithLifecycle()
         val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
+        val selection by viewModel.selection.collectAsStateWithLifecycle()
+        val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
         val coverUpdates by viewModel.mangaCoverUpdateStore.covers.collectAsStateWithLifecycle()
         val trailingSlotCount by viewModel.trailingSlotCount.collectAsStateWithLifecycle()
         val refreshProgress by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
@@ -205,6 +209,11 @@ data class BrowseSourceScreen(
             viewModel.exitSearch()
         }
 
+        // Selection is the innermost state, so back leaves it before it leaves the screen.
+        BackHandler(enabled = state.toolbarQuery == null && selectionMode) {
+            viewModel.clearSelection()
+        }
+
         if (viewModel.source is StubSource) {
             MissingSourceScreen(
                 source = viewModel.source,
@@ -214,9 +223,9 @@ data class BrowseSourceScreen(
         }
 
         val scope = rememberCoroutineScope()
-        val haptic = LocalHapticFeedback.current
         val uriHandler = LocalUriHandler.current
         val snackbarHostState = remember { SnackbarHostState() }
+        val filterNotice = rememberTransientNoticeState()
 
         val onHelpClick = { uriHandler.openUri(LocalSource.HELP_URL) }
 
@@ -330,6 +339,25 @@ data class BrowseSourceScreen(
                             .takeIf { viewModel.source is LocalSource },
                         onClearHistoryClick = { viewModel.setDialog(BrowseSourceViewModel.Dialog.ClearHistory) },
                         onSearch = viewModel::search,
+                        selectedCount = selection.size,
+                        onUnselectAll = viewModel::clearSelection,
+                        // The loaded pages are the fallback universe: sources that can enumerate
+                        // their whole listing (the local library) replace it inside the view model,
+                        // so select-all also reaches entries no page has loaded yet.
+                        onSelectAll = {
+                            viewModel.selectAll(
+                                mangaList.itemSnapshotList.items.mapNotNull {
+                                    (it as? BrowseSourceUiModel.Item)?.manga
+                                },
+                            )
+                        },
+                        onInvertSelection = {
+                            viewModel.invertSelection(
+                                mangaList.itemSnapshotList.items.mapNotNull {
+                                    (it as? BrowseSourceUiModel.Item)?.manga
+                                },
+                            )
+                        },
                     )
 
                     if (viewModel.source is LocalSource) {
@@ -341,29 +369,80 @@ data class BrowseSourceScreen(
                         // 否则初始界面会落到 CUSTOM 而四个按钮一个都不亮。
                         val displayedQuery = (displayedListing as? Listing.Search)?.query
                         val localBrowseMode = when {
-                            displayedListing == Listing.Latest -> LocalBrowseMode.UPDATED
+                            displayedListing == Listing.Latest -> LocalBrowseMode.CUSTOM
                             !displayedQuery.isNullOrBlank() -> LocalBrowseMode.CUSTOM
                             else -> when (markFilter) {
                                 MarkFilter.NONE -> LocalBrowseMode.ALL
                                 MarkFilter.FLAGGED -> LocalBrowseMode.FLAGGED
                                 MarkFilter.GOOD_DOUJIN -> LocalBrowseMode.GOOD_DOUJIN
+                                MarkFilter.NOT_IN_LIBRARY -> LocalBrowseMode.NOT_IN_LIBRARY
                             }
+                        }
+                        // The filter controls are icons only, so what a tap selected is easy to
+                        // misread. A short notice names it and is gone again in a moment: it
+                        // sizes itself to the text instead of stretching across the screen the
+                        // way the snackbar host does, and it does not sit in the way of the list.
+                        //
+                        // The two controls are independent, so the notice reports the state the
+                        // list is left in rather than the one that moved: clearing the reading
+                        // status while a shelf filter is still on does not show everything.
+                        //
+                        // The notice replaces the one before it rather than queueing behind it,
+                        // which matters when the buttons are tapped in quick succession.
+                        val announceFilters: (ReadingFilter, MarkFilter) -> Unit = { reading, mark ->
+                            val active = buildList {
+                                if (reading != ReadingFilter.ALL) {
+                                    add(context.stringResource(reading.label))
+                                }
+                                mark.label?.let { add(context.stringResource(it)) }
+                            }
+                            filterNotice.show(
+                                if (active.isEmpty()) {
+                                    context.stringResource(MR.strings.filter_toast_cleared)
+                                } else {
+                                    context.stringResource(
+                                        MR.strings.filter_toast_applied,
+                                        active.joinToString(" · "),
+                                    )
+                                },
+                            )
                         }
                         LocalSourceControlBar(
                             mangaCount = currentViewMangaCount,
                             readingFilter = readingFilter,
                             browseMode = localBrowseMode,
                             sort = localSort,
-                            onReadingFilterSelected = viewModel::setReadingFilter,
+                            onReadingFilterSelected = { filter ->
+                                viewModel.setReadingFilter(filter)
+                                announceFilters(filter, markFilter)
+                            },
                             onSelectSortKey = viewModel::setLocalSortKey,
                             onToggleSortDirection = viewModel::toggleLocalSortDirection,
                             onBrowseModeSelected = { mode ->
-                                when (mode) {
-                                    LocalBrowseMode.ALL -> viewModel.setLocalListFilter(MarkFilter.NONE)
-                                    LocalBrowseMode.FLAGGED -> viewModel.setLocalListFilter(MarkFilter.FLAGGED)
-                                    LocalBrowseMode.GOOD_DOUJIN -> viewModel.setLocalListFilter(MarkFilter.GOOD_DOUJIN)
-                                    LocalBrowseMode.UPDATED -> viewModel.showLocalLatest()
-                                    LocalBrowseMode.CUSTOM -> Unit
+                                // Re-selecting the active mode clears it: with the whole cluster
+                                // being one segmented control, a mode that cannot be turned off
+                                // would leave no way back to the full list.
+                                val next = when (mode) {
+                                    LocalBrowseMode.ALL -> MarkFilter.NONE
+                                    LocalBrowseMode.FLAGGED -> {
+                                        MarkFilter.FLAGGED.takeUnless { localBrowseMode == LocalBrowseMode.FLAGGED }
+                                            ?: MarkFilter.NONE
+                                    }
+                                    LocalBrowseMode.GOOD_DOUJIN -> {
+                                        MarkFilter.GOOD_DOUJIN.takeUnless {
+                                            localBrowseMode == LocalBrowseMode.GOOD_DOUJIN
+                                        } ?: MarkFilter.NONE
+                                    }
+                                    LocalBrowseMode.NOT_IN_LIBRARY -> {
+                                        MarkFilter.NOT_IN_LIBRARY.takeUnless {
+                                            localBrowseMode == LocalBrowseMode.NOT_IN_LIBRARY
+                                        } ?: MarkFilter.NONE
+                                    }
+                                    LocalBrowseMode.CUSTOM -> null
+                                }
+                                if (next != null) {
+                                    viewModel.setLocalListFilter(next)
+                                    announceFilters(readingFilter, next)
                                 }
                             },
                         )
@@ -559,7 +638,35 @@ data class BrowseSourceScreen(
                     HorizontalDivider()
                 }
             },
-            snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
+            // The notice shares the snackbar slot so it lands at the bottom edge, clear of the
+            // list, and hands its height back when it goes. The column spans the width so both
+            // stay centered on it whatever each one's own width turns out to be.
+            snackbarHost = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    TransientNoticeHost(state = filterNotice)
+                    AutoDismissSnackbarHost(hostState = snackbarHostState)
+                }
+            },
+            bottomBar = {
+                if (viewModel.source is LocalSource) {
+                    LibraryBottomActionMenu(
+                        visible = selectionMode,
+                        onChangeCategoryClicked = viewModel::openChangeCategoryDialogForSelection,
+                        onMarkAsReadClicked = { viewModel.requestMarkSelectedRead(true) },
+                        onMarkAsUnreadClicked = { viewModel.requestMarkSelectedRead(false) },
+                        // Downloads and migration both address a source that owns the files;
+                        // neither applies to a local library, so the row shows the shelf and
+                        // deletion actions instead.
+                        onDownloadClicked = null,
+                        onDeleteClicked = viewModel::requestDeleteSelectedManga,
+                        onMigrateClicked = null,
+                        deleteTint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
         ) { paddingValues ->
             BrowseSourceContent(
                 source = viewModel.source,
@@ -572,12 +679,21 @@ data class BrowseSourceScreen(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                // Identity of what the list SHOWS, not of the pages in it: when it changes (a
+                // filter or listing swap), the fast scroller re-anchors to the real position
+                // instead of holding the thumb where the previous listing left it. Paging growth
+                // inside one listing keeps the key, so the sticky thumb still holds its ground.
+                listKey = Triple(state.listing, readingFilter, markFilter),
                 snackbarHostState = snackbarHostState,
                 contentPadding = paddingValues,
                 onWebViewClick = onWebViewClick,
                 onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
                 onLocalSourceHelpClick = onHelpClick,
                 onMangaClick = { manga ->
+                    if (selectionMode) {
+                        viewModel.toggleSelection(manga.id)
+                        return@BrowseSourceContent
+                    }
                     // Hand over the whole filtered result set so random keeps walking what the
                     // list shows. Fall back to the loaded page only while the pool is still
                     // being resolved, so the button is never left without candidates.
@@ -598,20 +714,22 @@ data class BrowseSourceScreen(
                 onRandomManga = onRandomManga,
                 onRandomGoodDoujin = onRandomGoodDoujin,
                 onMangaLongClick = { manga ->
-                    scope.launchIO {
-                        val duplicates = viewModel.getDuplicateLibraryManga(manga)
-                        when {
-                            manga.id in favoriteIds -> viewModel.setDialog(
-                                BrowseSourceViewModel.Dialog.RemoveManga(manga),
-                            )
-                            duplicates.isNotEmpty() -> viewModel.setDialog(
-                                BrowseSourceViewModel.Dialog.AddDuplicateManga(manga, duplicates),
-                            )
-                            else -> viewModel.addFavorite(manga)
-                        }
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    // Picking several works at once is what putting them on a shelf needs, so a
+                    // long press starts a selection instead of acting on the one entry. Adding a
+                    // single work is still one tap away through the selection's own action.
+                    val visible = mangaList.itemSnapshotList.items
+                        .mapNotNull { (it as? BrowseSourceUiModel.Item)?.manga }
+                    if (selectionMode) {
+                        viewModel.toggleRangeSelection(manga.id, visible)
+                    } else {
+                        viewModel.toggleSelection(manga.id)
                     }
                 },
+                selectedIds = selection,
+                // Everything in the local library is browsed to be read, not to be discovered
+                // and shelved, so graying out the works already on a shelf just dims most of the
+                // grid for no gain. The shelf badge still tells them apart.
+                dimInLibraryCovers = viewModel.source !is LocalSource,
                 onRefreshChapters = viewModel::refreshAllChapters,
                 scrollToTopRequest = scrollToTopRequest,
             )
@@ -667,15 +785,6 @@ data class BrowseSourceScreen(
                     onDismissRequest = onDismissRequest,
                 )
             }
-            is BrowseSourceViewModel.Dialog.RemoveManga -> {
-                RemoveMangaDialog(
-                    onDismissRequest = onDismissRequest,
-                    onConfirm = {
-                        viewModel.changeMangaFavorite(dialog.manga)
-                    },
-                    mangaToRemove = dialog.manga,
-                )
-            }
             is BrowseSourceViewModel.Dialog.ChangeMangaCategory -> {
                 ChangeCategoryDialog(
                     initialSelection = dialog.initialSelection,
@@ -685,6 +794,56 @@ data class BrowseSourceScreen(
                         viewModel.changeMangaFavorite(dialog.manga)
                         viewModel.moveMangaToCategories(dialog.manga, include)
                     },
+                )
+            }
+
+            is BrowseSourceViewModel.Dialog.ChangeSelectionCategory -> {
+                ChangeCategoryDialog(
+                    initialSelection = dialog.initialSelection,
+                    onDismissRequest = onDismissRequest,
+                    onEditCategories = { navigator.push(CategoryScreen()) },
+                    onConfirm = { include, exclude ->
+                        viewModel.setSelectedMangaCategories(include, exclude)
+                    },
+                    // The local library's picker offers the default shelf, which the other
+                    // callers hide because they only ever move between named categories.
+                    includeDefaultCategory = true,
+                    // Unchecking every shelf is what "take it off the library" means here, so the
+                    // picker carries that outcome instead of the row spending a button on it.
+                    onRemoveFromLibrary = viewModel::removeSelectedFromLibrary,
+                )
+            }
+
+            is BrowseSourceViewModel.Dialog.DeleteSelection -> {
+                DeleteLocalEntriesDialog(
+                    title = stringResource(MR.strings.local_delete_selection_title, dialog.titles.size),
+                    entryNames = dialog.titles,
+                    onDismissRequest = onDismissRequest,
+                    onConfirm = {
+                        viewModel.deleteSelectedLocalManga()
+                        onDismissRequest()
+                    },
+                )
+            }
+
+            is BrowseSourceViewModel.Dialog.MarkSelectionRead -> {
+                ConfirmDialog(
+                    text = stringResource(
+                        if (dialog.read) {
+                            MR.strings.mark_selection_read_confirmation
+                        } else {
+                            MR.strings.mark_selection_unread_confirmation
+                        },
+                        dialog.count,
+                    ),
+                    confirmText = stringResource(
+                        if (dialog.read) MR.strings.action_mark_as_read else MR.strings.action_mark_as_unread,
+                    ),
+                    onConfirm = {
+                        viewModel.markSelectedRead(dialog.read)
+                        onDismissRequest()
+                    },
+                    onDismiss = onDismissRequest,
                 )
             }
             else -> {}
@@ -728,6 +887,24 @@ data class BrowseSourceScreen(
                 snackbarHostState.showSnackbarReplacing(
                     message,
                 )
+            }
+        }
+
+        LaunchedEffect(viewModel) {
+            viewModel.deleteCompleted.collect { result ->
+                // The rows are gone from disk, so the served pages still hold them; refresh so the
+                // deleted cards disappear without leaving and re-entering the tab.
+                currentMangaList.refresh()
+                val message = when {
+                    result.deleted == 0 -> context.stringResource(MR.strings.local_delete_failed)
+                    result.failed.isNotEmpty() -> context.stringResource(
+                        MR.strings.local_delete_partial,
+                        result.deleted,
+                        result.failed.size,
+                    )
+                    else -> context.stringResource(MR.strings.local_delete_success, result.deleted)
+                }
+                snackbarHostState.showSnackbarReplacing(message)
             }
         }
 
@@ -835,7 +1012,12 @@ private fun LocalBrowseModeButtons(
     value: LocalBrowseMode,
     onSelect: (LocalBrowseMode) -> Unit,
 ) {
-    val options = LocalBrowseMode.entries.filterNot { it == LocalBrowseMode.CUSTOM }
+    // "All" is the state where none of the three is on, so it is not a button of its own: the
+    // reading-status chip beside this group already spells "all" out for its own dimension, and
+    // two identically named controls next to each other read as a duplicate.
+    val options = LocalBrowseMode.entries.filterNot {
+        it == LocalBrowseMode.ALL || it == LocalBrowseMode.CUSTOM
+    }
     // 左右两枚胶囊（阅读筛选、排序）都用 surfaceContainerHighest；这一组四个按钮是同一
     // 个分段控件的内页，往回退一级到 surfaceContainer，既不跟隔壁胶囊撞成同一种灰，
     // 又仍比整条筛选栏（surfaceContainerLow）深一点，分段轮廓不会糊掉。
@@ -1109,9 +1291,9 @@ private fun localSortIcon(index: Int): ImageVector = when (index) {
 
 private enum class LocalBrowseMode {
     ALL,
-    FLAGGED,
     GOOD_DOUJIN,
-    UPDATED,
+    FLAGGED,
+    NOT_IN_LIBRARY,
     CUSTOM,
 }
 
@@ -1120,7 +1302,7 @@ private val LocalBrowseMode.imageVector: ImageVector
         LocalBrowseMode.ALL -> Icons.Outlined.SelectAll
         LocalBrowseMode.FLAGGED -> Icons.Outlined.Flag
         LocalBrowseMode.GOOD_DOUJIN -> Icons.Outlined.Favorite
-        LocalBrowseMode.UPDATED -> Icons.Outlined.NewReleases
+        LocalBrowseMode.NOT_IN_LIBRARY -> Icons.Outlined.BookmarkRemove
         LocalBrowseMode.CUSTOM -> Icons.Outlined.SortByAlpha
     }
 
@@ -1129,7 +1311,7 @@ private val LocalBrowseMode.label: StringResource
         LocalBrowseMode.ALL -> MR.strings.action_filter_all
         LocalBrowseMode.FLAGGED -> MR.strings.action_filter_marks
         LocalBrowseMode.GOOD_DOUJIN -> MR.strings.action_filter_good_doujin
-        LocalBrowseMode.UPDATED -> MR.strings.label_recent_updates
+        LocalBrowseMode.NOT_IN_LIBRARY -> MR.strings.action_filter_not_in_library
         LocalBrowseMode.CUSTOM -> MR.strings.action_sort
     }
 
@@ -1147,4 +1329,13 @@ private val ReadingFilter.label: StringResource
         ReadingFilter.UNREAD -> MR.strings.action_filter_not_finished
         ReadingFilter.IN_PROGRESS -> MR.strings.action_filter_in_progress
         ReadingFilter.FINISHED -> MR.strings.action_filter_finished
+    }
+
+/** Name of the mark filter a button stands for, null for "no filter" (the full list). */
+private val MarkFilter.label: StringResource?
+    get() = when (this) {
+        MarkFilter.NONE -> null
+        MarkFilter.FLAGGED -> MR.strings.action_filter_marks
+        MarkFilter.GOOD_DOUJIN -> MR.strings.action_filter_good_doujin
+        MarkFilter.NOT_IN_LIBRARY -> MR.strings.action_filter_not_in_library
     }

@@ -26,4 +26,18 @@ object Archive {
         if (file.isDirectory) return !name.startsWith('.')
         return isSupported(file) || file.extension.equals("epub", true)
     }
+
+    /**
+     * Whether an archive entry can be one page of a chapter, ignoring whether it decodes as an
+     * image - callers pair this with [ImageUtil.isImagePage], which needs the entry stream.
+     *
+     * Download clients keep their thumbnails under a `.thumb/` folder inside the archive, and
+     * those are images, so they would otherwise be read as extra pages. A dot-prefixed *file*
+     * name stays a valid page - page files are commonly named like `.001.webp` - so only
+     * dot-prefixed parent directories are rejected here.
+     */
+    fun isPageEntry(name: String, isFile: Boolean): Boolean {
+        if (!isFile) return false
+        return name.split('/').dropLast(1).none { it.startsWith('.') }
+    }
 }

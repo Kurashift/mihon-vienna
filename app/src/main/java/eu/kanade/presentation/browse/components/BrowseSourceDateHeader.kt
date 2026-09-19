@@ -54,7 +54,7 @@ internal fun LazyPagingItems<BrowseSourceUiModel>.hasDateHeaders(): Boolean {
 
 internal fun LazyPagingItems<BrowseSourceUiModel>.peekKey(index: Int): Any {
     return when (val item = peek(index)) {
-        is BrowseSourceUiModel.Header -> "latest-header-${item.timestamp}"
+        is BrowseSourceUiModel.Header -> "date-header-${item.bucket}"
         is BrowseSourceUiModel.Item -> item.manga.id
         null -> -index - 1L
     }
