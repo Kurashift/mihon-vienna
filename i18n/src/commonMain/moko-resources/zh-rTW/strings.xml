@@ -1053,7 +1053,8 @@
     <string name="action_delete_all_chapters">刪除該合集</string>
 
     <string name="local_delete_warning">檔案會從磁碟上直接刪除，不會進入回收桶，無法復原。</string>
-    <string name="local_delete_title">刪除本地檔案？</string>
+    <string name="local_delete_collection_title">刪除合集本地檔案？</string>
+    <string name="local_delete_chapter_title">刪除篇目本地檔案？</string>
     <string name="local_delete_marked_chapters_title">刪除已標示的 %1$d 個篇目？</string>
     <string name="local_delete_scope_marked">涉及 %1$d 部作品：%2$s</string>
     <string name="local_delete_unmarked_safe">未標示的篇目不會受影響。</string>

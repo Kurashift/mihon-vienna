@@ -1214,7 +1214,8 @@
     <string name="action_delete_local_files">删除本地文件</string>
     <string name="action_delete_all_chapters">删除该合集</string>
     <string name="local_delete_warning">文件会从磁盘上直接删除，不会进入回收站，无法恢复。</string>
-    <string name="local_delete_title">删除本地文件？</string>
+    <string name="local_delete_collection_title">删除合集本地文件？</string>
+    <string name="local_delete_chapter_title">删除篇目本地文件？</string>
     <string name="local_delete_marked_chapters_title">删除已标记的 %1$d 个篇目？</string>
     <string name="local_delete_unmarked_safe">未标记的篇目不会受影响。</string>
     <string name="local_delete_group_remains">该漫画下仍有非本地条目，删除后仍会留在清单中。</string>

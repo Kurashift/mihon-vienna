@@ -452,7 +452,7 @@ class MangaScreen(
             }
             is MangaViewModel.Dialog.DeleteLocalChapters -> {
                 DeleteLocalEntriesDialog(
-                    title = context.stringResource(MR.strings.local_delete_title),
+                    title = context.stringResource(MR.strings.local_delete_chapter_title),
                     entryNames = dialog.chapters.map { it.name },
                     onDismissRequest = onDismissRequest,
                     onConfirm = { viewModel.deleteLocalChapters(dialog.chapters) },
@@ -460,7 +460,7 @@ class MangaScreen(
             }
             is MangaViewModel.Dialog.DeleteLocalManga -> {
                 DeleteLocalEntriesDialog(
-                    title = context.stringResource(MR.strings.local_delete_title),
+                    title = context.stringResource(MR.strings.local_delete_collection_title),
                     // The short title names nothing, so the body lists the work. The dialog also
                     // needs a non-empty list to enable its confirm button.
                     entryNames = listOf(dialog.manga.title),

@@ -836,7 +836,7 @@ data class BrowseSourceScreen(
 
             is BrowseSourceViewModel.Dialog.DeleteSelection -> {
                 DeleteLocalEntriesDialog(
-                    title = stringResource(MR.strings.local_delete_title),
+                    title = stringResource(MR.strings.local_delete_collection_title),
                     entryNames = dialog.titles,
                     onDismissRequest = onDismissRequest,
                     onConfirm = {
