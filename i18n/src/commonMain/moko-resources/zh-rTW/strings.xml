@@ -315,6 +315,7 @@
     <string name="no_results_found">找不到結果</string>
     <string name="migration_selection_prompt">請選擇檔案來源</string>
     <string name="action_webview_back">上一頁</string>
+    <string name="press_back_again_to_exit">再按一次返回鍵退出</string>
     <string name="action_webview_forward">下一頁</string>
     <string name="action_webview_refresh">重新整理</string>
     <string name="pref_category_library">書櫃</string>

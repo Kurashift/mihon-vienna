@@ -363,6 +363,7 @@
     <string name="no_results_found">没有结果</string>
     <string name="migration_selection_prompt">选择需要迁移的图源</string>
     <string name="action_webview_back">后退</string>
+    <string name="press_back_again_to_exit">再按一次返回键退出</string>
     <string name="action_webview_forward">前进</string>
     <string name="action_webview_refresh">刷新</string>
     <string name="pref_category_library">书架</string>

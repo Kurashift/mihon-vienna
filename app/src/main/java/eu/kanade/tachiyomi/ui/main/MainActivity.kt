@@ -9,9 +9,11 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
@@ -40,6 +43,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -100,6 +104,7 @@ import eu.kanade.tachiyomi.util.system.dpToPx
 import eu.kanade.tachiyomi.util.system.getSerializableExtraCompat
 import eu.kanade.tachiyomi.util.system.isBenchmarkBuildType
 import eu.kanade.tachiyomi.util.system.isNavigationBarNeedsScrim
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.updaterEnabled
 import eu.kanade.tachiyomi.util.view.setComposeContent
 import kotlinx.coroutines.channels.awaitClose
@@ -118,6 +123,7 @@ import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
@@ -152,6 +158,15 @@ class MainActivity : BaseActivity() {
      */
     private val instantScreenKey = mutableStateOf<ScreenKey?>(null)
 
+    /**
+     * Host for the exit hint pill. Lives on the activity rather than in composition because the
+     * back callback below is registered in onCreate, before any composition exists.
+     */
+    private val exitSnackbarHostState = SnackbarHostState()
+
+    /** When the root-level back press last showed the exit hint, as returned by [SystemClock]. */
+    private var lastRootBackPressAt = 0L
+
     init {
         registerSecureActivity(this)
     }
@@ -166,6 +181,24 @@ class MainActivity : BaseActivity() {
         val splashScreen = if (isLaunch) installSplashScreen() else null
 
         super.onCreate(savedInstanceState)
+
+        // Registered before any composition, so every screen-level back handler outranks this
+        // one: it only fires once they have all declined, i.e. on the shelf tab with nothing
+        // stacked on it. The first press shows the exit hint, a second press inside the window
+        // actually leaves the app.
+        onBackPressedDispatcher.addCallback(this) {
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastRootBackPressAt <= EXIT_DOUBLE_PRESS_INTERVAL_MS) {
+                finish()
+            } else {
+                lastRootBackPressAt = now
+                lifecycleScope.launch {
+                    exitSnackbarHostState.showSnackbarReplacing(
+                        message = getString(MR.strings.press_back_again_to_exit.resourceId),
+                    )
+                }
+            }
+        }
 
         Migrator.awaitAndRelease()
 
@@ -223,6 +256,14 @@ class MainActivity : BaseActivity() {
 
                 val scaffoldInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
                 Scaffold(
+                    snackbarHost = {
+                        AutoDismissSnackbarHost(
+                            hostState = exitSnackbarHostState,
+                            // The scaffold's own insets are horizontal-only, so lift the pill
+                            // above the system navigation bar instead of the screen edge.
+                            modifier = Modifier.navigationBarsPadding(),
+                        )
+                    },
                     topBar = {
                         AppStateBanners(
                             downloadedOnlyMode = downloadOnly,
@@ -683,3 +724,6 @@ class MainActivity : BaseActivity() {
 private const val SPLASH_MIN_DURATION = 500 // ms
 private const val SPLASH_MAX_DURATION = 5000 // ms
 private const val SPLASH_EXIT_ANIM_DURATION = 400L // ms
+
+// Window in which a second root-level back press confirms the exit
+private const val EXIT_DOUBLE_PRESS_INTERVAL_MS = 2_000L
