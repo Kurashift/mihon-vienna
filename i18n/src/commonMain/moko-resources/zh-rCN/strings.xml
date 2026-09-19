@@ -579,6 +579,7 @@
     <string name="source_unsupported">图源不受支持</string>
     <string name="unread">未读</string>
     <string name="date">日期</string>
+    <string name="date_header_unknown">未知日期</string>
     <string name="local_filter_order_by">排序依据</string>
     <string name="local_filter_order_by_count">篇数</string>
     <string name="local_invalid_format">篇目格式无效</string>

@@ -61,7 +61,7 @@ fun dateHeaderText(bucket: DateHeaderBucket): String {
     return when (bucket) {
         is DateHeaderBucket.Day -> relativeDateText(bucket.date)
         is DateHeaderBucket.Month -> monthText(bucket.date)
-        is DateHeaderBucket.Unknown -> stringResource(MR.strings.not_applicable)
+        is DateHeaderBucket.Unknown -> stringResource(MR.strings.date_header_unknown)
     }
 }
 

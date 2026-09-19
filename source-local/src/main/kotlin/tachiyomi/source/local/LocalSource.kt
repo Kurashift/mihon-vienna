@@ -1146,7 +1146,9 @@ class LocalSource(
                 }
             }
             ORDER_BY_CHAPTER_COUNT -> {
-                // Ties fall back to the name order so equal counts stay in a readable position.
+                // Ties fall back to the name order so equal counts stay in a readable position;
+                // the tiebreaker follows the direction, or a run of equal counts would look
+                // identical whichever way the list is ordered.
                 val byTitle = Comparator<LocalMangaEntry> { a, b ->
                     a.title.compareToCaseInsensitiveNaturalOrder(b.title)
                 }
@@ -1155,7 +1157,7 @@ class LocalSource(
                 } else {
                     compareByDescending { it.chapterCount }
                 }
-                mangaEntries.sortedWith(byCount.then(byTitle))
+                mangaEntries.sortedWith(byCount.then(if (ascending) byTitle else byTitle.reversed()))
             }
             else -> {
                 // The date is the import date (date_added: when the work's row was created, i.e.
@@ -1189,10 +1191,13 @@ class LocalSource(
                     val byTitle = Comparator<LocalMangaEntry> { a, b ->
                         a.title.compareToCaseInsensitiveNaturalOrder(b.title)
                     }
+                    // The name tiebreaker follows the direction too: rows created before the
+                    // import date was recorded all carry 0, and without a flipped tiebreaker a
+                    // list of equal dates would come out identical whichever way it is ordered.
                     if (ascending) {
                         mangaEntries.sortedWith(byImportDate.then(byTitle))
                     } else {
-                        mangaEntries.sortedWith(byImportDate.reversed().then(byTitle))
+                        mangaEntries.sortedWith(byImportDate.reversed().then(byTitle.reversed()))
                     }
                 }
             }

@@ -783,6 +783,7 @@
     <string name="local_filter_order_by">Order by</string>
     <string name="local_filter_order_by_count">Chapter count</string>
     <string name="date">Date</string>
+    <string name="date_header_unknown">Unknown date</string>
 
     <!-- Manga info -->
     <string name="ongoing">Ongoing</string>

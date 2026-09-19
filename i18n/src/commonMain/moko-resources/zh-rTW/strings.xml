@@ -607,6 +607,7 @@
     <string name="source_unsupported">不支援的來源</string>
     <string name="unread">未讀</string>
     <string name="date">日期</string>
+    <string name="date_header_unknown">未知日期</string>
     <string name="chapter_not_found">未找到篇目</string>
     <string name="off">關閉</string>
     <string name="on">開啟</string>
