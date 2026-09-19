@@ -422,19 +422,6 @@ fun LibraryBottomActionMenu(
                         )
                     }
                 }
-                if (onRemoveFromLibraryClicked != null) {
-                    // Reads as the shelf picker's counterpart and wears the crossed-out bookmark
-                    // the "not in library" filter uses: the picker files a work, this takes it off.
-                    // It trails the reading actions rather than leading them, so the button that
-                    // drops works from the shelf is not the one sitting first under the thumb.
-                    Button(
-                        title = stringResource(MR.strings.action_remove_from_library),
-                        icon = Icons.Outlined.BookmarkRemove,
-                        toConfirm = confirm[5],
-                        onLongClick = { onLongClickItem(5) },
-                        onClick = onRemoveFromLibraryClicked,
-                    )
-                }
                 if (onDownloadClicked != null) {
                     var downloadExpanded by remember { mutableStateOf(false) }
                     Button(
@@ -451,6 +438,19 @@ fun LibraryBottomActionMenu(
                             offset = BottomBarMenuDpOffset,
                         )
                     }
+                }
+                if (onRemoveFromLibraryClicked != null) {
+                    // Reads as the shelf picker's counterpart and wears the crossed-out bookmark
+                    // the "not in library" filter uses: the picker files a work, this takes it off.
+                    // It trails the download action rather than leading the row, so the button
+                    // that drops works from the shelf is not the one sitting first under the thumb.
+                    Button(
+                        title = stringResource(MR.strings.action_remove_from_library),
+                        icon = Icons.Outlined.BookmarkRemove,
+                        toConfirm = confirm[5],
+                        onLongClick = { onLongClickItem(5) },
+                        onClick = onRemoveFromLibraryClicked,
+                    )
                 }
                 if (!itemOverflow) {
                     if (onMigrateClicked != null) {
