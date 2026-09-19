@@ -84,7 +84,6 @@
     <string name="filter_toast_cleared">Showing everything</string>
     <string name="mark_selection_read_confirmation">Mark all %1$d selected collections as read? Every chapter in them is marked.</string>
     <string name="mark_selection_unread_confirmation">Mark all %1$d selected collections as unread? Every chapter in them is marked.</string>
-    <string name="local_delete_selection_title">Delete local files of %1$d collections?</string>
     <string name="action_set_interval">Set interval</string>
     <string name="action_filter_bookmarked">Bookmarked</string>
     <string name="action_filter_tracked">Tracked</string>
@@ -1355,8 +1354,7 @@
     <string name="action_delete_local_files">Delete local files</string>
     <string name="action_delete_all_chapters">Delete this collection</string>
     <string name="local_delete_warning">Files will be erased from disk directly, not moved to a trash folder. This cannot be undone.</string>
-    <string name="local_delete_manga_title">Delete local files of collection %1$s?</string>
-    <string name="local_delete_chapters_title">Delete local files of %1$d chapters?</string>
+    <string name="local_delete_title">Delete local files?</string>
     <string name="local_delete_marked_chapters_title">Delete %1$d marked chapters?</string>
     <string name="local_delete_unmarked_safe">Unmarked chapters will not be affected.</string>
     <string name="local_delete_group_remains">This manga still has non-local entries and will remain in the list after deletion.</string>

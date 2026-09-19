@@ -39,7 +39,6 @@ fun DeleteLocalEntriesDialog(
     title: String,
     entryNames: List<String>,
     subtitle: String? = null,
-    showEntryList: Boolean = true,
     notices: List<String> = emptyList(),
     inProgress: Boolean = false,
     onDismissRequest: () -> Unit,
@@ -129,9 +128,7 @@ fun DeleteLocalEntriesDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                // Callers that already name the single item in the title pass showEntryList =
-                // false: repeating it as a one-line list adds no information.
-                if (showEntryList && entryNames.isNotEmpty()) {
+                if (entryNames.isNotEmpty()) {
                     Text(
                         text = condensedBulletList(entryNames),
                         style = MaterialTheme.typography.bodySmall,

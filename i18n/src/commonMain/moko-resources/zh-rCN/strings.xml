@@ -29,7 +29,6 @@
     <string name="filter_toast_cleared">已显示全部</string>
     <string name="mark_selection_read_confirmation">把选中的 %1$d 个合集全部标记为已读？该合集下的所有篇目都会被标记。</string>
     <string name="mark_selection_unread_confirmation">把选中的 %1$d 个合集全部标记为未读？该合集下的所有篇目都会被标记。</string>
-    <string name="local_delete_selection_title">删除 %1$d 个合集的本地文件？</string>
     <string name="action_filter_bookmarked">已添加书签</string>
     <string name="action_filter_unread">未读</string>
     <string name="action_filter_not_finished">剩余</string>
@@ -1215,8 +1214,7 @@
     <string name="action_delete_local_files">删除本地文件</string>
     <string name="action_delete_all_chapters">删除该合集</string>
     <string name="local_delete_warning">文件会从磁盘上直接删除，不会进入回收站，无法恢复。</string>
-    <string name="local_delete_manga_title">删除《%1$s》合集的本地文件？</string>
-    <string name="local_delete_chapters_title">删除 %1$d 个篇目的本地文件？</string>
+    <string name="local_delete_title">删除本地文件？</string>
     <string name="local_delete_marked_chapters_title">删除已标记的 %1$d 个篇目？</string>
     <string name="local_delete_unmarked_safe">未标记的篇目不会受影响。</string>
     <string name="local_delete_group_remains">该漫画下仍有非本地条目，删除后仍会留在清单中。</string>

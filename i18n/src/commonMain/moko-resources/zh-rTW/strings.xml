@@ -27,7 +27,6 @@
     <string name="filter_toast_cleared">已顯示全部</string>
     <string name="mark_selection_read_confirmation">把選中的 %1$d 個合集全部標記為已讀？該合集下的所有篇目都會被標記。</string>
     <string name="mark_selection_unread_confirmation">把選中的 %1$d 個合集全部標記為未讀？該合集下的所有篇目都會被標記。</string>
-    <string name="local_delete_selection_title">刪除 %1$d 個合集的本地檔案？</string>
     <string name="browse_source_matched_chapter">篇目名：%1$s</string>
     <string name="action_filter_empty">清除篩選器</string>
     <string name="action_sort_alpha">名稱</string>
@@ -1052,10 +1051,9 @@
     <string name="chapter_marked_read">已標示為已讀</string>
     <string name="chapter_marked_unread">已標示為未讀</string>
     <string name="action_delete_all_chapters">刪除該合集</string>
-    <string name="local_delete_manga_title">刪除《%1$s》合集的本地檔案？</string>
 
     <string name="local_delete_warning">檔案會從磁碟上直接刪除，不會進入回收桶，無法復原。</string>
-    <string name="local_delete_chapters_title">刪除 %1$d 個篇目的本地檔案？</string>
+    <string name="local_delete_title">刪除本地檔案？</string>
     <string name="local_delete_marked_chapters_title">刪除已標示的 %1$d 個篇目？</string>
     <string name="local_delete_scope_marked">涉及 %1$d 部作品：%2$s</string>
     <string name="local_delete_unmarked_safe">未標示的篇目不會受影響。</string>
