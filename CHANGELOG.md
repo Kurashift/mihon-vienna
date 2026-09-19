@@ -26,6 +26,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Shelf picker: the default shelf is offered as an explicit choice, so a work can be put on a shelf without also being filed under a category
 
 - History: each entry now shows how far into the chapter you left off — the same x/y page progress the reader shows, next to the date, and only for an unfinished chapter that was actually opened, matching the updates list
+- Main screen: backing out of the shelf tab with the system back shows a "press back again to exit" pill, and a second press within two seconds leaves the app; deeper screens and dialogs keep their own back behavior
 
 ### Changed
 - Local library: the filter row's "recent" button is gone. It selected the same works the date sort already orders by, and the slot now carries the "not on a shelf" filter
@@ -47,6 +48,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Shelf picker: a pick that names no shelf leaves the confirm button disabled instead of quietly filing the works nowhere. Works come off the shelf through the library's own button, which says what it keeps
 - Shelf picker: the local library's picker no longer doubles as "take these off the shelf" either, so both pickers file and only file
 - Delete confirmations: the dialogs that erase files now open with a warning icon beside the title, and their titles wrap on phrase boundaries, so a Chinese sentence breaks between phrases instead of leaving a stray character on the last line or splitting one in half
+- Delete confirmations: the local-files dialog opens with a short "Delete local files?" title that stays on one line; the count or the work's name moved into the body
+- Library: the selection row now runs download, remove-from-shelf, then the overflow menu holding migrate and delete, so the most used action is not the one hidden behind "more"
 
 ### Fixed
 - Fixed the crash when importing local books, and the repeated "importing" banner that followed it. A work order above 10 KB — a folder import of a few dozen books with long paths, or a move of a thousand chapters — was passed through WorkManager, which rejects input data that large, so the app died the moment the import started and retried at the same spot on every relaunch. The job now writes its work order to a file and hands WorkManager only the file name, so import and move sizes are no longer capped
@@ -56,6 +59,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Fixed the shelf picker writing the default shelf as if it were a real category. Confirming with only "default" checked stored a row pointing at that shelf's id, and the default shelf is defined as the absence of a row — so a work filed nowhere came back reported as filed, and the picker stopped being able to tell the two apart
 - Local library: switching the reading filter or the order now opens the list at its top and keeps it there, instead of flashing the top and then landing partway down. A swap replaces the content underneath the list while the previous one is still on screen, and the list follows the entry it had remembered to wherever that entry sits in the replacement — the end of the first page. The top is now held while the swapped-in pages arrive, which leaves that entry nothing to follow. The hold ends the moment the reader scrolls, and it only ever runs for a swap the screen was there to see, so leaving the tab and coming back still returns to where the reader left off
 - Local library: the fast scroller no longer leaves its thumb stranded at the top. The thumb deliberately holds its ground when the entry count grows, since that is how a landing page looks; a filter change grows the count the same way, so the thumb kept the position of the list that had just been replaced, and scrolling up could not bring it back because the thumb is clamped to the track. It now re-anchors together with the list it belongs to
+- Fixed the local library's date order ignoring its direction when every row shares one date: rows created before import dates were recorded all carry 0, and the name tiebreaker stayed ascending in both directions, so flipping the arrow reordered nothing. The undated group now reads "Unknown date" instead of N/A
 
 - Fixed History crashing on launch for installs upgraded from earlier versions (since 2.2.5): the reading-progress columns were added to the historyView definition without a migration, so existing databases kept the old view and the history query failed with a missing column; a migration now recreates the view
 
