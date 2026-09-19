@@ -1,3 +1,8 @@
+-- Add per-chapter progress columns (last page read, total pages, read) to historyView for the
+-- progress indicator on history entries. Existing installs keep the old view definition, so it
+-- must be recreated.
+DROP VIEW IF EXISTS historyView;
+
 CREATE VIEW historyView AS
 SELECT
     history._id AS id,
@@ -35,60 +40,3 @@ JOIN (
     GROUP BY chapters.manga_id
 ) AS max_last_read
 ON chapters.manga_id = max_last_read.manga_id;
-
-history:
-SELECT
-id,
-mangaId,
-chapterId,
-title,
-thumbnailUrl,
-source,
-favorite,
-cover_last_modified,
-chapterFlags,
-chapterNumber,
-chapterName,
-chapterTranslatedName,
-chapterUrl,
-chapterVersion,
-chapterDateUpload,
-chapterLastModifiedAt,
-readAt,
-readDuration,
-chapterLastPageRead,
-chapterTotalPages,
-chapterRead
-FROM historyView
-WHERE historyView.readAt > 0
-AND maxReadAtChapterId = historyView.chapterId
-AND lower(historyView.title) LIKE ('%' || :query || '%')
-ORDER BY readAt DESC;
-
-getLatestHistory:
-SELECT
-id,
-mangaId,
-chapterId,
-title,
-thumbnailUrl,
-source,
-favorite,
-cover_last_modified,
-chapterFlags,
-chapterNumber,
-chapterName,
-chapterTranslatedName,
-chapterUrl,
-chapterVersion,
-chapterDateUpload,
-chapterLastModifiedAt,
-readAt,
-readDuration,
-chapterLastPageRead,
-chapterTotalPages,
-chapterRead
-FROM historyView
-WHERE historyView.readAt > 0
-ORDER BY readAt DESC
-LIMIT 1;

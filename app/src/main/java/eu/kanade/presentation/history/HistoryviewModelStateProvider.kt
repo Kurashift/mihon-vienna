@@ -115,6 +115,9 @@ class HistoryviewModelStateProvider : PreviewParameterProvider<HistoryViewModel.
                         chapterVersion = 1L,
                         chapterDateUpload = 1L,
                         chapterLastModifiedAt = 1L,
+                        chapterLastPageRead = Random.nextLong(0, 40),
+                        chapterTotalPages = 40L,
+                        chapterRead = false,
                     ),
                 ),
             )

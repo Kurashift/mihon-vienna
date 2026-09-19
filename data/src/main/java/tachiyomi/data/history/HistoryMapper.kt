@@ -37,6 +37,9 @@ object HistoryMapper {
         chapterLastModifiedAt: Long,
         readAt: Date?,
         readDuration: Long,
+        chapterLastPageRead: Long,
+        chapterTotalPages: Long,
+        chapterRead: Boolean,
     ): HistoryWithRelations = HistoryWithRelations(
         id = historyId,
         chapterId = chapterId,
@@ -59,5 +62,8 @@ object HistoryMapper {
         chapterVersion = chapterVersion,
         chapterDateUpload = chapterDateUpload,
         chapterLastModifiedAt = chapterLastModifiedAt,
+        chapterLastPageRead = chapterLastPageRead,
+        chapterTotalPages = chapterTotalPages,
+        chapterRead = chapterRead,
     )
 }

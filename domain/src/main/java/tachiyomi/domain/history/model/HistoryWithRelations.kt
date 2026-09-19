@@ -20,6 +20,9 @@ data class HistoryWithRelations(
     val chapterVersion: Long,
     val chapterDateUpload: Long,
     val chapterLastModifiedAt: Long,
+    val chapterLastPageRead: Long,
+    val chapterTotalPages: Long,
+    val chapterRead: Boolean,
 ) {
     val chapterTranslatedNameOrNull: String?
         get() = chapterTranslatedName?.trim()?.takeIf { it.isNotEmpty() }

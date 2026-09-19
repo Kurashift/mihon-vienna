@@ -28,6 +28,9 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
         chapterVersion = 1L,
         chapterDateUpload = 1L,
         chapterLastModifiedAt = 1L,
+        chapterLastPageRead = 31L,
+        chapterTotalPages = 185L,
+        chapterRead = false,
     )
 
     private val historyWithoutReadAt = HistoryWithRelations(
@@ -52,6 +55,9 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
         chapterVersion = 1L,
         chapterDateUpload = 1L,
         chapterLastModifiedAt = 1L,
+        chapterLastPageRead = 0L,
+        chapterTotalPages = 0L,
+        chapterRead = false,
     )
 
     private val historyWithNegativeChapterNumber = HistoryWithRelations(
@@ -76,6 +82,9 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
         chapterVersion = 1L,
         chapterDateUpload = 1L,
         chapterLastModifiedAt = 1L,
+        chapterLastPageRead = 0L,
+        chapterTotalPages = 0L,
+        chapterRead = false,
     )
 
     override val values: Sequence<HistoryWithRelations>

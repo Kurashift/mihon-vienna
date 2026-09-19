@@ -82,19 +82,47 @@ fun HistoryItem(
                 style = textStyle,
             )
             val readAt = remember { history.readAt?.toTimestampString() ?: "" }
-            Text(
-                text = if (history.chapterNumber > -1) {
-                    stringResource(
-                        MR.strings.recent_manga_time,
-                        formatChapterNumber(history.chapterNumber),
-                        readAt,
-                    )
-                } else {
-                    readAt
-                },
+            // Same rule the updates list uses: only an unfinished chapter that was actually
+            // opened carries progress, so finished rows stay clean. The number is the page the
+            // reader was left on, in the same x/y form the reader itself shows.
+            val progressText = when {
+                history.chapterRead ||
+                    history.chapterLastPageRead <= 0L ||
+                    history.chapterTotalPages <= 0L -> null
+                else -> stringResource(
+                    MR.strings.chapter_progress_ratio,
+                    (history.chapterLastPageRead + 1).coerceAtMost(history.chapterTotalPages),
+                    history.chapterTotalPages,
+                )
+            }
+            Row(
                 modifier = Modifier.padding(top = 4.dp),
-                style = textStyle,
-            )
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(
+                    text = if (history.chapterNumber > -1) {
+                        stringResource(
+                            MR.strings.recent_manga_time,
+                            formatChapterNumber(history.chapterNumber),
+                            readAt,
+                        )
+                    } else {
+                        readAt
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                    style = textStyle,
+                )
+                if (progressText != null) {
+                    Text(
+                        text = progressText,
+                        modifier = Modifier.padding(start = MaterialTheme.padding.small),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
 
         if (!history.coverData.isMangaFavorite) {
