@@ -4,6 +4,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.viewModelScope
 import eu.kanade.core.util.insertSeparators
+import eu.kanade.domain.manga.interactor.UpdateManga
+import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.presentation.history.HistoryUiModel
 import eu.kanade.tachiyomi.util.lang.toLocalDate
 import kotlinx.coroutines.Dispatchers
@@ -20,9 +22,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import mihon.core.viewmodel.StateViewModel
+import tachiyomi.core.common.preference.CheckboxState
+import tachiyomi.core.common.preference.mapAsCheckboxState
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.category.interactor.GetCategories
+import tachiyomi.domain.category.interactor.SetMangaCategories
+import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetHistory
@@ -30,15 +38,27 @@ import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
+import tachiyomi.domain.manga.interactor.GetManga
+import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.manga.model.shouldDisplayChapterNumber
+import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 class HistoryViewModel(
+    private val addTracks: AddTracks = Injekt.get(),
+    private val getCategories: GetCategories = Injekt.get(),
     private val getChapter: GetChapter = Injekt.get(),
+    private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
     private val getHistory: GetHistory = Injekt.get(),
+    private val getManga: GetManga = Injekt.get(),
     private val historyRepository: HistoryRepository = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
+    private val setMangaCategories: SetMangaCategories = Injekt.get(),
+    private val sourceManager: SourceManager = Injekt.get(),
+    private val updateManga: UpdateManga = Injekt.get(),
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateViewModel<HistoryViewModel.State>(State()) {
 
@@ -141,8 +161,117 @@ class HistoryViewModel(
         }
     }
 
+    fun invertSelection() {
+        mutableState.update { state ->
+            val all = state.list.orEmpty()
+                .filterIsInstance<HistoryUiModel.Item>()
+                .mapTo(mutableSetOf()) { uiModel -> uiModel.item.id }
+            state.copy(selection = all - state.selection)
+        }
+    }
+
     fun clearSelection() {
         mutableState.update { it.copy(selection = emptySet()) }
+    }
+
+    // ---- 多选加入书架 ----
+
+    /**
+     * 多选底栏的「添加到书架」：把选中历史背后的作品加入书架，已在书架的跳过。
+     * 单部作品保留旧长按菜单的重复检查；批量逐部问一遍就太吵，与浏览源的批量加书架一致。
+     */
+    fun addSelectionToLibrary() {
+        viewModelScope.launchIO {
+            val mangas = selectedMangas().filterNot { it.favorite }
+            if (mangas.isEmpty()) {
+                clearSelection()
+                return@launchIO
+            }
+            if (mangas.size == 1) {
+                val manga = mangas.first()
+                val duplicates = getDuplicateLibraryManga(manga)
+                if (duplicates.isNotEmpty()) {
+                    setDialog(Dialog.DuplicateManga(manga, duplicates))
+                    return@launchIO
+                }
+            }
+            decideCategoryAndAdd(mangas)
+        }
+    }
+
+    /** 重复弹窗确认后，对单部作品继续走默认分类判断。 */
+    fun addFavorite(manga: Manga) {
+        decideCategoryAndAdd(listOf(manga))
+    }
+
+    fun showMigrateDialog(target: Manga, current: Manga) {
+        mutableState.update { it.copy(dialog = Dialog.Migrate(target = target, current = current)) }
+    }
+
+    private fun decideCategoryAndAdd(mangas: List<Manga>) {
+        viewModelScope.launchIO {
+            val categories = getCategories()
+            val defaultCategoryId = libraryPreferences.defaultCategory.get().toLong()
+            val defaultCategory = categories.find { it.id == defaultCategoryId }
+            when {
+                // 设置了默认分类：全部直接进默认分类
+                defaultCategory != null -> addToLibrary(mangas, listOf(defaultCategory.id))
+
+                // 自动「默认」或没有分类：不归入任何分类
+                defaultCategoryId == 0L || categories.isEmpty() -> addToLibrary(mangas, emptyList())
+
+                // 需要挑选分类：单部弹该作品的分类选择，批量弹一次共用选择
+                mangas.size == 1 -> setDialog(
+                    Dialog.ChangeCategory(mangas.first(), categories.mapAsCheckboxState { false }),
+                )
+                else -> setDialog(Dialog.ChangeCategoryBatch(categories.mapAsCheckboxState { false }))
+            }
+        }
+    }
+
+    /** 分类弹窗（单部）确认。 */
+    fun addMangaToLibraryInCategories(manga: Manga, categoryIds: List<Long>) {
+        addToLibrary(listOf(manga), categoryIds)
+    }
+
+    /** 分类弹窗（批量）确认：对当前选中背后的作品统一应用所选分类。 */
+    fun addSelectionToLibraryInCategories(categoryIds: List<Long>) {
+        viewModelScope.launchIO {
+            val mangas = selectedMangas().filterNot { it.favorite }
+            if (mangas.isEmpty()) {
+                clearSelection()
+                return@launchIO
+            }
+            addToLibrary(mangas, categoryIds)
+        }
+    }
+
+    private fun addToLibrary(mangas: List<Manga>, categoryIds: List<Long>) {
+        viewModelScope.launchNonCancellable {
+            mangas.forEach { manga ->
+                updateManga.awaitUpdateFavorite(manga.id, true)
+                setMangaCategories.await(manga.id, categoryIds)
+                addTracks.bindEnhancedTrackers(manga, sourceManager.getOrStub(manga.source))
+            }
+            clearSelection()
+        }
+    }
+
+    /** 选中历史条目背后的作品，同一条目的多条历史归并为一部。 */
+    private suspend fun selectedMangas(): List<Manga> {
+        val ids = state.value.selection
+        if (ids.isEmpty()) return emptyList()
+        val mangaIds = state.value.list.orEmpty()
+            .filterIsInstance<HistoryUiModel.Item>()
+            .filter { it.item.id in ids }
+            .map { it.item.mangaId }
+            .distinct()
+        return mangaIds.mapNotNull { getManga.await(it) }
+    }
+
+    /** 用户自建分类，不含系统分类。 */
+    private suspend fun getCategories(): List<Category> {
+        return getCategories.await().filterNot { it.isSystemCategory }
     }
 
     fun deleteSelection() {
@@ -204,6 +333,13 @@ class HistoryViewModel(
 
     sealed interface Dialog {
         data object DeleteAll : Dialog
+        data class DuplicateManga(val manga: Manga, val duplicates: List<MangaWithChapterCount>) : Dialog
+        data class ChangeCategory(
+            val manga: Manga,
+            val initialSelection: List<CheckboxState<Category>>,
+        ) : Dialog
+        data class ChangeCategoryBatch(val initialSelection: List<CheckboxState<Category>>) : Dialog
+        data class Migrate(val target: Manga, val current: Manga) : Dialog
     }
 
     sealed interface Event {

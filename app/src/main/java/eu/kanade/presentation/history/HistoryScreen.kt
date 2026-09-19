@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -19,6 +19,7 @@ import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.components.relativeDateText
+import eu.kanade.presentation.history.components.HistoryBottomActionMenu
 import eu.kanade.presentation.history.components.HistoryItem
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
 import eu.kanade.tachiyomi.data.search.SearchHistoryScope
@@ -45,7 +46,9 @@ fun HistoryScreen(
     onToggleSelection: (historyId: Long, selected: Boolean) -> Unit,
     onClearSelection: () -> Unit,
     onSelectAll: () -> Unit,
+    onInvertSelection: () -> Unit,
     onDeleteSelection: () -> Unit,
+    onAddToLibrary: () -> Unit,
     onDialogChange: (HistoryViewModel.Dialog?) -> Unit,
 ) {
     BackHandler(enabled = state.selection.isNotEmpty(), onBack = onClearSelection)
@@ -80,14 +83,21 @@ fun HistoryScreen(
                                 onClick = onSelectAll,
                             ),
                             AppBar.Action(
-                                title = stringResource(MR.strings.action_delete),
-                                icon = Icons.Outlined.Delete,
-                                onClick = onDeleteSelection,
+                                title = stringResource(MR.strings.action_select_inverse),
+                                icon = Icons.Outlined.FlipToBack,
+                                onClick = onInvertSelection,
                             ),
                         ),
                     )
                 },
                 scrollBehavior = scrollBehavior,
+            )
+        },
+        bottomBar = {
+            HistoryBottomActionMenu(
+                visible = state.selection.isNotEmpty(),
+                onAddToLibraryClicked = onAddToLibrary,
+                onDeleteClicked = onDeleteSelection,
             )
         },
         snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
@@ -193,7 +203,9 @@ internal fun HistoryScreenPreviews(
             onToggleSelection = { _, _ -> },
             onClearSelection = {},
             onSelectAll = {},
+            onInvertSelection = {},
             onDeleteSelection = {},
+            onAddToLibrary = {},
             onDialogChange = {},
         )
     }

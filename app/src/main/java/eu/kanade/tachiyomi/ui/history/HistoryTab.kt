@@ -17,10 +17,13 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.history.HistoryScreen
 import eu.kanade.presentation.history.components.HistoryDeleteAllDialog
+import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
@@ -28,6 +31,7 @@ import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
+import mihon.feature.migration.dialog.MigrateMangaDialog
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.i18n.MR
@@ -72,16 +76,56 @@ data object HistoryTab : Tab {
             onToggleSelection = viewModel::toggleSelection,
             onClearSelection = viewModel::clearSelection,
             onSelectAll = viewModel::toggleAllSelection,
+            onInvertSelection = viewModel::invertSelection,
             onDeleteSelection = viewModel::deleteSelection,
+            onAddToLibrary = viewModel::addSelectionToLibrary,
             onDialogChange = viewModel::setDialog,
         )
 
         val onDismissRequest = { viewModel.setDialog(null) }
-        when (state.dialog) {
+        when (val dialog = state.dialog) {
             is HistoryViewModel.Dialog.DeleteAll -> {
                 HistoryDeleteAllDialog(
                     onDismissRequest = onDismissRequest,
                     onDelete = viewModel::removeAllHistory,
+                )
+            }
+            is HistoryViewModel.Dialog.DuplicateManga -> {
+                DuplicateMangaDialog(
+                    duplicates = dialog.duplicates,
+                    onDismissRequest = onDismissRequest,
+                    onConfirm = { viewModel.addFavorite(dialog.manga) },
+                    onOpenManga = { navigator.push(MangaScreen(it.id)) },
+                    onMigrate = { viewModel.showMigrateDialog(dialog.manga, it) },
+                )
+            }
+            is HistoryViewModel.Dialog.ChangeCategory -> {
+                ChangeCategoryDialog(
+                    initialSelection = dialog.initialSelection,
+                    onDismissRequest = onDismissRequest,
+                    onEditCategories = { navigator.push(CategoryScreen()) },
+                    onConfirm = { include, _ ->
+                        viewModel.addMangaToLibraryInCategories(dialog.manga, include)
+                    },
+                )
+            }
+            is HistoryViewModel.Dialog.ChangeCategoryBatch -> {
+                ChangeCategoryDialog(
+                    initialSelection = dialog.initialSelection,
+                    onDismissRequest = onDismissRequest,
+                    onEditCategories = { navigator.push(CategoryScreen()) },
+                    onConfirm = { include, _ ->
+                        viewModel.addSelectionToLibraryInCategories(include)
+                    },
+                )
+            }
+            is HistoryViewModel.Dialog.Migrate -> {
+                MigrateMangaDialog(
+                    current = dialog.current,
+                    target = dialog.target,
+                    // Initiated from the context of [dialog.target] so we show [dialog.current].
+                    onClickTitle = { navigator.push(MangaScreen(dialog.current.id)) },
+                    onDismissRequest = onDismissRequest,
                 )
             }
             null -> {}
