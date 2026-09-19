@@ -415,6 +415,7 @@
     <string name="tapping_inverted_none">無</string>
     <string name="restore_duration">%1$02d 分， %2$02d 秒</string>
     <string name="recent_manga_time">第 %1$s 篇 - %2$s</string>
+    <string name="chapter_number_format">第 %1$s 章</string>
     <string name="notification_chapters_single">第 %1$s 篇</string>
     <string name="notification_chapters_multiple">第 %1$s 篇</string>
     <string name="notification_chapters_single_and_more">第 %1$s 篇以及另外 %2$d 篇</string>
