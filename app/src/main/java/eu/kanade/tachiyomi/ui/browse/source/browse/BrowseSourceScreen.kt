@@ -139,6 +139,23 @@ import eu.kanade.tachiyomi.source.model.Filter as SourceModelFilter
  */
 val LocalScrollToTopRequests = staticCompositionLocalOf<StateFlow<Long>?> { null }
 
+/**
+ * Identity of what a browse listing is showing, as opposed to which pages happen to be loaded.
+ *
+ * It answers "would this be a different list?", so it drives both the swap handling and the fast
+ * scroller: a change opens the list at its top and re-anchors the thumb to the real position
+ * instead of holding the one the previous listing left it at. Paging growth inside one listing
+ * keeps the identity, so a landing page does not take the reader anywhere.
+ */
+private data class BrowseListKey(
+    val listing: Listing,
+    val readingFilter: ReadingFilter,
+    val markFilter: MarkFilter,
+    // Ordering rearranges the entries and re-derives the date headings, so it is part of what the
+    // list shows: the same work sits at a different position, and the reader starts over.
+    val sort: SourceModelFilter.Sort.Selection?,
+)
+
 data class BrowseSourceScreen(
     val sourceId: Long,
     private val listingQuery: String?,
@@ -680,10 +697,16 @@ data class BrowseSourceScreen(
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
                 // Identity of what the list SHOWS, not of the pages in it: when it changes (a
-                // filter or listing swap), the fast scroller re-anchors to the real position
-                // instead of holding the thumb where the previous listing left it. Paging growth
-                // inside one listing keeps the key, so the sticky thumb still holds its ground.
-                listKey = Triple(state.listing, readingFilter, markFilter),
+                // filter, listing or sort swap), the list opens at its top, the fast scroller
+                // re-anchors to the real position instead of holding the thumb where the previous
+                // listing left it, and the old item keys no longer resolve. Paging growth inside
+                // one listing keeps the key, so the sticky thumb still holds its ground.
+                listKey = BrowseListKey(
+                    listing = state.listing,
+                    readingFilter = readingFilter,
+                    markFilter = markFilter,
+                    sort = localSort,
+                ),
                 snackbarHostState = snackbarHostState,
                 contentPadding = paddingValues,
                 onWebViewClick = onWebViewClick,
@@ -808,9 +831,6 @@ data class BrowseSourceScreen(
                     // The local library's picker offers the default shelf, which the other
                     // callers hide because they only ever move between named categories.
                     includeDefaultCategory = true,
-                    // Unchecking every shelf is what "take it off the library" means here, so the
-                    // picker carries that outcome instead of the row spending a button on it.
-                    onRemoveFromLibrary = viewModel::removeSelectedFromLibrary,
                 )
             }
 

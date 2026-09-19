@@ -26,6 +26,7 @@ import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.source.interactor.GetIncognitoState
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.track.interactor.AddTracks
+import eu.kanade.presentation.category.components.writableCategoryIds
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
@@ -1400,7 +1401,7 @@ class BrowseSourceViewModel(
         if (selected.isEmpty()) return
         // The default shelf is the absence of a row, so its id is a signal rather than something
         // to write; storing it would name a category that does not exist.
-        val writable = include.filter { it != Category.UNCATEGORIZED_ID }
+        val writable = writableCategoryIds(include)
         viewModelScope.launchNonCancellable {
             val selectedUrls = mutableSetOf<String>()
             selected.forEach { mangaId ->
@@ -1430,30 +1431,6 @@ class BrowseSourceViewModel(
             }
             favoriteIdsInternal.update { it + selected }
             favoriteUrlsInternal.update { it + selectedUrls }
-            invalidatePagingSources()
-            clearSelection()
-        }
-    }
-
-    /** Takes the selected works off the shelf without touching their files. */
-    fun removeSelectedFromLibrary() {
-        val selected = selectionInternal.value
-        if (selected.isEmpty()) return
-        viewModelScope.launchNonCancellable {
-            val removedUrls = mutableSetOf<String>()
-            selected.forEach { mangaId ->
-                val manga = runCatching { mangaRepository.getMangaByIdOrNull(mangaId) }.getOrNull()
-                    ?: return@forEach
-                removedUrls += manga.url
-                updateManga.await(
-                    manga.copy(favorite = false, dateAdded = 0).removeCovers(coverCache).toMangaUpdate(),
-                )
-                // Same rule as the single toggle: leaving the library drops the shelf rows, so
-                // re-adding later does not resurrect the old shelves as pre-checked picks.
-                setMangaCategories.await(mangaId, emptyList())
-            }
-            favoriteIdsInternal.update { it - selected }
-            favoriteUrlsInternal.update { it - removedUrls }
             invalidatePagingSources()
             clearSelection()
         }

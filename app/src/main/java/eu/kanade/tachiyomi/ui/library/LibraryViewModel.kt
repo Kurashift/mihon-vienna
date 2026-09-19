@@ -11,6 +11,7 @@ import eu.kanade.core.util.fastFilterNot
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.interactor.SetReadStatus
 import eu.kanade.domain.manga.interactor.UpdateManga
+import eu.kanade.presentation.category.components.writableCategoryIds
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
 import eu.kanade.presentation.manga.DownloadAction
 import eu.kanade.tachiyomi.data.cache.CoverCache
@@ -600,12 +601,17 @@ class LibraryViewModel(
      * @param removeCategories the categories to remove in all mangas.
      */
     fun setMangaCategories(mangaList: List<Manga>, addCategories: List<Long>, removeCategories: List<Long>) {
+        // The default shelf is the absence of a row, so its id must not be written: see
+        // writableCategoryIds. Confirming the picker with only the default shelf checked is a real
+        // case, and persisting id 0 there would make the stored categories of a work filed
+        // nowhere come back non-empty.
+        val writable = writableCategoryIds(addCategories)
         viewModelScope.launchNonCancellable {
             mangaList.forEach { manga ->
                 val categoryIds = getCategories.await(manga.id)
                     .map { it.id }
                     .subtract(removeCategories.toSet())
-                    .plus(addCategories)
+                    .plus(writable)
                     .toList()
 
                 setMangaCategories.await(manga.id, categoryIds)
@@ -614,11 +620,12 @@ class LibraryViewModel(
     }
 
     /**
-     * Takes the selection off the shelf, the same outcome the picker produces when every shelf is
-     * left unchecked.
+     * Takes the selection off the shelf.
      *
      * Only the library entry goes: downloaded chapters and local files are untouched, so this is
-     * not the same action as the trash button, which clears downloads.
+     * not the same action as the erase button, which clears downloads. The date added is cleared
+     * with the favourite so that re-adding later sorts by the new date, matching what the detail
+     * screen's toggle and the source listing's removal already do.
      */
     fun removeFromLibrary() {
         val selected = state.value.selectedManga
@@ -627,7 +634,7 @@ class LibraryViewModel(
             updateManga.awaitAll(
                 selected.map {
                     it.removeCovers(coverCache)
-                    MangaUpdate(favorite = false, id = it.id)
+                    MangaUpdate(favorite = false, dateAdded = 0, id = it.id)
                 },
             )
             // Shelf membership belongs to being in the library: rows left behind would resurface
@@ -790,6 +797,18 @@ class LibraryViewModel(
         mutableState.update { it.copy(dialog = Dialog.DeleteManga(state.value.selectedManga)) }
     }
 
+    /**
+     * Asks before the selection leaves the shelf.
+     *
+     * Nothing is erased by the action itself, but it is the one step that takes works out of the
+     * library, and a batch of them disappears from the list at once. The dialog is also where the
+     * reassurance belongs: what is kept (downloads, progress, history) is exactly what the red
+     * erase button next to it would destroy, which is the confusion it exists to prevent.
+     */
+    fun openRemoveFromLibraryDialog() {
+        mutableState.update { it.copy(dialog = Dialog.RemoveFromLibrary(state.value.selectedManga)) }
+    }
+
     fun closeDialog() {
         mutableState.update { it.copy(dialog = null) }
     }
@@ -802,6 +821,8 @@ class LibraryViewModel(
         ) : Dialog
 
         data class DeleteManga(val manga: List<Manga>) : Dialog
+
+        data class RemoveFromLibrary(val manga: List<Manga>) : Dialog
     }
 
     @Immutable
@@ -861,7 +882,18 @@ class LibraryViewModel(
 
         val selectionMode = selection.isNotEmpty()
 
-        val selectedManga by lazy { selection.mapNotNull { libraryData.favoritesById[it]?.libraryManga?.manga } }
+        val selectedItems by lazy { selection.mapNotNull { libraryData.favoritesById[it] } }
+
+        val selectedManga by lazy { selectedItems.map { it.libraryManga.manga } }
+
+        /**
+         * Whether clearing downloads would do anything for the current selection.
+         *
+         * The shelf row only offers that erase when there is something to erase: a selection of
+         * works that were never downloaded has no files to clear, and the red button would be a
+         * live-looking control that does nothing.
+         */
+        val selectionHasDownloads = selectedItems.any { it.downloadCount > 0 }
 
         fun getItemsForCategoryId(categoryId: Long?): List<LibraryItem> {
             if (categoryId == null) return emptyList()

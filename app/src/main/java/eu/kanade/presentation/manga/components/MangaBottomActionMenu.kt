@@ -67,6 +67,7 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.DownloadDropdownMenu
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.presentation.manga.DownloadAction
@@ -335,6 +336,13 @@ fun LibraryBottomActionMenu(
     onDeleteClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    // Only the shelf offers this: taking a work off the shelf is the shelf's own decision, while a
+    // source listing has no shelf membership to drop.
+    onRemoveFromLibraryClicked: (() -> Unit)? = null,
+    // What the trailing erase button erases. Callers whose delete removes files name them so the
+    // button cannot be mistaken for dropping a list entry; the plain default keeps the upstream
+    // look for callers that have nothing more specific to say.
+    deleteTitle: StringResource = MR.strings.action_delete,
     // Set only by a caller whose delete erases files from disk; that is the one destructive action
     // the row paints red and sets apart, matching how the detail screen marks its own.
     deleteTint: Color? = null,
@@ -350,7 +358,7 @@ fun LibraryBottomActionMenu(
             shape = MaterialTheme.shapes.large.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            val confirm = remember { mutableStateListOf(false, false, false, false, false) }
+            val confirm = remember { mutableStateListOf(false, false, false, false, false, false) }
             var resetJob by remember { mutableStateOf<Job?>(null) }
             val onLongClickItem: (Int) -> Unit = { toConfirmIndex ->
                 confirm.indices.forEach { i -> confirm[i] = i == toConfirmIndex }
@@ -414,6 +422,19 @@ fun LibraryBottomActionMenu(
                         )
                     }
                 }
+                if (onRemoveFromLibraryClicked != null) {
+                    // Reads as the shelf picker's counterpart and wears the crossed-out bookmark
+                    // the "not in library" filter uses: the picker files a work, this takes it off.
+                    // It trails the reading actions rather than leading them, so the button that
+                    // drops works from the shelf is not the one sitting first under the thumb.
+                    Button(
+                        title = stringResource(MR.strings.action_remove_from_library),
+                        icon = Icons.Outlined.BookmarkRemove,
+                        toConfirm = confirm[5],
+                        onLongClick = { onLongClickItem(5) },
+                        onClick = onRemoveFromLibraryClicked,
+                    )
+                }
                 if (onDownloadClicked != null) {
                     var downloadExpanded by remember { mutableStateOf(false) }
                     Button(
@@ -454,7 +475,10 @@ fun LibraryBottomActionMenu(
                             )
                         }
                         Button(
-                            title = stringResource(MR.strings.action_delete),
+                            // Named by the caller for what it actually erases: a bare "delete"
+                            // beside a remove-from-shelf action reads as the latter, while the
+                            // two do very different things to a work.
+                            title = stringResource(deleteTitle),
                             icon = if (deleteTint != null) Icons.Filled.Delete else Icons.Outlined.Delete,
                             toConfirm = confirm[4],
                             onLongClick = { onLongClickItem(4) },
@@ -485,7 +509,7 @@ fun LibraryBottomActionMenu(
                             }
                             if (onDeleteClicked != null) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_delete)) },
+                                    text = { Text(stringResource(deleteTitle)) },
                                     onClick = onDeleteClicked,
                                 )
                             }

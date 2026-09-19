@@ -2,15 +2,22 @@ package eu.kanade.presentation.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tachiyomi.i18n.MR
@@ -58,15 +65,50 @@ fun DeleteLocalEntriesDialog(
                 )
             }
         },
-        // 漫画名不受调用方控制，可能非常长；M3 弹窗标题是 24sp，在内容宽度里一行只
-        // 装得下十来个汉字，不限行数会把正文挤到屏幕外。截断即可：用户就在那一页上
+        // 警告图标排在标题左侧同一行里，而不是走 M3 的 icon 槽位：那个槽位把图标居中放在
+        // 标题上方并独占一行高度，弹窗会明显变高、标题也会被推离左边缘。和标题同行居左
+        // 更紧凑，视线也从警告直接接上「删的是什么」。
+        //
+        // 标题字号沿用 M3 的 headlineSmall（AlertDialog 的默认标题样式），只在断行上做手脚。
+        // 这些标题是一整句中文（"删除 1 个合集的本地文件？"），图标又占掉左侧约 32dp，
+        // 在这台设备上标题可用宽约 256dp，24sp 下这句话要 288dp —— 一定会折成两行。
+        //
+        // 所以关键不是让它别折，而是让它折在对的地方：
+        //   LineBreak.Heading（均分行宽）会为了两行等长而在词组中间下刀，断成
+        //   "删除 1 个合集 / 的本地文件？"，比孤字更难读，不能用；
+        //   默认断行会贪心填满第一行，末尾留下孤零零的"件？"，就是最初的问题；
+        //   WordBreak.Phrase 按词组边界断行（Android 13+），得到
+        //   "删除 1 个合集的 / 本地文件？"，两边都是完整词组。
+        //
+        // 漫画名不受调用方控制，可能非常长；maxLines 留 2 行并截断——用户就在那一页上
         // 点的删除，名字认得出来。
         title = {
-            Text(
-                text = title,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // 图标对齐首行而不是整块居中：标题折成两行时，居中会让图标落在两行中间，
+                // 看起来像挂在文字旁边。首行对齐在单行和多行下都对。
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    // headlineSmall 行高 32dp、图标 24dp，补 4dp 让图标落在首行的光学中心。
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Text(
+                    text = title,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        lineBreak = LineBreak(
+                            strategy = LineBreak.Strategy.Simple,
+                            strictness = LineBreak.Strictness.Default,
+                            wordBreak = LineBreak.WordBreak.Phrase,
+                        ),
+                    ),
+                )
+            }
         },
         text = {
             Column(

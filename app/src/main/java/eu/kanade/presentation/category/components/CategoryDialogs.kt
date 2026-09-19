@@ -192,7 +192,6 @@ fun ChangeCategoryDialog(
     onEditCategories: () -> Unit,
     onConfirm: (List<Long>, List<Long>) -> Unit,
     includeDefaultCategory: Boolean = false,
-    onRemoveFromLibrary: (() -> Unit)? = null,
 ) {
     if (initialSelection.isEmpty()) {
         AlertDialog(
@@ -223,7 +222,10 @@ fun ChangeCategoryDialog(
     val uncheckedIds = selection
         .filter { it is CheckboxState.State.None || it is CheckboxState.TriState.None }
         .map { it.value.id }
-    val leavesLibrary = onRemoveFromLibrary != null && selectionLeavesLibrary(selection)
+    // Nothing picked is not a decision this picker can carry out: a work belongs to a shelf or to
+    // none, and "none" is what the library's own button does, not something a filing dialog should
+    // reach. The confirm stays disabled rather than quietly leaving the works unfiled.
+    val hasPick = !selectionPicksNothing(selection)
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
@@ -239,22 +241,13 @@ fun ChangeCategoryDialog(
                     Text(text = stringResource(MR.strings.action_cancel))
                 }
                 tachiyomi.presentation.core.components.material.TextButton(
+                    enabled = hasPick,
                     onClick = {
                         onDismissRequest()
-                        if (leavesLibrary) {
-                            // The works end up on no shelf at all, which is what taking them off
-                            // the library means; the picker is the one place that can say it.
-                            onRemoveFromLibrary?.invoke()
-                        } else {
-                            onConfirm(checkedIds, uncheckedIds)
-                        }
+                        onConfirm(checkedIds, uncheckedIds)
                     },
                 ) {
-                    Text(
-                        text = stringResource(
-                            if (leavesLibrary) MR.strings.action_remove_from_library else MR.strings.action_ok,
-                        ),
-                    )
+                    Text(text = stringResource(MR.strings.action_ok))
                 }
             }
         },
@@ -312,20 +305,31 @@ fun ChangeCategoryDialog(
 }
 
 /**
- * Whether confirming [selection] means "take these works off the library".
+ * Whether [selection] picks no shelf at all.
  *
- * Leaving every shelf unchecked is the only way the picker can express that a work belongs to no
- * shelf at all, and it is what the local library uses instead of a separate button. It counts
- * only when every row is unchecked outright: a batch of works filed differently opens with
- * half-checked rows, and reading that as "no shelf" would drop them off the library on a bare
- * confirm.
+ * A work belongs to a shelf or to none, and none is a state the picker cannot produce: taking
+ * works off the shelf is the library row's own button. Confirming such a pick would file the works
+ * nowhere, so the caller disables its confirm instead. Only an outright empty pick counts: a batch
+ * of works filed differently opens with half-checked rows, and reading those as "nothing picked"
+ * would disable the confirm on a selection the user never touched.
  */
-internal fun selectionLeavesLibrary(selection: List<CheckboxState<Category>>): Boolean {
+internal fun selectionPicksNothing(selection: List<CheckboxState<Category>>): Boolean {
     if (selection.isEmpty()) return false
     return selection.all {
         it is CheckboxState.State.None || it is CheckboxState.TriState.None
     }
 }
+
+/**
+ * The ids of [checked] that may actually be written as category rows.
+ *
+ * The default shelf is the absence of a row, not a row pointing at [Category.UNCATEGORIZED_ID], so
+ * its id is a signal the picker reads rather than something to persist. Writing it would name a
+ * shelf that does not exist and make the stored categories of a work filed nowhere come back
+ * non-empty, which is the state the default shelf is defined as.
+ */
+internal fun writableCategoryIds(checked: List<Long>): List<Long> =
+    checked.filterNot { it == Category.UNCATEGORIZED_ID }
 
 @Composable
 private fun CategoryRow(

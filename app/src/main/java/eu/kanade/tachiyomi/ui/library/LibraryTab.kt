@@ -29,6 +29,7 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.library.DeleteLibraryMangaDialog
 import eu.kanade.presentation.library.LibrarySettingsDialog
+import eu.kanade.presentation.library.RemoveFromLibraryDialog
 import eu.kanade.presentation.library.components.LibraryContent
 import eu.kanade.presentation.library.components.LibraryToolbar
 import eu.kanade.presentation.manga.components.LibraryBottomActionMenu
@@ -147,19 +148,23 @@ data object LibraryTab : Tab {
                 LibraryBottomActionMenu(
                     visible = state.selectionMode,
                     onChangeCategoryClicked = viewModel::openChangeCategoryDialog,
+                    onRemoveFromLibraryClicked = viewModel::openRemoveFromLibraryDialog,
                     onMarkAsReadClicked = { viewModel.markReadSelection(true) },
                     onMarkAsUnreadClicked = { viewModel.markReadSelection(false) },
                     onDownloadClicked = viewModel::performDownloadAction
                         .takeIf { state.selectedManga.fastAll { !it.isLocal() } },
-                    // Downloaded chapters are files on the device, so this erase action is painted
-                    // like the others. Taking works off the shelf is the picker's job now — every
-                    // shelf unchecked does it — so the button no longer carries that too.
-                    onDeleteClicked = viewModel::openDeleteMangaDialog,
+                    // Downloaded chapters are files on the device, so this erase is painted like
+                    // the others and named for what it clears. It is only offered when the
+                    // selection actually holds downloads, and it no longer stands in for taking
+                    // works off the shelf: that is the row's own button next to the picker.
+                    onDeleteClicked = viewModel::openDeleteMangaDialog
+                        .takeIf { state.selectionHasDownloads },
                     onMigrateClicked = {
                         val selection = state.selection
                         viewModel.clearSelection()
                         navigator.push(MigrationConfigScreen(selection))
                     },
+                    deleteTitle = MR.strings.action_delete_downloaded_chapters,
                     deleteTint = MaterialTheme.colorScheme.error,
                 )
             },
@@ -245,12 +250,16 @@ data object LibraryTab : Tab {
                         viewModel.clearSelection()
                         viewModel.setMangaCategories(dialog.manga, include, exclude)
                     },
-                    // Same picker as the local library's, reachable the same way: the default
-                    // shelf is a row rather than an invisible fallback, and leaving every row
-                    // unchecked takes the works off the shelf. That is what the trash button used
-                    // to do, so the row no longer needs one.
+                    // The default shelf is a row rather than an invisible fallback. Picking only
+                    // it files the works there; taking them off the shelf is the row's own button,
+                    // so the picker stays a picker and does not double as a second remove path.
                     includeDefaultCategory = true,
-                    onRemoveFromLibrary = viewModel::removeFromLibrary,
+                )
+            }
+            is LibraryViewModel.Dialog.RemoveFromLibrary -> {
+                RemoveFromLibraryDialog(
+                    onDismissRequest = onDismissRequest,
+                    onConfirm = viewModel::removeFromLibrary,
                 )
             }
             is LibraryViewModel.Dialog.DeleteManga -> {

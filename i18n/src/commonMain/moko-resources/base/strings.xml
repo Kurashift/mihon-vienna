@@ -78,6 +78,8 @@
     <string name="action_filter_marks">Marks</string>
     <string name="action_filter_not_in_library">Not on a shelf</string>
     <string name="action_remove_from_library">Remove from shelf</string>
+    <string name="remove_from_library_title">Take these works off the shelf?</string>
+    <string name="remove_from_library_confirmation">They leave the library, and your downloaded chapters, reading progress and history are kept. You can put them back on the shelf at any time.</string>
     <string name="filter_toast_applied">Showing: %1$s</string>
     <string name="filter_toast_cleared">Showing everything</string>
     <string name="mark_selection_read_confirmation">Mark all %1$d selected collections as read? Every chapter in them is marked.</string>
@@ -123,6 +125,7 @@
     <string name="action_bookmark">Bookmark work</string>
     <string name="action_remove_bookmark">Unbookmark work</string>
     <string name="action_delete">Delete</string>
+    <string name="action_delete_downloaded_chapters">Delete downloaded chapters</string>
     <string name="action_update_library">Update library</string>
     <string name="action_refresh_all_chapters">Refresh all works</string>
     <string name="action_refresh_all_chapters_short">Refresh</string>
