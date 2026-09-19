@@ -1,39 +1,54 @@
 package eu.kanade.presentation.history.components
 
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.anchoredDraggable
+import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.DotSeparatorText
 import eu.kanade.presentation.manga.components.MangaCover
-import eu.kanade.presentation.manga.components.swipeAction
-import eu.kanade.presentation.manga.components.swipeActionThreshold
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
 import eu.kanade.presentation.util.formatChapterNumber
 import eu.kanade.tachiyomi.util.lang.toTimestampString
-import me.saket.swipe.SwipeableActionsBox
+import kotlinx.coroutines.launch
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -41,8 +56,14 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.selectedBackground
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCover
+import kotlin.math.roundToInt
 
 private val HistoryItemHeight = 96.dp
+
+// 左滑露出垃圾桶的宽度：单个图标按钮的舒适触达区，与章节列表快滑的 56dp 阈值同量级。
+private val HistoryRevealWidth = 72.dp
+
+private enum class HistorySwipe { Closed, Revealed }
 
 @Composable
 fun HistoryItem(
@@ -55,32 +76,82 @@ fun HistoryItem(
     onClickToggleSelection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 快滑动作实例必须按内容缓存（同 MangaChapterGridItem）：me.saket.swipe 把「已越过阈值」
-    // 记在实例上，实例一换就把旧动作当新快滑，越阈的震动会跟着重组重放；onSwipe 走
-    // rememberUpdatedState 取最新回调，不参与缓存键。
-    val deleteBackground = MaterialTheme.colorScheme.errorContainer
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val revealPx = remember(density) { with(density) { HistoryRevealWidth.toPx() } }
     val currentOnDeleteSwipe by rememberUpdatedState(onClickDeleteSwipe)
-    val endActions = remember(history.id, selectionMode, deleteBackground) {
-        listOfNotNull(
-            swipeAction(
-                onSwipe = { currentOnDeleteSwipe() },
-                icon = Icons.Outlined.Delete,
-                background = deleteBackground,
-            ).takeIf { !selectionMode },
+
+    // 左滑是「露出并停住」而不是划过阈值即触发：条目停在露出一半以上（36dp）的位置，
+    // 垃圾桶变成可点按钮，点按才删除；点条目本体或右滑收回。锚点拖拽由
+    // AnchoredDraggableState 的就近锚点回弹负责，这里只管声明两个位置。
+    val swipeState = remember(history.id) { AnchoredDraggableState(initialValue = HistorySwipe.Closed) }
+    val flingBehavior = AnchoredDraggableDefaults.flingBehavior(
+        state = swipeState,
+        positionalThreshold = { with(density) { (HistoryRevealWidth / 2).toPx() } },
+        animationSpec = spring(),
+    )
+    LaunchedEffect(swipeState, revealPx) {
+        swipeState.updateAnchors(
+            DraggableAnchors {
+                HistorySwipe.Closed at 0f
+                HistorySwipe.Revealed at -revealPx
+            },
         )
     }
-    SwipeableActionsBox(
-        modifier = modifier.clipToBounds(),
-        endActions = endActions,
-        swipeThreshold = swipeActionThreshold,
-        backgroundUntilSwipeThreshold = MaterialTheme.colorScheme.surfaceContainerLowest,
-    ) {
+    LaunchedEffect(selectionMode) {
+        if (selectionMode) swipeState.animateTo(HistorySwipe.Closed)
+    }
+
+    Box(modifier = modifier.clipToBounds()) {
         Row(
             modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(HistoryRevealWidth)
+                .background(MaterialTheme.colorScheme.errorContainer),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            IconButton(
+                onClick = {
+                    scope.launch { swipeState.animateTo(HistorySwipe.Closed) }
+                    currentOnDeleteSwipe()
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = stringResource(MR.strings.action_delete),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .offset { IntOffset(swipeState.offset.takeIf { it.isFinite() }?.roundToInt() ?: 0, 0) }
+                .anchoredDraggable(
+                    state = swipeState,
+                    orientation = Orientation.Horizontal,
+                    enabled = !selectionMode,
+                    flingBehavior = flingBehavior,
+                )
                 .selectedBackground(selected)
                 .combinedClickable(
-                    onClick = if (selectionMode) onClickToggleSelection else onClickResume,
-                    onLongClick = onClickToggleSelection,
+                    onClick = {
+                        if (swipeState.settledValue == HistorySwipe.Revealed) {
+                            scope.launch { swipeState.animateTo(HistorySwipe.Closed) }
+                        } else if (selectionMode) {
+                            onClickToggleSelection()
+                        } else {
+                            onClickResume()
+                        }
+                    },
+                    onLongClick = {
+                        if (swipeState.settledValue == HistorySwipe.Revealed) {
+                            scope.launch { swipeState.animateTo(HistorySwipe.Closed) }
+                        } else {
+                            onClickToggleSelection()
+                        }
+                    },
                 )
                 .height(HistoryItemHeight)
                 .padding(horizontal = MaterialTheme.padding.medium, vertical = MaterialTheme.padding.small),
