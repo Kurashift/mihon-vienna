@@ -15,6 +15,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +48,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +64,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.animation.doOnEnd
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen
@@ -76,6 +82,7 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.source.interactor.GetIncognitoState
 import eu.kanade.presentation.components.AdaptiveSheet
 import eu.kanade.presentation.components.AppStateBanners
+import eu.kanade.presentation.components.BottomNavFabLift
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
@@ -104,9 +111,9 @@ import eu.kanade.tachiyomi.util.system.dpToPx
 import eu.kanade.tachiyomi.util.system.getSerializableExtraCompat
 import eu.kanade.tachiyomi.util.system.isBenchmarkBuildType
 import eu.kanade.tachiyomi.util.system.isNavigationBarNeedsScrim
-import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.updaterEnabled
 import eu.kanade.tachiyomi.util.view.setComposeContent
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -115,6 +122,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import logcat.LogPriority
 import mihon.core.migration.Migrator
 import mihon.feature.support.SupportUsScreen
@@ -123,7 +131,6 @@ import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
-import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
@@ -158,11 +165,10 @@ class MainActivity : BaseActivity() {
      */
     private val instantScreenKey = mutableStateOf<ScreenKey?>(null)
 
-    /**
-     * Host for the exit hint pill. Lives on the activity rather than in composition because the
-     * back callback below is registered in onCreate, before any composition exists.
-     */
-    private val exitSnackbarHostState = SnackbarHostState()
+    /** Whether the exit hint pill is on screen; the back callback below owns it. */
+    private val exitHintVisible = mutableStateOf(false)
+
+    private var exitHintJob: Job? = null
 
     /** When the root-level back press last showed the exit hint, as returned by [SystemClock]. */
     private var lastRootBackPressAt = 0L
@@ -192,11 +198,7 @@ class MainActivity : BaseActivity() {
                 finish()
             } else {
                 lastRootBackPressAt = now
-                lifecycleScope.launch {
-                    exitSnackbarHostState.showSnackbarReplacing(
-                        message = getString(MR.strings.press_back_again_to_exit.resourceId),
-                    )
-                }
+                showExitHint()
             }
         }
 
@@ -257,12 +259,7 @@ class MainActivity : BaseActivity() {
                 val scaffoldInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
                 Scaffold(
                     snackbarHost = {
-                        AutoDismissSnackbarHost(
-                            hostState = exitSnackbarHostState,
-                            // The scaffold's own insets are horizontal-only, so lift the pill
-                            // above the system navigation bar instead of the screen edge.
-                            modifier = Modifier.navigationBarsPadding(),
-                        )
+                        ExitHintPill(visible = exitHintVisible.value)
                     },
                     topBar = {
                         AppStateBanners(
@@ -339,6 +336,49 @@ class MainActivity : BaseActivity() {
         if (isLaunch && libraryPreferences.autoClearChapterCache.get()) {
             lifecycleScope.launchIO {
                 chapterCache.clear()
+            }
+        }
+    }
+
+    /**
+     * Shows the exit hint pill for exactly the double-press window: while it is up, the next
+     * back press exits; once it is gone the next press starts a fresh window.
+     */
+    private fun showExitHint() {
+        exitHintJob?.cancel()
+        exitHintJob = lifecycleScope.launch {
+            exitHintVisible.value = true
+            delay(EXIT_DOUBLE_PRESS_INTERVAL_MS)
+            exitHintVisible.value = false
+        }
+    }
+
+    /**
+     * The root-level back hint: a short centered capsule floating above the bottom navigation
+     * bar. It deliberately carries no pointer-input modifiers, so taps fall through to whatever
+     * sits underneath — it is a notice, not a control.
+     */
+    @Composable
+    private fun ExitHintPill(visible: Boolean) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(90)) + scaleIn(initialScale = 0.9f, animationSpec = tween(90)),
+            exit = fadeOut(tween(150)),
+            modifier = Modifier
+                .navigationBarsPadding()
+                .padding(bottom = BottomNavFabLift + 12.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.inverseSurface,
+                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                shadowElevation = 3.dp,
+            ) {
+                Text(
+                    text = stringResource(MR.strings.press_back_again_to_exit),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
