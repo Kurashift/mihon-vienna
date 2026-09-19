@@ -23,6 +23,8 @@ interface HistoryRepository {
 
     suspend fun resetHistoryByMangaIds(mangaIds: List<Long>)
 
+    suspend fun resetHistoryByIds(historyIds: List<Long>)
+
     suspend fun resetHistoryBySourceId(sourceId: Long)
 
     suspend fun deleteAllHistory(): Boolean

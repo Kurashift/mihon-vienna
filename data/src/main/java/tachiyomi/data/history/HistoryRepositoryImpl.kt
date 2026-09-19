@@ -73,6 +73,15 @@ class HistoryRepositoryImpl(
         }
     }
 
+    override suspend fun resetHistoryByIds(historyIds: List<Long>) {
+        if (historyIds.isEmpty()) return
+        try {
+            database.historyQueries.resetHistoryByIds(historyIds)
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, throwable = e)
+        }
+    }
+
     override suspend fun resetHistoryBySourceId(sourceId: Long) {
         try {
             database.historyQueries.resetHistoryBySourceId(sourceId)

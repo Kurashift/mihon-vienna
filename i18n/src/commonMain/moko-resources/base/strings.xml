@@ -947,6 +947,7 @@
     <string name="chapter_progress_ratio">%1$d/%2$d</string>
     <string name="chapter_progress_ratio_unknown">%1$d/?</string>
     <string name="chapter_number_format">Chapter %1$s</string>
+    <string name="history_deleted_count">Deleted %1$d entries</string>
     <string name="no_next_chapter">Next work not found</string>
     <string name="decode_image_error">The image couldn\'t be loaded</string>
     <string name="confirm_set_image_as_cover">Use this image as cover art?</string>

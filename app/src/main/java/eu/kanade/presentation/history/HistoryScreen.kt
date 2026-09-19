@@ -1,10 +1,13 @@
 package eu.kanade.presentation.history
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -38,9 +41,14 @@ fun HistoryScreen(
     onSearchQueryChange: (String?) -> Unit,
     onClickCover: (mangaId: Long) -> Unit,
     onClickResume: (chapterId: Long) -> Unit,
-    onClickFavorite: (mangaId: Long) -> Unit,
+    onClickDeleteSwipe: (historyId: Long) -> Unit,
+    onToggleSelection: (historyId: Long, selected: Boolean) -> Unit,
+    onClearSelection: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDeleteSelection: () -> Unit,
     onDialogChange: (HistoryViewModel.Dialog?) -> Unit,
 ) {
+    BackHandler(enabled = state.selection.isNotEmpty(), onBack = onClearSelection)
     Scaffold(
         topBar = { scrollBehavior ->
             SearchToolbar(
@@ -57,6 +65,24 @@ fun HistoryScreen(
                                 onClick = {
                                     onDialogChange(HistoryViewModel.Dialog.DeleteAll)
                                 },
+                            ),
+                        ),
+                    )
+                },
+                actionModeCounter = state.selection.size,
+                onCancelActionMode = onClearSelection,
+                actionModeActions = {
+                    AppBarActions(
+                        listOf(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_select_all),
+                                icon = Icons.Outlined.SelectAll,
+                                onClick = onSelectAll,
+                            ),
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_delete),
+                                icon = Icons.Outlined.Delete,
+                                onClick = onDeleteSelection,
                             ),
                         ),
                     )
@@ -82,11 +108,12 @@ fun HistoryScreen(
             } else {
                 HistoryScreenContent(
                     history = it,
+                    selection = state.selection,
                     contentPadding = contentPadding,
                     onClickCover = { history -> onClickCover(history.mangaId) },
                     onClickResume = { history -> onClickResume(history.chapterId) },
-                    onClickDelete = { item -> onDialogChange(HistoryViewModel.Dialog.Delete(item)) },
-                    onClickFavorite = { history -> onClickFavorite(history.mangaId) },
+                    onClickDeleteSwipe = onClickDeleteSwipe,
+                    onToggleSelection = onToggleSelection,
                 )
             }
         }
@@ -96,11 +123,12 @@ fun HistoryScreen(
 @Composable
 private fun HistoryScreenContent(
     history: List<HistoryUiModel>,
+    selection: Set<Long>,
     contentPadding: PaddingValues,
     onClickCover: (HistoryWithRelations) -> Unit,
     onClickResume: (HistoryWithRelations) -> Unit,
-    onClickDelete: (HistoryWithRelations) -> Unit,
-    onClickFavorite: (HistoryWithRelations) -> Unit,
+    onClickDeleteSwipe: (historyId: Long) -> Unit,
+    onToggleSelection: (historyId: Long, selected: Boolean) -> Unit,
 ) {
     FastScrollLazyColumn(
         contentPadding = contentPadding,
@@ -130,10 +158,12 @@ private fun HistoryScreenContent(
                     val value = item.item
                     HistoryItem(
                         history = value,
+                        selected = value.id in selection,
+                        selectionMode = selection.isNotEmpty(),
                         onClickCover = { onClickCover(value) },
                         onClickResume = { onClickResume(value) },
-                        onClickDelete = { onClickDelete(value) },
-                        onClickFavorite = { onClickFavorite(value) },
+                        onClickDeleteSwipe = { onClickDeleteSwipe(value.id) },
+                        onClickToggleSelection = { onToggleSelection(value.id, value.id !in selection) },
                     )
                 }
             }
@@ -159,8 +189,12 @@ internal fun HistoryScreenPreviews(
             onSearchQueryChange = {},
             onClickCover = {},
             onClickResume = { run {} },
+            onClickDeleteSwipe = {},
+            onToggleSelection = { _, _ -> },
+            onClearSelection = {},
+            onSelectAll = {},
+            onDeleteSelection = {},
             onDialogChange = {},
-            onClickFavorite = {},
         )
     }
 }

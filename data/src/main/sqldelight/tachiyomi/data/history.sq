@@ -89,6 +89,11 @@ WHERE _id IN (
     WHERE M._id IN :mangaIds
 );
 
+resetHistoryByIds:
+UPDATE history
+SET last_read = 0
+WHERE _id IN :historyIds;
+
 removeAllHistory:
 DELETE FROM history;
 
