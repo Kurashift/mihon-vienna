@@ -107,7 +107,10 @@ fun HistoryItem(
         Row(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .fillMaxHeight()
+                // Same constant as the content row: the box hosting both is measured without a
+                // height bound inside the list, where fillMaxHeight degrades to wrapping the
+                // icon and the strip would end up half the entry's height.
+                .height(HistoryItemHeight)
                 .width(HistoryRevealWidth)
                 .graphicsLayer {
                     // 垃圾桶条必须跟着内容边缘一起滑：收起时整条被平移到右边界之外，
