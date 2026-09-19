@@ -14,8 +14,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -145,6 +147,16 @@ data object LibraryTab : Tab {
                 )
             },
             bottomBar = {
+                // The row keeps the button set it last showed with a selection: leaving selection
+                // empties it, which flips both gates below in the same recomposition that starts
+                // the collapse, and without this freeze the shrinking row would flash the
+                // default no-selection buttons before it finishes going away.
+                var rowHasDownloads by remember { mutableStateOf(false) }
+                var rowDownloadAvailable by remember { mutableStateOf(false) }
+                if (state.selectionMode) {
+                    rowHasDownloads = state.selectionHasDownloads
+                    rowDownloadAvailable = state.selectedManga.fastAll { !it.isLocal() }
+                }
                 LibraryBottomActionMenu(
                     visible = state.selectionMode,
                     onChangeCategoryClicked = viewModel::openChangeCategoryDialog,
@@ -152,13 +164,13 @@ data object LibraryTab : Tab {
                     onMarkAsReadClicked = { viewModel.markReadSelection(true) },
                     onMarkAsUnreadClicked = { viewModel.markReadSelection(false) },
                     onDownloadClicked = viewModel::performDownloadAction
-                        .takeIf { state.selectedManga.fastAll { !it.isLocal() } },
+                        .takeIf { rowDownloadAvailable },
                     // Downloaded chapters are files on the device, so this erase is painted like
                     // the others and named for what it clears. It is only offered when the
                     // selection actually holds downloads, and it no longer stands in for taking
                     // works off the shelf: that is the row's own button next to the picker.
                     onDeleteClicked = viewModel::openDeleteMangaDialog
-                        .takeIf { state.selectionHasDownloads },
+                        .takeIf { rowHasDownloads },
                     onMigrateClicked = {
                         val selection = state.selection
                         viewModel.clearSelection()
