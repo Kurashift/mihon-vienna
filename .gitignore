@@ -36,6 +36,7 @@ secrets.properties
 # Agent / IDE local state (never commit)
 .codebuddy/
 .dsh/
+.zcode/
 __pycache__/
 *.pyc
 gradle/build-logic/bin/
