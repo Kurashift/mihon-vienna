@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,6 +109,12 @@ fun HistoryItem(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(HistoryRevealWidth)
+                .graphicsLayer {
+                    // 垃圾桶条必须跟着内容边缘一起滑：收起时整条被平移到右边界之外，
+                    // 经 clipToBounds 裁掉——既不可见也不可点，只随左滑滑进来。内容行
+                    // 背景是透明的，靠「内容盖住它」遮不住静止状态的条。
+                    translationX = (swipeState.offset.takeIf { it.isFinite() } ?: 0f) + revealPx
+                }
                 .background(MaterialTheme.colorScheme.errorContainer),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
