@@ -64,6 +64,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Fixed the library selection row flashing the default button set for the length of its collapse after the selection was cleared; the shrinking row now keeps the buttons it had
 
 - Fixed History crashing on launch for installs upgraded from earlier versions (since 2.2.5): the reading-progress columns were added to the historyView definition without a migration, so existing databases kept the old view and the history query failed with a missing column; a migration now recreates the view
+- The library's random button now shares the same "recently shown" memory every other random entry point already had, so pressing it twice in a row no longer offers the same work again on a small shelf. It was the one random pick that drew with no memory at all, which is why it felt repetitive while the dice on a work's page did not. The shared memory also no longer wipes itself when a shelf is smaller than the window: it keeps the newest pick aside, so a shelf of a dozen works cannot collapse into a fixed rotation
 
 ## [v2.2.4] - 2026-09-13
 ### Added
