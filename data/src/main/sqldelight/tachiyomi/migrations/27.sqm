@@ -1,0 +1,11 @@
+-- 「已读」与「有读完时间」应当同进同退：26 号迁移补上了已读却缺戳的行，
+-- 这里处理反方向——未读却仍带着时间的残留行。
+--
+-- 残留来自此前的「清空观看进度」：图源页那条路径只清了 read 与 last_page_read，
+-- 没有清 marked_read_at（详情页的同名动作走 SetReadStatus，是会清的），
+-- 于是留下 read = 0 却带时间的行。未读的篇目没有「读完那一刻」可言，
+-- 时间留着只会让「已读即有戳」这条不变式不再成立，清掉。
+UPDATE chapters
+SET marked_read_at = 0
+WHERE read = 0
+AND marked_read_at != 0;

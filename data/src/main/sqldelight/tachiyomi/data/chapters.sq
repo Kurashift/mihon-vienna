@@ -257,16 +257,19 @@ SET read = CASE
     END
 WHERE _id = :chapterId;
 
+-- 清空观看进度：把篇目退回未读。读完时间一并清掉，与详情页菜单的「清空观看进度」同口径
+-- （那边走 SetReadStatus，同样会清）——否则会留下 read = 0 却带时间的残留行，
+-- 破坏「已读即有戳」的不变式。
 setAllChaptersUnreadBySource:
 UPDATE chapters
-SET read = 0, last_page_read = 0
+SET read = 0, last_page_read = 0, marked_read_at = 0
 WHERE manga_id IN (
     SELECT _id FROM mangas WHERE source = :sourceId
 );
 
 setAllChaptersUnreadByMangaIds:
 UPDATE chapters
-SET read = 0, last_page_read = 0
+SET read = 0, last_page_read = 0, marked_read_at = 0
 WHERE manga_id IN :mangaIds;
 
 getMangaProgressBySource:
