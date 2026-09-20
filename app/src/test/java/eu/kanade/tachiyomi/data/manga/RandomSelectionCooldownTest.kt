@@ -136,17 +136,71 @@ class RandomSelectionCooldownTest {
         )
     }
 
+    /**
+     * The symptom a reader reported: with a small pool, the same work kept coming back every other
+     * hop. The exhaustion branch kept `pool.size - 1` of them cooling and only reacted once the
+     * pool ran completely dry, so the window grew until exactly one work was still drawable - and
+     * `randomIndex(1)` is a constant, so that hop was not a pick at all but a foregone conclusion.
+     *
+     * The index is handed the candidate count here, which is the thing that was wrong: a hop drawn
+     * against a count of 1 cannot be random. Every draw has to see at least two.
+     */
     @Test
-    fun `a shelf smaller than the window still cycles through all of its works`() {
-        val cooldown = createCooldown()
-        val pool = listOf(1L, 2L, 3L)
+    fun `a small pool always offers a real choice, never one forced candidate`() {
+        val preference = InMemoryPreferenceStore().getString("random_selection_cooldown")
+        // The whole pool is cooling, with 3 as the most recent pick.
+        preference.set("""[{"mangaId":1,"at":0},{"mangaId":2,"at":0},{"mangaId":3,"at":0}]""")
+        val counts = mutableListOf<Int>()
+        var draws = 0
+        val cooldown = RandomSelectionCooldown(
+            preference,
+            now = { 0L },
+            randomIndex = { size ->
+                counts += size
+                (draws++ * 3) % size
+            },
+        )
+        val pool = listOf(1L, 2L, 3L, 4L, 5L)
 
-        // With randomIndex always 0 the pick is whatever the cooldown leaves first in the pool.
-        assertEquals(1L, cooldown.pickManga(pool))
-        assertEquals(2L, cooldown.pickManga(pool))
-        assertEquals(3L, cooldown.pickManga(pool))
-        // Every work is cooling now: the one waiting longest comes back rather than the last one.
-        assertEquals(1L, cooldown.pickManga(pool))
+        var current: Long? = null
+        repeat(20) {
+            current = cooldown.pickManga(pool, currentMangaId = current)
+        }
+
+        assertTrue(counts.all { it >= 2 }, "every hop must choose between at least two works: $counts")
+    }
+
+    @Test
+    fun `a small shelf never repeats a work on consecutive picks`() {
+        val preference = InMemoryPreferenceStore().getString("random_selection_cooldown")
+        var draws = 0
+        val cooldown = RandomSelectionCooldown(
+            preference,
+            now = { 0L },
+            randomIndex = { size -> (draws++ * 7) % size },
+        )
+        val pool = listOf(1L, 2L, 3L, 4L, 5L)
+
+        var current: Long? = null
+        repeat(24) {
+            val picked = cooldown.pickManga(pool, currentMangaId = current)!!
+            assertTrue(picked != current, "picked $picked twice in a row from $pool")
+            current = picked
+        }
+    }
+
+    /**
+     * Two works is the floor a hop cannot improve on: whatever is picked, the next hop has to be
+     * the other one. It must still alternate rather than stall on a single work.
+     */
+    @Test
+    fun `a two-work pool alternates instead of stalling`() {
+        val cooldown = createCooldown()
+        val pool = listOf(1L, 2L)
+
+        assertEquals(1L, cooldown.pickManga(pool, currentMangaId = null))
+        assertEquals(2L, cooldown.pickManga(pool, currentMangaId = 1L))
+        assertEquals(1L, cooldown.pickManga(pool, currentMangaId = 2L))
     }
 
     @Test

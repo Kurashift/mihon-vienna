@@ -89,18 +89,32 @@ class RandomSelectionCooldown(
         val entries = activeEntries()
         val cooledMangaIds = entries.mapTo(mutableSetOf()) { it.mangaId }
         val available = pool.filterNot { mangaId(it) in cooledMangaIds }
-        if (available.isNotEmpty()) return available
+        // A hop needs at least two candidates to be a choice: `pickManga` draws its index against
+        // the size of what comes back, so a single-member pool makes it deterministic. A pool of
+        // one is the floor this cannot improve on, and hands back what it has.
+        if (available.size >= TWO_CHOICES.coerceAtMost(pool.size)) return available
 
-        // Exhaustion: every work in the pool is cooling down. Hold back the newest poolSize - 1 of
-        // them, which leaves the one waiting longest drawable. Wiping the window instead would
-        // offer the work just left, and returning nothing would strand a shelf smaller than it.
+        // Exhaustion: so much of the pool is cooling that there is nothing left to choose from.
+        // Hold back only the newest entry *from this pool* and start a fresh round, which leaves
+        // every other work drawable again.
+        //
+        // Keeping pool.size - 1 of them cooling instead - and only reacting once the pool ran
+        // completely dry - was worse in a way that showed: the window grew until exactly one work
+        // was still drawable, and `available.size == 1` is not "a random pick out of one" but a
+        // constant index. Every hop then came out of that single survivor, so a reader saw the same
+        // work return every other hop in a fixed rotation. A pool of two is the one case that
+        // cannot be helped - a hop has to be followed by something.
+        //
+        // Letting the rest back in does not let the work just left return. That is the callers'
+        // job already - `pickManga` drops `currentMangaId`, and `eligibleChapters` narrows to
+        // `others` - so the one hop that has to stay away is away without this window's help.
+        //
+        // Narrowed to this pool because the window is shared: the random entry points draw from
+        // different lists, so its newest entry may belong to one this pick is not about.
         val poolIds = pool.mapTo(mutableSetOf(), mangaId)
-        val keepCount = (poolIds.size - 1).coerceIn(1, MAX_ENTRIES)
-        val kept = entries.filter { it.mangaId in poolIds }.takeLast(keepCount)
-        if (kept.isEmpty()) return pool
-        writeEntries(kept)
-        val keptMangaIds = kept.mapTo(mutableSetOf()) { it.mangaId }
-        return pool.filterNot { mangaId(it) in keptMangaIds }.ifEmpty { pool }
+        val heldBack = entries.lastOrNull { it.mangaId in poolIds }?.mangaId ?: return pool
+        writeEntries(entries.filterNot { it.mangaId in poolIds && it.mangaId != heldBack })
+        return pool.filterNot { mangaId(it) == heldBack }.ifEmpty { pool }
     }
 
     private fun activeEntries(): List<Entry> {
@@ -155,9 +169,16 @@ class RandomSelectionCooldown(
         /**
          * Sized to cover a full reading session on a large library rather than the handful the
          * window used to hold: at 10 entries against a library of hundreds, a work came back after
-         * roughly ten swipes. Exhaustion keeps this from starving a smaller shelf.
+         * roughly ten swipes. A pool larger than this can never run dry, so it keeps a full window;
+         * a smaller one cycles in rounds instead (see [resolvePool]).
          */
         const val MAX_ENTRIES = 50
+
+        /**
+         * How many works have to stay drawable for a hop to be a pick rather than a foregone
+         * conclusion. A pool smaller than this cannot reach it, and is drawn from what it has.
+         */
+        const val TWO_CHOICES = 2
         const val MANGA_ID = "mangaId"
         const val AT = "at"
     }
