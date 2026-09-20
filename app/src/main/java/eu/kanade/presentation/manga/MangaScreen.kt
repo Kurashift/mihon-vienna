@@ -40,7 +40,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -95,7 +94,6 @@ import eu.kanade.presentation.manga.components.chapterGridDragSource
 import eu.kanade.presentation.manga.components.chapterGridSlotBounds
 import eu.kanade.presentation.util.formatChapterNumber
 import eu.kanade.tachiyomi.data.download.model.Download
-import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.source.getNameForMangaInfo
@@ -197,14 +195,13 @@ fun MangaScreen(
         }
     }
 
+    // The marks come from the screen's own state, not a second subscription here: the display
+    // scope narrows the list by these same sets, and two sources for one fact can disagree for a
+    // frame - long enough for a chapter to be counted out of the list while still drawn as marked.
+    val markedChapterIds = state.markedChapterIds
+    val goodDoujinChapterIds = state.goodDoujinChapterIds
+    // Writing a mark still goes through the store, which is what the state above watches.
     val markStore = remember { Injekt.get<MangaMarkStore>() }
-    val marks by markStore.marks.collectAsState()
-    val markedChapterIds = remember(marks) { marks.mapTo(mutableSetOf()) { it.chapterId } }
-    val goodDoujinStore = remember { Injekt.get<GoodDoujinStore>() }
-    val goodDoujinMarks by goodDoujinStore.marks.collectAsState()
-    val goodDoujinChapterIds = remember(goodDoujinMarks) {
-        goodDoujinMarks.mapTo(mutableSetOf()) { it.chapterId }
-    }
     val basePreferences = remember { Injekt.get<BasePreferences>() }
     val chapterCoversEnabled by basePreferences.localChapterCoversEnabled.collectPreferenceAsState()
     val chapterCoverGridEnabled by basePreferences.localChapterCoverGridEnabled.collectPreferenceAsState()

@@ -70,6 +70,7 @@ import eu.kanade.tachiyomi.data.manga.ChapterFlagStore
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
+import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.util.system.toast
@@ -100,18 +101,27 @@ enum class ChapterFlagListType(
     val emptyRes: StringResource,
     val clearConfirmRes: StringResource,
     val chapterCountRes: StringResource,
+    /**
+     * The part of a work this list is about.
+     *
+     * The list holds chapters, so opening one of its works is asking for exactly those chapters
+     * and nothing else - the same narrowing the local library's mark filters hand over.
+     */
+    val chapterScope: ChapterScope,
 ) {
     DUPLICATES(
         MR.strings.marks_list_title,
         MR.strings.marks_list_empty,
         MR.strings.marks_list_clear_confirm,
         MR.strings.marks_list_chapter_count,
+        ChapterScope.FLAGGED,
     ),
     GOOD_DOUJINS(
         MR.strings.good_doujin_list_title,
         MR.strings.good_doujin_list_empty,
         MR.strings.good_doujin_list_clear_confirm,
         MR.strings.good_doujin_list_chapter_count,
+        ChapterScope.GOOD_DOUJIN,
     ),
 }
 
@@ -330,7 +340,9 @@ class ChapterFlagListScreen(
                                 ChapterFlagGroupHeader(
                                     title = group.mangaTitle,
                                     count = group.marks.size,
-                                    onClick = { openManga(navigator, scope, context, group.mangaId) },
+                                    onClick = {
+                                        openManga(navigator, scope, context, group.mangaId, type.chapterScope)
+                                    },
                                     onLongClick = {
                                         // 一键勾选该组下所有本地篇目：非本地条目没有文件可删。
                                         val localIds = group.marks
@@ -374,7 +386,9 @@ class ChapterFlagListScreen(
                     StickyGroupHeaderOverlay(
                         groups = visibleGroups,
                         gridState = gridState,
-                        onClick = { group -> openManga(navigator, scope, context, group.mangaId) },
+                        onClick = {
+                            group -> openManga(navigator, scope, context, group.mangaId, type.chapterScope)
+                        },
                     )
                 }
             }
@@ -795,12 +809,13 @@ private fun openManga(
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
     mangaId: Long,
+    chapterScope: ChapterScope,
 ) {
     scope.launch {
         val repository = Injekt.get<MangaRepository>()
         val exists = runCatching { withIOContext { repository.getMangaById(mangaId) } }.isSuccess
         if (exists) {
-            navigator.push(MangaScreen(mangaId))
+            navigator.push(MangaScreen(mangaId, chapterScope = chapterScope))
         } else {
             context.toast(MR.strings.marks_list_manga_missing)
         }

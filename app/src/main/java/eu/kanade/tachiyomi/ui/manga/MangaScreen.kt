@@ -83,6 +83,7 @@ class MangaScreen(
     val mangaId: Long,
     val fromSource: Boolean = false,
     val randomCandidates: List<Long> = emptyList(),
+    val chapterScope: ChapterScope = ChapterScope.ALL,
 ) : Screen(), AssistContentScreen {
 
     private var assistUrl: String? = null
@@ -119,6 +120,7 @@ class MangaScreen(
                 set(MangaViewModel.MANGA_ID_KEY, mangaId)
                 set(MangaViewModel.IS_FROM_SOURCE_KEY, fromSource)
                 set(MangaViewModel.RANDOM_CANDIDATES_KEY, randomCandidates)
+                set(MangaViewModel.CHAPTER_SCOPE_KEY, chapterScope)
             },
         )
 
@@ -227,6 +229,7 @@ class MangaScreen(
                                         mangaId = randomId,
                                         fromSource = true,
                                         randomCandidates = viewModel.randomCandidates,
+                                        chapterScope = successState.chapterScope,
                                     ),
                                 )
                             } else {
@@ -256,7 +259,17 @@ class MangaScreen(
                         try {
                             val result = viewModel.getRandomGoodDoujinManga()
                             if (result.mangaId != null) {
-                                pushDetail(navigator, MangaScreen(result.mangaId, true))
+                                // The pick comes out of the good-doujin list itself, so the next
+                                // screen opens showing those chapters whatever this one is
+                                // currently narrowed to.
+                                pushDetail(
+                                    navigator,
+                                    MangaScreen(
+                                        mangaId = result.mangaId,
+                                        fromSource = true,
+                                        chapterScope = ChapterScope.GOOD_DOUJIN,
+                                    ),
+                                )
                             } else if (!result.hasEntries) {
                                 viewModel.snackbarHostState.showSnackbarReplacing(
                                     context.stringResource(MR.strings.good_doujin_list_empty),
@@ -491,6 +504,8 @@ class MangaScreen(
             MangaViewModel.Dialog.SettingsSheet -> ChapterSettingsDialog(
                 onDismissRequest = onDismissRequest,
                 manga = successState.manga,
+                chapterScope = successState.chapterScope,
+                onChapterScopeChanged = viewModel::setChapterScope,
                 onDownloadFilterChanged = viewModel::setDownloadedFilter,
                 onUnreadFilterChanged = viewModel::setUnreadFilter,
                 onBookmarkedFilterChanged = viewModel::setBookmarkedFilter,

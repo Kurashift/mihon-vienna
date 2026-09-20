@@ -19,6 +19,9 @@
     <string name="action_filter_bookmarked">已新增書籤</string>
     <string name="action_filter_unread">未讀</string>
     <string name="action_filter_not_finished">剩余</string>
+    <string name="action_filter_marks">標記</string>
+    <string name="action_filter_good_doujin">好本子</string>
+    <string name="chapter_filter_scope_section">顯示範圍</string>
     <string name="action_filter_not_in_library">未加入書架</string>
     <string name="action_remove_from_library">移出書架</string>
     <string name="remove_from_library_title">把這些作品移出書架？</string>

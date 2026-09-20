@@ -107,6 +107,7 @@ import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.MarkFil
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.ReadingFilter
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.local.LocalImportScreen
+import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
@@ -259,7 +260,15 @@ data class BrowseSourceScreen(
                         try {
                             val randomId = viewModel.getRandomLocalMangaId()
                             if (randomId != null) {
-                                navigator.push(MangaScreen(randomId, true))
+                                // The random pick comes out of the filtered list, so it opens
+                                // narrowed the same way a tap on that list does.
+                                navigator.push(
+                                    MangaScreen(
+                                        mangaId = randomId,
+                                        fromSource = true,
+                                        chapterScope = markFilter.toChapterScope(),
+                                    ),
+                                )
                                 // Hold the guard through the transition.
                                 delay(150)
                             } else {
@@ -284,7 +293,17 @@ data class BrowseSourceScreen(
                         try {
                             val result = viewModel.getRandomGoodDoujinManga()
                             if (result.mangaId != null) {
-                                navigator.push(MangaScreen(result.mangaId, true))
+                                // The pick comes out of the good-doujin list, not the list on
+                                // screen, so the scope follows what chose it. Reading the filter
+                                // here would open a flagged work's page under a good-doujin
+                                // scope whenever the two happen to differ, and vice versa.
+                                navigator.push(
+                                    MangaScreen(
+                                        mangaId = result.mangaId,
+                                        fromSource = true,
+                                        chapterScope = ChapterScope.GOOD_DOUJIN,
+                                    ),
+                                )
                                 delay(150)
                             } else if (!result.hasEntries) {
                                 snackbarHostState.showSnackbarReplacing(
@@ -731,6 +750,9 @@ data class BrowseSourceScreen(
                             manga.id,
                             true,
                             randomCandidates = candidates,
+                            // Under a mark filter the list is exactly the works carrying that
+                            // mark; the work's own page opens showing those chapters.
+                            chapterScope = markFilter.toChapterScope(),
                         ),
                     )
                 },

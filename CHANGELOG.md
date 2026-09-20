@@ -24,6 +24,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Local library: the filter row can show only the works that are not on a shelf yet, so a batch of newly added folders can be sorted into shelves in one pass
 - Local library: a long press now starts a selection. Several works can be put on a shelf, marked read, taken off the shelf or deleted at once
 - Shelf picker: the default shelf is offered as an explicit choice, so a work can be put on a shelf without also being filed under a category
+- Work page: opening a work from the local library while it is filtered to 标记 or 好本子 now shows only those chapters, so the few that put the work on that list are not hidden among all of them. It is a property of that visit rather than a setting: the filter sheet offers 全部 / 标记 / 好本子 under 显示范围, reaching the work from an unfiltered list or from the shelf still shows everything, and following a random pick keeps the same part
+- My lists: opening a work from the marks list or the good-doujin list shows that list's chapters, the same way the library's mark filters do
 
 - History: each entry now shows how far into the chapter you left off — the same x/y page progress the reader shows, next to the date, and only for an unfinished chapter that was actually opened, matching the updates list
 - Main screen: backing out of the shelf tab with the system back shows a short centered "press back again to exit" capsule floating above the bottom bar; it lets taps through, and a second press within two seconds leaves the app. Deeper screens and dialogs keep their own back behavior

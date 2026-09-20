@@ -249,6 +249,7 @@
     <string name="chapter_display_original_only">仅原名</string>
     <string name="chapter_display_translated_only">仅译名</string>
     <string name="chapter_display_translated_and_original">译名与原名</string>
+    <string name="chapter_filter_scope_section">显示范围</string>
     <string name="chapter_filter_status_section">阅读状态</string>
     <string name="chapter_filter_source_section">来源</string>
     <string name="chapter_sort_basis_section">排序依据</string>

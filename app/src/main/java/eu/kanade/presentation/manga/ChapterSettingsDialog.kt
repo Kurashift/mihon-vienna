@@ -31,6 +31,7 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.manga.model.downloadedFilter
 import eu.kanade.presentation.components.TabbedDialog
 import eu.kanade.presentation.components.TabbedDialogPaddings
+import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import tachiyomi.core.common.preference.TriState
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
@@ -49,6 +50,8 @@ import uy.kohesive.injekt.api.get
 fun ChapterSettingsDialog(
     onDismissRequest: () -> Unit,
     manga: Manga? = null,
+    chapterScope: ChapterScope,
+    onChapterScopeChanged: (ChapterScope) -> Unit,
     onDownloadFilterChanged: (TriState) -> Unit,
     onUnreadFilterChanged: (TriState) -> Unit,
     onBookmarkedFilterChanged: (TriState) -> Unit,
@@ -129,6 +132,8 @@ fun ChapterSettingsDialog(
                 2 -> {
                     FilterPage(
                         isLocal = manga?.isLocal() ?: false,
+                        chapterScope = chapterScope,
+                        onChapterScopeChanged = onChapterScopeChanged,
                         downloadFilter = manga?.downloadedFilter ?: TriState.DISABLED,
                         onDownloadFilterChanged = onDownloadFilterChanged
                             .takeUnless { downloadedOnly },
@@ -148,6 +153,8 @@ fun ChapterSettingsDialog(
 @Composable
 private fun ColumnScope.FilterPage(
     isLocal: Boolean,
+    chapterScope: ChapterScope,
+    onChapterScopeChanged: (ChapterScope) -> Unit,
     downloadFilter: TriState,
     onDownloadFilterChanged: ((TriState) -> Unit)?,
     unreadFilter: TriState,
@@ -157,6 +164,25 @@ private fun ColumnScope.FilterPage(
     scanlatorFilterActive: Boolean,
     onScanlatorFilterClicked: (() -> Unit),
 ) {
+    // Marks only exist in the local library, so the scope has nothing to narrow to anywhere else.
+    if (isLocal) {
+        ListGroupHeader(text = stringResource(MR.strings.chapter_filter_scope_section))
+        RadioItem(
+            label = stringResource(MR.strings.action_filter_all),
+            selected = chapterScope == ChapterScope.ALL,
+            onClick = { onChapterScopeChanged(ChapterScope.ALL) },
+        )
+        RadioItem(
+            label = stringResource(MR.strings.action_filter_marks),
+            selected = chapterScope == ChapterScope.FLAGGED,
+            onClick = { onChapterScopeChanged(ChapterScope.FLAGGED) },
+        )
+        RadioItem(
+            label = stringResource(MR.strings.action_filter_good_doujin),
+            selected = chapterScope == ChapterScope.GOOD_DOUJIN,
+            onClick = { onChapterScopeChanged(ChapterScope.GOOD_DOUJIN) },
+        )
+    }
     ListGroupHeader(text = stringResource(MR.strings.chapter_filter_status_section))
     if (!isLocal) {
         // Every local chapter counts as downloaded, so the filter cannot narrow anything.

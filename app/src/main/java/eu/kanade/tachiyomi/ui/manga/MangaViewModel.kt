@@ -38,6 +38,7 @@ import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.LocalRandomScope
 import eu.kanade.tachiyomi.data.manga.MangaMark
+import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
@@ -55,6 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
@@ -113,6 +115,7 @@ class MangaViewModel(
     private val context: Context,
     private val mangaId: Long,
     val randomCandidates: List<Long> = emptyList(),
+    chapterScope: ChapterScope = ChapterScope.ALL,
     private val isFromSource: Boolean,
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val basePreferences: BasePreferences = Injekt.get(),
@@ -139,6 +142,7 @@ class MangaViewModel(
     private val addTracks: AddTracks = Injekt.get(),
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
+    private val mangaMarkStore: MangaMarkStore = Injekt.get(),
     private val goodDoujinStore: GoodDoujinStore = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
     private val localRandomScope: LocalRandomScope = Injekt.get(),
@@ -169,6 +173,8 @@ class MangaViewModel(
 
         val RANDOM_CANDIDATES_KEY = CreationExtras.Key<List<Long>>()
 
+        val CHAPTER_SCOPE_KEY = CreationExtras.Key<ChapterScope>()
+
         val Factory = viewModelFactory {
             initializer {
                 MangaViewModel(
@@ -176,6 +182,7 @@ class MangaViewModel(
                     mangaId = get(MANGA_ID_KEY)!!,
                     isFromSource = get(IS_FROM_SOURCE_KEY)!!,
                     randomCandidates = get(RANDOM_CANDIDATES_KEY) ?: emptyList(),
+                    chapterScope = get(CHAPTER_SCOPE_KEY) ?: ChapterScope.ALL,
                 )
             }
         }
@@ -210,6 +217,15 @@ class MangaViewModel(
     private val filteredChapters: List<ChapterList.Item>?
         get() = successState?.processedChapters
 
+    /**
+     * Which part of this work the screen shows.
+     *
+     * The value the route arrived with only seeds this: the reader can change it from the filter
+     * sheet, and the change has to reach the screens a random hop opens next rather than being
+     * frozen at whatever the visit started as.
+     */
+    private val chapterScopeInternal = MutableStateFlow(chapterScope)
+
     private val chapterReorderMutex = Mutex()
     val chapterSwipeStartAction = libraryPreferences.swipeToEndAction.get()
     val chapterSwipeEndAction = libraryPreferences.swipeToStartAction.get()
@@ -236,14 +252,24 @@ class MangaViewModel(
     }
 
     init {
+        // Both marks describe this screen: they badge the chapter rows, and the display scope the
+        // reader arrived with narrows the list to one of them. Read together so a scope switch and
+        // the marks it reads can never be a frame apart.
         viewModelScope.launchIO {
-            goodDoujinStore.marks
-                .map { marks ->
-                    marks.filterTo(mutableSetOf()) { it.mangaId == mangaId }.mapTo(mutableSetOf()) { it.chapterId }
-                }
+            combine(
+                mangaMarkStore.marks,
+                goodDoujinStore.marks,
+            ) { marks, doujins ->
+                marks.chapterIdsOf(mangaId) to doujins.chapterIdsOf(mangaId)
+            }
                 .distinctUntilChanged()
-                .collectLatest { chapterIds ->
-                    updateSuccessState { it.copy(goodDoujinChapterIds = chapterIds) }
+                .collectLatest { (markedChapterIds, goodDoujinChapterIds) ->
+                    updateSuccessState {
+                        it.copy(
+                            markedChapterIds = markedChapterIds,
+                            goodDoujinChapterIds = goodDoujinChapterIds,
+                        )
+                    }
                 }
         }
 
@@ -336,9 +362,9 @@ class MangaViewModel(
                     source = Injekt.get<SourceManager>().getOrStub(manga.source),
                     isFromSource = isFromSource,
                     chapters = chapters,
-                    goodDoujinChapterIds = goodDoujinStore.marks.value
-                        .filterTo(mutableSetOf()) { it.mangaId == mangaId }
-                        .mapTo(mutableSetOf()) { it.chapterId },
+                    chapterScope = chapterScopeInternal.value,
+                    markedChapterIds = mangaMarkStore.marks.value.chapterIdsOf(mangaId),
+                    goodDoujinChapterIds = goodDoujinStore.marks.value.chapterIdsOf(mangaId),
                     availableScanlators = getAvailableScanlators.await(mangaId),
                     excludedScanlators = getExcludedScanlators.await(mangaId),
                     isRefreshingData = needRefreshInfo || needRefreshChapter,
@@ -1223,6 +1249,19 @@ class MangaViewModel(
     }
 
     /**
+     * Narrows the list to one of the marks, or shows the whole work again.
+     *
+     * Only this visit changes: the choice is not written to the work's chapter flags, so the next
+     * visit starts from everything. It is not flagged as unsaved either - it belongs to how the
+     * reader is looking at the work right now, not to the work.
+     */
+    fun setChapterScope(scope: ChapterScope) {
+        if (chapterScopeInternal.value == scope) return
+        chapterScopeInternal.value = scope
+        updateSuccessState { it.copy(chapterScope = scope) }
+    }
+
+    /**
      * Sets the active display mode.
      * @param mode the mode to set.
      */
@@ -1565,6 +1604,8 @@ class MangaViewModel(
             val source: Source,
             val isFromSource: Boolean,
             val chapters: List<ChapterList.Item>,
+            val chapterScope: ChapterScope,
+            val markedChapterIds: Set<Long>,
             val goodDoujinChapterIds: Set<Long>,
             val availableScanlators: Set<String>,
             val excludedScanlators: Set<String>,
@@ -1590,7 +1631,9 @@ class MangaViewModel(
                 get() = excludedScanlators.intersect(availableScanlators).isNotEmpty()
 
             val filterActive: Boolean
-                get() = scanlatorFilterActive || manga.chaptersFiltered()
+                get() = chapterScope != ChapterScope.ALL ||
+                    scanlatorFilterActive ||
+                    manga.chaptersFiltered()
 
             /**
              * Applies the view filters to the list of chapters obtained from the database.
@@ -1604,6 +1647,9 @@ class MangaViewModel(
                 val downloadedFilter = manga.downloadedFilter
                 val bookmarkedFilter = manga.bookmarkedFilter
                 return asSequence()
+                    // The scope narrows to the chapters that put the work on the list the reader
+                    // came from, so it reads the mark stores the same way the browse list does.
+                    .filter { chapterScope.includes(it.id, markedChapterIds, goodDoujinChapterIds) }
                     .filter { (chapter) -> applyFilter(unreadFilter) { !chapter.read } }
                     .filter { (chapter) -> applyFilter(bookmarkedFilter) { chapter.bookmark } }
                     .filter { applyFilter(downloadedFilter) { it.isDownloaded || isLocalManga } }
@@ -1612,6 +1658,10 @@ class MangaViewModel(
         }
     }
 }
+
+/** Chapter ids of one work's marks, read out of a mark store's whole list. */
+private fun List<MangaMark>.chapterIdsOf(mangaId: Long): Set<Long> =
+    filterTo(mutableSetOf()) { it.mangaId == mangaId }.mapTo(mutableSetOf()) { it.chapterId }
 
 internal data class RandomGoodDoujinResult(
     val hasEntries: Boolean,
