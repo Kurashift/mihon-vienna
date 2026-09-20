@@ -188,6 +188,9 @@ class MangaRestorer(
                         id = dbChapter.id,
                         bookmark = chapter.bookmark || dbChapter.bookmark,
                         totalPages = chapter.totalPages.takeIf { it > 0 } ?: dbChapter.totalPages,
+                        // The backup's timestamp wins when it carries one; otherwise the device's own
+                        // date is kept, so restoring an older file cannot wipe a recorded finish time.
+                        markedReadAt = chapter.markedReadAt.takeIf { it > 0 } ?: dbChapter.markedReadAt,
                     )
                 if (dbChapter.read && !updatedChapter.read) {
                     updatedChapter = updatedChapter.copy(
@@ -211,6 +214,7 @@ class MangaRestorer(
         this.copy(id = 0L, mangaId = 0L, dateFetch = 0L, dateUpload = 0L, lastModifiedAt = 0L, version = 0L)
 
     private suspend fun insertNewChapters(chapters: List<Chapter>) {
+        val restoredAt = Clock.System.now().toEpochMilliseconds()
         database.transaction {
             chapters.forEach { chapter ->
                 database.chaptersQueries.insert(
@@ -230,13 +234,17 @@ class MangaRestorer(
                     chapter.version,
                     chapter.memo,
                     chapter.translatedName,
-                    chapter.markedReadAt,
+                    // A chapter the backup marks as read but whose file predates the timestamp field
+                    // gets stamped now, so the read-review list has a stable date for it instead of
+                    // falling back to the history timestamp, which moves on every reader open.
+                    chapter.markedReadAt.takeIf { it > 0 } ?: restoredAt.takeIf { chapter.read } ?: 0,
                 )
             }
         }
     }
 
     private suspend fun updateExistingChapters(chapters: List<Chapter>) {
+        val restoredAt = Clock.System.now().toEpochMilliseconds()
         database.transaction {
             chapters.forEach { chapter ->
                 database.chaptersQueries.update(
@@ -258,7 +266,10 @@ class MangaRestorer(
                     isSyncing = 0,
                     memo = chapter.memo.let(MemoColumnAdapter::encode),
                     translatedName = chapter.translatedName,
-                    markedReadAt = chapter.markedReadAt,
+                    // A read chapter keeps whatever finish time it already had, and gets stamped now
+                    // if it had none - either way the stored value is never cleared, so a restore of
+                    // an older file cannot wipe a date this device recorded.
+                    markedReadAt = chapter.markedReadAt.takeIf { it > 0 } ?: restoredAt.takeIf { chapter.read },
                 )
             }
         }

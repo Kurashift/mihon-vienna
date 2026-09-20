@@ -11,6 +11,7 @@ import tachiyomi.domain.chapter.model.toChapterUpdate
 import tachiyomi.domain.track.interactor.InsertTrack
 import tachiyomi.domain.track.model.Track
 import kotlin.math.max
+import kotlin.time.Clock
 
 class SyncChapterProgressWithTrack(
     private val updateChapter: UpdateChapter,
@@ -31,9 +32,13 @@ class SyncChapterProgressWithTrack(
             .sortedBy { it.chapterNumber }
             .filter { it.isRecognizedNumber }
 
+        // Every chapter here flips unread -> read, so it gets the same finish timestamp the reader
+        // and the detail screen's mark-as-read write; leaving it at 0 would make the read-review
+        // list fall back to the history timestamp, which moves on every reader open.
+        val now = Clock.System.now().toEpochMilliseconds()
         val chapterUpdates = sortedChapters
             .filter { chapter -> chapter.chapterNumber <= remoteTrack.lastChapterRead && !chapter.read }
-            .map { it.copy(read = true).toChapterUpdate() }
+            .map { it.copy(read = true, markedReadAt = it.markedReadAt.takeIf { it > 0 } ?: now).toChapterUpdate() }
 
         // only take into account continuous reading
         val localLastRead = sortedChapters.takeWhile { it.read }.lastOrNull()?.chapterNumber ?: 0F

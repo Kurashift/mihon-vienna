@@ -45,4 +45,29 @@ class BackupChapterProgressTest {
         assertEquals(true, restored.read)
         assertEquals(0, restored.chapterId)
     }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @Test
+    fun `finish timestamp survives backup serialization and reaches the chapter`() {
+        val original = BackupChapter(
+            url = "Author/Story.cbz",
+            name = "Story",
+            read = true,
+            totalPages = 12,
+            markedReadAt = 1_700_000_000_000,
+        )
+
+        val encoded = ProtoBuf.encodeToByteArray(BackupChapter.serializer(), original)
+        val restored = ProtoBuf.decodeFromByteArray(BackupChapter.serializer(), encoded)
+
+        assertEquals(1_700_000_000_000, restored.markedReadAt)
+        assertEquals(1_700_000_000_000, restored.toChapterImpl().markedReadAt)
+    }
+
+    @Test
+    fun `a backup without the field restores as no timestamp rather than zero`() {
+        // Backups written before the field existed decode to 0, which the restorer reads as
+        // "nothing recorded" and leaves the device's own date alone.
+        assertEquals(0, BackupChapter(url = "Author/Story.cbz", name = "Story").markedReadAt)
+    }
 }

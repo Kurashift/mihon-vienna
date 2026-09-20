@@ -298,18 +298,13 @@ SELECT
     chapters.date_upload AS date_upload,
     chapters.last_modified_at AS last_modified_at,
     chapters.version AS version,
-    -- 复查用「读完的那一刻」。老数据（阅读器读完但没记到时间）回退到历史里的最后阅读时间，
-    -- 两者都取不到时为 0（排到末尾）。不直接用 history.last_read：打开阅读器会刷新它。
-    -- 注意 marked_read_at 非空（默认 0），所以这里不能用 COALESCE，必须显式判 0。
-    CASE
-        WHEN chapters.marked_read_at > 0 THEN chapters.marked_read_at
-        ELSE coalesce(history.last_read, 0)
-    END AS marked_read_at
+    -- 复查用「读完的那一刻」，只认 marked_read_at：这是稳定值，写完就不再变。
+    -- 曾经在这里回退到 history.last_read，但打开阅读器会刷新它，清单里的时间和排序
+    -- 每进一次阅读器就跟着跳；没有戳的行（老数据）由迁移一次性补齐，之后不再回退。
+    chapters.marked_read_at AS marked_read_at
 FROM chapters
 JOIN mangas
 ON mangas._id = chapters.manga_id
-LEFT JOIN history
-ON history.chapter_id = chapters._id
 WHERE mangas.source = :sourceId
 AND chapters.read = 1;
 

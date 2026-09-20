@@ -43,6 +43,9 @@ fun Chapter.toChapterUpdate(): ChapterUpdate {
         version,
         memo,
         translatedName,
-        markedReadAt,
+        // 0 means "this Chapter object carries no finish timestamp" (an unread row, or one built by
+        // Chapter.create()), not "clear the stored one". Passing it on would let any
+        // copy(read = true) writer overwrite a real timestamp with 0; null leaves the column alone.
+        markedReadAt.takeIf { it > 0 },
     )
 }

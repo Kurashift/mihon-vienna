@@ -1,23 +1,40 @@
 package eu.kanade.tachiyomi.ui.browse.source.browse
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -38,6 +56,7 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.ConfirmDialog
 import eu.kanade.presentation.components.SearchToolbar
+import eu.kanade.presentation.components.SelectionToolbar
 import eu.kanade.presentation.mylists.MY_LIST_COVER_ASPECT_RATIO
 import eu.kanade.presentation.mylists.MY_LIST_MANGA_COVER_ASPECT_RATIO
 import eu.kanade.presentation.mylists.MyListChapterTitle
@@ -62,8 +81,10 @@ import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.data.Database
@@ -81,6 +102,7 @@ import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCover
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 已读完篇目：按漫画汇总全部已读完的本地篇目，一页里快速回看，也能撤销误标。
@@ -109,10 +131,10 @@ class LocalReadReviewScreen : Screen() {
                     MangaGroup(
                         mangaId = chapters.first().mangaId,
                         mangaTitle = chapters.first().mangaTitle,
-                        chapters = chapters.sortedByDescending(LocalReadReviewItem::lastReadAt),
+                        chapters = chapters.sortedByDescending(LocalReadReviewItem::finishedAt),
                     )
                 }
-                .sortedByDescending { it.chapters.first().lastReadAt }
+                .sortedByDescending { it.chapters.first().finishedAt }
         }
 
         var query by remember { mutableStateOf<String?>(null) }
@@ -241,7 +263,7 @@ class LocalReadReviewDetailScreen(
         val chapters = remember(readChapters) {
             readChapters
                 .filter { it.mangaId == mangaId }
-                .sortedByDescending(LocalReadReviewItem::lastReadAt)
+                .sortedByDescending(LocalReadReviewItem::finishedAt)
         }
         val coverByChapterId = rememberChapterCovers(chapters)
         // 与一级页取同一份偏好，两页的篇目名显示保持一致。
@@ -279,42 +301,52 @@ class LocalReadReviewDetailScreen(
 
         Scaffold(
             topBar = { scrollBehavior ->
-                AppBar(
-                    title = mangaTitle,
-                    subtitle = stringResource(MR.strings.local_read_review_count, chapters.size),
-                    onClickTitle = { openMangaScreen(navigator, scope, context, mangaId) },
-                    navigateUp = navigator::pop,
-                    actions = {
-                        AppBarActions(
-                            listOf(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.export),
-                                    icon = Icons.Outlined.FileUpload,
-                                    onClick = exportList,
-                                    enabled = exportText.isNotEmpty(),
+                // 选中时换成与书架、历史同一套的选择工具栏：计数 + 全选 + 反选 + 退出，
+                // 不再是只有一个动作的顶栏。批量动作挪到底栏。
+                if (selectedChapterIds.isNotEmpty()) {
+                    SelectionToolbar(
+                        selectedCount = selectedChapterIds.size,
+                        onClickUnselectAll = { selectedChapterIds = emptySet() },
+                        onClickSelectAll = {
+                            selectedChapterIds = chapters.mapTo(mutableSetOf()) { it.chapterId }
+                        },
+                        onClickInvertSelection = {
+                            selectedChapterIds = chapters
+                                .mapTo(mutableSetOf()) { it.chapterId }
+                                .minus(selectedChapterIds)
+                        },
+                    )
+                } else {
+                    AppBar(
+                        title = mangaTitle,
+                        subtitle = stringResource(MR.strings.local_read_review_count, chapters.size),
+                        onClickTitle = { openMangaScreen(navigator, scope, context, mangaId) },
+                        navigateUp = navigator::pop,
+                        actions = {
+                            AppBarActions(
+                                listOf(
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.export),
+                                        icon = Icons.Outlined.FileUpload,
+                                        onClick = exportList,
+                                        enabled = exportText.isNotEmpty(),
+                                    ),
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.local_read_review_clear),
+                                        icon = Icons.Outlined.RemoveDone,
+                                        onClick = { showClearConfirm = true },
+                                    ),
                                 ),
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.local_read_review_clear),
-                                    icon = Icons.Outlined.RemoveDone,
-                                    onClick = { showClearConfirm = true },
-                                ),
-                            ),
-                        )
-                    },
-                    actionModeCounter = selectedChapterIds.size,
-                    onCancelActionMode = { selectedChapterIds = emptySet() },
-                    actionModeActions = {
-                        AppBarActions(
-                            listOf(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.action_mark_as_unread),
-                                    icon = Icons.Outlined.RemoveDone,
-                                    onClick = { pendingUnreadIds = selectedChapterIds },
-                                ),
-                            ),
-                        )
-                    },
-                    scrollBehavior = scrollBehavior,
+                            )
+                        },
+                        scrollBehavior = scrollBehavior,
+                    )
+                }
+            },
+            bottomBar = {
+                MyListReadActionMenu(
+                    visible = selectedChapterIds.isNotEmpty(),
+                    onMarkUnreadClicked = { pendingUnreadIds = selectedChapterIds },
                 )
             },
         ) { contentPadding ->
@@ -427,7 +459,7 @@ private fun LocalReviewMangaRow(
                 text = stringResource(
                     MR.strings.local_read_review_group_subtitle,
                     group.chapters.size,
-                    formatListTime(group.chapters.first().lastReadAt),
+                    formatListTime(group.chapters.first().finishedAt),
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -501,7 +533,7 @@ private fun LocalReviewChapterRow(
                 )
             }
             Text(
-                text = formatListTime(item.lastReadAt),
+                text = formatListTime(item.finishedAt),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -609,6 +641,88 @@ private suspend fun markUnread(updateChapter: UpdateChapter, chapterIds: List<Lo
     }
 }
 
+/**
+ * 二级页多选时的底栏：目前只有「标记未读」一个动作。
+ *
+ * 与书架/历史的底栏同高同形（圆角、navigationBars inset、44dp 行高），长按守卫沿用书架底栏
+ * 的写法：按住时按钮加宽并露出文字，1 秒后自动收回，避免误触这个会改动已读状态的按钮。
+ */
+@Composable
+private fun MyListReadActionMenu(
+    visible: Boolean,
+    onMarkUnreadClicked: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(expandFrom = Alignment.Bottom),
+        exit = shrinkVertically(shrinkTowards = Alignment.Bottom),
+    ) {
+        val scope = rememberCoroutineScope()
+        var toConfirm by remember { mutableStateOf(false) }
+        var resetJob by remember { mutableStateOf<Job?>(null) }
+        val onLongClick = {
+            toConfirm = true
+            resetJob?.cancel()
+            resetJob = scope.launch {
+                delay(1.seconds)
+                toConfirm = false
+            }
+        }
+        Surface(
+            modifier = modifier,
+            shape = MaterialTheme.shapes.large.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Row(
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            ) {
+                val animatedWeight by animateFloatAsState(
+                    targetValue = if (toConfirm) 2f else 1f,
+                    label = "weight",
+                )
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .weight(animatedWeight)
+                        .combinedClickable(
+                            interactionSource = null,
+                            indication = ripple(bounded = false),
+                            onLongClick = onLongClick,
+                            onClick = onMarkUnreadClicked,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.RemoveDone,
+                            contentDescription = stringResource(MR.strings.action_mark_as_unread),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        AnimatedVisibility(
+                            visible = toConfirm,
+                            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                        ) {
+                            Text(
+                                text = stringResource(MR.strings.action_mark_as_unread),
+                                overflow = TextOverflow.Visible,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** 按漫画归好的一组已读篇目，组内已按读完时间倒序。 */
 private data class MangaGroup(
     val mangaId: Long,
@@ -627,7 +741,7 @@ private data class LocalReadReviewItem(
     val dateUpload: Long,
     val lastModifiedAt: Long,
     val version: Long,
-    val lastReadAt: Long,
+    val finishedAt: Long,
 )
 
 private fun mapReadLocalChapter(
@@ -653,5 +767,5 @@ private fun mapReadLocalChapter(
     dateUpload = date_upload,
     lastModifiedAt = last_modified_at,
     version = version,
-    lastReadAt = marked_read_at,
+    finishedAt = marked_read_at,
 )

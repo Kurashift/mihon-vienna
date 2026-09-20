@@ -32,6 +32,7 @@ import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
+import kotlin.time.Clock
 import eu.kanade.tachiyomi.BuildConfig.APPLICATION_ID as ID
 
 /**
@@ -193,9 +194,13 @@ class NotificationReceiver : BroadcastReceiver() {
         val sourceManager: SourceManager = Injekt.get()
 
         launchIO {
+            val now = Clock.System.now().toEpochMilliseconds()
             val toUpdate = chapterUrls.mapNotNull { getChapter.await(it, mangaId) }
                 .map {
-                    val chapter = it.copy(read = true)
+                    // Marking from the update notification is the same read transition the reader and
+                    // the detail screen record, so it stamps the finish timestamp too; a chapter that
+                    // already carries one keeps it rather than being re-dated.
+                    val chapter = it.copy(read = true, markedReadAt = it.markedReadAt.takeIf { it > 0 } ?: now)
                     if (downloadPreferences.removeAfterMarkedAsRead.get()) {
                         val manga = getManga.await(mangaId)
                         if (manga != null) {

@@ -319,6 +319,88 @@ class LocalChapterMoveDetectorTest {
         ).lastPageRead shouldBe 12
     }
 
+    @Test
+    fun `merge carries the finish timestamp of the row that is being removed`() {
+        val old = dbChapter(
+            id = 10,
+            mangaId = 1,
+            url = "Old/Story.cbz",
+            name = "Story",
+            read = true,
+            markedReadAt = 0,
+        )
+        val duplicate = dbChapter(
+            id = 11,
+            mangaId = 2,
+            url = "New/Story.cbz",
+            name = "Story",
+            read = true,
+            markedReadAt = 1_700_000_000_000,
+        )
+
+        // Without this the duplicate's date would be lost with the row, leaving a read chapter
+        // with no finish time - the state that used to make the list fall back to history.
+        mergeMovedLocalChapter(old, duplicate, targetMangaId = 2, targetUrl = "New/Story.cbz")
+            .markedReadAt shouldBe 1_700_000_000_000
+    }
+
+    @Test
+    fun `merge keeps the earliest finish timestamp so a re-stamp cannot move the date forward`() {
+        val earlier = dbChapter(
+            id = 10,
+            mangaId = 1,
+            url = "Old/Story.cbz",
+            name = "Story",
+            read = true,
+            markedReadAt = 1_600_000_000_000,
+        )
+        val later = dbChapter(
+            id = 11,
+            mangaId = 2,
+            url = "New/Story.cbz",
+            name = "Story",
+            read = true,
+            markedReadAt = 1_700_000_000_000,
+        )
+
+        mergeMovedLocalChapter(earlier, later, targetMangaId = 2, targetUrl = "New/Story.cbz")
+            .markedReadAt shouldBe 1_600_000_000_000
+    }
+
+    @Test
+    fun `exact duplicate merge also keeps the earliest finish timestamp`() {
+        // Same manga and url: the precondition of the exact-duplicate merge.
+        val earlier = dbChapter(
+            id = 10,
+            mangaId = 1,
+            url = "Author/Story.cbz",
+            name = "Story",
+            read = true,
+            markedReadAt = 1_600_000_000_000,
+        )
+        val later = dbChapter(
+            id = 11,
+            mangaId = 1,
+            url = "Author/Story.cbz",
+            name = "Story",
+            read = true,
+            markedReadAt = 1_700_000_000_000,
+        )
+
+        mergeExactLocalChapterDuplicates(listOf(earlier, later)).markedReadAt shouldBe 1_600_000_000_000
+    }
+
+    @Test
+    fun `merge of rows without any finish timestamp leaves the stored value alone`() {
+        val old = dbChapter(id = 10, mangaId = 1, url = "Old/Story.cbz", name = "Story", read = true)
+        val duplicate = dbChapter(id = 11, mangaId = 2, url = "New/Story.cbz", name = "Story", read = true)
+
+        // null, not 0: the update leaves the column untouched instead of clearing a date the
+        // device may still hold for the keeper row.
+        mergeMovedLocalChapter(old, duplicate, targetMangaId = 2, targetUrl = "New/Story.cbz")
+            .markedReadAt shouldBe null
+    }
+
     private fun chapter(id: Long, mangaId: Long, mangaUrl: String, fileName: String) = StoredLocalChapter(
         chapterId = id,
         mangaId = mangaId,
@@ -337,6 +419,7 @@ class LocalChapterMoveDetectorTest {
         totalPages: Long = 0,
         sourceOrder: Long = 0,
         translatedName: String? = null,
+        markedReadAt: Long = 0,
         memo: JsonObject = JsonObject(emptyMap()),
     ) = Chapter.create().copy(
         id = id,
@@ -349,6 +432,7 @@ class LocalChapterMoveDetectorTest {
         totalPages = totalPages,
         sourceOrder = sourceOrder,
         translatedName = translatedName,
+        markedReadAt = markedReadAt,
         memo = memo,
     )
 }

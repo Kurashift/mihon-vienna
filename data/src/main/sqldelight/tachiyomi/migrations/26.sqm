@@ -1,0 +1,19 @@
+-- 已读完篇目清单的时间改为只认 marked_read_at（写完不再变），此前清单在缺戳时回退到
+-- history.last_read，而打开阅读器会刷新后者，导致时间与排序每进一次阅读器就跳。
+-- 回退取消之前，把仍缺戳的已读行用历史里的最后阅读时间补一次；此后「已读」与「有戳」
+-- 保持一致，展示层不再需要任何回退。
+--
+-- 21/22/23 号迁移已做过同类补齐，但之后仍有多条写入路径会留下 read = 1 且无戳的行
+-- （恢复备份、进度记录平台同步、通知栏标记已读、本地篇目移动合并），这里再兜一次底。
+UPDATE chapters
+SET marked_read_at = coalesce(
+    (
+        SELECT history.last_read
+        FROM history
+        WHERE history.chapter_id = chapters._id
+        AND history.last_read > 0
+    ),
+    marked_read_at
+)
+WHERE read = 1
+AND marked_read_at = 0;

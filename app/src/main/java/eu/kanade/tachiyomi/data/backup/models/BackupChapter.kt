@@ -31,6 +31,9 @@ class BackupChapter(
     @ProtoNumber(15) var customOrder: Long = 0,
     @ProtoNumber(16) var translatedName: String? = null,
     @ProtoNumber(17) var customCover: ByteArray? = null,
+    // When the chapter was first finished. Absent in backups written before this field existed, so
+    // a restore of an older file leaves the stored value alone instead of clearing it.
+    @ProtoNumber(18) var markedReadAt: Long = 0,
 ) {
     @Transient
     var chapterId: Long = 0
@@ -54,6 +57,7 @@ class BackupChapter(
             totalPages = this@BackupChapter.totalPages,
             customOrder = this@BackupChapter.customOrder,
             translatedName = this@BackupChapter.translatedName,
+            markedReadAt = this@BackupChapter.markedReadAt,
         )
     }
 }
@@ -87,7 +91,7 @@ val backupChapterMapper = {
         totalPages: Long,
         customOrder: Long,
         translatedName: String?,
-        _: Long,
+        markedReadAt: Long,
     ->
     BackupChapter(
         url = url,
@@ -106,6 +110,7 @@ val backupChapterMapper = {
         totalPages = totalPages,
         customOrder = customOrder,
         translatedName = translatedName,
+        markedReadAt = markedReadAt,
     ).apply {
         this.chapterId = chapterId
     }

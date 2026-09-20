@@ -121,7 +121,21 @@ internal fun mergeMovedLocalChapter(
         version = maxOf(chapter.version, duplicate.version),
         memo = JsonObject(chapter.memo + duplicate.memo),
         translatedName = chapter.translatedNameOrNull ?: duplicate.translatedNameOrNull,
+        // The duplicate row is about to be removed, so its finish timestamp has to travel with the
+        // merge; keeping the earlier of the two preserves the "first finished" meaning.
+        markedReadAt = earliestMarkedReadAt(listOf(chapter, duplicate)),
     )
+}
+
+/**
+ * Picks the finish timestamp to carry across a merge: the earliest one any of the merged rows has.
+ *
+ * The column means "first finished", so a row that was re-stamped later must not move the date
+ * forward. Rows without a stamp carry 0, which is absence rather than a very old date, and null is
+ * returned when none of them has one so the caller leaves the stored value untouched.
+ */
+private fun earliestMarkedReadAt(chapters: List<Chapter>): Long? {
+    return chapters.map(Chapter::markedReadAt).filter { it > 0 }.minOrNull()
 }
 
 internal fun findExactLocalChapterDuplicateGroups(chapters: List<Chapter>): List<List<Chapter>> {
@@ -170,6 +184,9 @@ internal fun mergeExactLocalChapterDuplicates(
             },
         ),
         translatedName = ordered.firstNotNullOfOrNull(Chapter::translatedNameOrNull),
+        // Same reason as the move merge: the rows folded in here disappear, so the keeper has to
+        // take over the earliest finish timestamp among them.
+        markedReadAt = earliestMarkedReadAt(ordered),
     )
 }
 
