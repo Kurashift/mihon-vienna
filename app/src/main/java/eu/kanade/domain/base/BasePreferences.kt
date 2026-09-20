@@ -68,7 +68,7 @@ class BasePreferences(
     /** Chapters the user keeps as good doujins. */
     val goodDoujins: Preference<String> = preferenceStore.getString("good_doujins", "")
 
-    /** Recent random manga and chapter selections shared by every random entry point. */
+    /** Recent random manga selections, shared by every random entry point. */
     val recentlySkippedManga: Preference<String> = preferenceStore.getString("recently_skipped_manga", "")
 
     /** Play history of the audio module, stored as a JSON list. */

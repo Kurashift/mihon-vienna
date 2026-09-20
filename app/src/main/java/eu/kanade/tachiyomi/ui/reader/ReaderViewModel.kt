@@ -1007,6 +1007,7 @@ class ReaderViewModel @JvmOverloads constructor(
         )
         val available = randomSelectionCooldown.eligibleChapters(
             candidates = candidates,
+            currentMangaId = currentManga.id,
             releaseOnExhaustion = allowCooldownReset,
             mangaId = Chapter::mangaId,
             chapterId = Chapter::id,
@@ -1029,7 +1030,7 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     private suspend fun findRandomGoodDoujinTarget(allowCooldownReset: Boolean): RandomJumpTarget? {
-        if (manga == null) return null
+        val currentManga = manga ?: return null
         val marks = Injekt.get<GoodDoujinStore>().marks.value
         val mangaIds = marks.mapTo(linkedSetOf()) { it.mangaId }.toList()
         if (mangaIds.isEmpty()) return null
@@ -1044,6 +1045,7 @@ class ReaderViewModel @JvmOverloads constructor(
         )
         val available = randomSelectionCooldown.eligibleChapters(
             candidates = candidates,
+            currentMangaId = currentManga.id,
             releaseOnExhaustion = allowCooldownReset,
             mangaId = Chapter::mangaId,
             chapterId = Chapter::id,
@@ -1139,8 +1141,8 @@ class ReaderViewModel @JvmOverloads constructor(
         val localArchive: Format.Archive?,
     )
 
-    fun rememberSkippedChapter(mangaId: Long, chapterId: Long) {
-        randomSelectionCooldown.rememberChapter(mangaId, chapterId)
+    fun rememberSkippedManga(mangaId: Long) {
+        randomSelectionCooldown.rememberManga(mangaId)
     }
 
     fun getChapterUrl(): String? {

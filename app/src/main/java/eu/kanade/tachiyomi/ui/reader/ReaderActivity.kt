@@ -669,11 +669,11 @@ class ReaderActivity : BaseActivity() {
                 null
             }
             if (target != null) {
-                // Remember the chapter we jumped from so the next random jump doesn't land on
-                // that same chapter; the manga's other unread chapters stay in the pools.
+                // Cool the work we jumped from, not just the chapter, so the next jump cannot land
+                // on the same work wearing one of its other unread chapters.
                 val currentChapterId = viewModel.getCurrentChapterId()
                 if (currentChapterId != null) {
-                    viewModel.rememberSkippedChapter(viewModel.mangaId, currentChapterId)
+                    viewModel.rememberSkippedManga(viewModel.mangaId)
                     RandomReaderHistory.push(
                         RandomReaderHistory.Entry(
                             mangaId = viewModel.mangaId,

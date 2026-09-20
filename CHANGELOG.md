@@ -68,6 +68,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 - Fixed History crashing on launch for installs upgraded from earlier versions (since 2.2.5): the reading-progress columns were added to the historyView definition without a migration, so existing databases kept the old view and the history query failed with a missing column; a migration now recreates the view
 - The library's random button now shares the same "recently shown" memory every other random entry point already had, so pressing it twice in a row no longer offers the same work again on a small shelf. It was the one random pick that drew with no memory at all, which is why it felt repetitive while the dice on a work's page did not. The shared memory also no longer wipes itself when a shelf is smaller than the window: it keeps the newest pick aside, so a shelf of a dozen works cannot collapse into a fixed rotation
+- Reader: swiping for a random work no longer keeps landing on the same one. The memory behind it cooled a single chapter rather than the work, so a work you had just left came straight back wearing one of its other unread chapters, and the window held only ten entries against a library of thousands of chapters — measured on a library of 405 works, a third of the swipes repeated a work already seen. It now cools the work, holds fifty of them, and never jumps to the one you are reading; on that same library the first 35 swipes are now all different works
 
 ## [v2.2.4] - 2026-09-13
 ### Added
