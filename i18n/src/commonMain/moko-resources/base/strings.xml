@@ -1210,6 +1210,7 @@
     <string name="marks_list_remove_entry_confirm">Remove “%1$s” from this list? The local manga will not be deleted.</string>
     <string name="marks_list_remove_selected_confirm">Remove the selected %1$d manga and all of their list entries? Your local files will not be touched.</string>
     <string name="marks_list_remove_selected_entries_confirm">Remove the selected %1$d works from this list? Your local manga will not be deleted.</string>
+    <string name="marks_list_no_others">No other marked works available</string>
     <string name="marks_list_chapter_count">%1$d marked works</string>
     <string name="marks_list_search_hint">Search by work or chapter name</string>
     <string name="marks_list_open_chapter">Open work</string>

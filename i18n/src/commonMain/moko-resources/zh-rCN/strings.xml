@@ -1071,6 +1071,7 @@
     <string name="marks_list_remove_entry_confirm">从清单中移除“%1$s”？不会删除本地漫画。</string>
     <string name="marks_list_remove_selected_confirm">从清单中移除选中的 %1$d 部漫画及其全部记录？不会删除本地文件。</string>
     <string name="marks_list_remove_selected_entries_confirm">从清单中移除选中的 %1$d 个篇目？不会删除本地漫画。</string>
+    <string name="marks_list_no_others">没有其他标记作品</string>
     <string name="marks_list_chapter_count">已标记 %1$d 个篇目</string>
     <string name="marks_list_search_hint">按漫画名或篇目名搜索</string>
     <string name="marks_list_open_chapter">进入篇目阅读</string>

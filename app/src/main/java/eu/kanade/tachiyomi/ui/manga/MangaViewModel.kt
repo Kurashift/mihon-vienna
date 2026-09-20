@@ -838,10 +838,24 @@ class MangaViewModel(
             return if (allowed == null) this else filter { it in allowed }
         }
 
+        // The mark scope can be switched from the filter sheet, so the candidates the browse page
+        // handed over may no longer be the range on screen. Narrowing by the scope in force now
+        // keeps a jump inside it: without this the pick could land on a work carrying none of the
+        // marked chapters the destination then tries to show, which is an empty page.
+        val markedIds = chapterScopeInternal.value.randomPoolMangaIds(
+            markedMangaIds = mangaMarkStore.marks.value.map { it.mangaId },
+            goodDoujinMangaIds = goodDoujinStore.marks.value.map { it.mangaId },
+        )
+        fun List<Long>.withinMark(): List<Long> {
+            return if (markedIds == null) this else filter { it in markedIds }
+        }
+
         // Prefer the filtered list the user came from (local source browse page), so
         // random keeps opening manga within the same search/filter result.
         if (randomCandidates.isNotEmpty()) {
-            randomSelectionCooldown.pickManga(randomCandidates.withinScope(), manga.id)?.let { return it }
+            randomSelectionCooldown
+                .pickManga(randomCandidates.withinScope().withinMark(), manga.id)
+                ?.let { return it }
         }
 
         // Fallback: pick from the whole local library (e.g. opened from home/updates), where
@@ -862,9 +876,14 @@ class MangaViewModel(
                 }
                 .withinScope()
         }
-        return randomSelectionCooldown.pickManga(ids, manga.id)
+        return randomSelectionCooldown.pickManga(ids.withinMark(), manga.id)
     }
 
+    /**
+     * Picks a random work from the good-doujin list. It is the list itself that decides the pool,
+     * so a jump always lands on a work carrying one of those chapters whatever this screen is
+     * currently narrowed to.
+     */
     internal suspend fun getRandomGoodDoujinManga(): RandomGoodDoujinResult {
         val currentMangaId = successState?.manga?.id ?: return RandomGoodDoujinResult(false, null)
         val markedMangaIds = goodDoujinStore.marks.value

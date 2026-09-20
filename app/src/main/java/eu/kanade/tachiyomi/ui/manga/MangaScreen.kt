@@ -234,7 +234,17 @@ class MangaScreen(
                                 )
                             } else {
                                 viewModel.snackbarHostState.showSnackbarReplacing(
-                                    context.stringResource(MR.strings.information_no_entries_found),
+                                    context.stringResource(
+                                        // Under a mark scope an empty result means there is no
+                                        // other work carrying that mark, not that the shelf is
+                                        // empty - the message has to name the reason the reader
+                                        // can act on.
+                                        when (successState.chapterScope) {
+                                            ChapterScope.FLAGGED -> MR.strings.marks_list_no_others
+                                            ChapterScope.GOOD_DOUJIN -> MR.strings.good_doujin_list_no_others
+                                            ChapterScope.ALL -> MR.strings.information_no_entries_found
+                                        },
+                                    ),
                                 )
                             }
                         } finally {

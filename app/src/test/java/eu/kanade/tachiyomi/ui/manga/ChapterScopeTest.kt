@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.ui.manga
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -61,5 +63,35 @@ class ChapterScopeTest {
     fun `marks of another work do not leak in`() {
         assertFalse(ChapterScope.FLAGGED.includes(11L, setOf(21L, 22L), emptySet()))
         assertFalse(ChapterScope.GOOD_DOUJIN.includes(11L, emptySet(), setOf(21L, 22L)))
+    }
+
+    /**
+     * A random jump has to land inside the scope on screen. Landing outside it opens a work whose
+     * page then shows none of the marked chapters - an empty screen the reader cannot read from.
+     */
+    @Test
+    fun `a mark scope narrows the random pool to its own works`() {
+        assertEquals(setOf(1L, 2L), ChapterScope.FLAGGED.randomPoolMangaIds(setOf(1L, 2L), setOf(2L, 3L)))
+        assertEquals(
+            setOf(2L, 3L),
+            ChapterScope.GOOD_DOUJIN.randomPoolMangaIds(setOf(1L, 2L), setOf(2L, 3L)),
+        )
+    }
+
+    /** No scope narrows nothing, which is what leaves the whole library as the pool. */
+    @Test
+    fun `the all scope leaves the random pool alone`() {
+        assertNull(ChapterScope.ALL.randomPoolMangaIds(setOf(1L), setOf(2L)))
+    }
+
+    /**
+     * Nothing is marked, so nothing is eligible. Returning an empty set rather than null matters:
+     * null would read as "no narrowing" and hand the whole library back, which is the empty page
+     * this exists to prevent.
+     */
+    @Test
+    fun `a mark scope with no marks has an empty random pool, not an open one`() {
+        assertEquals(emptySet<Long>(), ChapterScope.FLAGGED.randomPoolMangaIds(emptyList(), emptyList()))
+        assertEquals(emptySet<Long>(), ChapterScope.GOOD_DOUJIN.randomPoolMangaIds(emptyList(), emptyList()))
     }
 }

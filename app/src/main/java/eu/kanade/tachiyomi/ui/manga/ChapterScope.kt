@@ -39,3 +39,23 @@ fun ChapterScope.includes(
     ChapterScope.FLAGGED -> chapterId in markedChapterIds
     ChapterScope.GOOD_DOUJIN -> chapterId in goodDoujinChapterIds
 }
+
+/**
+ * The works a random pick may land on under [scope], or null when it narrows nothing.
+ *
+ * A jump has to stay inside the part the reader is looking at: landing on a work that carries
+ * none of the marked chapters the destination then tries to show opens an empty page. Marks are
+ * stored against the chapter while this pool is made of works, so the two lists are folded to
+ * their work ids here.
+ *
+ * Both inputs are the works of a mark store, and the scopes read them exactly as [includes]
+ * reads the chapter-level sets - same store, same scope.
+ */
+fun ChapterScope.randomPoolMangaIds(
+    markedMangaIds: Collection<Long>,
+    goodDoujinMangaIds: Collection<Long>,
+): Set<Long>? = when (this) {
+    ChapterScope.ALL -> null
+    ChapterScope.FLAGGED -> markedMangaIds.toHashSet()
+    ChapterScope.GOOD_DOUJIN -> goodDoujinMangaIds.toHashSet()
+}
