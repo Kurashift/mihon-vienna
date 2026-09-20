@@ -67,6 +67,16 @@ class RandomSelectionCooldownTest {
     }
 
     @Test
+    fun `exhausted pool still excludes the most recent pick`() {
+        val preference = InMemoryPreferenceStore().getString("random_selection_cooldown")
+        // Whole pool cooled, with manga 1 as the most recent selection and first in the pool.
+        preference.set("""[{"mangaId":2,"at":0},{"mangaId":1,"at":0}]""")
+        val cooldown = RandomSelectionCooldown(preference, now = { 0L }, randomIndex = { 0 })
+
+        assertEquals(2L, cooldown.pickManga(listOf(1, 2)))
+    }
+
+    @Test
     fun `chapter pool only releases cooldown for an explicit retry`() {
         val cooldown = createCooldown()
         val chapter = Candidate(1, 10)

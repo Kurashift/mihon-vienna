@@ -17,6 +17,7 @@ import eu.kanade.presentation.manga.DownloadAction
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -90,6 +91,7 @@ class LibraryViewModel(
     private val downloadManager: DownloadManager = Injekt.get(),
     private val downloadCache: DownloadCache = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
+    private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
 ) : StateViewModel<LibraryViewModel.State>(State()) {
 
     init {
@@ -655,7 +657,10 @@ class LibraryViewModel(
 
     fun getRandomLibraryItemForCurrentCategory(): LibraryItem? {
         val state = state.value
-        return state.getItemsForCategoryId(state.activeCategory?.id).randomOrNull()
+        val itemsById = state.getItemsForCategoryId(state.activeCategory?.id)
+            .associateBy { it.libraryManga.manga.id }
+        val pickedId = randomSelectionCooldown.pickManga(itemsById.keys)
+        return pickedId?.let(itemsById::get)
     }
 
     fun showSettingsDialog() {

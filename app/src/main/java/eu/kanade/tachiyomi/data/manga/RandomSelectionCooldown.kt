@@ -33,8 +33,11 @@ class RandomSelectionCooldown(
         val resolvedPool = when {
             available.isNotEmpty() -> available
             entries.isNotEmpty() -> {
-                writeEntries(emptyList())
-                pool
+                // Exhaustion: keep the newest pick cooled rather than wiping the window, so a
+                // pool smaller than MAX_ENTRIES still cannot offer the same manga twice in a row.
+                val latest = entries.last()
+                writeEntries(listOf(latest))
+                pool.filterNot { it == latest.mangaId }.ifEmpty { pool }
             }
             else -> pool
         }
