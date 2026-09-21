@@ -10,16 +10,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Fixed` - for any bug fixes.
 - `Other` - for technical stuff.
 
-## [v2.2.5] - 2026-09-14
-### Added
-- Local library: the toolbar menu now offers "Import/export title translations", reaching the same screen as the entry in Data and storage
-
-### Fixed
-- Fixed the local library translation export dropping works that were never opened. Those folders have no database rows, and the export used to skip them entirely, so a library of hundreds could export only a fraction. The export now lists every chapter file the scan confirms
-- Fixed the export reading a narrower set than the count it reported, so it could promise more chapters than the file contained
-- Fixed importing a template for an unopened work: its chapters are now registered from disk first, so the filled-in translations are stored instead of being discarded as unmatched
-
-## [Unreleased]
+## [v2.3.0] - 2026-09-21
 ### Added
 - Local library: PDF files are read as chapters. A PDF has no image files to list, so each page is rendered on demand and then treated exactly like a page from any other format, which keeps dual-page splitting, zoom, the automatic background and save/share/set-as-cover working with no format-specific code. A PDF can be imported like an archive, and a folder of them is a folder of chapters
 - Local library: the filter row can show only the works that are not on a shelf yet, so a batch of newly added folders can be sorted into shelves in one pass
@@ -29,9 +20,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - My lists: opening a work from the marks list or the good-doujin list shows that list's chapters, the same way the library's mark filters do
 - Work page: the bottom-left random gesture now stays inside 标记 / 好本子 when the page is narrowed to one of them, and says "No other marked works available" instead of opening an empty page. Two things had to line up for the jump to land somewhere readable — the candidates inherited from the browse list were the ones that list had at the time, so they are now narrowed by the scope in force (the filter sheet can switch it after arriving), and the fallback pool used when there is no browse list to inherit was the whole library with the reading filter alone. A jump that lands outside the scope opens a work carrying none of the chapters the destination then tries to show
 - Work page: which chapters a random jump opens with is decided by the mode you picked, never by the gesture. Only 标记 and 好本子 narrow a page, so a random good-doujin jump keeps 好本子 when that is the mode in force and opens the work whole otherwise — including from an unfiltered list, where it used to narrow to 好本子 on its own. That gesture always draws from the good-doujin list whichever filter the screen carries, so under 标记 it would land on a work with no marked chapters and open an empty page; the reader did not ask for a mark-narrowed page by dragging from a screen that says nothing about which chapters to show. The other gesture still keeps whatever mode the page is in
-
 - History: each entry now shows how far into the chapter you left off — the same x/y page progress the reader shows, next to the date, and only for an unfinished chapter that was actually opened, matching the updates list
-
 - Work page: an empty chapter list now says so in the list area, in the same face-and-caption style the other empty screens use. It used to just stop under the header, which read as still loading. It names the right reason too: a work whose chapters are all hidden by the filters or the display scope says "No chapters under the current filters", while a work that genuinely has none keeps the existing message — telling the first one "no chapters" would read as the work's files having gone missing. The line stays hidden while a fetch is in flight, when an empty list only means the chapters have not been read yet
 - Main screen: backing out of the shelf tab with the system back shows a short centered "press back again to exit" capsule floating above the bottom bar; it lets taps through, and a second press within two seconds leaves the app. Deeper screens and dialogs keep their own back behavior
 
@@ -97,10 +86,20 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - My lists: the "read entries" list no longer re-dates a finished work every time you open it. Its date came from a column that only means "first finished", but a chapter that had been marked read without recording one fell back to the last-read time in history, which the reader refreshes on every open — so a stray tap on the last page moved the entry to the top with a fresh date. Every path that marks a chapter read now records that date, a backup carries it, moving or de-duplicating local chapters keeps it, and a migration fills it in for entries that never got one; the list reads the column alone, so the date and the order hold still. A restored backup also no longer clears a date the device already had
 - Fixed "clear reading records" on a source's listing leaving the finish date behind. It reset the read flag and the page progress but not the date, so the same action cleared the date from a work's own menu and kept it from the source listing — the work dropped out of the read-entries list either way, but the leftover date stayed in the database. Both paths now clear it, and a migration clears any already left behind
 - My lists: a selection in a work's read entries is now managed like the shelf's — select all, invert and cancel in the top bar, with mark-as-unread moved to the bottom row behind the same long-press guard the other destructive actions use. The screen's own time field was also renamed, since it holds the finish date rather than the last time the work was opened
-
 - Fixed History crashing on launch for installs upgraded from earlier versions (since 2.2.5): the reading-progress columns were added to the historyView definition without a migration, so existing databases kept the old view and the history query failed with a missing column; a migration now recreates the view
 - The library's random button now shares the same "recently shown" memory every other random entry point already had, so pressing it twice in a row no longer offers the same work again on a small shelf. It was the one random pick that drew with no memory at all, which is why it felt repetitive while the dice on a work's page did not. The shared memory also no longer wipes itself when a shelf is smaller than the window: it keeps the newest pick aside, so a shelf of a dozen works cannot collapse into a fixed rotation
 - Reader: swiping for a random work no longer keeps landing on the same one. The memory behind it cooled a single chapter rather than the work, so a work you had just left came straight back wearing one of its other unread chapters, and the window held only ten entries against a library of thousands of chapters — measured on a library of 405 works, a third of the swipes repeated a work already seen. It now cools the work, holds fifty of them, and never jumps to the one you are reading; on that same library the first 35 swipes are now all different works
+
+## [Unreleased]
+
+## [v2.2.5] - 2026-09-14
+### Added
+- Local library: the toolbar menu now offers "Import/export title translations", reaching the same screen as the entry in Data and storage
+
+### Fixed
+- Fixed the local library translation export dropping works that were never opened. Those folders have no database rows, and the export used to skip them entirely, so a library of hundreds could export only a fraction. The export now lists every chapter file the scan confirms
+- Fixed the export reading a narrower set than the count it reported, so it could promise more chapters than the file contained
+- Fixed importing a template for an unopened work: its chapters are now registered from disk first, so the filled-in translations are stored instead of being discarded as unmatched
 
 ## [v2.2.4] - 2026-09-13
 ### Added
