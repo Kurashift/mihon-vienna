@@ -2452,6 +2452,7 @@ class LocalSource(
         const val ORDER_BY_CHAPTER_COUNT = 2
 
         private const val LISTING_INDEX_VERSION = 4
+
         // 5: page counts no longer include leftover thumbnail files such as `.thumb`.
         private const val CHAPTER_INDEX_VERSION = 5
         private const val CHAPTER_NAMES_INDEX_VERSION = 2
