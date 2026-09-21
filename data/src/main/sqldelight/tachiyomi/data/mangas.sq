@@ -313,6 +313,15 @@ WHERE _id = :mangaId;
 
 insertNetworkManga {
     -- Insert the manga if it doesn't exist already
+    --
+    -- A local work whose caller could not date it gets the current time instead of 0. The date sort
+    -- reads this column as the day the work entered the local library, and 0 reads as 1970: a work
+    -- imported through the import screen - built by Manga.create(), which leaves date_added at 0 -
+    -- used to sort as the oldest entry in the library and its date header came out "unknown".
+    -- Only the local source is filled in: a remote work's date_added is what it is, and the updates
+    -- view compares the chapters' date_fetch against it.
+    --
+    -- strftime returns seconds; every other timestamp in this schema is milliseconds.
     INSERT INTO mangas(
         source, url, artist, author, description, genre, title, status, thumbnail_url, favorite,
         last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added,
@@ -320,7 +329,11 @@ insertNetworkManga {
     )
     SELECT
         :source, :url, :artist, :author, :description, :genre, :title, :status, :thumbnailUrl, :favorite,
-        :lastUpdate, :nextUpdate, :initialized, :viewerFlags, :chapterFlags, :coverLastModified, :dateAdded,
+        :lastUpdate, :nextUpdate, :initialized, :viewerFlags, :chapterFlags, :coverLastModified,
+        CASE
+            WHEN :source = 0 AND :dateAdded = 0 THEN strftime('%s', 'now') * 1000
+            ELSE :dateAdded
+        END,
         :updateStrategy, :calculateInterval, 0, :version, :memo
     WHERE NOT EXISTS(SELECT 0 FROM mangas WHERE source = :source AND url = :url);
 

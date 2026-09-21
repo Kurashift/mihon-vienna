@@ -1,0 +1,27 @@
+-- 本地作品的导入日期补回真实时间。
+--
+-- 「导入日期」排序与日期表头读 mangas.date_added，而导入路径（LocalImportScreen、题名翻译
+-- 模板导入、本地篇目移动的目标）是用 Manga.create() 建行的，那个工厂把 date_added 留成 0；
+-- insertNetworkManga 原样透传，之后没有任何写入方回填。0 是 1970，这些作品因此永远排在
+-- 最旧一头，表头显示「未知」。同一批作品若是靠浏览目录发现的，走的是 SManga.toDomainManga，
+-- 写的是真实时间——同一个库里两条路结果不同。
+--
+-- 插入路径已在 insertNetworkManga 里改为写当前时间，这里只补存量行。真实的导入时刻没有
+-- 别处记着，但该作品篇目最早的抓取时间是一个可靠的代理：篇目是随目录一起被发现的，所以它
+-- 不会早于作品进入库的时刻，也远好过 1970。没有任何篇目的行保持 0，由展示层继续当作
+-- 「未知」处理。
+--
+-- 这个 UPDATE 会触发 update_last_modified_at_mangas，把被补行的 last_modified_at 刷成当前
+-- 时间。该列唯一的外部用途是恢复备份时的排序，影响可忽略；version 与 favorite_modified_at
+-- 都不受影响（未点名 favorite，url/description 未变）。
+UPDATE mangas
+SET date_added = coalesce(
+    (
+        SELECT min(chapters.date_fetch)
+        FROM chapters
+        WHERE chapters.manga_id = mangas._id
+    ),
+    date_added
+)
+WHERE source = 0
+AND date_added = 0;
