@@ -47,3 +47,8 @@ gradle/build-logic/bin/
 /_*.json
 /_ctx_out/
 /generated-images/
+
+# JVM crash dumps. A test JVM that dies from memory pressure drops these beside
+# whichever module it was running for, not in the root.
+hs_err_pid*.log
+replay_pid*.log
