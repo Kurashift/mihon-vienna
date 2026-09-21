@@ -282,6 +282,7 @@ data class LocalImportScreen(
                 )
             }
         val ambiguousExistingGroupedTargetCount = groupedTargetResolutions.count { (_, target) -> target == null }
+
         /** Whether every name this batch will import under is one the import can act on. */
         val collectionNamesUsable = !hasInvalidGroupedName &&
             groupedNameCollisions == 0 &&
@@ -290,6 +291,7 @@ data class LocalImportScreen(
             // neither of those chosen is an unfinished name rather than a reason to fall back to the
             // folder's own.
             (!isSingleCollection || !singleCollectionName.isNullOrBlank())
+
         /**
          * The list the target card shows, in batch order: the name each collection will be created
          * or reused under, and whether it already exists. A null third means the name is ambiguous
@@ -495,7 +497,7 @@ data class LocalImportScreen(
                         if (selectedUris.isEmpty()) {
                             Text(
                                 text = "文件夹：整个文件夹作为一个来源导入\n" +
-                                    "文件：支持 CBZ、ZIP、RAR、7Z、TAR 等压缩包与 EPUB",
+                                    "文件：支持 CBZ、ZIP、RAR、7Z、TAR 等压缩包与 EPUB、PDF",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp),
@@ -1119,7 +1121,7 @@ private fun LocalChapterTransferService.SourceRejection.reasonText(): String {
         LocalChapterTransferService.SourceRejection.Unreadable ->
             "无法读取，可能是权限不足或系统限制的目录"
         LocalChapterTransferService.SourceRejection.NoContent ->
-            "没有找到可导入的本子或压缩包"
+            "没有找到可导入的本子、压缩包、EPUB 或 PDF"
         LocalChapterTransferService.SourceRejection.InsideLibrary ->
             "已经在本地库中，无需重复导入"
     }

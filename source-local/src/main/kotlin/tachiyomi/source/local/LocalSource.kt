@@ -34,8 +34,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromStream
 import logcat.LogPriority
+import mihon.core.archive.PdfReader
 import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
+import mihon.core.archive.pdfReader
 import nl.adaptivity.xmlutil.core.AndroidXmlReader
 import nl.adaptivity.xmlutil.serialization.XML
 import org.json.JSONArray
@@ -1308,9 +1310,7 @@ class LocalSource(
                 // Uses the chapter metadata cache, so only the archive that actually
                 // contains a ComicInfo.xml is opened (or none, when there isn't one).
                 noXmlFile == null -> {
-                    val chapterFiles = mangaDirFiles.filter {
-                        it.isDirectory || Archive.isSupported(it) || it.extension.equals("epub", true)
-                    }
+                    val chapterFiles = mangaDirFiles.filter(Archive::isChapterEntry)
                     if (chapterFiles.isEmpty()) return@withIOContext manga
                     val entries = getChapterIndex(manga, chapterFiles)
                     val archiveWithComicInfo = entries.firstOrNull { entry ->
@@ -1977,6 +1977,13 @@ class LocalSource(
                 dateUpload = chapter.date_upload
                 pageCount = runCatching { epub.getImagesFromPages().size }.getOrDefault(0)
             }
+        } else if (format is Format.Pdf) {
+            // A PDF has no ComicInfo.xml, so the only thing worth the open is the page count.
+            // That count is also all that can fail here: a password-protected or corrupt file
+            // must leave the rest of the chapter list readable rather than take it down.
+            pageCount = runCatching {
+                format.file.pdfReader(context).use { it.pageCount }
+            }.getOrDefault(0)
         } else {
             getComicInfoForChapter(chapterFile) { stream ->
                 val chapter = SChapter.create().apply {
@@ -2418,6 +2425,21 @@ class LocalSource(
                         entry?.let { coverManager.update(manga, epub.getInputStream(it)!!) }
                     }
                 }
+                is Format.Pdf -> {
+                    // The first page is rendered rather than copied, so the cover file ends up
+                    // holding image bytes like every other format's does.
+                    format.file.pdfReader(context).use { pdf ->
+                        if (pdf.pageCount == 0) return@use null
+                        coverManager.update(
+                            manga,
+                            pdf.renderPageAsStream(
+                                index = 0,
+                                maxWidth = PdfReader.COVER_MAX_SIZE,
+                                maxHeight = PdfReader.COVER_MAX_SIZE,
+                            ),
+                        )
+                    }
+                }
             }
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Error updating cover for ${manga.title}" }
@@ -2555,6 +2577,7 @@ private val LOCAL_CHAPTER_FILE_EXTENSIONS = listOf(
     "cbt",
     "tar",
     "epub",
+    "pdf",
 )
 
 internal data class LocalPage<T>(

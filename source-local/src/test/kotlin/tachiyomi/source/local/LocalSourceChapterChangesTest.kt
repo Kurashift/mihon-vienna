@@ -21,9 +21,16 @@ class LocalSourceChapterChangesTest {
                 "Chapter 1.cbt",
                 "Chapter 1.tar",
                 "Chapter 1.epub",
+                "Chapter 1.pdf",
             ),
             chapterFileNameCandidates("Chapter 1"),
         )
+    }
+
+    @Test
+    fun `pdf base name is normalized like the other formats`() {
+        assertEquals("Chapter 1", chapterBaseName("Chapter 1.pdf"))
+        assertEquals(listOf("Chapter 1.pdf"), chapterFileNameCandidates("Chapter 1.pdf"))
     }
 
     @Test

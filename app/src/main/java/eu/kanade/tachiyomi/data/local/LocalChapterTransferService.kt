@@ -688,7 +688,7 @@ class LocalChapterTransferService(
 
     internal fun expand(file: UniFile): List<Candidate> {
         if (!file.isDirectory) {
-            return if (Archive.isSupported(file) || file.extension.equals("epub", true)) {
+            return if (Archive.isChapterEntry(file)) {
                 listOf(Candidate(file, file.name.orEmpty().substringBeforeLast('.')))
             } else {
                 emptyList()
@@ -696,10 +696,7 @@ class LocalChapterTransferService(
         }
         val children = file.listFiles().orEmpty()
         val directImages = children.filter { !it.isDirectory && isImportableFile(it) }
-        val directArchives = children.filter {
-            !it.isDirectory &&
-                (Archive.isSupported(it) || it.extension.equals("epub", true))
-        }
+        val directArchives = children.filter { !it.isDirectory && Archive.isChapterEntry(it) }
         // Dot-prefixed directories are download-client bookkeeping (`.thumb`), not chapters:
         // counting one as a child folder would also make a folder of loose images look like a
         // container and stop it from importing as a single chapter. Same rule as [expandGrouped].

@@ -1112,7 +1112,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 val localArchive = if (source is LocalSource) {
                     when (val format = runCatching { source.getFormat(chapter.toSChapter()) }.getOrNull()) {
                         is Format.Archive -> format
-                        is Format.Directory, is Format.Epub -> null
+                        is Format.Directory, is Format.Epub, is Format.Pdf -> null
                         null -> continue
                     }
                 } else {

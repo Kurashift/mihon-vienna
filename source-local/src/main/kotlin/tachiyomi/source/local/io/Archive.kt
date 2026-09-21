@@ -24,7 +24,7 @@ object Archive {
         val name = file.name.orEmpty()
         if (name.isEmpty()) return false
         if (file.isDirectory) return !name.startsWith('.')
-        return isSupported(file) || file.extension.equals("epub", true)
+        return isSupported(file) || file.extension.equals("epub", true) || file.extension.equals("pdf", true)
     }
 
     /**

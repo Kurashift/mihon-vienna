@@ -25,6 +25,17 @@ class ArchiveTest {
     }
 
     @Test
+    fun `pdf is a chapter`() {
+        assertTrue(Archive.isChapterEntry(entry("Chapter 1.pdf")))
+        assertTrue(Archive.isChapterEntry(entry("Chapter 1.PDF")))
+    }
+
+    @Test
+    fun `dot-prefixed pdf stays a chapter like the other supported formats`() {
+        assertTrue(Archive.isChapterEntry(entry(".Hentai.pdf")))
+    }
+
+    @Test
     fun `plain archive and chapter directory are chapters`() {
         assertTrue(Archive.isChapterEntry(entry("Chapter 1.cbz")))
         assertTrue(Archive.isChapterEntry(entry("Chapter 1", directory = true)))

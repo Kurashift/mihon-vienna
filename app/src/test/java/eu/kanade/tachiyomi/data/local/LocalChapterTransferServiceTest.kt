@@ -75,6 +75,27 @@ class LocalChapterTransferServiceTest {
     }
 
     @Test
+    fun `a selected pdf is a chapter`() {
+        assertEquals(listOf("Chapter 1"), service.expand(image("Chapter 1.pdf")).map { it.name })
+    }
+
+    @Test
+    fun `each pdf in a folder is its own chapter`() {
+        // A PDF is a whole document, not a loose page, so it counts as a chapter file the same
+        // way a cbz does - a folder of them is a folder of chapters, not one chapter.
+        val book = directory("Book", image("Chapter 1.pdf"), image("Chapter 2.pdf"))
+
+        assertEquals(listOf("Chapter 1", "Chapter 2"), service.expand(book).map { it.name })
+    }
+
+    @Test
+    fun `pdfs sit alongside archives in a mixed folder`() {
+        val book = directory("Book", image("Chapter 1.cbz"), image("Chapter 2.pdf"))
+
+        assertEquals(listOf("Chapter 1", "Chapter 2"), service.expand(book).map { it.name })
+    }
+
+    @Test
     fun `picking the library folder itself clashes`() {
         assertTrue(
             service.overlapsPath(

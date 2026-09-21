@@ -24,6 +24,7 @@ import logcat.LogPriority
 import mihon.core.archive.ArchiveEntry
 import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
+import mihon.core.archive.pdfReader
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.source.local.io.Archive
@@ -319,6 +320,7 @@ class LocalChapterCoverManager(
                 is Format.Directory -> decodeDirectoryCover(format.file)
                 is Format.Archive -> decodeArchiveCover(format.file)
                 is Format.Epub -> decodeEpubCover(format.file)
+                is Format.Pdf -> decodePdfCover(format.file)
             } ?: return null
 
             writeCover(bitmap, target)
@@ -392,6 +394,17 @@ class LocalChapterCoverManager(
             val entry = epub.getImagesFromPages().firstOrNull() ?: return@use null
             val input = epub.getInputStream(entry) ?: return@use null
             decodeCopiedThumbnail(input)
+        }
+    }
+
+    /**
+     * The first page is rendered straight into the thumbnail's own box, so unlike the other
+     * formats there is no source image to decode and downscale afterwards.
+     */
+    private fun decodePdfCover(pdfFile: UniFile): Bitmap? {
+        return pdfFile.pdfReader(context).use { pdf ->
+            if (pdf.pageCount == 0) return@use null
+            pdf.renderPage(index = 0, maxWidth = TARGET_WIDTH, maxHeight = TARGET_HEIGHT)
         }
     }
 
