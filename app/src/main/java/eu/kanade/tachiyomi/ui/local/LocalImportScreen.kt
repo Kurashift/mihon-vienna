@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -46,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,6 +76,23 @@ private enum class ImportTargetMode {
     EXISTING,
     NEW,
 }
+
+/**
+ * One collection a batch will create or reuse, as the target list shows it.
+ *
+ * [key] is the name the folder gave, and never changes: it is what a rename is recorded against, so
+ * renaming the same row twice replaces the first rename instead of stacking a second one on a name
+ * that no longer exists. [name] is what the collection will actually be called, after any rename.
+ *
+ * [exists] is null when the name cannot be resolved against the library: either several stored
+ * collections match it after normalization, or the name is blank. The reader has to tidy that up
+ * before the import can run, so it is neither "new" nor "reused".
+ */
+private data class CollectionListItem(
+    val key: String,
+    val name: String,
+    val exists: Boolean?,
+)
 
 // 来源文件选择状态需要撑过"选择已有合集"的 push/pop：Voyager 离开组合时只有
 // rememberSaveable 会随返回恢复，普通 remember 会被丢弃（表现为选完合集后文件被清空）。
@@ -177,6 +197,7 @@ data class LocalImportScreen(
             mutableStateOf(if (fixedTargetMangaId != null) ImportTargetMode.EXISTING else ImportTargetMode.NEW)
         }
         var showMangaPicker by rememberSaveable { mutableStateOf(false) }
+        var showCollectionList by rememberSaveable { mutableStateOf(false) }
         var output by remember { mutableStateOf(LocalChapterTransferService.FolderOutput.DIRECTORY) }
         var deleteSource by remember { mutableStateOf(false) }
         var importing by remember { mutableStateOf(false) }
@@ -198,9 +219,21 @@ data class LocalImportScreen(
             )
         }
         val isCollectionImport = fixedTargetMangaId == null && isLocalCollectionImport(sourceShapes)
+        // Names as the folders give them, before any renaming, de-duplicated.
+        val derivedCollectionNames = localImportCollectionNames(sourceShapes)
+        // One collection is named in the field the manual target has always used, so its name is the
+        // reader's to edit there and the batch is imported through the ordinary single-target path -
+        // which reuses an existing collection of that name by itself. Several collections have names
+        // the folders own: they are listed to be checked, and renamed one by one from the list.
+        val isSingleCollection = isCollectionImport && derivedCollectionNames.size == 1
+        val isMultiCollection = isCollectionImport && derivedCollectionNames.size > 1
+        // Renames made from the collection list, keyed by the name the folder gave. A map rather than
+        // a rewritten source list: the source keeps naming its own folder, so removing a folder from
+        // the batch cannot leave a rename pointing at nothing.
+        var collectionRenames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
         // The collections this batch contributes. A folder that is itself the collection - its
-        // contents are directly the works - has no first-level containers of its own, so it stands
-        // in as one collection over itself: `importUrisInternal` expands a picked folder anyway, so
+        // contents are directly the works - has no first-level containers of its own, so it stands in
+        // as one collection over itself: `importUrisInternal` expands a picked folder anyway, so
         // handing it the folder is exactly what already happened for a folder picked as a chapter
         // source. Everything downstream (name collision, target reuse, the import itself) then works
         // on one shape instead of two.
@@ -218,10 +251,28 @@ data class LocalImportScreen(
                 )
             }
         }
-        val groupedNameCollisions = localGroupedImportNameCollisionCount(sourceGroups.map { it.name })
-        val hasInvalidGroupedName = hasInvalidLocalGroupedImportName(sourceGroups.map { it.name })
-        val groupedTargetKeys = sourceGroups.map { localMangaDirectoryIdentity(it.name) }.distinct()
-        val groupedTargetResolutions = sourceGroups
+        val renamedSourceGroups = sourceGroups.map { group ->
+            val derived = localMangaDirectoryName(group.name)
+            collectionRenames[derived]?.let { group.copy(name = it) } ?: group
+        }
+        // The name a single collection is created or reused under comes from the target controls: the
+        // text field, or the collection picked instead. The group is what carries the chapter URIs - a
+        // 根目录/作者/本子 folder holds its works one level down, and only the group knows that - so a
+        // single collection still travels the grouped path with a group of one.
+        val singleCollectionName = when {
+            !isSingleCollection -> null
+            targetMode == ImportTargetMode.EXISTING && targetId >= 0 ->
+                mangas.firstOrNull { it.id == targetId }?.url
+            else -> newTitle
+        }
+        val effectiveGroups = if (singleCollectionName != null) {
+            renamedSourceGroups.map { it.copy(name = singleCollectionName) }
+        } else {
+            renamedSourceGroups
+        }
+        val groupedNameCollisions = localGroupedImportNameCollisionCount(effectiveGroups.map { it.name })
+        val hasInvalidGroupedName = hasInvalidLocalGroupedImportName(effectiveGroups.map { it.name })
+        val groupedTargetResolutions = effectiveGroups
             .groupBy { localMangaDirectoryIdentity(it.name) }
             .values
             .map { groups ->
@@ -230,8 +281,51 @@ data class LocalImportScreen(
                     existingUrls = allLocalMangas.map(Manga::url),
                 )
             }
-        val existingGroupedTargetCount = groupedTargetResolutions.count { (_, target) -> target?.exists == true }
         val ambiguousExistingGroupedTargetCount = groupedTargetResolutions.count { (_, target) -> target == null }
+        /** Whether every name this batch will import under is one the import can act on. */
+        val collectionNamesUsable = !hasInvalidGroupedName &&
+            groupedNameCollisions == 0 &&
+            ambiguousExistingGroupedTargetCount == 0 &&
+            // A single collection is named by the field or by the collection picked instead, so
+            // neither of those chosen is an unfinished name rather than a reason to fall back to the
+            // folder's own.
+            (!isSingleCollection || !singleCollectionName.isNullOrBlank())
+        /**
+         * The list the target card shows, in batch order: the name each collection will be created
+         * or reused under, and whether it already exists. A null third means the name is ambiguous
+         * against the library and cannot be resolved without the reader tidying it up first.
+         *
+         * Built from the folders' own names rather than from [effectiveGroups], so each row keeps a
+         * key that a rename cannot move out from under it.
+         */
+        val collectionList = derivedCollectionNames.map { derived ->
+            val renamed = collectionRenames[derived] ?: derived
+            val target = resolveLocalGroupedImportTarget(
+                proposedName = renamed,
+                existingUrls = allLocalMangas.map(Manga::url),
+            )
+            CollectionListItem(
+                key = derived,
+                name = localMangaDirectoryName(renamed),
+                exists = target?.exists,
+            )
+        }
+        val existingCollectionCount = collectionList.count { it.exists == true }
+        val newCollectionCount = collectionList.count { it.exists == false }
+        val ambiguousCollectionCount = collectionList.count { it.exists == null }
+        // The folder's own name is the pre-filled answer, not a decision made for the reader. Tracked
+        // against the value this effect last wrote, so a name the reader typed is never overwritten
+        // while picking another folder still fills the field in.
+        var lastPrefilledTitle by rememberSaveable { mutableStateOf<String?>(null) }
+        LaunchedEffect(isSingleCollection, derivedCollectionNames) {
+            val derived = derivedCollectionNames.singleOrNull()
+                ?.takeIf { isSingleCollection }
+                ?: return@LaunchedEffect
+            if (newTitle.isBlank() || newTitle == lastPrefilledTitle) {
+                newTitle = derived
+                lastPrefilledTitle = derived
+            }
+        }
 
         fun groupedPlans(): List<LocalChapterTransferService.GroupPreviewRequest> {
             return groupedTargetResolutions.mapNotNull { (groups, target) ->
@@ -408,10 +502,10 @@ data class LocalImportScreen(
                             )
                         } else {
                             Text(
+                                // The collection count belongs to the target card, which is where the
+                                // names are; repeating it here only said the same thing twice.
                                 text = if (isCollectionImport) {
-                                    "已识别 ${sourceGroups.size} 个合集，共 ${sourcePreviews.sumOf {
-                                        it.candidateNames.size
-                                    }} 个本子"
+                                    "共 ${sourcePreviews.sumOf { it.candidateNames.size }} 个本子"
                                 } else {
                                     "已添加 ${sourcePreviews.size} 个来源，共 ${sourcePreviews.sumOf {
                                         it.candidateNames.size
@@ -428,17 +522,10 @@ data class LocalImportScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(preview.displayName, maxLines = 1)
                                         Text(
+                                            // The name a folder gives its collection is stated once, on
+                                            // the target card. Here it is only what the source holds.
                                             if (isCollectionImport && preview.groups.isNotEmpty()) {
-                                                "${preview.groups.size} 个合集：${preview.groups.take(3).joinToString("、") {
-                                                    it.name
-                                                }}"
-                                            } else if (isCollectionImport) {
-                                                // The folder is the collection, so its own name is what
-                                                // the card will be called - saying it here is what makes
-                                                // that visible before the import runs.
-                                                "作为合集「${localMangaDirectoryName(preview.displayName)}」导入，包含 ${
-                                                    preview.candidateNames.size
-                                                } 个本子"
+                                                "${preview.groups.size} 个合集，共 ${preview.candidateNames.size} 个本子"
                                             } else {
                                                 "包含 ${preview.candidateNames.size} 个本子：${preview.candidateNames.take(
                                                     3,
@@ -499,21 +586,24 @@ data class LocalImportScreen(
                 }
                 item {
                     ImportSection(title = "目标合集") {
-                        if (isCollectionImport) {
-                            Text("将按文件夹名称自动复用或创建合集")
+                        if (isMultiCollection) {
                             Text(
-                                "复用 $existingGroupedTargetCount 个，新建 ${groupedTargetKeys.size - existingGroupedTargetCount} 个",
+                                "按文件夹名称新建或复用 ${collectionList.size} 个合集",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "复用 $existingCollectionCount 个，新建 $newCollectionCount 个",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Text(
-                                sourceGroups.map {
-                                    localMangaDirectoryName(it.name)
-                                }.distinct().take(6).joinToString("、"),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
+                            // The names in full, on one line each and clickable, rather than run
+                            // together into a paragraph that has to be truncated: with a batch this
+                            // is the one thing worth reading, and the list is where a name can be
+                            // fixed. Long names ellipsize instead of wrapping, so the rows stay one
+                            // height and the list stays scannable.
+                            CollectionNameList(
+                                items = collectionList,
+                                onClick = { showCollectionList = true },
                             )
                             if (groupedNameCollisions > 0) {
                                 Text(
@@ -529,7 +619,7 @@ data class LocalImportScreen(
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             }
-                            if (ambiguousExistingGroupedTargetCount > 0) {
+                            if (ambiguousCollectionCount > 0) {
                                 Text(
                                     "已有合集名称存在歧义，请先在本库中整理同名合集",
                                     style = MaterialTheme.typography.bodySmall,
@@ -588,6 +678,11 @@ data class LocalImportScreen(
                                     TextButton(onClick = { showMangaPicker = true }) { Text("选择合集") }
                                 }
                             } else {
+                                // Pre-filled with the picked folder's name when there is exactly one
+                                // collection, and plain empty otherwise. It is an ordinary text field
+                                // either way: the folder's name is the answer to type over, not a
+                                // decision made for the reader - and a name that already exists is
+                                // reused by the import path itself, so reuse needs no separate case.
                                 OutlinedTextField(
                                     value = newTitle,
                                     onValueChange = { newTitle = it },
@@ -692,10 +787,7 @@ data class LocalImportScreen(
                                     } else {
                                         -1L
                                     }
-                                    if (
-                                        isCollectionImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
-                                        ambiguousExistingGroupedTargetCount == 0
-                                    ) {
+                                    if (isCollectionImport && collectionNamesUsable) {
                                         val plans = groupedPlans()
                                         val preview = runCatching {
                                             transferService.previewGroupedImport(plans)
@@ -740,10 +832,7 @@ data class LocalImportScreen(
                             },
                             enabled = !importing && selectedUris.isNotEmpty() &&
                                 (
-                                    (
-                                        isCollectionImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
-                                            ambiguousExistingGroupedTargetCount == 0
-                                        ) ||
+                                    (isCollectionImport && collectionNamesUsable) ||
                                         (
                                             fixedTargetMangaId != null ||
                                                 (targetMode == ImportTargetMode.EXISTING && targetId >= 0) ||
@@ -764,6 +853,23 @@ data class LocalImportScreen(
                     targetMode = ImportTargetMode.EXISTING
                 },
                 onDismissRequest = { showMangaPicker = false },
+            )
+        }
+        if (showCollectionList) {
+            CollectionNameDialog(
+                items = collectionList,
+                onRename = { key, renamed ->
+                    // Keyed by the name the folder gave, so renaming the same row twice replaces the
+                    // first rename rather than stacking a second on a name that no longer exists -
+                    // and a name edited back to the folder's own drops the entry instead of leaving
+                    // a rename that says nothing.
+                    collectionRenames = if (renamed == key || renamed.isBlank()) {
+                        collectionRenames - key
+                    } else {
+                        collectionRenames + (key to renamed)
+                    }
+                },
+                onDismissRequest = { showCollectionList = false },
             )
         }
         conflictPreview?.let { preview ->
@@ -835,6 +941,152 @@ data class LocalImportScreen(
         }
     }
 }
+
+/**
+ * The collections a batch will create or reuse, as a list of names inside the target card.
+ *
+ * Shows every name rather than the first few: with a batch this list is the one thing worth
+ * reading, and a truncated one cannot be checked. The rows are capped in height and the whole list
+ * is clickable, because a long batch cannot be read in the card anyway - [CollectionNameDialog]
+ * opens the same list with room to scroll it and to fix a name.
+ */
+@Composable
+private fun CollectionNameList(
+    items: List<CollectionListItem>,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+    ) {
+        items.take(COLLECTION_LIST_PREVIEW_LIMIT).forEach { item ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = item.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                CollectionStateLabel(item.exists)
+            }
+        }
+        if (items.size > COLLECTION_LIST_PREVIEW_LIMIT) {
+            Text(
+                text = "还有 ${items.size - COLLECTION_LIST_PREVIEW_LIMIT} 个，点按查看全部",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The whole batch's collections, scrollable, with a rename per row.
+ *
+ * Kept as its own dialog rather than an expanded card because the list is unbounded: a 根目录/作者/本子
+ * pick of a hundred authors has a hundred rows, which is a screen of its own and not something to
+ * push the import button off the bottom of the page for.
+ */
+@Composable
+private fun CollectionNameDialog(
+    items: List<CollectionListItem>,
+    onRename: (original: String, renamed: String) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    // The row being edited, by its stable key: renaming in place keeps the list and its own scroll
+    // position, where a second dialog over this one would hide the names being compared.
+    var editingKey by remember { mutableStateOf<String?>(null) }
+    var draft by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text("本次导入的合集") },
+        text = {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(items, key = { it.key }) { item ->
+                    if (editingKey == item.key) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = draft,
+                                onValueChange = { draft = it },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                label = { Text("合集名称") },
+                            )
+                            TextButton(
+                                onClick = {
+                                    onRename(item.key, localMangaDirectoryName(draft))
+                                    editingKey = null
+                                },
+                            ) { Text("保存") }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable {
+                                    editingKey = item.key
+                                    draft = item.name
+                                }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = item.name,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                // Two lines rather than one: the dialog exists to read names in
+                                // full, so a long one is worth a taller row here.
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            CollectionStateLabel(item.exists)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) { Text(stringResource(MR.strings.action_ok)) }
+        },
+    )
+}
+
+/** Whether a collection in the list will be created, reused, or needs its name sorted out first. */
+@Composable
+private fun CollectionStateLabel(exists: Boolean?) {
+    val (label, color) = when (exists) {
+        true -> "复用" to MaterialTheme.colorScheme.primary
+        false -> "新建" to MaterialTheme.colorScheme.onSurfaceVariant
+        null -> "名称有歧义" to MaterialTheme.colorScheme.error
+    }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        modifier = Modifier.padding(start = 12.dp),
+    )
+}
+
+/** How many names the target card lists before deferring to [CollectionNameDialog]. */
+private const val COLLECTION_LIST_PREVIEW_LIMIT = 5
 
 @Composable
 private fun ImportSection(

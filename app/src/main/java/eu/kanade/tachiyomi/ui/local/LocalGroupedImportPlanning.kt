@@ -65,7 +65,8 @@ internal data class LocalImportSourceShape(
 )
 
 /**
- * The collections a picked source contributes, by the names they are to be created or reused under.
+ * The collections a picked batch contributes, by the names they are to be created or reused under,
+ * in order and de-duplicated.
  *
  * A folder *is* a collection: the reader picked it because it holds works, so its name is the
  * collection's name. Several folders picked together are therefore several collections, each named
@@ -78,12 +79,14 @@ internal data class LocalImportSourceShape(
  * merged into one collection instead of becoming one each.
  *
  * A file contributes no name: it is one chapter of a collection the reader names, so the picker's
- * file mode keeps its manual target.
+ * file mode keeps its manual target, and a batch holding one keeps it for the whole batch.
  */
-internal fun localImportCollectionNames(source: LocalImportSourceShape): List<String> {
-    if (!source.isDirectory) return emptyList()
-    if (source.groupNames.isNotEmpty()) return source.groupNames
-    return listOf(source.displayName)
+internal fun localImportCollectionNames(sources: List<LocalImportSourceShape>): List<String> {
+    if (!isLocalCollectionImport(sources)) return emptyList()
+    return sources
+        .flatMap { source -> source.groupNames.ifEmpty { listOf(source.displayName) } }
+        .map(::localMangaDirectoryName)
+        .distinct()
 }
 
 /**

@@ -91,10 +91,12 @@ class LocalGroupedImportPlanningTest {
         assertEquals(
             listOf("Author A", "Author B"),
             localImportCollectionNames(
-                LocalImportSourceShape(
-                    displayName = "Root",
-                    isDirectory = true,
-                    groupNames = listOf("Author A", "Author B"),
+                listOf(
+                    LocalImportSourceShape(
+                        displayName = "Root",
+                        isDirectory = true,
+                        groupNames = listOf("Author A", "Author B"),
+                    ),
                 ),
             ),
         )
@@ -105,24 +107,63 @@ class LocalGroupedImportPlanningTest {
         assertEquals(
             listOf("My Collection"),
             localImportCollectionNames(
-                LocalImportSourceShape(
-                    displayName = "My Collection",
-                    isDirectory = true,
-                    groupNames = emptyList(),
+                listOf(
+                    LocalImportSourceShape(
+                        displayName = "My Collection",
+                        isDirectory = true,
+                        groupNames = emptyList(),
+                    ),
                 ),
             ),
         )
     }
 
     @Test
-    fun `file contributes no collection name`() {
+    fun `several folders become several collections named after each`() {
+        assertEquals(
+            listOf("One", "Two"),
+            localImportCollectionNames(
+                listOf(
+                    LocalImportSourceShape("One", isDirectory = true, groupNames = emptyList()),
+                    LocalImportSourceShape("Two", isDirectory = true, groupNames = emptyList()),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `two folders of one name are one collection`() {
+        assertEquals(
+            listOf("Same"),
+            localImportCollectionNames(
+                listOf(
+                    LocalImportSourceShape("Same", isDirectory = true, groupNames = emptyList()),
+                    LocalImportSourceShape("Same", isDirectory = true, groupNames = emptyList()),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `collection names are sanitized for the target directory`() {
+        assertEquals(
+            listOf("A_B_C"),
+            localImportCollectionNames(
+                listOf(
+                    LocalImportSourceShape("A:B/C", isDirectory = true, groupNames = emptyList()),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a batch holding a file contributes no collections`() {
         assertEquals(
             emptyList<String>(),
             localImportCollectionNames(
-                LocalImportSourceShape(
-                    displayName = "Chapter 01.cbz",
-                    isDirectory = false,
-                    groupNames = emptyList(),
+                listOf(
+                    LocalImportSourceShape("One", isDirectory = true, groupNames = emptyList()),
+                    LocalImportSourceShape("Chapter.cbz", isDirectory = false, groupNames = emptyList()),
                 ),
             ),
         )
