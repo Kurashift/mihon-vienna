@@ -410,6 +410,13 @@ class LocalSource(
 
         val cached = cachedListing
         if (cached != null && isListingFresh(now, cachedListingTime, baseDirLastModified)) {
+            // The cache has just been re-confirmed against the base directory, so whatever raised
+            // the invalidation did not change the listing and there is nothing left to rebuild.
+            // Clearing it here is what returns later reads to the age-only fast path above:
+            // leaving it set sent every subsequent read past that path into this one, where it
+            // paid a full directory walk to arrive at the same answer - an ordinary sort change
+            // taking seconds to redraw once an import had raised the flag.
+            listingInvalidated = false
             return@withIOContext cached
         }
 
@@ -417,6 +424,12 @@ class LocalSource(
             val lockedNow = System.currentTimeMillis()
             val lockedCached = cachedListing
             if (lockedCached != null && isListingFresh(lockedNow, cachedListingTime, baseDirLastModified)) {
+                // Same rule as the check above, kept for the same reason: a cache re-confirmed
+                // against the base directory leaves nothing to rebuild, so the flag must not
+                // outlive that answer. This branch is only reached when the cache changed under
+                // the lock, so it is the rarer of the two, but a flag left raised here would cost
+                // every later read a directory walk exactly as the other one did.
+                listingInvalidated = false
                 return@withLock lockedCached
             }
 
@@ -436,6 +449,16 @@ class LocalSource(
                 publishListingSnapshot(entries)
                 cachedListingTime = lockedNow
                 cachedBaseDirLastModified = baseDirLastModified
+                // Same rule as the two checks above, but only when the index was accepted for its
+                // freshness: that is a confirmed answer against the base directory, so the
+                // invalidation in force when this read started is spent. The other way in is an
+                // unreadable directory, which confirms nothing - the flag stays raised there so
+                // the next read retries instead of trusting an unverified index for a full day.
+                // This branch is the first read of a fresh process, which is exactly when an
+                // import's raised flag would otherwise send every later read on a directory walk.
+                if (snapshot.isAccessible && persisted.isFresh(baseDirLastModified, lockedNow)) {
+                    listingInvalidated = false
+                }
                 return@withLock entries
             }
 
