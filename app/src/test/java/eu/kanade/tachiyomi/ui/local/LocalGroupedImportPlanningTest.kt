@@ -85,4 +85,75 @@ class LocalGroupedImportPlanningTest {
             resolveLocalGroupedImportTarget("Author", listOf("Author", "author")),
         )
     }
+
+    @Test
+    fun `folder whose children are containers contributes one collection per container`() {
+        assertEquals(
+            listOf("Author A", "Author B"),
+            localImportCollectionNames(
+                LocalImportSourceShape(
+                    displayName = "Root",
+                    isDirectory = true,
+                    groupNames = listOf("Author A", "Author B"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `folder holding the works directly is itself the collection`() {
+        assertEquals(
+            listOf("My Collection"),
+            localImportCollectionNames(
+                LocalImportSourceShape(
+                    displayName = "My Collection",
+                    isDirectory = true,
+                    groupNames = emptyList(),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `file contributes no collection name`() {
+        assertEquals(
+            emptyList<String>(),
+            localImportCollectionNames(
+                LocalImportSourceShape(
+                    displayName = "Chapter 01.cbz",
+                    isDirectory = false,
+                    groupNames = emptyList(),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a batch of folders is a collection import`() {
+        assertTrue(
+            isLocalCollectionImport(
+                listOf(
+                    LocalImportSourceShape("One", isDirectory = true, groupNames = emptyList()),
+                    LocalImportSourceShape("Two", isDirectory = true, groupNames = listOf("Author")),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a batch holding a file is not a collection import`() {
+        assertFalse(
+            isLocalCollectionImport(
+                listOf(
+                    LocalImportSourceShape("One", isDirectory = true, groupNames = emptyList()),
+                    LocalImportSourceShape("Chapter.cbz", isDirectory = false, groupNames = emptyList()),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `an empty batch is not a collection import`() {
+        assertFalse(isLocalCollectionImport(emptyList()))
+    }
 }

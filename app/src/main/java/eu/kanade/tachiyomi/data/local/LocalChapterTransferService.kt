@@ -73,6 +73,16 @@ class LocalChapterTransferService(
         val candidateNames: List<String>,
         val groups: List<SourceGroupPreview> = emptyList(),
         val ignoredGroupCount: Int = 0,
+        /**
+         * Whether the pick was a folder rather than a file.
+         *
+         * A folder is a collection: its name is the collection's name, and several picked folders
+         * become several collections. A file is one chapter of a collection the reader names, so it
+         * contributes no name of its own. The two cannot be told apart from [groups] alone, because
+         * a folder whose contents are directly the chapters has no groups - and that is exactly the
+         * case that used to fall through to a manual name.
+         */
+        val isDirectory: Boolean = false,
     )
 
     data class SourceGroupPreview(
@@ -104,9 +114,6 @@ class LocalChapterTransferService(
 
         /** The folder is the local library, so importing it would copy the library onto itself. */
         InsideLibrary,
-
-        /** A usable source, but its layout does not match the sources already selected. */
-        MismatchedLayout,
     }
 
     /**
@@ -153,6 +160,7 @@ class LocalChapterTransferService(
                     candidateNames = grouped.flatMap { it.candidateNames },
                     groups = grouped,
                     ignoredGroupCount = (file.listFiles().orEmpty().size - grouped.size).coerceAtLeast(0),
+                    isDirectory = true,
                 ),
             )
         }
@@ -166,6 +174,7 @@ class LocalChapterTransferService(
                 uri = uri,
                 displayName = displayName,
                 candidateNames = candidates.map { it.name },
+                isDirectory = file.isDirectory,
             ),
         )
     }

@@ -50,3 +50,49 @@ internal fun resolveLocalGroupedImportTarget(
         else -> null
     }
 }
+
+/**
+ * One picked source as the collection rules need it: what it is called, whether it is a folder,
+ * and the first-level folders inside it that are themselves containers.
+ *
+ * Kept free of `Uri` and of the source itself so the rules below are plain decisions that can be
+ * tested without a document provider.
+ */
+internal data class LocalImportSourceShape(
+    val displayName: String,
+    val isDirectory: Boolean,
+    val groupNames: List<String>,
+)
+
+/**
+ * The collections a picked source contributes, by the names they are to be created or reused under.
+ *
+ * A folder *is* a collection: the reader picked it because it holds works, so its name is the
+ * collection's name. Several folders picked together are therefore several collections, each named
+ * after its own folder - the same rule that already named the author folders of a 根目录/作者/本子
+ * layout.
+ *
+ * This used to depend on whether the folder's children were themselves containers, which left the
+ * most ordinary case out: a folder whose contents are directly the works (archives, or one folder
+ * per work) has no groups, so it fell through to a manual name - and several such folders were
+ * merged into one collection instead of becoming one each.
+ *
+ * A file contributes no name: it is one chapter of a collection the reader names, so the picker's
+ * file mode keeps its manual target.
+ */
+internal fun localImportCollectionNames(source: LocalImportSourceShape): List<String> {
+    if (!source.isDirectory) return emptyList()
+    if (source.groupNames.isNotEmpty()) return source.groupNames
+    return listOf(source.displayName)
+}
+
+/**
+ * Whether a batch is imported as collections rather than into one manually named target.
+ *
+ * Decided by the whole batch rather than per source, because a batch is imported through one target
+ * choice: a file among the picks means the reader is assembling chapters under a name of their own,
+ * and the folders that came along join that one target exactly as they always have.
+ */
+internal fun isLocalCollectionImport(sources: List<LocalImportSourceShape>): Boolean {
+    return sources.isNotEmpty() && sources.all { it.isDirectory }
+}

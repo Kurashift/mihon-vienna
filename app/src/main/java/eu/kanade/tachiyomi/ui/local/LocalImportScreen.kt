@@ -94,11 +94,12 @@ private val sourcePreviewListSaver = listSaver<List<LocalChapterTransferService.
                     },
                 ),
                 preview.ignoredGroupCount,
+                preview.isDirectory,
             )
         }
     },
     restore = { saved ->
-        saved.chunked(5).map { fields ->
+        saved.chunked(6).map { fields ->
             LocalChapterTransferService.SourcePreview(
                 uri = Uri.parse(fields[0] as String),
                 displayName = fields[1] as String,
@@ -113,6 +114,12 @@ private val sourcePreviewListSaver = listSaver<List<LocalChapterTransferService.
                     )
                 },
                 ignoredGroupCount = fields[4] as Int,
+                // Absent only in state saved by a build before this field existed. Defaulting to
+                // false degrades that batch to the manual target, which is what every source had
+                // before the field: guessing "folder" would turn a restored file into a collection
+                // named after the file, and a name the reader never chose is worse than one they
+                // have to type.
+                isDirectory = fields.getOrNull(5) as? Boolean ?: false,
             )
         }
     },
@@ -180,9 +187,37 @@ data class LocalImportScreen(
         }
         val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
             .collectAsStateWithLifecycle(initialValue = null)
-        val isGroupedImport = fixedTargetMangaId == null && sourcePreviews.isNotEmpty() &&
-            sourcePreviews.all { it.groups.isNotEmpty() }
-        val sourceGroups = sourcePreviews.flatMap { it.groups }
+        // A batch of folders is imported as collections, one per folder, named after it. A batch
+        // that includes a file keeps the manual target it always had: a file is one chapter of a
+        // collection the reader names, and the folders picked alongside it join that same target.
+        val sourceShapes = sourcePreviews.map {
+            LocalImportSourceShape(
+                displayName = it.displayName,
+                isDirectory = it.isDirectory,
+                groupNames = it.groups.map { group -> group.name },
+            )
+        }
+        val isCollectionImport = fixedTargetMangaId == null && isLocalCollectionImport(sourceShapes)
+        // The collections this batch contributes. A folder that is itself the collection - its
+        // contents are directly the works - has no first-level containers of its own, so it stands
+        // in as one collection over itself: `importUrisInternal` expands a picked folder anyway, so
+        // handing it the folder is exactly what already happened for a folder picked as a chapter
+        // source. Everything downstream (name collision, target reuse, the import itself) then works
+        // on one shape instead of two.
+        val sourceGroups = sourcePreviews.flatMap { preview ->
+            when {
+                preview.groups.isNotEmpty() -> preview.groups
+                !isCollectionImport -> emptyList()
+                else -> listOf(
+                    LocalChapterTransferService.SourceGroupPreview(
+                        uri = preview.uri,
+                        name = preview.displayName,
+                        candidateNames = preview.candidateNames,
+                        candidateUris = listOf(preview.uri),
+                    ),
+                )
+            }
+        }
         val groupedNameCollisions = localGroupedImportNameCollisionCount(sourceGroups.map { it.name })
         val hasInvalidGroupedName = hasInvalidLocalGroupedImportName(sourceGroups.map { it.name })
         val groupedTargetKeys = sourceGroups.map { localMangaDirectoryIdentity(it.name) }.distinct()
@@ -262,23 +297,14 @@ data class LocalImportScreen(
                     }
                 }
                 val inspected = uniqueUris.map { transferService.inspectSource(it) }
-                val inspectedPreviews = inspected.mapNotNull { it.preview }
-                val expectedGrouped = sourcePreviews.firstOrNull()?.groups?.isNotEmpty()
-                    ?: inspectedPreviews.firstOrNull()?.groups?.isNotEmpty()
-                // Layout mismatch is a rejection too, so a source that *was* readable is not
-                // reported to the user as "nothing found" — it simply cannot join this batch.
-                val usable = inspectedPreviews.filter { it.groups.isNotEmpty() == expectedGrouped }
-                val usableUris = usable.mapTo(hashSetOf()) { it.uri }
-                val rejected = inspected.map { inspection ->
-                    when {
-                        inspection.preview == null -> inspection
-                        inspection.preview.uri !in usableUris -> inspection.copy(
-                            preview = null,
-                            rejection = LocalChapterTransferService.SourceRejection.MismatchedLayout,
-                        )
-                        else -> inspection
-                    }
-                }
+                // Every readable pick joins the batch. There used to be a second filter here that
+                // dropped a source whose layout differed from the ones already picked, because a
+                // batch was imported through one target and a 根目录/作者/本子 folder could not share
+                // that with a folder holding the works directly. A folder now names its own
+                // collection, so the two layouts no longer conflict - and the filter is what used to
+                // refuse exactly that combination.
+                val usable = inspected.mapNotNull { it.preview }
+                val rejected = inspected.filter { it.preview == null }
                 // Both accumulate across picks so the count and the listed reasons never drift
                 // apart: a user who tries several folders sees every rejection, not only the last
                 // batch's.
@@ -382,7 +408,7 @@ data class LocalImportScreen(
                             )
                         } else {
                             Text(
-                                text = if (isGroupedImport) {
+                                text = if (isCollectionImport) {
                                     "已识别 ${sourceGroups.size} 个合集，共 ${sourcePreviews.sumOf {
                                         it.candidateNames.size
                                     }} 个本子"
@@ -402,10 +428,17 @@ data class LocalImportScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(preview.displayName, maxLines = 1)
                                         Text(
-                                            if (preview.groups.isNotEmpty() && fixedTargetMangaId == null) {
+                                            if (isCollectionImport && preview.groups.isNotEmpty()) {
                                                 "${preview.groups.size} 个合集：${preview.groups.take(3).joinToString("、") {
                                                     it.name
                                                 }}"
+                                            } else if (isCollectionImport) {
+                                                // The folder is the collection, so its own name is what
+                                                // the card will be called - saying it here is what makes
+                                                // that visible before the import runs.
+                                                "作为合集「${localMangaDirectoryName(preview.displayName)}」导入，包含 ${
+                                                    preview.candidateNames.size
+                                                } 个本子"
                                             } else {
                                                 "包含 ${preview.candidateNames.size} 个本子：${preview.candidateNames.take(
                                                     3,
@@ -466,8 +499,8 @@ data class LocalImportScreen(
                 }
                 item {
                     ImportSection(title = "目标合集") {
-                        if (isGroupedImport) {
-                            Text("将按一级文件夹名称自动复用或创建合集")
+                        if (isCollectionImport) {
+                            Text("将按文件夹名称自动复用或创建合集")
                             Text(
                                 "复用 $existingGroupedTargetCount 个，新建 ${groupedTargetKeys.size - existingGroupedTargetCount} 个",
                                 style = MaterialTheme.typography.bodySmall,
@@ -660,7 +693,7 @@ data class LocalImportScreen(
                                         -1L
                                     }
                                     if (
-                                        isGroupedImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
+                                        isCollectionImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
                                         ambiguousExistingGroupedTargetCount == 0
                                     ) {
                                         val plans = groupedPlans()
@@ -708,7 +741,7 @@ data class LocalImportScreen(
                             enabled = !importing && selectedUris.isNotEmpty() &&
                                 (
                                     (
-                                        isGroupedImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
+                                        isCollectionImport && groupedNameCollisions == 0 && !hasInvalidGroupedName &&
                                             ambiguousExistingGroupedTargetCount == 0
                                         ) ||
                                         (
@@ -837,7 +870,5 @@ private fun LocalChapterTransferService.SourceRejection.reasonText(): String {
             "没有找到可导入的本子或压缩包"
         LocalChapterTransferService.SourceRejection.InsideLibrary ->
             "已经在本地库中，无需重复导入"
-        LocalChapterTransferService.SourceRejection.MismatchedLayout ->
-            "结构与本次已选的来源不一致，已跳过"
     }
 }
