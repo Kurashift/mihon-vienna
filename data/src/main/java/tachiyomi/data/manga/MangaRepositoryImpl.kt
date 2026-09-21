@@ -193,6 +193,23 @@ class MangaRepositoryImpl(
     }
 
     override suspend fun setMangaCategories(mangaId: Long, categoryIds: List<Long>) {
+        // A re-file to the same shelves is left alone. Every insert bumps the manga's version
+        // (see the trigger in mangas_categories.sq), and version decides which record wins when
+        // a backup is restored over this one - so a picker confirmed without changing anything
+        // would otherwise quietly re-date the entry for that comparison. Comparing as sets
+        // rather than as lists also makes a re-order of the same ids a no-op, which is what a
+        // picker returning its selection in a different order would look like.
+        //
+        // Read before the transaction rather than inside it: the mutating queries here are
+        // suspend, and the reads in this module are all awaited, so there is no precedent for a
+        // blocking read in a transaction body. Only this method writes the table for a user
+        // action, so nothing can slip between the two.
+        val current = database.mangas_categoriesQueries
+            .getCategoryIdsByMangaId(mangaId)
+            .awaitAsList()
+            .toSet()
+        if (current == categoryIds.toSet()) return
+
         database.transaction {
             database.mangas_categoriesQueries.deleteMangaCategoryByMangaId(mangaId)
             categoryIds.forEach { categoryId ->

@@ -25,3 +25,12 @@ VALUES (:mangaId, :categoryId);
 deleteMangaCategoryByMangaId:
 DELETE FROM mangas_categories
 WHERE manga_id = :mangaId;
+
+-- Read back what a manga is filed under, so a re-file to the same shelves can be skipped.
+--
+-- Each insert fires the version trigger above, so rewriting an unchanged set is not free: version
+-- is what decides which record wins when a backup is restored over this one.
+getCategoryIdsByMangaId:
+SELECT category_id
+FROM mangas_categories
+WHERE manga_id = :mangaId;

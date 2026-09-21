@@ -66,6 +66,7 @@ import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracksPerManga
 import tachiyomi.domain.track.model.Track
+import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -627,7 +628,10 @@ class LibraryViewModel(
      * Only the library entry goes: downloaded chapters and local files are untouched, so this is
      * not the same action as the erase button, which clears downloads. The date added is cleared
      * with the favourite so that re-adding later sorts by the new date, matching what the detail
-     * screen's toggle and the source listing's removal already do.
+     * screen's toggle and the source listing's removal already do - except for the local source,
+     * whose date sort reads date_added as the day the work entered the library (see
+     * LocalSource's ordering): a work taken off the shelf is still in the local library, so its
+     * import date stays.
      */
     fun removeFromLibrary() {
         val selected = state.value.selectedManga
@@ -636,7 +640,11 @@ class LibraryViewModel(
             updateManga.awaitAll(
                 selected.map {
                     it.removeCovers(coverCache)
-                    MangaUpdate(favorite = false, dateAdded = 0, id = it.id)
+                    MangaUpdate(
+                        favorite = false,
+                        dateAdded = if (it.source == LocalSource.ID) null else 0,
+                        id = it.id,
+                    )
                 },
             )
             // Shelf membership belongs to being in the library: rows left behind would resurface

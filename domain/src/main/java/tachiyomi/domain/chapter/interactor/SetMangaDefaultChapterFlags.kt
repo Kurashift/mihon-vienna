@@ -12,35 +12,16 @@ class SetMangaDefaultChapterFlags(
     private val getFavorites: GetFavorites,
 ) {
 
-    suspend fun await(manga: Manga) {
-        withNonCancellableContext {
-            with(libraryPreferences) {
-                setMangaChapterFlags.awaitSetAllFlags(
-                    mangaId = manga.id,
-                    unreadFilter = filterChapterByRead.get(),
-                    downloadedFilter = filterChapterByDownloaded.get(),
-                    bookmarkedFilter = filterChapterByBookmarked.get(),
-                    sortingMode = Manga.normalizeChapterSorting(
-                        if (manga.source == 0L) {
-                            sortChapterBySourceOrNumber.get()
-                        } else {
-                            sortCloudChapterBySourceOrNumber.get()
-                        },
-                    ),
-                    sortingDirection = if (manga.source == 0L) {
-                        sortChapterByAscendingOrDescending.get()
-                    } else {
-                        sortCloudChapterByAscendingOrDescending.get()
-                    },
-                    displayMode = if (manga.source == 0L) {
-                        localChapterDisplayMode.get()
-                    } else {
-                        displayChapterByNameOrNumber.get()
-                    },
-                )
-            }
-        }
-    }
+    /**
+     * Hands [manga] the current defaults, writing only if they would change something.
+     *
+     * Delegates to [awaitIfChanged] rather than writing the flags straight through: an update to a
+     * manga row also refreshes its `last_modified_at` through a trigger, so a write that changes
+     * nothing is not free - and [awaitAll] runs this for the whole library at once.
+     *
+     * @return true when flags were written.
+     */
+    suspend fun await(manga: Manga): Boolean = awaitIfChanged(manga)
 
     /**
      * Applies the chapter display defaults only when they would actually change the manga's

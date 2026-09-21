@@ -9,37 +9,45 @@ class SetMangaChapterFlags(
 ) {
 
     suspend fun awaitSetDownloadedFilter(manga: Manga, flag: Long): Boolean {
+        val newFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_DOWNLOADED_MASK)
+        if (newFlags == manga.chapterFlags) return false
         return mangaRepository.update(
             MangaUpdate(
                 id = manga.id,
-                chapterFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_DOWNLOADED_MASK),
+                chapterFlags = newFlags,
             ),
         )
     }
 
     suspend fun awaitSetUnreadFilter(manga: Manga, flag: Long): Boolean {
+        val newFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_UNREAD_MASK)
+        if (newFlags == manga.chapterFlags) return false
         return mangaRepository.update(
             MangaUpdate(
                 id = manga.id,
-                chapterFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_UNREAD_MASK),
+                chapterFlags = newFlags,
             ),
         )
     }
 
     suspend fun awaitSetBookmarkFilter(manga: Manga, flag: Long): Boolean {
+        val newFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_BOOKMARKED_MASK)
+        if (newFlags == manga.chapterFlags) return false
         return mangaRepository.update(
             MangaUpdate(
                 id = manga.id,
-                chapterFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_BOOKMARKED_MASK),
+                chapterFlags = newFlags,
             ),
         )
     }
 
     suspend fun awaitSetDisplayMode(manga: Manga, flag: Long): Boolean {
+        val newFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_DISPLAY_MASK)
+        if (newFlags == manga.chapterFlags) return false
         return mangaRepository.update(
             MangaUpdate(
                 id = manga.id,
-                chapterFlags = manga.chapterFlags.setFlag(flag, Manga.CHAPTER_DISPLAY_MASK),
+                chapterFlags = newFlags,
             ),
         )
     }
@@ -62,6 +70,7 @@ class SetMangaChapterFlags(
                     .setFlag(Manga.CHAPTER_SORT_ASC, Manga.CHAPTER_SORT_DIR_MASK)
             }
         }
+        if (newFlags == manga.chapterFlags) return false
         return mangaRepository.update(
             MangaUpdate(
                 id = manga.id,
@@ -74,6 +83,7 @@ class SetMangaChapterFlags(
         val newFlags = manga.chapterFlags
             .setFlag(sortingMode, Manga.CHAPTER_SORTING_MASK)
             .setFlag(sortingDirection, Manga.CHAPTER_SORT_DIR_MASK)
+        if (newFlags == manga.chapterFlags) return false
         return mangaRepository.update(
             MangaUpdate(
                 id = manga.id,
@@ -82,6 +92,15 @@ class SetMangaChapterFlags(
         )
     }
 
+    /**
+     * Writes the whole flag set, unconditionally.
+     *
+     * No comparison is possible here: this overload takes an id, not the [Manga] the current flags
+     * would have to be read off, so it cannot tell whether the write changes anything. Callers that
+     * have the manga in hand should compare first - see [SetMangaDefaultChapterFlags.awaitIfChanged],
+     * which is the shape to copy. The write matters more than it looks: any update to a manga row
+     * also refreshes its `last_modified_at` through a trigger, so a no-op write is not free.
+     */
     suspend fun awaitSetAllFlags(
         mangaId: Long,
         unreadFilter: Long,
