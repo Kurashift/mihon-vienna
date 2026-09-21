@@ -39,6 +39,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -68,6 +69,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.util.fastAll
@@ -100,6 +103,7 @@ import eu.kanade.tachiyomi.source.getNameForMangaInfo
 import eu.kanade.tachiyomi.ui.manga.ChapterList
 import eu.kanade.tachiyomi.ui.manga.MangaViewModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
+import kotlin.random.Random
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableLazyListState
@@ -116,6 +120,7 @@ import tachiyomi.presentation.core.components.material.FabPosition
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.secondaryItemAlpha
 import tachiyomi.source.local.image.LocalChapterCover
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
@@ -728,6 +733,25 @@ private fun MangaScreenSmallImpl(
                             }
                         }
 
+                        // A narrowed list can legitimately come out empty - a scope the work
+                        // carries no chapters for, or a filter nothing matches - and a page that
+                        // just stops after its header reads as still loading. `state.chapters` is
+                        // the unfiltered list, so it tells the two causes apart.
+                        //
+                        // Held back while a fetch is in flight: an empty list then means "not read
+                        // yet", not "nothing here", and saying so would flash on every first open.
+                        if (chapterItems.isEmpty() && !state.isRefreshingData) {
+                            item(
+                                key = MangaScreenItem.EMPTY_CHAPTERS,
+                                contentType = MangaScreenItem.EMPTY_CHAPTERS,
+                            ) {
+                                ChapterListEmptyState(
+                                    hasChapters = state.chapters.isNotEmpty(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+
                         sharedChapterItems(
                             manga = state.manga,
                             chapters = chapterItems,
@@ -1147,6 +1171,21 @@ fun MangaScreenLargeImpl(
                                 )
                             }
 
+                            // See the small layout: a narrowed list can come out empty, and
+                            // `state.chapters` tells an empty work from a filtered one. Held back
+                            // while a fetch is in flight, when empty only means "not read yet".
+                            if (chapterItems.isEmpty() && !state.isRefreshingData) {
+                                item(
+                                    key = MangaScreenItem.EMPTY_CHAPTERS,
+                                    contentType = MangaScreenItem.EMPTY_CHAPTERS,
+                                ) {
+                                    ChapterListEmptyState(
+                                        hasChapters = state.chapters.isNotEmpty(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+
                             sharedChapterItems(
                                 manga = state.manga,
                                 chapters = chapterItems,
@@ -1349,6 +1388,72 @@ private fun syncChapterItems(
         if (target[i] != source[i]) target[i] = source[i]
     }
 }
+
+/**
+ * Shown in place of the chapter rows when the list comes out empty.
+ *
+ * Which of the two reasons it names matters. A work with no chapters at all and a work whose
+ * chapters are all hidden by the filters or the display scope both leave this list empty, and only
+ * the second is something the reader can undo - so [hasChapters] picks the wording. Calling the
+ * second one "no chapters" would read as the work's files having gone missing.
+ *
+ * The count in the header above already reads 0; what it cannot say is why. The filter sheet is
+ * one tap away from here either way, so this stays out of the way rather than adding a control.
+ *
+ * Deliberately not the shared full-screen empty state: that one fills and scrolls the whole screen,
+ * which it can only do as a screen's only content. This sits inside the chapter list, where the
+ * height is unbounded and a nested scroll container is not allowed. It borrows the same face and
+ * secondary-alpha text so the two read as one design, at the size a row of the list can hold.
+ */
+@Composable
+private fun ChapterListEmptyState(
+    hasChapters: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 24.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Text(
+                text = remember { emptyListFace() },
+                modifier = Modifier.secondaryItemAlpha(),
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        }
+        Text(
+            text = stringResource(
+                if (hasChapters) {
+                    MR.strings.chapter_list_empty_filtered
+                } else {
+                    MR.strings.no_chapters_error
+                },
+            ),
+            modifier = Modifier.secondaryItemAlpha(),
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** The same faces the full-screen empty state uses, so an empty list reads the same way. */
+private val EmptyListFaces = listOf(
+    "(･o･;)",
+    "Σ(ಠ_ಠ)",
+    "ಥ_ಥ",
+    "(˘･_･˘)",
+    "(；￣Д￣)",
+    "(･Д･。",
+    "(╬ಠ益ಠ)",
+    "(╥﹏╥)",
+    "(⋟﹏⋞)",
+    "Ò︵Ó",
+    " ˙ᯅ˙)",
+    "(¬_¬)",
+)
+
+private fun emptyListFace(): String = EmptyListFaces[Random.nextInt(EmptyListFaces.size)]
 
 private fun LazyListScope.sharedChapterItems(
     manga: Manga,

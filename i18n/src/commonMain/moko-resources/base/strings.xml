@@ -835,6 +835,7 @@
     <string name="chapter_display_translated_only">Translated only</string>
     <string name="chapter_display_translated_and_original">Translated + original</string>
     <string name="chapter_filter_scope_section">Chapters shown</string>
+    <string name="chapter_list_empty_filtered">No chapters under the current filters</string>
     <string name="chapter_filter_status_section">Status</string>
     <string name="chapter_filter_source_section">Source</string>
     <string name="chapter_sort_basis_section">Sort by</string>
