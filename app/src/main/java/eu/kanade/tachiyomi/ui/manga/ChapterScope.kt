@@ -59,3 +59,24 @@ fun ChapterScope.randomPoolMangaIds(
     ChapterScope.FLAGGED -> markedMangaIds.toHashSet()
     ChapterScope.GOOD_DOUJIN -> goodDoujinMangaIds.toHashSet()
 }
+
+/**
+ * The scope a random *good doujin* jump opens with.
+ *
+ * That gesture always draws from the good-doujin list, whichever filter the screen it started
+ * from happens to carry, so it can only hand over a scope the pool agrees with. Under
+ * [ChapterScope.GOOD_DOUJIN] - the one mode where the reader did ask for these chapters - the
+ * destination keeps it. Under every other scope, including no narrowing at all, it opens the work
+ * whole.
+ *
+ * Keeping 标记 here would be the one combination that cannot work: the pick never consulted the
+ * mark filter, so it lands on a work that may carry no marked chapters at all, and the destination
+ * would open on an empty list. The reader did not ask for a mark-narrowed page either - they
+ * dragged from a screen whose mode says nothing about which chapters to show.
+ */
+fun ChapterScope.opensGoodDoujinJump(): ChapterScope = when (this) {
+    ChapterScope.GOOD_DOUJIN -> ChapterScope.GOOD_DOUJIN
+    ChapterScope.ALL,
+    ChapterScope.FLAGGED,
+    -> ChapterScope.ALL
+}

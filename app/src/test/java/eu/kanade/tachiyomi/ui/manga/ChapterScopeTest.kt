@@ -94,4 +94,25 @@ class ChapterScopeTest {
         assertEquals(emptySet<Long>(), ChapterScope.FLAGGED.randomPoolMangaIds(emptyList(), emptyList()))
         assertEquals(emptySet<Long>(), ChapterScope.GOOD_DOUJIN.randomPoolMangaIds(emptyList(), emptyList()))
     }
+
+    /**
+     * The good-doujin gesture draws from the good-doujin list whatever filter the screen it started
+     * from carries, so the only scope it can hand over is the one that list agrees with.
+     */
+    @Test
+    fun `a good doujin jump keeps its scope only where the reader asked for it`() {
+        assertEquals(ChapterScope.GOOD_DOUJIN, ChapterScope.GOOD_DOUJIN.opensGoodDoujinJump())
+    }
+
+    /**
+     * Under 标记 the destination has to open whole. The pick never consulted the mark filter, so the
+     * work it lands on may carry no marked chapters at all - keeping 标记 would open the empty page
+     * this whole hand-over exists to avoid. And the reader did not ask for a mark-narrowed page by
+     * dragging from a screen whose mode says nothing about which chapters to show.
+     */
+    @Test
+    fun `a good doujin jump opens the whole work under a scope its pool does not agree with`() {
+        assertEquals(ChapterScope.ALL, ChapterScope.ALL.opensGoodDoujinJump())
+        assertEquals(ChapterScope.ALL, ChapterScope.FLAGGED.opensGoodDoujinJump())
+    }
 }

@@ -269,15 +269,15 @@ class MangaScreen(
                         try {
                             val result = viewModel.getRandomGoodDoujinManga()
                             if (result.mangaId != null) {
-                                // The pick comes out of the good-doujin list itself, so the next
-                                // screen opens showing those chapters whatever this one is
-                                // currently narrowed to.
+                                // Drawn from the good-doujin list rather than from what this screen
+                                // shows, so the destination keeps that scope only when this screen
+                                // is already narrowed to it - see opensGoodDoujinJump.
                                 pushDetail(
                                     navigator,
                                     MangaScreen(
                                         mangaId = result.mangaId,
                                         fromSource = true,
-                                        chapterScope = ChapterScope.GOOD_DOUJIN,
+                                        chapterScope = successState.chapterScope.opensGoodDoujinJump(),
                                     ),
                                 )
                             } else if (!result.hasEntries) {

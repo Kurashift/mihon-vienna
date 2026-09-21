@@ -108,6 +108,7 @@ import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.Reading
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.local.LocalImportScreen
 import eu.kanade.tachiyomi.ui.manga.ChapterScope
+import eu.kanade.tachiyomi.ui.manga.opensGoodDoujinJump
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
@@ -293,15 +294,15 @@ data class BrowseSourceScreen(
                         try {
                             val result = viewModel.getRandomGoodDoujinManga()
                             if (result.mangaId != null) {
-                                // The pick comes out of the good-doujin list, not the list on
-                                // screen, so the scope follows what chose it. Reading the filter
-                                // here would open a flagged work's page under a good-doujin
-                                // scope whenever the two happen to differ, and vice versa.
+                                // The pick comes from the good-doujin list, not from the list on
+                                // screen, so the destination can only show a scope that list
+                                // agrees with: good doujins when that is the mode in force, the
+                                // whole work otherwise.
                                 navigator.push(
                                     MangaScreen(
                                         mangaId = result.mangaId,
                                         fromSource = true,
-                                        chapterScope = ChapterScope.GOOD_DOUJIN,
+                                        chapterScope = markFilter.toChapterScope().opensGoodDoujinJump(),
                                     ),
                                 )
                                 delay(150)
