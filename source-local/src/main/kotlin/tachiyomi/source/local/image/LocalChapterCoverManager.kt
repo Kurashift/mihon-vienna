@@ -43,7 +43,23 @@ data class LocalChapterCover(
     val chapterId: Long,
     val chapterUrl: String,
     val version: Long,
-)
+) {
+    companion object {
+        /**
+         * The version to key a local chapter's cover on.
+         *
+         * Only the fields that change when the cover's own content does: a custom cover bumps the
+         * chapter's `version`, and a re-fetched chapter's `date_upload` moves with it.
+         *
+         * `last_modified_at` is deliberately left out. It is rewritten by a trigger on *any* chapter
+         * update - opening the reader, dragging to reorder, marking a chapter a good doujin - so
+         * folding it in changes the key for every cover on screen at once and Coil re-decodes them
+         * all. That decode is the white flash the reader sees. The manga detail screen excluded it
+         * for that reason; this is the same rule, in one place, so the lists cannot drift from it.
+         */
+        fun versionOf(chapterVersion: Long, dateUpload: Long): Long = chapterVersion xor dateUpload
+    }
+}
 
 data class LocalChapterCoverStats(
     val count: Int,

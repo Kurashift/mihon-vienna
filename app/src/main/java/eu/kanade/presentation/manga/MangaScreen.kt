@@ -103,7 +103,6 @@ import eu.kanade.tachiyomi.source.getNameForMangaInfo
 import eu.kanade.tachiyomi.ui.manga.ChapterList
 import eu.kanade.tachiyomi.ui.manga.MangaViewModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
-import kotlin.random.Random
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableLazyListState
@@ -126,6 +125,7 @@ import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import kotlin.math.abs
+import kotlin.random.Random
 import kotlin.time.Instant
 import tachiyomi.presentation.core.util.collectAsState as collectPreferenceAsState
 
@@ -1673,12 +1673,14 @@ private fun LazyListScope.sharedChapterItems(
                 chapterSwipeEndAction = effectiveSwipeEnd,
                 goodDoujinMarked = item.chapter.id in goodDoujinChapterIds,
                 flagMarked = item.chapter.id in markedChapterIds,
-                // 同网格：last_modified_at 会在写 custom_order 时被触发器带起来，不能进封面 key。
                 cover = if (showLocalChapterCovers) {
                     LocalChapterCover(
                         chapterId = item.chapter.id,
                         chapterUrl = item.chapter.url,
-                        version = item.chapter.version xor item.chapter.dateUpload,
+                        version = LocalChapterCover.versionOf(
+                            chapterVersion = item.chapter.version,
+                            dateUpload = item.chapter.dateUpload,
+                        ),
                     )
                 } else {
                     null
@@ -1893,13 +1895,13 @@ private fun ChapterGridCard(
             },
         ),
         title = displayTitle.title,
-        // 不要拿 last_modified_at 参与封面 key：拖拽排序写 custom_order 也会被
-        // update_last_modified_at_chapters 触发器一起改掉，整屏封面的 key 全变，
-        // Coil 重新解码的那一瞬就是用户看到的白闪。
         cover = LocalChapterCover(
             chapterId = item.chapter.id,
             chapterUrl = item.chapter.url,
-            version = item.chapter.version xor item.chapter.dateUpload,
+            version = LocalChapterCover.versionOf(
+                chapterVersion = item.chapter.version,
+                dateUpload = item.chapter.dateUpload,
+            ),
         ),
         readProgress = chapterProgress?.let { progress ->
             stringResource(

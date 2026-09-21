@@ -574,7 +574,10 @@ private fun rememberChapterCovers(chapters: List<LocalReadReviewItem>): Map<Long
             chapter.chapterId to LocalChapterCover(
                 chapterId = chapter.chapterId,
                 chapterUrl = chapter.chapterUrl,
-                version = chapter.version xor chapter.dateUpload xor chapter.lastModifiedAt,
+                version = LocalChapterCover.versionOf(
+                    chapterVersion = chapter.version,
+                    dateUpload = chapter.dateUpload,
+                ),
             )
         }
     }

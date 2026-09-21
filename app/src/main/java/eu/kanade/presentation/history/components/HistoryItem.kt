@@ -172,7 +172,10 @@ fun HistoryItem(
                 LocalChapterCover(
                     chapterId = history.chapterId,
                     chapterUrl = history.chapterUrl,
-                    version = history.chapterVersion xor history.chapterDateUpload xor history.chapterLastModifiedAt,
+                    version = LocalChapterCover.versionOf(
+                        chapterVersion = history.chapterVersion,
+                        dateUpload = history.chapterDateUpload,
+                    ),
                 )
             } else {
                 history.coverData

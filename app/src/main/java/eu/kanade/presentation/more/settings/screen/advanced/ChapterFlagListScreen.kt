@@ -386,8 +386,8 @@ class ChapterFlagListScreen(
                     StickyGroupHeaderOverlay(
                         groups = visibleGroups,
                         gridState = gridState,
-                        onClick = {
-                            group -> openManga(navigator, scope, context, group.mangaId, type.chapterScope)
+                        onClick = { group ->
+                            openManga(navigator, scope, context, group.mangaId, type.chapterScope)
                         },
                     )
                 }
@@ -529,7 +529,10 @@ private fun rememberChapterVisuals(groups: List<MangaGroup>): Map<Long, ChapterV
                         cover = LocalChapterCover(
                             chapterId = chapter.id,
                             chapterUrl = chapter.url,
-                            version = chapter.version xor chapter.dateUpload xor chapter.lastModifiedAt,
+                            version = LocalChapterCover.versionOf(
+                                chapterVersion = chapter.version,
+                                dateUpload = chapter.dateUpload,
+                            ),
                         ),
                         translatedName = chapter.translatedName,
                     )
