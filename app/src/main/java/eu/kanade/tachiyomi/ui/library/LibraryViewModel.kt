@@ -629,7 +629,7 @@ class LibraryViewModel(
      * not the same action as the erase button, which clears downloads. The date added is cleared
      * with the favourite so that re-adding later sorts by the new date, matching what the detail
      * screen's toggle and the source listing's removal already do - except for the local source,
-     * whose date sort reads date_added as the day the work entered the library (see
+     * whose date sort reads date_added as the day the work last entered the library (see
      * LocalSource's ordering): a work taken off the shelf is still in the local library, so its
      * import date stays.
      */

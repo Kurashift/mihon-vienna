@@ -314,7 +314,9 @@ insertNetworkManga {
     -- imported through the import screen - built by Manga.create(), which leaves date_added at 0 -
     -- used to sort as the oldest entry in the library and its date header came out "unknown".
     -- Only the local source is filled in: a remote work's date_added is what it is, and the updates
-    -- view compares the chapters' date_fetch against it.
+    -- view compares the chapters' date_fetch against it. That comparison is also why an import that
+    -- adds chapters re-dates the work from the moment the import started: the new chapters carry a
+    -- later date_fetch, so they still reach the updates view.
     --
     -- strftime returns seconds; every other timestamp in this schema is milliseconds.
     INSERT INTO mangas(

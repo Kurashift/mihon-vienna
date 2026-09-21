@@ -56,8 +56,9 @@ class UpdateManga(
         // the library for a toggle that changed nothing.
         if (manga.favorite == favorite) return true
 
-        // The local source's date sort reads date_added as the day the work entered the library
-        // (see LocalSource's ordering), so shelf membership must not rewrite it. Other sources
+        // The local source's date sort reads date_added as the day the work last entered the
+        // library (see LocalSource's ordering), so shelf membership must not rewrite it. Only a
+        // real addition of content moves it - importing new chapters into the work. Other sources
         // keep the upstream semantics: the date the work was added to the library.
         val dateAdded = when {
             manga.source == LocalSource.ID -> null

@@ -19,7 +19,10 @@ import tachiyomi.domain.manga.model.MangaProgress
  * has no access to progress or marks, and still serves global search with the import date.
  */
 enum class LocalDateAxis {
-    /** When the work's row was created: the date it entered the local library. */
+    /**
+     * When the work last entered the local library: its row's creation, or the most recent import
+     * that added chapters to it.
+     */
     Imported,
 
     /**

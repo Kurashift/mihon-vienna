@@ -70,7 +70,9 @@ interface MangaRepository {
     /**
      * Import date (date_added) of every manga row of the source, keyed by url. A work whose row
      * has not been created yet is simply absent, which is how the local source's date sort can
-     * still treat a freshly imported folder as new instead of as the oldest entry.
+     * still treat a freshly imported folder as new instead of as the oldest entry. For a local
+     * work the value is the last moment it entered the library: its row's creation, or the most
+     * recent import that added chapters to it.
      */
     suspend fun getDateAddedBySourceId(sourceId: Long): Map<String, Long>
 

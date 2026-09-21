@@ -1247,12 +1247,13 @@ class LocalSource(
             }
             else -> {
                 // The date is the import date (date_added: when the work's row was created, i.e.
-                // when it first showed up in the local library) - neither the folder's nor the
-                // chapters' file times, which move on every content change. An entry whose row
-                // does not exist yet is by definition being imported right now, so it sorts as
-                // the newest; the page load that follows creates the row with that very same
-                // timestamp, which keeps its position stable across reloads. Rows created before
-                // the import date was recorded carry 0 and read as the oldest.
+                // when it first showed up in the local library, or the most recent import that
+                // added chapters to it) - neither the folder's nor the chapters' file times,
+                // which move on every content change. An entry whose row does not exist yet is by
+                // definition being imported right now, so it sorts as the newest; the page load
+                // that follows creates the row with that very same timestamp, which keeps its
+                // position stable across reloads. Rows created before the import date was
+                // recorded carry 0 and read as the oldest.
                 //
                 // The "recently updated" listing is the one view whose native order is the
                 // chapters' own recency, so it keeps sorting by that whatever the sort key.

@@ -18,10 +18,12 @@ fun SManga.toDomainManga(sourceId: Long): Manga {
         initialized = initialized,
         memo = memo,
         source = sourceId,
-        // The row only gets created once, so this is the moment the work was first seen, and it
-        // is what the local source's date sort reads as the import date. Shelf actions overwrite
-        // it with their own timestamp afterwards, so for remote sources the value stays
-        // invisible until the work is favorited.
+        // The row is created once and grows afterwards, so this is the moment the work first
+        // showed up in the local library - and it is what the local source's date sort reads as
+        // the import date. Importing more chapters into it re-dates it to that later import, so
+        // the column means "when this work last entered the library", not "when its row was
+        // made". Shelf actions overwrite it with their own timestamp afterwards, so for remote
+        // sources the value stays invisible until the work is favorited.
         dateAdded = Clock.System.now().toEpochMilliseconds(),
     )
 }

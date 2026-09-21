@@ -479,6 +479,12 @@ class LocalChapterTransferService(
         val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
             ?: fileSystem.getBaseDirectory()?.createDirectory(target.url)
             ?: error("Local source directory is unavailable")
+        // Taken before anything is copied, so it is the moment the import began. Every chapter this
+        // import registers is stamped strictly later (see the date_fetch below): the updates view
+        // lists a chapter only while date_fetch > date_added, and both are read from the same
+        // millisecond clock, so an import fast enough to land on the same millisecond would
+        // otherwise hide the very chapters it just added.
+        val importStartedAt = System.currentTimeMillis()
         val candidates = uris.flatMap { expand(UniFile.fromUri(context, it) ?: return@flatMap emptyList()) }
             .distinctBy { it.file.uri.toString() }
         val totalBytes = candidates.sumOf { sizeOfForTransfer(it.file, options) }
@@ -554,7 +560,11 @@ class LocalChapterTransferService(
                                     mangaId = target.id,
                                     url = chapterUrl,
                                     name = destinationName,
-                                    dateFetch = System.currentTimeMillis(),
+                                    // Strictly later than the import stamp, whatever the clock
+                                    // resolution: the updates view lists a chapter only while
+                                    // date_fetch > date_added, so a chapter sharing its work's
+                                    // stamp would be imported and immediately invisible there.
+                                    dateFetch = maxOf(System.currentTimeMillis(), importStartedAt + 1),
                                     dateUpload = System.currentTimeMillis(),
                                 ),
                             ),
@@ -574,6 +584,25 @@ class LocalChapterTransferService(
                 failed++
             }
             onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
+        }
+        if (imported > 0) {
+            // New chapters are the work growing, so it re-enters the library at this moment and the
+            // import date says so: a work that gained chapters is as new as one that just arrived,
+            // and under the import-date order it belongs at the top with the rest of today's
+            // arrivals. Only a real addition moves it - an import that was entirely duplicates
+            // changed nothing, and shelving still leaves the date alone.
+            try {
+                withLocalChapterMutationLock(target.url) {
+                    mangaRepository.update(
+                        MangaUpdate(id = target.id, dateAdded = importStartedAt),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // The chapters are on disk and in the database; the date is presentation. Failing
+                // the import over it would report a transfer that succeeded as a failure.
+            }
         }
         firstImportedChapterFileName?.let { chapterFileName ->
             try {

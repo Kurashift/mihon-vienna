@@ -1897,7 +1897,7 @@ class BrowseSourceViewModel(
             }
 
             val update = new.toMangaUpdate()
-            // The local source's date sort reads date_added as the day the work entered the
+            // The local source's date sort reads date_added as the day the work last entered the
             // library (see LocalSource's ordering), so shelf membership must not rewrite it;
             // only other sources carry the upstream "date added to library" meaning here.
             val applied = if (source is LocalSource) update.copy(dateAdded = null) else update
@@ -2152,7 +2152,7 @@ class BrowseSourceViewModel(
                 setMangaCategories.await(mangaId, categoryIds)
                 if (!manga.favorite) {
                     // Shelving must not touch date_added: the local date sort reads it as the
-                    // day the work entered the library (see LocalSource's ordering), and
+                    // day the work last entered the library (see LocalSource's ordering), and
                     // rewriting it dropped the work into the "today" section the moment it was
                     // shelved.
                     updateManga.await(
