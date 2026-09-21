@@ -35,16 +35,6 @@ ON H.chapter_id = C._id
 WHERE C.url = :chapterUrl AND C.manga_id = :mangaId AND C._id = H.chapter_id
 LIMIT 1;
 
-getLastReadMangaIdBySource:
-SELECT C.manga_id
-FROM history H
-JOIN chapters C ON H.chapter_id = C._id
-JOIN mangas M ON C.manga_id = M._id
-WHERE M.source = :sourceId
-AND H.last_read > 0
-ORDER BY H.last_read DESC
-LIMIT 1;
-
 resetHistoryById:
 UPDATE history
 SET last_read = 0

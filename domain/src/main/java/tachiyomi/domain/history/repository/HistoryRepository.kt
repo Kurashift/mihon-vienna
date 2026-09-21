@@ -9,8 +9,6 @@ interface HistoryRepository {
 
     fun getHistory(query: String): Flow<List<HistoryWithRelations>>
 
-    fun getLastReadMangaIdBySource(sourceId: Long): Flow<Long?>
-
     suspend fun getLastHistory(): HistoryWithRelations?
 
     suspend fun getTotalReadDuration(): Long

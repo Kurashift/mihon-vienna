@@ -24,12 +24,6 @@ class HistoryRepositoryImpl(
             .subscribeToList()
     }
 
-    override fun getLastReadMangaIdBySource(sourceId: Long): Flow<Long?> {
-        return database.historyQueries
-            .getLastReadMangaIdBySource(sourceId)
-            .subscribeToOneOrNull()
-    }
-
     override suspend fun getLastHistory(): HistoryWithRelations? {
         return database.historyViewQueries
             .getLatestHistory(HistoryMapper::mapHistoryWithRelations)

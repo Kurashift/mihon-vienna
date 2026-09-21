@@ -135,11 +135,6 @@ getAllMangaSourceAndUrl:
 SELECT source, url
 FROM mangas;
 
-getMangasWithFavoriteTimestamp:
-SELECT *
-FROM mangas
-WHERE favorite_modified_at IS NOT NULL;
-
 getSourceIdWithFavoriteCount:
 SELECT
 source,
