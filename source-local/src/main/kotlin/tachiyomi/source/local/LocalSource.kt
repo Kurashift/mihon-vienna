@@ -23,6 +23,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
@@ -164,6 +165,25 @@ class LocalSource(
     private val listingSnapshotInternal = MutableStateFlow(LocalListingSnapshot())
     val listingSnapshot: StateFlow<LocalListingSnapshot> = listingSnapshotInternal
 
+    /**
+     * Counts the moments the listing is known to be out of date and has to be derived again.
+     *
+     * [invalidateListing] can only raise a flag: it is called from the import worker, which runs
+     * outside any screen and cannot rebuild anything itself. A flag has no observer, so the browse
+     * screen never learned that an import had finished - the new work stayed invisible until the
+     * reader happened to tap a filter, which rebuilt the list for an unrelated reason. This flow is
+     * what makes the same event visible: one tick per real change, collected by the screen that
+     * derives the listing.
+     *
+     * Deliberately not derived from [listingSnapshot]: that snapshot is published on several paths
+     * that are not changes (a cold-start read of the persisted index, a rebuild that produced the
+     * same entries), and it only carries the two url lists - a chapter count or cover that changed
+     * under an unchanged url set would not move it. Watching the snapshot would therefore both
+     * rebuild on nothing and stay silent on some real changes.
+     */
+    private val listingRevisionInternal = MutableStateFlow(0L)
+    val listingRevision: StateFlow<Long> = listingRevisionInternal
+
     @Volatile
     private var cachedListingTime: Long = 0
 
@@ -270,6 +290,14 @@ class LocalSource(
         0,
     )
 
+    /**
+     * Direction of the title and chapter-count orderings, which share this one slot.
+     *
+     * Ascending, so the title list reads A-to-Z. The date orderings no longer use it: each keeps its
+     * own direction (see the browse screen's date slots), because sharing a slot meant the import
+     * date could never be newest-first while the title list was A-to-Z, and a choice on one silently
+     * became the other's.
+     */
     private val orderByAscendingPreference: Preference<Boolean> = preferenceStore.getBoolean(
         "local_source_order_by_ascending",
         true,
@@ -284,11 +312,22 @@ class LocalSource(
 
     /** Persists [index] and [ascending], skipping the writes when nothing actually changed. */
     fun setOrderBy(index: Int, ascending: Boolean) {
-        if (orderByIndexPreference.get() != index) {
-            orderByIndexPreference.set(index)
-        }
+        setOrderByIndex(index)
         if (orderByAscendingPreference.get() != ascending) {
             orderByAscendingPreference.set(ascending)
+        }
+    }
+
+    /**
+     * Persists [index] alone, leaving the stored direction as it is.
+     *
+     * Used when the reader switches keys: the date orderings keep their own direction, so the
+     * source's slot must not be rewritten on their behalf - doing so would carry the title list's
+     * direction into the date keys and back again.
+     */
+    fun setOrderByIndex(index: Int) {
+        if (orderByIndexPreference.get() != index) {
+            orderByIndexPreference.set(index)
         }
     }
 
@@ -410,13 +449,18 @@ class LocalSource(
         }
     }
 
-    /** Forces the next pager load to rebuild the listing after a confirmed directory change. */
+    /**
+     * Forces the next pager load to rebuild the listing after a confirmed directory change, and
+     * ticks [listingRevision] so a screen already showing that listing derives it again without
+     * waiting for the reader to touch a control.
+     */
     fun invalidateListing() {
         listingInvalidated = true
         cachedDerivedListing = null
         lastListingRefreshAttempt = 0L
         cachedBaseDirectorySnapshot = null
         cachedBaseDirectorySnapshotTime = 0L
+        listingRevisionInternal.update { it + 1 }
     }
 
     private suspend fun getBaseDirectorySnapshot(
@@ -707,6 +751,10 @@ class LocalSource(
      * Only touches the persisted index and the in-memory listing, so no rescan happens. The
      * directory signature preference is deliberately left untouched so the existing change
      * detection on the library screen still sees this as a directory change.
+     *
+     * The tick is unconditional: it is what tells a screen already showing the listing that the
+     * card it still holds is gone, which a new snapshot alone does not do - the pages on screen
+     * were sliced from the previous listing and no snapshot change re-slices them.
      */
     suspend fun removeListingEntry(mangaUrl: String) = withIOContext {
         listingMutex.withLock {
@@ -722,6 +770,7 @@ class LocalSource(
                 publishListingSnapshot(updated)
             }
         }
+        listingRevisionInternal.update { it + 1 }
     }
 
     private data class ListingIndex(
@@ -891,6 +940,27 @@ class LocalSource(
 
     suspend fun getSearchMangaUrls(query: String): List<String> {
         return getSearchMangaList(query, latestWindow = false).map(SManga::url)
+    }
+
+    /**
+     * The whole listing at once, in the same order the paged calls serve it.
+     *
+     * The listing is derived in full before any page is sliced out of it, so serving it page by
+     * page only ever re-slices a list that already exists - and the slicing is what makes the list
+     * reach the screen in installments: a page arrives, the list grows, and a reader who is part
+     * way down is moved by the change. Handing the complete list over instead lets the screen show
+     * a list that is finished from the start.
+     *
+     * Deliberately NOT narrowed by [setListingUrlFilter]. That narrowing exists so a pager walks
+     * only the matches instead of every page of the library, and it is applied from a different
+     * coroutine than the one that renders the list - so a whole-listing caller could read it
+     * before it was set and derive the previous filter's list, showing that and then correcting
+     * itself. A whole listing applies the same reading and mark filters to every entry as it maps
+     * them anyway, so narrowing here buys nothing and costs that race. The order does still apply:
+     * it is what decides the sequence.
+     */
+    suspend fun getWholeListing(latestWindow: Boolean): List<SManga> {
+        return getSearchMangaList("", latestWindow, narrowToFilter = false)
     }
 
     /**
@@ -1073,9 +1143,19 @@ class LocalSource(
         }
     }
 
+    /**
+     * Derives the listing in full.
+     *
+     * [narrowToFilter] applies the caller's pushed-down mark/reading narrowing, which is how a
+     * pager avoids walking pages that cannot match. A caller that renders the whole listing at once
+     * passes false: it filters every entry itself, and reading the narrowing could race the
+     * coroutine that sets it. It is part of the memo key either way, since the two produce
+     * different lists.
+     */
     private suspend fun getSearchMangaList(
         query: String,
         latestWindow: Boolean,
+        narrowToFilter: Boolean = true,
     ): List<SManga> = withIOContext {
         val orderByIndex = orderByIndexPreference.get()
         val ascending = orderByAscendingPreference.get()
@@ -1089,7 +1169,11 @@ class LocalSource(
         // Only the browsing listings are narrowed: they are the ones served with a blank query.
         // A search already defines its own result set, and the same source also answers global
         // search and smart search, which must never see a filter one screen happens to use.
-        val urlFilter = listingUrlFilter?.takeIf { query.isBlank() }
+        // Only the paged callers narrow: they walk the listing and benefit from skipping entries
+        // that cannot match. A whole-listing caller filters every entry itself, so it asks for the
+        // unnarrowed listing - see [getWholeListing].
+        val urlFilter = listingUrlFilter
+            ?.takeIf { narrowToFilter && query.isBlank() }
         val allEntries = getListing()
 
         // Reuse the previously derived page when nothing that feeds it changed. The listing

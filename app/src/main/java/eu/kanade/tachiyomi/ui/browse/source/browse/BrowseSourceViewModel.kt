@@ -12,6 +12,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.paging.LoadState
+import androidx.paging.LoadStates
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -31,9 +33,11 @@ import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
+import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.ui.manga.RandomGoodDoujinResult
 import eu.kanade.tachiyomi.util.lang.toLocalDate
 import eu.kanade.tachiyomi.util.removeCovers
@@ -71,8 +75,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import logcat.LogPriority
 import mihon.core.viewmodel.StateViewModel
+import mihon.domain.manga.model.toDomainManga
 import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.core.common.preference.CheckboxState
+import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.mapAsCheckboxState
 import tachiyomi.core.common.util.lang.launchIO
@@ -146,6 +152,17 @@ class BrowseSourceViewModel(
         private const val CLEAR_HISTORY_BATCH_SIZE = 500
         private const val LOCAL_DIRECTORY_POLL_MILLIS = 30_000L
         private const val LOCAL_REFRESH_CONCURRENCY = 6
+
+        /**
+         * The load states of a list that is already complete: nothing is loading, and there is
+         * nothing further to fetch. Handing this to [PagingData.from] is what stops a finished list
+         * from being reported as still loading.
+         */
+        private val CompleteLoadStates = LoadStates(
+            refresh = LoadState.NotLoading(endOfPaginationReached = false),
+            prepend = LoadState.NotLoading(endOfPaginationReached = true),
+            append = LoadState.NotLoading(endOfPaginationReached = true),
+        )
 
         val SOURCE_ID_KEY = CreationExtras.Key<Long>()
         val LISTING_QUERY_KEY = CreationExtras.Key<String?>()
@@ -248,35 +265,206 @@ class BrowseSourceViewModel(
         "browse_reading_filter_$sourceId",
         ReadingFilter.ALL.name,
     )
-    private val readingFilterInternal = MutableStateFlow(
-        runCatching { ReadingFilter.valueOf(readingFilterPreference.get()) }
-            .getOrDefault(ReadingFilter.ALL),
-    )
-    val readingFilter: StateFlow<ReadingFilter> = readingFilterInternal
     private val markFilterPreference = preferenceStore.getString(
         "browse_mark_filter_$sourceId",
         MarkFilter.NONE.name,
     )
-    private val markFilterInternal = MutableStateFlow(
-        if (source is LocalSource && state.value.listing == Listing.Latest) {
-            MarkFilter.NONE
-        } else {
-            runCatching { MarkFilter.valueOf(markFilterPreference.get()) }
-                .getOrDefault(MarkFilter.NONE)
-        },
+
+    private val dateAxisPreference: Preference<String> = preferenceStore.getString(
+        "browse_date_axis",
+        LocalDateAxis.Imported.name,
     )
-    val markFilter: StateFlow<MarkFilter> = markFilterInternal
 
     /**
-     * Ordering of the local library, null for any other source.
+     * Remembered direction of each date, so switching dates does not carry the previous one's
+     * direction over.
      *
-     * The paged list reads it while mapping pages, so a sort change reloads the current listing
-     * exactly once with the new order rather than emitting a stale page first. It is deliberately
-     * not part of the pager's [combine]: those flows produce a brand new paging flow, which would
-     * replay the cached page in the old order before the reload lands.
+     * The direction used to travel with the sort key, which meant two orders that are each natural
+     * on their own could never be reached one from the other: arriving at 看完 from 全部 inherited
+     * ascending, so the most recently finished work - the one the reader came to see - sat at the
+     * bottom, and the one tap that fixed it also overwrote the direction of the list they came
+     * from. Each date therefore keeps its own.
+     *
+     * Every date defaults to descending: a date list answers "what happened recently", so the
+     * newest entry belongs at the top - the import date included, where the newest arrival is what
+     * the reader most often wants.
+     *
+     * Every date lives here, the import date included. Its direction used to be the source's stored
+     * one, because the source derives the listing in that order - but that slot is shared with 标题
+     * and 篇数, so the import date could never be newest-first while the title list was A-to-Z, and
+     * a choice made on one silently became the other's. The key now has its own slot and the
+     * ordering is applied in the app layer like every other date.
      */
-    private val localSortInternal = MutableStateFlow((source as? LocalSource)?.orderBySelection)
-    val localSort: StateFlow<SourceModelFilter.Sort.Selection?> = localSortInternal
+    private val dateAxisAscendingPreferences: Map<LocalDateAxis, Preference<Boolean>> =
+        LocalDateAxis.entries.associateWith { axis ->
+            preferenceStore.getBoolean("browse_date_axis_ascending_${axis.name}", false)
+        }
+
+    /**
+     * Everything the reader changes as one action: the filters in force, the sort key, the date that
+     * key means, and each date's remembered direction.
+     *
+     * One value rather than separate flows because these change together and are only meaningful
+     * together. A filter tap can also move the date (see [followedDateAxis]), and with separate
+     * flows the list rebuilt once per field: the first rebuild ordered it by the date the reader was
+     * leaving, and only the second was the order they asked for - visible as the list flashing an
+     * order that never existed. One emission cannot be torn, which is the same reason the filter and
+     * its match sets are published as one value.
+     *
+     * The derived flows below are read-only projections of this; every write goes through
+     * [updateListControls].
+     */
+    @Immutable
+    private data class ListControls(
+        val readingFilter: ReadingFilter,
+        val markFilter: MarkFilter,
+        val sort: SourceModelFilter.Sort.Selection?,
+        val dateAxis: LocalDateAxis,
+        val dateDirections: Map<LocalDateAxis, Boolean>,
+    ) {
+        /** The dates the filters in force make available, in menu order. */
+        val availableDates: List<LocalDateAxis>
+            get() = datesAvailableFor(readingFilter, markFilter)
+
+        /** Direction in force for [axis], read from that date's own slot. */
+        fun ascendingFor(axis: LocalDateAxis): Boolean = dateDirections[axis] ?: false
+
+        /** The ordering the list is really in: the date key's direction comes from its own slot. */
+        val effectiveSort: SourceModelFilter.Sort.Selection?
+            get() = sort?.let { selection ->
+                if (selection.index == LocalSource.ORDER_BY_DATE) {
+                    selection.copy(ascending = ascendingFor(dateAxis))
+                } else {
+                    selection
+                }
+            }
+    }
+
+    private val listControls = MutableStateFlow(
+        ListControls(
+            readingFilter = runCatching { ReadingFilter.valueOf(readingFilterPreference.get()) }
+                .getOrDefault(ReadingFilter.ALL),
+            markFilter = if (source is LocalSource && state.value.listing == Listing.Latest) {
+                MarkFilter.NONE
+            } else {
+                runCatching { MarkFilter.valueOf(markFilterPreference.get()) }
+                    .getOrDefault(MarkFilter.NONE)
+            },
+            sort = (source as? LocalSource)?.orderBySelection,
+            dateAxis = runCatching { LocalDateAxis.valueOf(dateAxisPreference.get()) }
+                .getOrDefault(LocalDateAxis.Imported),
+            dateDirections = dateAxisAscendingPreferences.mapValues { (_, preference) -> preference.get() },
+        ),
+    )
+
+    /**
+     * Applies [change] as one write.
+     *
+     * The single write path for the reader's list controls. Describing a change as one function over
+     * the whole state is what keeps a tap that moves two fields from rebuilding the list twice.
+     *
+     * There is deliberately no per-field mirror: a second copy of any of these goes stale the moment
+     * this is the only writer, and a decision that reads the stale copy acts on the state the reader
+     * just left. Reading them off [listControls] is what makes the one write authoritative.
+     */
+    private inline fun updateListControls(change: (ListControls) -> ListControls) {
+        val next = change(listControls.value)
+        if (next == listControls.value) return
+        listControls.value = next
+    }
+
+    val readingFilter: StateFlow<ReadingFilter> = listControls
+        .map { it.readingFilter }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, listControls.value.readingFilter)
+    val markFilter: StateFlow<MarkFilter> = listControls
+        .map { it.markFilter }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, listControls.value.markFilter)
+
+    /**
+     * Direction in force for [axis].
+     *
+     * Read from the date's own slot, the import date included. It used to borrow the source's
+     * stored direction, because the source does the sorting for that one - but sharing a slot with
+     * 标题 and 篇数 meant the import date could never be newest-first while the title list was
+     * A-to-Z, and the reader's choice on one silently became the other's.
+     */
+    private fun axisAscending(axis: LocalDateAxis): Boolean =
+        listControls.value.ascendingFor(axis)
+
+    /**
+     * Records the direction chosen for [axis] (never the import date; see the map above).
+     *
+     * Advances the list generation like any other reorder: the rows are the same works in a new
+     * sequence, which is a new list as far as the screen is concerned - it opens at the top and
+     * re-anchors the scroller.
+     */
+    private fun setAxisAscending(axis: LocalDateAxis, ascending: Boolean) {
+        if (listControls.value.ascendingFor(axis) == ascending) return
+        dateAxisAscendingPreferences[axis]?.set(ascending)
+        updateListControls { it.copy(dateDirections = it.dateDirections + (axis to ascending)) }
+        listGeneration.update { it + 1 }
+    }
+
+    /**
+     * Records [axis] as the date to order by, without touching the list generation.
+     *
+     * The caller owns the generation bump, because picking a date can also change the sort key and
+     * the two must land as one list. Bumping here as well made a single tap rebuild the list twice
+     * - once for the key and once for the date - and the first rebuild was visible as the list
+     * briefly in an order the reader never asked for.
+     */
+    private fun setDateAxis(axis: LocalDateAxis) {
+        if (listControls.value.dateAxis == axis) return
+        updateListControls { it.copy(dateAxis = axis) }
+        dateAxisPreference.set(axis.name)
+    }
+
+    /**
+     * Everything the sort control and the list identity need, as one value.
+     *
+     * Published together because they describe one state: the key, the direction in force for it,
+     * the date it orders by, and which dates are on offer. Read as separate flows they arrive in
+     * separate frames, and the control briefly shows a combination that never existed - the new
+     * name over the old menu, or the new date over a list still in the previous order. One emission
+     * cannot be torn.
+     */
+    @Immutable
+    data class SortUiState(
+        val selection: SourceModelFilter.Sort.Selection?,
+        val dateAxis: LocalDateAxis?,
+        val availableDates: List<LocalDateAxis>,
+    )
+
+    private val sortUiStateInternal: Flow<SortUiState> = combine(
+        listControls,
+        state.map { servesWholeListing(it.listing) && it.listing !is Listing.Latest },
+    ) { controls, applies ->
+        SortUiState(
+            // Under the date key the direction shown (and used) is the date's own slot, never the
+            // source's - the source's slot belongs to 标题 and 篇数, and letting the date read it is
+            // what made newest-first import order impossible while the title list was A-to-Z.
+            selection = controls.effectiveSort,
+            dateAxis = controls.dateAxis.takeIf {
+                applies && controls.sort?.index == LocalSource.ORDER_BY_DATE
+            },
+            availableDates = controls.availableDates,
+        )
+    }
+
+    /** The sort control's state, as one value - see [SortUiState]. */
+    val sortUiState: StateFlow<SortUiState> = sortUiStateInternal
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SortUiState(
+                selection = listControls.value.sort,
+                dateAxis = null,
+                availableDates = listControls.value.availableDates,
+            ),
+        )
 
     /** Live phase of the local chapter refresh, null when no pass is running. */
     sealed interface ChapterRefreshProgress {
@@ -345,7 +533,7 @@ class BrowseSourceViewModel(
         // A favorite that just changed also changes what the "not in library" filter matches, so
         // the loaded pages have to be rebuilt for it as well.
         if (favoritesChanged &&
-            (hideInLibraryItems || markFilterInternal.value == MarkFilter.NOT_IN_LIBRARY)
+            (hideInLibraryItems || listControls.value.markFilter == MarkFilter.NOT_IN_LIBRARY)
         ) {
             invalidatePagingSources()
         }
@@ -394,8 +582,10 @@ class BrowseSourceViewModel(
             }
             val currentListingUrls = local.listingSnapshot.value.allUrls.toSet()
             if (currentListingUrls.isEmpty() || directorySnapshot.urls != currentListingUrls) {
+                // The rebuild is not requested here: invalidating the listing is what raises the
+                // revision, and the collector in `init` is the single place that turns it into one.
+                // Asking for it here as well derived the listing twice for one directory change.
                 local.invalidateListing()
-                invalidatePagingSources()
                 localSourceChanged.value = true
             } else {
                 basePreferences.localSourceDirectorySignature.set(signature)
@@ -452,16 +642,20 @@ class BrowseSourceViewModel(
         // read lands, so a mark never resolves to nothing while it is still in flight.
         val snapshotUrlByMangaId = progressList.associate { it.mangaId to it.url }
         val resolveUrl = { mangaId: Long -> markUrls[mangaId] ?: snapshotUrlByMangaId[mangaId] }
-        val flaggedUrls = duplicateMarks.mapNotNullTo(HashSet()) { resolveUrl(it.mangaId) }
-        val goodDoujinUrls = goodDoujinMarks.mapNotNullTo(HashSet()) { resolveUrl(it.mangaId) }
+        // Keyed by url, valued by the newest mark time on that work: membership is what the mark
+        // filters ask ("is this flagged?"), and the time is what the date ordering reads when the
+        // axis is the mark date. Several chapters of one work can be marked, so the newest wins -
+        // the list then tracks when the work was last marked, which is what a mark list is about.
+        val flaggedUrls = newestMarkByUrl(duplicateMarks, resolveUrl)
+        val goodDoujinUrls = newestMarkByUrl(goodDoujinMarks, resolveUrl)
 
         ProgressContext(
             progressByMangaId = progressList.associate { it.mangaId to it.progress },
             progressByUrl = progressList.associate { it.url to it.progress },
             fsChapterCounts = fsChapterCounts,
             lastReadMangaId = progressList
-                .filter { it.lastOpenedAt > 0L }
-                .maxByOrNull { it.lastOpenedAt }
+                .filter { it.progress.lastOpenedAt > 0L }
+                .maxByOrNull { it.progress.lastOpenedAt }
                 ?.mangaId,
             flaggedUrls = flaggedUrls,
             goodDoujinUrls = goodDoujinUrls,
@@ -525,14 +719,12 @@ class BrowseSourceViewModel(
     val filteredMangaIds: StateFlow<List<Long>> = combine(
         listingAndSnapshot,
         progressContext,
-        // Merged so the combine below keeps the typed overload: its arity limit is five, and
-        // going one over leaves every lambda parameter inferred as Any.
-        combine(readingFilterInternal, markFilterInternal) { readingFilter, markFilter ->
-            readingFilter to markFilter
-        },
+        listControls,
         favoriteUrlsInternal,
         mangaIdByUrl,
-    ) { (listing, snapshot), context, (readingFilter, markFilter), favoriteUrls, idByUrl ->
+    ) { (listing, snapshot), context, controls, favoriteUrls, idByUrl ->
+        val readingFilter = controls.readingFilter
+        val markFilter = controls.markFilter
         RandomPoolArgs(
             listing = listing,
             snapshotUrls = when (listing) {
@@ -582,41 +774,150 @@ class BrowseSourceViewModel(
      * when an include/exclude set actually changes.
      */
     @Immutable
-    private data class FilterContext(
-        val flaggedUrls: Set<String> = emptySet(),
-        val goodDoujinUrls: Set<String> = emptySet(),
+    data class FilterContext(
+        /**
+         * Urls carrying a mark, valued by the newest mark time on the work. The mark filters only
+         * ask membership; the times ride along because the date ordering reads them when the filter
+         * in force is a mark filter. They belong in this value rather than being read separately
+         * where the ordering happens: the filter and the times it is matched against have to reach
+         * the list as one value, or the list would briefly be ordered by times belonging to the
+         * previous filter.
+         *
+         * Empty whenever the corresponding mark filter is not in force, so a chapter being read -
+         * which changes progress but no mark - still cannot invalidate the paged list.
+         */
+        val flaggedUrls: Map<String, Long> = emptyMap(),
+        val goodDoujinUrls: Map<String, Long> = emptyMap(),
         val favoriteUrls: Set<String> = emptySet(),
         val finishedUrls: Set<String> = emptySet(),
         val startedUrls: Set<String> = emptySet(),
+    ) {
+        /**
+         * Newest mark time on the work at [url] of the kind [axis] tracks, 0 when it carries none.
+         *
+         * Keyed on the axis rather than on the mark filter: the two marks are separate stores, and
+         * the date being sorted by is what decides which one is being asked about.
+         */
+        fun markedAt(url: String, axis: LocalDateAxis): Long = when (axis) {
+            LocalDateAxis.Flagged -> flaggedUrls[url]
+            LocalDateAxis.GoodDoujin -> goodDoujinUrls[url]
+            else -> null
+        } ?: 0L
+    }
+
+    /**
+     * The filters in force, together with the sets they are matched against, as one value.
+     *
+     * They are only ever meaningful together: each filter's predicate reads its own set, so a new
+     * filter paired with the previous sets is not a state the list may be filtered by. Deriving
+     * them separately let exactly that reach the list - the filter changed first, the sets followed
+     * once the progress they come from was recomputed, and the page in between was filtered by a
+     * filter that had no data yet: "read" against a not-yet-built set of read urls matches nothing,
+     * so the list emptied and the screen showed "no results" before filling in.
+     *
+     * Published as one value so the paged list always sees a matching pair.
+     *
+     * [dateOrder] rides here for the same reason: it is derived from the same filter and progress
+     * as the sets, and the ordering it applies has to match the filter the list was narrowed by.
+     */
+    @Immutable
+    data class AppliedFilter(
+        val readingFilter: ReadingFilter,
+        val markFilter: MarkFilter,
+        val context: FilterContext,
+        val dateOrder: DateOrdering? = null,
     )
 
-    private val filterContext: StateFlow<FilterContext> = combine(
+    /**
+     * A date ordering to apply to the filtered list, beyond the one the source already produced.
+     *
+     * The source's own date ordering is the import date; every other axis reads data the source
+     * cannot see (progress, marks), so those orderings are applied to the list once it is filtered,
+     * in the app layer. Null whenever the source's own order already is the right one - the import
+     * axis, or a key that is not the date - which is what leaves the existing behaviour untouched.
+     *
+     * [progressByUrl] is carried rather than looked up later so the ordering reads the very
+     * progress the filter was built from; a separate read could pair a new axis with old progress.
+     */
+    @Immutable
+    data class DateOrdering(
+        val axis: LocalDateAxis,
+        val ascending: Boolean,
+        val progressByUrl: Map<String, MangaProgress>,
+    )
+
+    /**
+     * Counts the lists the reader has asked for: one step per filter, order or listing choice.
+     *
+     * Stamped onto every row, so the screen can tell a replacement from an update at the moment
+     * the rows are on screen. Deliberately not advanced by anything that changes content without
+     * changing what was asked for - shelving a work, a rescan - because those must leave the
+     * reader's place alone.
+     */
+    private val listGeneration = MutableStateFlow(0L)
+
+    /**
+     * The ordering inputs, grouped so the filter value below can take them as one.
+     *
+     * The whole control state is one input, not one per field. A filter tap can also move the date,
+     * and those now land in the same write - so taking them as separate inputs would emit once for
+     * each field and the list would be derived twice, the first time in an order that never existed.
+     */
+    private val appliedFilter: StateFlow<AppliedFilter> = combine(
         progressContext,
-        readingFilterInternal,
-        markFilterInternal,
+        listControls,
         favoriteUrlsInternal,
-    ) { context, readingFilter, markFilter, favoriteUrls ->
-        FilterContext(
-            flaggedUrls = if (markFilter == MarkFilter.FLAGGED) context.flaggedUrls else emptySet(),
-            goodDoujinUrls = if (markFilter == MarkFilter.GOOD_DOUJIN) context.goodDoujinUrls else emptySet(),
-            favoriteUrls = if (markFilter == MarkFilter.NOT_IN_LIBRARY) favoriteUrls else emptySet(),
-            finishedUrls = if (readingFilter != ReadingFilter.ALL) {
-                context.progressByUrl.filterValues(MangaProgress::hasFinished).keys.toSet()
-            } else {
-                emptySet()
-            },
-            startedUrls = if (readingFilter == ReadingFilter.IN_PROGRESS) {
-                context.progressByUrl.filterValues(MangaProgress::hasBeenRead).keys.toSet()
-            } else {
-                emptySet()
-            },
+    ) { context, controls, favoriteUrls ->
+        val readingFilter = controls.readingFilter
+        val markFilter = controls.markFilter
+        val sort = controls.sort
+        AppliedFilter(
+            readingFilter = readingFilter,
+            markFilter = markFilter,
+            context = FilterContext(
+                flaggedUrls = if (markFilter == MarkFilter.FLAGGED) context.flaggedUrls else emptyMap(),
+                goodDoujinUrls = if (markFilter == MarkFilter.GOOD_DOUJIN) context.goodDoujinUrls else emptyMap(),
+                favoriteUrls = if (markFilter == MarkFilter.NOT_IN_LIBRARY) favoriteUrls else emptySet(),
+                finishedUrls = if (readingFilter != ReadingFilter.ALL) {
+                    context.progressByUrl.filterValues(MangaProgress::hasFinished).keys.toSet()
+                } else {
+                    emptySet()
+                },
+                startedUrls = if (readingFilter == ReadingFilter.IN_PROGRESS) {
+                    context.progressByUrl.filterValues(MangaProgress::hasBeenRead).keys.toSet()
+                } else {
+                    emptySet()
+                },
+            ),
+            dateOrder = sort
+                ?.takeIf { it.index == LocalSource.ORDER_BY_DATE }
+                ?.let { controls.dateAxis }
+                ?.let { axis ->
+                    // Every date is applied here, the import date included. Its direction has its
+                    // own slot now (see [axisAscending]), and the source's own ordering is fixed to
+                    // one direction - so the import date can no longer ride along with it, or a
+                    // reader who chose newest-first import order would get whichever direction the
+                    // source happened to hold.
+                    DateOrdering(
+                        axis = axis,
+                        ascending = controls.ascendingFor(axis),
+                        // Carried only for the dates that read it. The others would otherwise pin a
+                        // fresh progress map into this value on every chapter read, and this value's
+                        // whole point is that a read cannot invalidate the paged list.
+                        progressByUrl = if (axis.readsProgress) context.progressByUrl else emptyMap(),
+                    )
+                },
         )
     }
         .distinctUntilChanged()
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            FilterContext(),
+            AppliedFilter(
+                readingFilter = listControls.value.readingFilter,
+                markFilter = listControls.value.markFilter,
+                context = FilterContext(),
+            ),
         )
 
     /**
@@ -634,15 +935,16 @@ class BrowseSourceViewModel(
      */
     private val listingUrlFilter: StateFlow<Set<String>?> = if (source is LocalSource) {
         combine(
-            filterContext,
-            readingFilterInternal,
-            markFilterInternal,
+            appliedFilter,
             source.listingSnapshot,
-        ) { context, readingFilter, markFilter, snapshot ->
+        ) { applied, snapshot ->
+            val context = applied.context
+            val markFilter = applied.markFilter
+            val readingFilter = applied.readingFilter
             val markUrls = when (markFilter) {
                 MarkFilter.NONE -> null
-                MarkFilter.FLAGGED -> context.flaggedUrls
-                MarkFilter.GOOD_DOUJIN -> context.goodDoujinUrls
+                MarkFilter.FLAGGED -> context.flaggedUrls.keys
+                MarkFilter.GOOD_DOUJIN -> context.goodDoujinUrls.keys
                 // Every url the library does not hold. Built from the snapshot rather than left
                 // null so the pager walks only the matches instead of the whole library.
                 MarkFilter.NOT_IN_LIBRARY -> snapshot.allUrls.filterNotTo(HashSet()) { it in context.favoriteUrls }
@@ -676,19 +978,15 @@ class BrowseSourceViewModel(
             state.map { it.listing }.distinctUntilChanged(),
             source.listingSnapshot,
         ) { listing, snapshot -> listing to snapshot }
-        // The two filters are merged so the combine below keeps the typed overload: its arity
-        // limit is five, and going one over leaves every lambda parameter inferred as Any.
-        val filters = combine(
-            readingFilterInternal,
-            markFilterInternal,
-        ) { readingFilter, markFilter -> readingFilter to markFilter }
         combine(
             listingWithSnapshot,
             progressContext,
-            filters,
+            listControls,
             favoriteUrlsInternal,
             screenVisible,
-        ) { (listing, snapshot), context, (filter, markFilter), favoriteUrls, visible ->
+        ) { (listing, snapshot), context, controls, favoriteUrls, visible ->
+            val filter = controls.readingFilter
+            val markFilter = controls.markFilter
             if (visible) {
                 CountFilterArgs(
                     listing = listing,
@@ -760,6 +1058,10 @@ class BrowseSourceViewModel(
      * Invalidates every paging source created so far (current listing, cached Popular/Latest
      * and any open search) so they reload with fresh data, e.g. after the local directory
      * changed or a manga was added to/removed from the library.
+     *
+     * Also ticks [reloadGeneration], which is what tells a listing served whole to re-derive. That
+     * listing has no paging source to invalidate, so without the tick every one of these reloads
+     * would be silently dropped for it.
      */
     private fun invalidatePagingSources() {
         // Pager instances for cached listings are created once, so keep their sources registered
@@ -768,7 +1070,11 @@ class BrowseSourceViewModel(
         // The pages served from now on reflect the listing as it stands at this moment, so this
         // is what any later comparison has to measure against.
         currentListingUrls()?.let { servedListingUrls = it }
+        reloadGeneration.update { it + 1 }
     }
+
+    /** Ticks whenever the listing has to be derived again; see [invalidatePagingSources]. */
+    private val reloadGeneration = MutableStateFlow(0)
 
     /** Urls of the local listing right now, null for any other source or before the first scan. */
     private fun currentListingUrls(): Set<String>? {
@@ -800,21 +1106,51 @@ class BrowseSourceViewModel(
     private val pageSize = if (source is LocalSource) LocalSource.PAGE_SIZE else 25
 
     /**
+     * Whether [listing] is served as one finished list rather than paged in.
+     *
+     * The local library, whose listing is derived in full anyway - see [wholeListingFor]. It is
+     * browsed with a blank query; a search on the local source defines a result set of its own and
+     * is paged like any other. Everything paging does around an unfinished list is unnecessary for
+     * the library and is switched off with this.
+     */
+    private fun servesWholeListing(listing: Listing): Boolean {
+        if (source !is LocalSource) return false
+        return !(listing is Listing.Search && !listing.query.isNullOrBlank())
+    }
+
+    /**
+     * Whether the list on screen is served whole, which decides how its rows are identified.
+     *
+     * A whole list is replaced outright, so a row must not be identified by what it shows: the
+     * lazy layout remembers the key of the row it is showing and, when the content is replaced,
+     * follows that key to wherever it now sits. For a list that grows a page at a time that is
+     * exactly right - the reader keeps their place. For a list that is replaced it is wrong: the
+     * work under the reader is still somewhere in the new list, just at another index, so the
+     * reader is carried there. It is what made a filter change land at 99, and what made flipping
+     * the sort throw the list to the other end.
+     */
+    val wholeListingShown: StateFlow<Boolean> = state
+        .map { servesWholeListing(it.listing) }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, servesWholeListing(state.value.listing))
+
+    /**
      * Whether the pager fills unloaded positions with placeholders, which fixes the presented
      * list length at the full result count. Off while a client-side filter can drop items out
      * of loaded pages, because the slots are then sized by the unfiltered listing and never
      * fill - see [clientFilterNarrows].
+     *
+     * Always off for a local listing: it is served complete (see [wholeListingFor]), so there are
+     * no unloaded positions to fill, and a placeholder count could only disagree with it.
      */
     private val pagingPlaceholdersEnabled: StateFlow<Boolean> = combine(
-        readingFilterInternal,
-        markFilterInternal,
-    ) { readingFilter, markFilter -> !clientFilterNarrows(readingFilter, markFilter) }
+        listControls,
+        wholeListingShown,
+    ) { controls, wholeListing ->
+        !wholeListing && !clientFilterNarrows(controls.readingFilter, controls.markFilter)
+    }
         .distinctUntilChanged()
-        .stateIn(
-            viewModelScope,
-            SharingStarted.Eagerly,
-            !clientFilterNarrows(readingFilterInternal.value, markFilterInternal.value),
-        )
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
      * Skeleton slots the listing keeps past the last loaded page so the scroller can be
@@ -829,9 +1165,17 @@ class BrowseSourceViewModel(
      * what pulls the next page in, and a page-sized run is exactly the range Paging treats as
      * "the next page". Sizing it by the unfiltered total instead is the behaviour that used to
      * flash a screenful of grey cards after every listing reload.
+     *
+     * Nothing is kept for a local listing: it is served complete, so its end is the real end and
+     * the scroller can already travel the whole of it.
      */
-    val trailingSlotCount: StateFlow<Int> = pagingPlaceholdersEnabled
-        .map { enabled -> if (enabled) 0 else pageSize }
+    val trailingSlotCount: StateFlow<Int> = combine(
+        pagingPlaceholdersEnabled,
+        wholeListingShown,
+    ) { placeholders, wholeListing ->
+        if (placeholders || wholeListing) 0 else pageSize
+    }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     private fun buildPager(listing: Listing, placeholdersEnabled: Boolean): Flow<PagingData<Manga>> {
@@ -852,7 +1196,164 @@ class BrowseSourceViewModel(
             .cachedIn(viewModelScope)
     }
 
+    /**
+     * The local library as a single, finished list, kept per window.
+     *
+     * Its listing is derived in full before any page is sliced out of it, so paging here only
+     * re-slices a list that already exists - while making the screen receive that list in
+     * installments. A page arriving grows the list underneath the reader, and paging's own
+     * bookkeeping (placeholders, the trailing skeleton slots, re-reading from the first page after
+     * an invalidation) exists to paper over exactly that. Handing the whole list over removes the
+     * cause instead: the list is complete before it is shown, so nothing about it changes while it
+     * is being read.
+     *
+     * The flow is cached per window so the same instance is handed back for every change of filter
+     * or order: the same flow re-emits, and the reader's list simply becomes the new one. That is
+     * what keeps the screen from tearing its list down and building it again.
+     *
+     * Cached on the window rather than on the listing object: a listing carries a `FilterList`,
+     * whose equals is always false, so keying on it would miss on every lookup.
+     *
+     * Two steps, deliberately separated. The derived listing depends only on the order and on the
+     * directory - it is the same library whatever the reading or mark filter says. Those are
+     * applied afterwards, to the list already in hand, so a filter tap is pure work on data that is
+     * already here while a re-order or a rescan derives first. Doing both in one step is what made
+     * a filter tap take as long as a reload.
+     */
+    private val wholeListingFlows = ConcurrentHashMap<Boolean, Flow<PagingData<Manga>>>()
+
+    private var resolvedRowsFor: Set<String>? = null
+    private var resolvedRowsGeneration = -1
+    private var resolvedRows = emptyMap<String, Manga>()
+
+    /**
+     * The stored row behind each derived entry.
+     *
+     * Resolving a row means asking the repository to insert-or-update it and hand back what is
+     * stored: a write transaction per entry, which measured 254ms for this library and accounted
+     * for 84% of the time a re-order took. A re-order does not change any row - the same works are
+     * there, in another sequence - so reusing what was already resolved is free of consequence and
+     * takes that cost off every sort and every filter change.
+     *
+     * Keyed on the set of works and on the reload counter, not on the derived list: a re-order
+     * produces a fresh list holding the very same works. The set is what can change a row's
+     * identity; the counter covers the events that change a row in place - a work being shelved, a
+     * rescan, an explicit reload.
+     */
+    private suspend fun resolveListingRows(smangas: List<SManga>): List<Manga> {
+        val urls = smangas.mapTo(HashSet()) { it.url }
+        val generation = reloadGeneration.value
+        if (urls != resolvedRowsFor || generation != resolvedRowsGeneration) {
+            val resolved = networkToLocalManga(smangas.map { it.toDomainManga(source.id) })
+            resolvedRows = resolved.associateBy { it.url }
+            resolvedRowsFor = urls
+            resolvedRowsGeneration = generation
+            return resolved
+        }
+        val cache = resolvedRows
+        return smangas.mapNotNull { cache[it.url] }
+    }
+
+    private fun wholeListingFor(listing: Listing): Flow<PagingData<Manga>> {
+        val latestWindow = listing is Listing.Latest
+        return wholeListingFlows.getOrPut(latestWindow) {
+            // One combine, not two chained ones. Chaining made a change that moves both the filter
+            // and the ordering derive the listing twice - once per stage - and the first pass was
+            // rendered before the second replaced it.
+            combine(listControls, reloadGeneration, appliedFilter) { controls, _, applied ->
+                val local = source as? LocalSource ?: return@combine emptyList()
+                val smangas = local.getWholeListing(latestWindow)
+                // This is the moment the pages really are built from the listing, so it is also the
+                // moment the comparison in [rebuildIfListingChanged] has to measure later changes
+                // against. Recording it only when the listing was invalidated recorded the listing
+                // as it stood *before* the change: the rebuild that followed then read as another
+                // change, and returning to the tab rebuilt the whole list a second time for the one
+                // event - which is what made an import look like it stuttered and re-sorted late.
+                local.listingSnapshot.value.allUrls.toSet()
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { servedListingUrls = it }
+                val filtered = resolveListingRows(smangas)
+                    .filter { !hideInLibraryItems || !it.favorite }
+                    .filter { it.matches(applied) }
+                // The 最近更新 listing keeps its native order - the chapters' own recency - whatever
+                // the sort key says, exactly as the source derived it.
+                when (val order = applied.dateOrder.takeIf { !latestWindow }) {
+                    null -> filtered
+                    else -> reorderDateAxis(filtered, order, applied)
+                }
+            }
+                .map { mangas ->
+                    PagingData.from(
+                        data = mangas,
+                        sourceLoadStates = CompleteLoadStates,
+                    )
+                }
+        }
+    }
+
+    /** Whether [manga] passes the reading and mark filters in force. */
+    private fun Manga.matches(applied: AppliedFilter): Boolean {
+        val url = this.url
+        val readingMatch = when (applied.readingFilter) {
+            ReadingFilter.ALL -> true
+            ReadingFilter.UNREAD -> url !in applied.context.finishedUrls
+            ReadingFilter.IN_PROGRESS ->
+                url in applied.context.startedUrls && url !in applied.context.finishedUrls
+            ReadingFilter.FINISHED -> url in applied.context.finishedUrls
+        }
+        val markMatch = when (applied.markFilter) {
+            MarkFilter.NONE -> true
+            MarkFilter.FLAGGED -> url in applied.context.flaggedUrls
+            MarkFilter.GOOD_DOUJIN -> url in applied.context.goodDoujinUrls
+            MarkFilter.NOT_IN_LIBRARY -> url !in applied.context.favoriteUrls
+        }
+        return readingMatch && markMatch
+    }
+
+    /**
+     * The timestamp [manga] is dated by under [ordering]'s axis, for both the sequence and the
+     * separators.
+     *
+     * One function for both on purpose: a list ordered by one date under headings naming another
+     * would put every entry under a heading of its own, because consecutive entries would keep
+     * falling into different buckets. The axis and the maps it reads come from the same applied
+     * filter, so the order and the headings cannot be built from different filters' data either.
+     *
+     * A null [ordering] is the import date - the source already served that sequence, so there is
+     * nothing to reorder by, but the headings still name it.
+     */
+    private fun dateAxisValueOf(manga: Manga, ordering: DateOrdering?, applied: AppliedFilter): Long {
+        val axis = ordering?.axis ?: LocalDateAxis.Imported
+        return axis.value(
+            manga = manga,
+            progress = ordering?.progressByUrl?.get(manga.url) ?: MangaProgress.EMPTY,
+            markedAt = applied.context.markedAt(manga.url, axis),
+        )
+    }
+
+    /**
+     * Reorders an already-filtered list by [ordering]'s axis.
+     *
+     * Applied to the filtered list rather than to the source's own ordering: the axis reads data
+     * the source cannot see, and filtering first means only the entries that survive are ordered.
+     */
+    private fun reorderDateAxis(
+        mangas: List<Manga>,
+        ordering: DateOrdering,
+        applied: AppliedFilter,
+    ): List<Manga> {
+        return mangas.sortedWith(
+            dateAxisComparator(ordering.ascending) { manga ->
+                dateAxisValueOf(manga, ordering, applied)
+            },
+        )
+    }
+
     private fun pagerFor(listing: Listing, placeholdersEnabled: Boolean): Flow<PagingData<Manga>> {
+        // The local library has nothing to gain from paging and pays for it: see [wholeListingFor].
+        if (servesWholeListing(listing)) {
+            return wholeListingFor(listing)
+        }
         return if (listing is Listing.Search) {
             buildPager(listing, placeholdersEnabled)
         } else {
@@ -867,13 +1368,18 @@ class BrowseSourceViewModel(
         // changing it invalidates the pages already on screen: an entry marked after the first
         // load would otherwise stay invisible until some unrelated reload rebuilt them. The
         // first value only seeds the source, which has not served a page yet.
+        //
+        // Only the pager is invalidated here, never a whole listing. This collector is driven by
+        // the same value the listing is derived from, so a whole listing already re-derives from
+        // that emission; ticking the reload as well would derive it a second time and show the
+        // list updating twice for one tap.
         viewModelScope.launchIO {
             var seeded = false
             listingUrlFilter.collect { urls ->
                 val local = source as? LocalSource ?: return@collect
                 local.setListingUrlFilter(urls)
                 if (seeded) {
-                    invalidatePagingSources()
+                    pagingSources.forEach { it.invalidate() }
                 }
                 seeded = true
             }
@@ -885,77 +1391,136 @@ class BrowseSourceViewModel(
         // then disappears on return instead of lingering as a blank card until the next rescan.
         // That comparison lives in [rebuildIfListingChanged], not in a collector here - watching
         // the snapshot continuously is what made an unchanged listing rebuild itself.
+        //
+        // The listing being invalidated is the one signal that is a real change and has no other
+        // way of reaching this screen. An import runs in a WorkManager worker, so it cannot rebuild
+        // anything itself and only raises the source's invalidated flag; without this collector the
+        // new work stayed invisible until the reader tapped a filter, which rebuilt the list for an
+        // unrelated reason. It is also why deleting from the details screen now lands here instead
+        // of waiting for the next visit: the delete path used to rely on the pager's own refresh,
+        // which is a no-op for a listing served whole (PagingData.from carries no ui receiver).
+        viewModelScope.launchIO {
+            val local = source as? LocalSource ?: return@launchIO
+            // The current value only seeds the collector: the flag may already be raised by a
+            // change that happened while this screen did not exist, and that change is what the
+            // first derivation is about to read anyway.
+            local.listingRevision.drop(1).collect {
+                invalidatePagingSources()
+            }
+        }
     }
 
-    val mangaPagerFlowFlow = combine(
-        // The pager is selected by listing AND by whether a narrowing filter is active: a filter
-        // toggle swaps in a pager built with matching placeholders, so the presented list never
-        // carries phantom slots sized by the unfiltered listing. Sort is deliberately absent
-        // (see [localSortInternal]). Cover overlays stay off this combine: publishing one cover
-        // used to allocate a new inner Flow and reconnect LazyPagingItems.
-        combine(
-            state.map { it.listing }.distinctUntilChanged(),
-            readingFilterInternal,
-            markFilterInternal,
-        ) { listing, readingFilter, markFilter ->
-            PagerCacheKey(listing, !clientFilterNarrows(readingFilter, markFilter))
-        }
-            .map { key -> key.listing to pagerFor(key.listing, key.placeholdersEnabled) },
-        filterContext,
-        readingFilterInternal,
-        markFilterInternal,
-    ) { (listing, pagerFlow), filterCtx, filter, markFilter ->
-        pagerFlow.map { pagingData ->
-            val items = pagingData.map { manga ->
-                BrowseSourceUiModel.Item(
-                    manga = manga,
-                    matchedChapter = manga.memo[LocalSource.MATCHED_CHAPTER_KEY]?.jsonPrimitive?.contentOrNull,
-                )
-            }.filter { model ->
-                val url = model.manga.url
-                val readingMatch = when (filter) {
-                    ReadingFilter.ALL -> true
-                    ReadingFilter.UNREAD -> url !in filterCtx.finishedUrls
-                    ReadingFilter.IN_PROGRESS -> url in filterCtx.startedUrls && url !in filterCtx.finishedUrls
-                    ReadingFilter.FINISHED -> url in filterCtx.finishedUrls
-                }
-                val markMatch = when (markFilter) {
-                    MarkFilter.NONE -> true
-                    MarkFilter.FLAGGED -> url in filterCtx.flaggedUrls
-                    MarkFilter.GOOD_DOUJIN -> url in filterCtx.goodDoujinUrls
-                    MarkFilter.NOT_IN_LIBRARY -> url !in filterCtx.favoriteUrls
-                }
-                readingMatch && markMatch
-            }
-            // Date headers group runs of consecutive entries, so they only read as sections while
-            // the list really is ordered by date. Under any other sort the dates jump around and
-            // every entry would open its own header. The "recently updated" listing is excluded
-            // the same way: it orders by the chapters' recency, not by the import date.
-            //
-            // The ordering is what decides this, not which listing is shown: the separators used
-            // to be tied to the "recent" listing, which meant picking the date sort on its own
-            // showed no dates at all. The buckets follow the sort's own notion of the date - the
-            // import date - so a heading names when the works under it entered the library.
-            // Recent days stay separate and read relatively; older ones collapse into their month
-            // so a library spanning years does not become all headings.
-            val orderByIndex = localSortInternal.value?.index
-            if (source is LocalSource &&
-                orderByIndex == LocalSource.ORDER_BY_DATE &&
-                listing !is Listing.Latest
-            ) {
-                val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-                items.insertSeparators<BrowseSourceUiModel.Item, BrowseSourceUiModel> { before, after ->
-                    val next = after ?: return@insertSeparators null
-                    val nextBucket = dateHeaderBucket(next.manga.dateAdded, today)
-                    val beforeBucket = before?.let { dateHeaderBucket(it.manga.dateAdded, today) }
-                    if (nextBucket != beforeBucket) BrowseSourceUiModel.Header(nextBucket) else null
-                }
-            } else {
-                items.map<BrowseSourceUiModel.Item, BrowseSourceUiModel> { it }
-            }
-        }
+    /**
+     * The pager and the item mapping for the listing currently shown.
+     *
+     * The pager is chosen by the listing and by whether a narrowing filter is active - the two
+     * things that decide which pager serves the pages, and the reason placeholders match the
+     * filter. Nothing else is an input here. The filters in force and the sets they match against
+     * are read while the pages are mapped instead: they change whenever something is read or
+     * shelved, and as inputs every one of those changes produced a brand new flow.
+     *
+     * That mattered because the caller collects this with paging-compose, which keys the
+     * `LazyPagingItems` on the flow instance. A new instance is a new pager presentation that
+     * starts with no items: the list empties, re-reads its first pages, and the scroll position,
+     * the fast scroller and its anchor are all rebuilt along with it. It is what sent the reader
+     * to the top - or to the end - when a work was added to the library, which only flips one
+     * entry's shelf membership.
+     *
+     * Mapping rather than rebuilding also means the pages already loaded stay loaded. The filter
+     * still decides which of them are shown, so a swap narrows the same loaded window instead of
+     * dropping it and walking the pages again.
+     */
+    val mangaPagerFlowFlow: StateFlow<Flow<PagingData<BrowseSourceUiModel>>> = combine(
+        state.map { it.listing }.distinctUntilChanged(),
+        appliedFilter.map { !clientFilterNarrows(it.readingFilter, it.markFilter) }
+            .distinctUntilChanged(),
+    ) { listing, placeholdersEnabled ->
+        listing to pagerFor(listing, placeholdersEnabled)
     }
-        .distinctUntilChanged { old, new -> old === new }
+        // Compared by identity on the pager flow, not on the pair: the listing's own equals cannot
+        // be relied on here (a listing carries a FilterList, whose equals is always false), so
+        // comparing pairs would call every re-emission a change. What matters is whether the flow
+        // underneath is the same one - if it is, the screen keeps the list it already has.
+        .distinctUntilChanged { old, new -> old.second === new.second }
+        .map { (listing, pagerFlow) ->
+            pagerFlow.map { pagingData ->
+                // Read per delivered page, not captured when the flow was built: the filters can
+                // change without the pager being swapped, and the pages that follow have to be
+                // mapped with the filters in force at that moment.
+                val applied = appliedFilter.value
+                val generation = listGeneration.value
+                val mapped = pagingData.map { manga ->
+                    BrowseSourceUiModel.Item(
+                        manga = manga,
+                        matchedChapter = manga.memo[LocalSource.MATCHED_CHAPTER_KEY]?.jsonPrimitive?.contentOrNull,
+                        listGeneration = generation,
+                    )
+                }.filter { model ->
+                    val url = model.manga.url
+                    val readingMatch = when (applied.readingFilter) {
+                        ReadingFilter.ALL -> true
+                        ReadingFilter.UNREAD -> url !in applied.context.finishedUrls
+                        ReadingFilter.IN_PROGRESS ->
+                            url in applied.context.startedUrls && url !in applied.context.finishedUrls
+                        ReadingFilter.FINISHED -> url in applied.context.finishedUrls
+                    }
+                    val markMatch = when (applied.markFilter) {
+                        MarkFilter.NONE -> true
+                        MarkFilter.FLAGGED -> url in applied.context.flaggedUrls
+                        MarkFilter.GOOD_DOUJIN -> url in applied.context.goodDoujinUrls
+                        MarkFilter.NOT_IN_LIBRARY -> url !in applied.context.favoriteUrls
+                    }
+                    readingMatch && markMatch
+                }
+                // Date headers group runs of consecutive entries, so they only read as sections
+                // while the list really is ordered by date. Under any other sort the dates jump
+                // around and every entry would open its own header. The "recently updated" listing
+                // is excluded the same way: it orders by the chapters' recency, not by a date the
+                // headings could name.
+                //
+                // The ordering is what decides this, not which listing is shown: the separators
+                // used to be tied to the "recent" listing, which meant picking the date sort on
+                // its own showed no dates at all. The buckets read the axis the ordering uses -
+                // the import date, or whichever date the active filter gives the key - so a heading
+                // names the event the list is actually ordered by. Recent days stay separate and
+                // read relatively; older ones collapse into their month so a library spanning years
+                // does not become all headings.
+                //
+                // Read off the applied value rather than a copy of the sort state: [applied] is the
+                // one write's own result, so a filter change that moved the ordering off the date
+                // key is already reflected here. A stale copy made the headings outlive that move
+                // and put date separators back on a list ordered by title.
+                val dateKeyActive = applied.dateOrder != null
+                if (source is LocalSource &&
+                    dateKeyActive &&
+                    listing !is Listing.Latest
+                ) {
+                    // Only where the axis ordering was actually applied. A local search is paged
+                    // rather than served whole, so it keeps the source's own import-date order -
+                    // and its headings have to name that date, not the axis the filter would have
+                    // given the library list.
+                    val ordering = applied.dateOrder.takeIf { servesWholeListing(listing) }
+                    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+                    mapped.insertSeparators<BrowseSourceUiModel.Item, BrowseSourceUiModel> { before, after ->
+                        val next = after ?: return@insertSeparators null
+                        val nextBucket = dateHeaderBucket(
+                            dateAxisValueOf(next.manga, ordering, applied),
+                            today,
+                        )
+                        val beforeBucket = before?.let {
+                            dateHeaderBucket(dateAxisValueOf(it.manga, ordering, applied), today)
+                        }
+                        if (nextBucket != beforeBucket) {
+                            BrowseSourceUiModel.Header(nextBucket, generation)
+                        } else {
+                            null
+                        }
+                    }
+                } else {
+                    mapped.map<BrowseSourceUiModel.Item, BrowseSourceUiModel> { it }
+                }
+            }
+        }
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
@@ -977,6 +1542,7 @@ class BrowseSourceViewModel(
     }
 
     fun setListing(listing: Listing) {
+        listGeneration.update { it + 1 }
         mutableState.update {
             it.copy(
                 listing = listing,
@@ -986,13 +1552,57 @@ class BrowseSourceViewModel(
     }
 
     fun setReadingFilter(filter: ReadingFilter) {
-        readingFilterInternal.value = filter
+        // Only the reading half moves: the mark filter in force is whatever the reader last chose,
+        // read off the one value rather than a copy that only ever holds the startup state.
+        applyFilters(readingFilter = filter, markFilter = listControls.value.markFilter)
         readingFilterPreference.set(filter.name)
     }
 
     private fun setMarkFilter(filter: MarkFilter) {
-        markFilterInternal.value = filter
+        applyFilters(readingFilter = listControls.value.readingFilter, markFilter = filter)
         markFilterPreference.set(filter.name)
+    }
+
+    /**
+     * Moves to a filter pair and applies whatever it implies for the ordering, as one write.
+     *
+     * Both the filters and the date they imply are computed here and stored together, so the list is
+     * derived once from the finished state. Writing them one after the other rebuilt the list twice:
+     * the first rebuild paired the new filter with the date the reader was leaving, which the new
+     * filter does not offer - so it fell back to another date for one frame, and the second rebuild
+     * showed the order they actually asked for. That intermediate frame is what flashed.
+     */
+    private fun applyFilters(readingFilter: ReadingFilter, markFilter: MarkFilter) {
+        val local = source as? LocalSource
+        val current = listControls.value
+        val sort = current.sort
+        val available = datesAvailableFor(readingFilter, markFilter)
+        val dateKeyActive = sort?.index == LocalSource.ORDER_BY_DATE
+        val follow = if (dateKeyActive) {
+            followedDateAxis(current.dateAxis, available)
+        } else {
+            DateFollow.Keep
+        }
+        // Leaving the date key for the title key is the one move that also rewrites the source's
+        // stored ordering, since that is what serves the title list.
+        val sortingByTitle = follow == DateFollow.DropToTitle
+        if (sortingByTitle) {
+            local?.setOrderByIndex(LocalSource.ORDER_BY_TITLE)
+        }
+        val nextSort = when {
+            !sortingByTitle -> sort
+            else -> local?.orderBySelection ?: sort?.copy(index = LocalSource.ORDER_BY_TITLE)
+        }
+        val nextDate = (follow as? DateFollow.MoveTo)?.axis ?: current.dateAxis
+        updateListControls {
+            it.copy(
+                readingFilter = readingFilter,
+                markFilter = markFilter,
+                sort = nextSort,
+                dateAxis = nextDate,
+            )
+        }
+        listGeneration.update { it + 1 }
     }
 
     fun setLocalListFilter(filter: MarkFilter) {
@@ -1002,32 +1612,143 @@ class BrowseSourceViewModel(
     }
 
     /**
-     * Orders the local library by [index], keeping the current direction. Re-picking the key
-     * already in use changes nothing, so it does not reload the list either.
+     * The ordering a sort action left the list in, for the screen to report back to the reader.
+     *
+     * Returned rather than read from [localSort] because the flow has not emitted at that moment:
+     * a direction flip on a non-import date only moves that date's slot, and reading the flow here
+     * would report the ordering the list is leaving behind. [dateAxis] rides along for the same
+     * reason - the notice names the date the action just chose, which the flow does not know yet.
      */
-    fun setLocalSortKey(index: Int) {
-        val local = source as? LocalSource ?: return
-        val current = localSortInternal.value ?: return
-        if (current.index == index) return
-        applyLocalSort(local, index, current.ascending)
+    @Immutable
+    data class SortChange(
+        val index: Int,
+        val ascending: Boolean,
+        val dateAxis: LocalDateAxis?,
+    )
+
+    /**
+     * Orders the local library by [index]. Re-picking the key already in use changes nothing, so it
+     * does not reload the list either.
+     *
+     * The direction is not carried over from the previous key. It used to be, which meant the
+     * direction a key was left in followed the reader into the next one - and a key whose natural
+     * order is the opposite of the one they came from arrived the wrong way round. Each key now
+     * resumes the direction it was last left in: a date its own remembered one, the others the
+     * source's single stored direction.
+     */
+    fun setLocalSortKey(index: Int): SortChange? {
+        val local = source as? LocalSource ?: return null
+        val controls = listControls.value
+        val current = controls.sort ?: return null
+        if (current.index == index) return null
+        return if (index == LocalSource.ORDER_BY_DATE) {
+            // The date key's direction is the date's own slot, so the source's stored direction is
+            // left untouched - it belongs to 标题 and 篇数, and writing the date's direction into it
+            // would turn the title list around behind the reader's back.
+            val ascending = axisAscending(controls.dateAxis)
+            applyLocalSortIndexOnly(local, index, ascending)
+            SortChange(index, ascending, controls.dateAxis)
+        } else {
+            // Leaving the date key: the source resumes the direction it holds. A date direction
+            // must not leak onto 标题 or 篇数 either.
+            val ascending = local.orderBySelection.ascending
+            applyLocalSort(local, index, ascending)
+            SortChange(index, ascending, null)
+        }
     }
 
-    /** Flips the local library's ordering between ascending and descending. */
-    fun toggleLocalSortDirection() {
-        val local = source as? LocalSource ?: return
-        val current = localSortInternal.value ?: return
-        applyLocalSort(local, current.index, !current.ascending)
+    /**
+     * Picks the date the date key orders by. Re-picking the one already chosen changes nothing.
+     *
+     * Selecting a date also selects the date key. The date is only reachable through the menu, so a
+     * reader on 标题 or 篇数 who opens the dates and picks one is asking to order by date - and
+     * requiring the key to be set first left that tap doing nothing at all.
+     *
+     * This is the only way the choice changes deliberately. [applyFilters] is the only way it
+     * changes otherwise, and only when a filter has made the chosen date wrong or out of place.
+     */
+    fun setLocalDateAxis(axis: LocalDateAxis): SortChange? {
+        val local = source as? LocalSource ?: return null
+        val controls = listControls.value
+        val current = controls.sort ?: return null
+        // The menu only offers the available dates, so this guards against a stale tap rather than
+        // against the reader asking for something they were not shown.
+        if (axis !in controls.availableDates) return null
+        val changingKey = current.index != LocalSource.ORDER_BY_DATE
+        if (!changingKey && controls.dateAxis == axis) return null
+        setDateAxis(axis)
+        if (changingKey) {
+            // Selecting a date also selects the date key: the date is only reachable through the
+            // menu, so a reader on 标题 or 篇数 picking one is asking to order by date - and
+            // requiring the key to be set first left that tap doing nothing at all. One write
+            // covers both changes, so the list is rebuilt once, in its final order.
+            local.setOrderBy(LocalSource.ORDER_BY_DATE, current.ascending)
+            updateListControls { it.copy(sort = local.orderBySelection) }
+            listGeneration.update { it + 1 }
+            pagingSources.forEach { it.invalidate() }
+        } else {
+            listGeneration.update { it + 1 }
+        }
+        return SortChange(
+            index = LocalSource.ORDER_BY_DATE,
+            ascending = axisAscending(axis),
+            dateAxis = axis,
+        )
+    }
+
+    /**
+     * Flips the ordering direction of the local library.
+     *
+     * On the date key the flip belongs to the chosen date, not to the source's stored direction: the
+     * source's date ordering is the import date, so writing the flip there while another date is in
+     * use would turn the reader's import-date order upside down behind their back. Only the import
+     * date's flip reaches the source.
+     */
+    fun toggleLocalSortDirection(): SortChange? {
+        val local = source as? LocalSource ?: return null
+        val controls = listControls.value
+        val current = controls.sort ?: return null
+        if (current.index != LocalSource.ORDER_BY_DATE) {
+            applyLocalSort(local, current.index, !current.ascending)
+            return SortChange(current.index, !current.ascending, null)
+        }
+        // Every date flips its own slot, the import date included: the source's direction is the
+        // title list's and flipping the date must not reach it.
+        val axis = controls.dateAxis
+        val flipped = !axisAscending(axis)
+        setAxisAscending(axis, flipped)
+        return SortChange(current.index, flipped, axis)
     }
 
     /**
      * Persists the new ordering and reloads the pages that are already on screen. Writing the
      * preference before invalidating is what makes the reload pick the new order up; the derived
      * listing cache keys on both fields, so it recomputes instead of serving the old sequence.
+     *
+     * The order itself is enough to redraw the list, so it is published without a reload tick. The
+     * tick would be a second, redundant reason for the list to be derived again, and the second
+     * derivation lands one beat after the first - which is exactly the stutter this had.
      */
     private fun applyLocalSort(local: LocalSource, index: Int, ascending: Boolean) {
         local.setOrderBy(index, ascending)
-        localSortInternal.value = local.orderBySelection
-        invalidatePagingSources()
+        updateListControls { it.copy(sort = local.orderBySelection) }
+        listGeneration.update { it + 1 }
+        // The pager still needs invalidating: its cached pages were sliced from the old order.
+        pagingSources.forEach { it.invalidate() }
+    }
+
+    /**
+     * Switches to [index] and hands the ordering its direction, without writing the source's own.
+     *
+     * Used when moving to the date key: that key reads its direction from the date's slot, so the
+     * source's stored direction has to keep meaning 标题 and 篇数. The internal selection still
+     * carries [ascending] so the list ordering and the chip agree from the first frame.
+     */
+    private fun applyLocalSortIndexOnly(local: LocalSource, index: Int, ascending: Boolean) {
+        local.setOrderByIndex(index)
+        updateListControls { it.copy(sort = local.orderBySelection.copy(ascending = ascending)) }
+        listGeneration.update { it + 1 }
+        pagingSources.forEach { it.invalidate() }
     }
 
     private fun matchesReadingFilter(filter: ReadingFilter, progress: MangaProgress): Boolean {
@@ -1060,8 +1781,8 @@ class BrowseSourceViewModel(
         }
         val markedUrls = when (markFilter) {
             MarkFilter.NONE -> null
-            MarkFilter.FLAGGED -> flaggedUrls
-            MarkFilter.GOOD_DOUJIN -> goodDoujinUrls
+            MarkFilter.FLAGGED -> flaggedUrls.keys
+            MarkFilter.GOOD_DOUJIN -> goodDoujinUrls.keys
             MarkFilter.NOT_IN_LIBRARY -> null
         }
         return CountContext(startedUrls, finishedUrls, markedUrls, favoriteUrls)
@@ -1175,7 +1896,12 @@ class BrowseSourceViewModel(
                 addTracks.bindEnhancedTrackers(manga, source)
             }
 
-            if (updateManga.await(new.toMangaUpdate())) {
+            val update = new.toMangaUpdate()
+            // The local source's date sort reads date_added as the day the work entered the
+            // library (see LocalSource's ordering), so shelf membership must not rewrite it;
+            // only other sources carry the upstream "date added to library" meaning here.
+            val applied = if (source is LocalSource) update.copy(dateAdded = null) else update
+            if (updateManga.await(applied)) {
                 favoriteIdsInternal.update { ids ->
                     if (new.favorite) ids + new.id else ids - new.id
                 }
@@ -1187,7 +1913,11 @@ class BrowseSourceViewModel(
                 if (!new.favorite) {
                     setMangaCategories.await(new.id, emptyList())
                 }
-                if (hideInLibraryItems || markFilterInternal.value == MarkFilter.NOT_IN_LIBRARY) {
+                // The pages already served are a slice of the listing as it stood when they were
+                // built, so a work whose shelf membership just changed can still be sitting in
+                // them - or missing from them - exactly where the "not in library" filter looks.
+                // Reloading is what makes the list agree with the filter again.
+                if (hideInLibraryItems || listControls.value.markFilter == MarkFilter.NOT_IN_LIBRARY) {
                     invalidatePagingSources()
                 }
             }
@@ -1421,11 +2151,12 @@ class BrowseSourceViewModel(
                 }
                 setMangaCategories.await(mangaId, categoryIds)
                 if (!manga.favorite) {
+                    // Shelving must not touch date_added: the local date sort reads it as the
+                    // day the work entered the library (see LocalSource's ordering), and
+                    // rewriting it dropped the work into the "today" section the moment it was
+                    // shelved.
                     updateManga.await(
-                        manga.copy(
-                            favorite = true,
-                            dateAdded = Clock.System.now().toEpochMilliseconds(),
-                        ).toMangaUpdate(),
+                        manga.copy(favorite = true).toMangaUpdate().copy(dateAdded = null),
                     )
                 }
             }
@@ -1458,6 +2189,11 @@ class BrowseSourceViewModel(
                 setReadStatus.await(manga = manga, read = read)
             }
             clearSelection()
+            // The reading filter matches against the progress snapshot, which is otherwise only
+            // reread when the screen is shown again. Without this the marked works keep their old
+            // read state - a work marked unread while the 看完 filter is on stays in the list, and
+            // a work marked read under 剩余 stays out - until the reader leaves and comes back.
+            refreshVisibleSnapshots()
         }
     }
 
@@ -1546,6 +2282,10 @@ class BrowseSourceViewModel(
                 historyRepository.resetHistoryByMangaIds(ids)
                 chapterRepository.setAllChaptersUnreadByMangaIds(ids)
             }
+            // Same reason as the batch mark: the reading filter reads the progress snapshot, so
+            // clearing progress has to refresh it or the works stay in whatever list the filter
+            // put them in until the screen is left and shown again.
+            refreshVisibleSnapshots()
         }
     }
 
@@ -1836,12 +2576,13 @@ class BrowseSourceViewModel(
         if (urls.isEmpty()) return emptyList()
 
         val context = progressContext.value
+        val controls = listControls.value
         return urls.filter { url ->
             matchesListingFilters(
                 url = url,
                 context = context,
-                readingFilter = readingFilterInternal.value,
-                markFilter = markFilterInternal.value,
+                readingFilter = controls.readingFilter,
+                markFilter = controls.markFilter,
                 favoriteUrls = favoriteUrlsInternal.value,
             )
         }
@@ -1990,8 +2731,14 @@ class BrowseSourceViewModel(
         val progressByUrl: Map<String, MangaProgress>,
         val fsChapterCounts: Map<String, Long>,
         val lastReadMangaId: Long? = null,
-        val flaggedUrls: Set<String> = emptySet(),
-        val goodDoujinUrls: Set<String> = emptySet(),
+        /**
+         * Urls of the works carrying at least one chapter mark, valued by the newest mark time on
+         * that work. Membership answers the mark filters; the value feeds the date ordering when
+         * the filter in force is a mark filter.
+         */
+        val flaggedUrls: Map<String, Long> = emptyMap(),
+        /** As [flaggedUrls], for the good-doujin mark. */
+        val goodDoujinUrls: Map<String, Long> = emptyMap(),
     ) {
         fun progressFor(mangaId: Long, url: String): MangaProgress {
             return progressByMangaId[mangaId] ?: fsChapterCounts[url]?.takeIf { it > 0 }?.let {
@@ -2015,3 +2762,30 @@ internal fun localDirectoryChangeCanApplyImmediately(
     observedUrls: Set<String>,
     listingUrls: Set<String>,
 ): Boolean = listingUrls.isNotEmpty() && observedUrls.containsAll(listingUrls)
+
+/**
+ * Urls of the works carrying a mark, valued by the newest mark time on each.
+ *
+ * A work can carry several marks (one per chapter), and the listing is per work, so the times have
+ * to be folded here rather than looked up later. The newest is the one that matters: a mark list
+ * ordered by date should lead with the work marked most recently, not with one whose oldest mark
+ * happens to be recent.
+ *
+ * Marks whose work no longer resolves to a url are dropped, exactly as the set-building it
+ * replaces did - a mark outliving its work must not invent an entry.
+ */
+private fun newestMarkByUrl(
+    marks: List<MangaMark>,
+    resolveUrl: (Long) -> String?,
+): Map<String, Long> {
+    if (marks.isEmpty()) return emptyMap()
+    val newest = HashMap<String, Long>(marks.size)
+    marks.forEach { mark ->
+        val url = resolveUrl(mark.mangaId) ?: return@forEach
+        val current = newest[url]
+        if (current == null || mark.markedAt > current) {
+            newest[url] = mark.markedAt
+        }
+    }
+    return newest
+}

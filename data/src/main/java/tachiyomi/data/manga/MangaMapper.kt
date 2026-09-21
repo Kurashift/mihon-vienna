@@ -205,6 +205,7 @@ object MangaMapper {
         finished_count: Long,
         last_read: Long,
         last_opened_at: Long,
+        finished_at: Long,
     ): MangaProgressByMangaId = MangaProgressByMangaId(
         mangaId = manga_id,
         url = manga_url,
@@ -213,7 +214,8 @@ object MangaMapper {
             readCount = read_count,
             finishedCount = finished_count,
             lastRead = last_read,
+            finishedAt = finished_at,
+            lastOpenedAt = last_opened_at,
         ),
-        lastOpenedAt = last_opened_at,
     )
 }

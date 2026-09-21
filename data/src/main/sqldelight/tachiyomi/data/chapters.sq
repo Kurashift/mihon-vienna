@@ -280,7 +280,10 @@ SELECT
     CAST(coalesce(sum(CASE WHEN chapters.read = 1 OR chapters.last_page_read > 2 THEN 1 ELSE 0 END), 0) AS INTEGER) AS read_count,
     CAST(coalesce(sum(CASE WHEN chapters.read = 1 THEN 1 ELSE 0 END), 0) AS INTEGER) AS finished_count,
     coalesce(max(CASE WHEN chapters.read = 1 OR chapters.last_page_read > 2 THEN history.last_read END), 0) AS last_read,
-    coalesce(max(history.last_read), 0) AS last_opened_at
+    coalesce(max(history.last_read), 0) AS last_opened_at,
+    -- 读完时间：这部作品里被标为已读的篇目中，最近一次的「读完那一刻」。
+    -- 与 finished_count 同一口径（只看 read = 1），所以它一定取自本作品已读的篇目。
+    coalesce(max(CASE WHEN chapters.read = 1 THEN chapters.marked_read_at END), 0) AS finished_at
 FROM mangas
 JOIN chapters
 ON mangas._id = chapters.manga_id

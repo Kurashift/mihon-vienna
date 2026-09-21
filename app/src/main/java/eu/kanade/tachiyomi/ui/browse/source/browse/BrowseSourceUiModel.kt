@@ -13,7 +13,14 @@ sealed interface BrowseSourceUiModel {
      * format and locale are available.
      */
     @Immutable
-    data class Header(val bucket: DateHeaderBucket) : BrowseSourceUiModel
+    data class Header(
+        /**
+         * Which list this separator belongs to, as counted by the reader's own choices. See
+         * [Item.listGeneration]; the screen reads it off the first row it is handed.
+         */
+        val bucket: DateHeaderBucket,
+        val listGeneration: Long = 0L,
+    ) : BrowseSourceUiModel
 
     /**
      * Immutable list entry. Progress and last-read state are intentionally NOT stored here:
@@ -25,5 +32,13 @@ sealed interface BrowseSourceUiModel {
     data class Item(
         val manga: Manga,
         val matchedChapter: String? = null,
+        /**
+         * Which list this row belongs to, as counted by the reader's own choices.
+         *
+         * It rides on the rows themselves so the screen can tell one list from the next at the
+         * moment the rows are on screen - see [presentedListGeneration]. Reading it from anywhere
+         * earlier would act before the rows arrive.
+         */
+        val listGeneration: Long = 0L,
     ) : BrowseSourceUiModel
 }

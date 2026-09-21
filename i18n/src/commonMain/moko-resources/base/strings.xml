@@ -80,6 +80,7 @@
     <string name="action_remove_from_library">Remove from shelf</string>
     <string name="remove_from_library_title">Take these works off the shelf?</string>
     <string name="remove_from_library_confirmation">They leave the library, and your downloaded chapters, reading progress and history are kept. You can put them back on the shelf at any time.</string>
+    <string name="sort_toast_applied">Sorted by: %1$s</string>
     <string name="filter_toast_applied">Showing: %1$s</string>
     <string name="filter_toast_cleared">Showing everything</string>
     <string name="mark_selection_read_confirmation">Mark all %1$d selected collections as read? Every chapter in them is marked.</string>
@@ -782,6 +783,16 @@
     <string name="local_invalid_format">Invalid work format</string>
     <string name="local_filter_order_by">Order by</string>
     <string name="local_filter_order_by_count">Chapter count</string>
+    <string name="date_axis_short_imported">Imported</string>
+    <string name="date_axis_short_last_read">Opened</string>
+    <string name="date_axis_short_finished">Finished</string>
+    <string name="date_axis_full_imported">Import date</string>
+    <string name="date_axis_full_last_read">Last opened</string>
+    <string name="date_axis_full_finished">Finish time</string>
+    <string name="date_axis_short_flagged">Flagged</string>
+    <string name="date_axis_short_good_doujin">Good</string>
+    <string name="date_axis_full_flagged">Flag time</string>
+    <string name="date_axis_full_good_doujin">Good-doujin date</string>
     <string name="date">Date</string>
     <string name="date_header_unknown">Unknown date</string>
 
@@ -1211,8 +1222,8 @@
     <string name="marks_list_remove_entry_confirm">Remove “%1$s” from this list? The local manga will not be deleted.</string>
     <string name="marks_list_remove_selected_confirm">Remove the selected %1$d manga and all of their list entries? Your local files will not be touched.</string>
     <string name="marks_list_remove_selected_entries_confirm">Remove the selected %1$d works from this list? Your local manga will not be deleted.</string>
-    <string name="marks_list_no_others">No other marked works available</string>
     <string name="marks_list_chapter_count">%1$d marked works</string>
+    <string name="marks_list_no_others">No other marked works available</string>
     <string name="marks_list_search_hint">Search by work or chapter name</string>
     <string name="marks_list_open_chapter">Open work</string>
     <string name="marks_list_clear_manga_confirm">Removes all marks for this manga from the list. Your local files are not touched.</string>

@@ -115,5 +115,5 @@ class LocalReadingFilterTest {
         MangaProgress(total, read, finished, lastRead = 0)
 
     private fun entry(mangaId: Long, progress: MangaProgress) =
-        MangaProgressByMangaId(mangaId, "url-$mangaId", progress, lastOpenedAt = 0)
+        MangaProgressByMangaId(mangaId, "url-$mangaId", progress)
 }

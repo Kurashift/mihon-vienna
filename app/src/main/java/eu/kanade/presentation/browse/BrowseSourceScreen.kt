@@ -16,11 +16,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.paging.LoadState
@@ -28,6 +24,7 @@ import androidx.paging.compose.LazyPagingItems
 import eu.kanade.presentation.browse.components.BrowseSourceComfortableGrid
 import eu.kanade.presentation.browse.components.BrowseSourceCompactGrid
 import eu.kanade.presentation.browse.components.BrowseSourceList
+import eu.kanade.presentation.browse.components.presentedListGeneration
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdate
@@ -65,6 +62,9 @@ fun BrowseSourceContent(
     ),
     coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
     trailingSlotCount: Int = 0,
+    // True when this list is replaced whole rather than grown a page at a time; see
+    // [peekKey] for why that changes how a row is identified.
+    wholeList: Boolean = false,
     listKey: Any? = null,
     onWebViewClick: () -> Unit,
     onHelpClick: () -> Unit,
@@ -151,42 +151,18 @@ fun BrowseSourceContent(
         return
     }
 
+    // The scroll state is keyed on which list the rows on screen belong to - read off those rows,
+    // not taken from the tap that asked for them and not from the moment the list was produced.
+    // Both of those are earlier than the rows arriving, so acting on them reset the list to its top
+    // while the previous cards were still on screen: it jumped first and filled in afterwards.
+    //
+    // Falls back to the requested identity only while nothing is presented yet.
+    val shownIdentity = mangaList.presentedListGeneration() ?: listKey
+
     // Held here rather than inside the branch so switching the display mode keeps the offset
     // instead of dropping the reader back to the top of the listing.
-    val gridState = rememberLazyGridState()
-    val listState = rememberLazyListState()
-
-    // A swap replaces the result set underneath a list that is still showing the previous one. The
-    // pager serves the page it had cached and only then the refreshed one, and the lazy layout
-    // follows the key of the first visible entry across each replacement, carrying the reader to
-    // whatever position that entry now occupies - the list opens at its top and then springs to the
-    // end of the first page, with no scroll involved. Asking for the top on each frame also forgets
-    // that key, so a replacement has nothing left to follow.
-    //
-    // Only a swap this screen was around to see counts as one. Coming back to the tab is not a
-    // swap: nothing has been observed yet, so the offset restored on the way in is left alone - it
-    // is exactly what the reader came back for.
-    var observedListKey by remember { mutableStateOf<Any?>(null) }
-    LaunchedEffect(listKey) {
-        val previous = observedListKey
-        observedListKey = listKey
-        if (previous == null || previous == listKey) return@LaunchedEffect
-
-        var settledFrames = 0
-        var lastCount = -1
-        repeat(SWAP_SETTLE_MAX_FRAMES) {
-            withFrameNanos { }
-            // Scrolling means the reader has taken over; the position is theirs from here on.
-            if (gridState.isScrollInProgress || listState.isScrollInProgress) return@LaunchedEffect
-            val count = mangaList.itemCount
-            // An empty list is not content that settled, it is content that has not arrived yet.
-            settledFrames = if (count in 1..lastCount) settledFrames + 1 else 0
-            lastCount = count
-            if (settledFrames >= SWAP_SETTLED_FRAMES) return@LaunchedEffect
-            gridState.requestScrollToItem(0, 0)
-            listState.requestScrollToItem(0, 0)
-        }
-    }
+    val gridState = key(shownIdentity) { rememberLazyGridState() }
+    val listState = key(shownIdentity) { rememberLazyListState() }
 
     when (displayMode) {
         LibraryDisplayMode.ComfortableGrid -> {
@@ -202,6 +178,7 @@ fun BrowseSourceContent(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                wholeList = wholeList,
                 listKey = listKey,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
@@ -225,6 +202,7 @@ fun BrowseSourceContent(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                wholeList = wholeList,
                 listKey = listKey,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
@@ -249,6 +227,7 @@ fun BrowseSourceContent(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                wholeList = wholeList,
                 listKey = listKey,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
@@ -262,18 +241,6 @@ fun BrowseSourceContent(
         }
     }
 }
-
-/**
- * Frames the presented count has to stand still for before a swap counts as delivered. Pages keep
- * arriving every few frames while one is loading, so this only elapses once they stop.
- */
-private const val SWAP_SETTLED_FRAMES = 15
-
-/**
- * Hard cap on holding a swapped listing at its top, so one that keeps streaming pages cannot be
- * held there indefinitely. Every frame of it is skipped once the reader scrolls.
- */
-private const val SWAP_SETTLE_MAX_FRAMES = 60
 
 @Composable
 internal fun MissingSourceScreen(

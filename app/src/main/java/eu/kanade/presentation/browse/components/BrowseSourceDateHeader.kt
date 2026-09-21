@@ -52,7 +52,37 @@ internal fun LazyPagingItems<BrowseSourceUiModel>.hasDateHeaders(): Boolean {
     return itemSnapshotList.items.any { it is BrowseSourceUiModel.Header }
 }
 
-internal fun LazyPagingItems<BrowseSourceUiModel>.peekKey(index: Int): Any {
+/**
+ * Which list the rows on screen belong to, or null while none are presented.
+ *
+ * Read from the presented rows rather than from the list that produced them: the screen uses it to
+ * decide when to reset its scroll position and fade the list in, and both must happen on the same
+ * frame as the new rows. Asking any earlier acts before the rows arrive, which reads as the list
+ * jumping to its top and only then filling in.
+ */
+internal fun LazyPagingItems<BrowseSourceUiModel>.presentedListGeneration(): Long? {
+    for (item in itemSnapshotList.items) {
+        when (item) {
+            is BrowseSourceUiModel.Item -> return item.listGeneration
+            is BrowseSourceUiModel.Header -> return item.listGeneration
+            null -> Unit
+        }
+    }
+    return null
+}
+
+/**
+ * Key for the row at [index].
+ *
+ * Rows are identified by their content while the list grows a page at a time, so a page arriving
+ * leaves the reader where they are. That is wrong for a list that is replaced outright: the
+ * layout remembers the key of the row under the reader and follows it into the replacement, and
+ * the work they were looking at is still in there, just at another index - so a filter change
+ * lands them at 99, and flipping the sort throws the list to the other end. A whole list is
+ * therefore keyed by position, which cannot be followed anywhere.
+ */
+internal fun LazyPagingItems<BrowseSourceUiModel>.peekKey(index: Int, wholeList: Boolean = false): Any {
+    if (wholeList) return index
     return when (val item = peek(index)) {
         is BrowseSourceUiModel.Header -> "date-header-${item.bucket}"
         is BrowseSourceUiModel.Item -> item.manga.id

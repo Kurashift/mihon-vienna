@@ -69,6 +69,9 @@ fun BrowseSourceCompactGrid(
     ),
     coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
     trailingSlotCount: Int = 0,
+    // True when this list is replaced whole rather than grown a page at a time; see
+    // [peekKey] for why that changes how a row is identified.
+    wholeList: Boolean = false,
     listKey: Any? = null,
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
@@ -176,7 +179,7 @@ fun BrowseSourceCompactGrid(
                         GridItemSpan(1)
                     }
                 },
-                key = { index -> mangaList.peekKey(index) },
+                key = { index -> mangaList.peekKey(index, wholeList) },
             ) { index ->
                 val item = if (isLoadingPaused) mangaList.peek(index) else mangaList[index]
                 when (item) {

@@ -17,12 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.BookmarkRemove
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Favorite
@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.outlined.SelectAll
@@ -44,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -52,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults.rememberTooltipPositionProvider
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -66,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -108,8 +112,8 @@ import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.Reading
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.local.LocalImportScreen
 import eu.kanade.tachiyomi.ui.manga.ChapterScope
-import eu.kanade.tachiyomi.ui.manga.opensGoodDoujinJump
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
+import eu.kanade.tachiyomi.ui.manga.opensGoodDoujinJump
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import kotlinx.coroutines.channels.Channel
@@ -196,13 +200,14 @@ data class BrowseSourceScreen(
         val coverUpdates by viewModel.mangaCoverUpdateStore.covers.collectAsStateWithLifecycle()
         val trailingSlotCount by viewModel.trailingSlotCount.collectAsStateWithLifecycle()
         val refreshProgress by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
-        val localSort by viewModel.localSort.collectAsStateWithLifecycle()
+        val sortUi by viewModel.sortUiState.collectAsStateWithLifecycle()
         val localSourceChanged by viewModel.localSourceChanged.collectAsStateWithLifecycle()
         val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
             .collectAsStateWithLifecycle(initialValue = null)
         val activeTransferStatus = transferStatus
             ?.takeUnless { it.state.isFinished }
             ?.takeIf { viewModel.source is LocalSource }
+        val wholeListShown by viewModel.wholeListingShown.collectAsStateWithLifecycle()
         val scrollToTopRequest = LocalScrollToTopRequests.current
             ?.collectAsStateWithLifecycle()
             ?.value ?: 0L
@@ -426,6 +431,10 @@ data class BrowseSourceScreen(
                         //
                         // The notice replaces the one before it rather than queueing behind it,
                         // which matters when the buttons are tapped in quick succession.
+                        //
+                        // It says nothing about the date ordering. The ordering is the reader's own
+                        // choice and a filter no longer moves it, so naming a date here would
+                        // report something this tap did not do.
                         val announceFilters: (ReadingFilter, MarkFilter) -> Unit = { reading, mark ->
                             val active = buildList {
                                 if (reading != ReadingFilter.ALL) {
@@ -444,17 +453,47 @@ data class BrowseSourceScreen(
                                 },
                             )
                         }
+                        // The sort controls used to announce nothing at all, which left the one
+                        // control whose meaning is not written on it silent. The notice names the
+                        // key and the direction; for the date key it names the date too, since the
+                        // chip has only two characters to give it.
+                        val announceSort: (BrowseSourceViewModel.SortChange) -> Unit = { changed ->
+                            val parts = buildList {
+                                add(context.stringResource(sortChipLabel(changed.index)))
+                                changed.dateAxis?.let { add(context.stringResource(it.shortName)) }
+                                add(
+                                    context.stringResource(
+                                        if (changed.ascending) MR.strings.action_asc else MR.strings.action_desc,
+                                    ),
+                                )
+                            }
+                            filterNotice.show(
+                                context.stringResource(
+                                    MR.strings.sort_toast_applied,
+                                    parts.joinToString(" · "),
+                                ),
+                            )
+                        }
                         LocalSourceControlBar(
                             mangaCount = currentViewMangaCount,
                             readingFilter = readingFilter,
                             browseMode = localBrowseMode,
-                            sort = localSort,
+                            sort = sortUi.selection,
+                            dateAxis = sortUi.dateAxis,
+                            availableDateAxes = sortUi.availableDates,
                             onReadingFilterSelected = { filter ->
                                 viewModel.setReadingFilter(filter)
                                 announceFilters(filter, markFilter)
                             },
-                            onSelectSortKey = viewModel::setLocalSortKey,
-                            onToggleSortDirection = viewModel::toggleLocalSortDirection,
+                            onSelectSortKey = { key ->
+                                viewModel.setLocalSortKey(key)?.let(announceSort)
+                            },
+                            onSelectDateAxis = { axis ->
+                                viewModel.setLocalDateAxis(axis)?.let(announceSort)
+                            },
+                            onToggleSortDirection = {
+                                viewModel.toggleLocalSortDirection()?.let(announceSort)
+                            },
                             onBrowseModeSelected = { mode ->
                                 // Re-selecting the active mode clears it: with the whole cluster
                                 // being one segmented control, a mode that cannot be turned off
@@ -716,6 +755,7 @@ data class BrowseSourceScreen(
                 progressContext = progressContext,
                 coverUpdates = coverUpdates,
                 trailingSlotCount = trailingSlotCount,
+                wholeList = wholeListShown,
                 // Identity of what the list SHOWS, not of the pages in it: when it changes (a
                 // filter, listing or sort swap), the list opens at its top, the fast scroller
                 // re-anchors to the real position instead of holding the thumb where the previous
@@ -725,7 +765,7 @@ data class BrowseSourceScreen(
                     listing = state.listing,
                     readingFilter = readingFilter,
                     markFilter = markFilter,
-                    sort = localSort,
+                    sort = sortUi.selection,
                 ),
                 snackbarHostState = snackbarHostState,
                 contentPadding = paddingValues,
@@ -990,8 +1030,11 @@ private fun LocalSourceControlBar(
     readingFilter: ReadingFilter,
     browseMode: LocalBrowseMode,
     sort: SourceModelFilter.Sort.Selection?,
+    dateAxis: LocalDateAxis?,
+    availableDateAxes: List<LocalDateAxis>,
     onReadingFilterSelected: (ReadingFilter) -> Unit,
     onSelectSortKey: (Int) -> Unit,
+    onSelectDateAxis: (LocalDateAxis) -> Unit,
     onToggleSortDirection: () -> Unit,
     onBrowseModeSelected: (LocalBrowseMode) -> Unit,
 ) {
@@ -1017,7 +1060,7 @@ private fun LocalSourceControlBar(
                 BrowseFilterMenuChip(
                     value = readingFilter,
                     options = ReadingFilter.entries,
-                    // 当前筛选项已由标签文案直接表达（全部/剩余/在读/读完），chip 保持中性外观，不再常亮。
+                    // 当前筛选项已由标签文案直接表达（全部/剩余/在看/看完），chip 保持中性外观，不再常亮。
                     selected = false,
                     imageVector = ReadingFilter::imageVector,
                     label = ReadingFilter::label,
@@ -1031,9 +1074,12 @@ private fun LocalSourceControlBar(
                     onSelect = onBrowseModeSelected,
                 )
                 sort?.let {
-                    LocalSortChip(
+                    LocalSortControl(
                         sort = it,
+                        dateAxis = dateAxis,
+                        availableDateAxes = availableDateAxes,
                         onSelectKey = onSelectSortKey,
+                        onSelectDateAxis = onSelectDateAxis,
                         onToggleDirection = onToggleSortDirection,
                     )
                 }
@@ -1185,16 +1231,7 @@ private fun <T> BrowseFilterMenuChip(
                                 contentDescription = null,
                             )
                         },
-                        trailingIcon = if (option == value) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                )
-                            }
-                        } else {
-                            null
-                        },
+                        modifier = selectedRowModifier(option == value),
                         onClick = {
                             menuExpanded = false
                             onSelect(option)
@@ -1213,63 +1250,306 @@ private val LOCAL_SORT_KEYS = listOf(
     LocalSource.ORDER_BY_DATE,
 )
 
-private fun localSortLabel(index: Int): StringResource = when (index) {
+/**
+ * The name of a sort key, with the date spelled out when the key is the date.
+ *
+ * Used where there is room for the whole thing: the menu, and the chip's long-press tooltip. The
+ * chip's own face is shorter - see [sortChipLabel] - because it sits in a row with two other
+ * controls and a manga count.
+ */
+@Composable
+private fun sortLabel(index: Int, dateAxis: LocalDateAxis?): String = when (index) {
+    LocalSource.ORDER_BY_DATE -> dateAxis?.let { stringResource(it.fullName) } ?: stringResource(MR.strings.date)
+    LocalSource.ORDER_BY_CHAPTER_COUNT -> stringResource(MR.strings.local_filter_order_by_count)
+    else -> stringResource(MR.strings.title)
+}
+
+/**
+ * The name of a sort key on the chip itself.
+ *
+ * Two characters whatever the key is, so the chip keeps one width: 标题 and 篇数 are already two,
+ * and the dates are named to match (导入 / 在看 / 看完 / 标记) rather than spelled out. A longer name
+ * would run past the label's cap and into the row's horizontal scroll, which is exactly what
+ * happened when the date was written out in full.
+ *
+ * A resource rather than a resolved string so the sort notice can name the key too, from a place
+ * that is not a composition.
+ */
+private fun sortChipLabel(index: Int): StringResource = when (index) {
     LocalSource.ORDER_BY_DATE -> MR.strings.date
     LocalSource.ORDER_BY_CHAPTER_COUNT -> MR.strings.local_filter_order_by_count
     else -> MR.strings.title
 }
 
+/** Two-character name of the date, for the chip and for notices. */
+private val LocalDateAxis.shortName: StringResource
+    get() = when (this) {
+        LocalDateAxis.Imported -> MR.strings.date_axis_short_imported
+        LocalDateAxis.Opened -> MR.strings.date_axis_short_last_read
+        LocalDateAxis.Finished -> MR.strings.date_axis_short_finished
+        LocalDateAxis.Flagged -> MR.strings.date_axis_short_flagged
+        LocalDateAxis.GoodDoujin -> MR.strings.date_axis_short_good_doujin
+    }
+
+/** Spelled-out name of the date, for the menu and the chip's tooltip. */
+private val LocalDateAxis.fullName: StringResource
+    get() = when (this) {
+        LocalDateAxis.Imported -> MR.strings.date_axis_full_imported
+        LocalDateAxis.Opened -> MR.strings.date_axis_full_last_read
+        LocalDateAxis.Finished -> MR.strings.date_axis_full_finished
+        LocalDateAxis.Flagged -> MR.strings.date_axis_full_flagged
+        LocalDateAxis.GoodDoujin -> MR.strings.date_axis_full_good_doujin
+    }
+
 /**
- * Ordering control for the local library, styled as a segment of the segmented pill used by
- * [LocalBrowseModeButtons]. Clicking it opens the menu of sort keys; re-selecting the active key
- * flips the ordering direction. The selected row shows the direction arrow instead of a checkmark,
- * and the same small arrow accompanies the label on the pill so the current direction stays visible.
+ * A calendar with [badge] tucked into its bottom-right corner, or a plain calendar when null.
+ *
+ * The badge sits on a disc painted in [discColor] - the colour of whatever surface the icon is on -
+ * which hides the calendar's own lines from behind it. That is what makes it read as a punched-out
+ * corner rather than two icons stacked, and it needs no blending because every surface this is used
+ * on is a flat colour.
  */
 @Composable
-private fun LocalSortChip(
+private fun CalendarWithBadge(
+    badge: ImageVector?,
+    discColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier) {
+        Icon(
+            imageVector = Icons.Outlined.Event,
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+        )
+        if (badge != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(10.dp)
+                    .background(discColor, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = badge,
+                    contentDescription = null,
+                    modifier = Modifier.size(8.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The icon for a date: a calendar badged with the event that date tracks.
+ *
+ * The badges deliberately reuse the icons the filter controls use (History for 在看, Done for 看完,
+ * Flag for 标记), so one concept keeps one symbol wherever it appears.
+ */
+@Composable
+private fun DateAxisIcon(axis: LocalDateAxis, discColor: Color, modifier: Modifier = Modifier) {
+    CalendarWithBadge(
+        badge = when (axis) {
+            LocalDateAxis.Imported -> null
+            LocalDateAxis.Opened -> Icons.Outlined.History
+            LocalDateAxis.Finished -> Icons.Outlined.Done
+            LocalDateAxis.Flagged -> Icons.Outlined.Flag
+            LocalDateAxis.GoodDoujin -> Icons.Outlined.Favorite
+        },
+        discColor = discColor,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Row background for the menu entry that is the one in force, or none when it is not.
+ *
+ * The chosen entry is marked by tinting the row, not by tinting its text or adding a trailing
+ * tick: the tint reads as a highlighted band, and a tick would spend a column of width on every row
+ * whether or not it is the chosen one.
+ *
+ * Edge to edge, with no inner frame. The tint covers the whole row, so the label and icon keep the
+ * same left edge as every other row; an inset band shifted the chosen row's content sideways and
+ * made it look misaligned against its neighbours.
+ *
+ * [MaterialTheme.colorScheme.secondaryContainer] is the app's own "chosen" colour - the segmented
+ * controls use it for the active segment - so a menu selection looks like every other selection.
+ */
+@Composable
+private fun selectedRowModifier(selected: Boolean): Modifier = if (selected) {
+    Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+} else {
+    Modifier
+}
+
+/**
+ * Ordering control for the local library: the sort key and the direction, one pill cut in two.
+ *
+ * Two segments rather than two chips because they are two halves of one thing - what to order by,
+ * and which way - and the seam is what says so. The interaction is cut the same way: the left half
+ * opens the menu, the right half flips the direction on the spot. The direction used to live inside
+ * the menu as a re-tap of the active row, which cost two taps and a popup for the half that changes
+ * most often.
+ *
+ * The menu lists the keys, and the date key opens a second level listing the dates the current
+ * filters actually offer - see [availableDateAxes]. A second level rather than six flat rows keeps
+ * the menu the size it has always been. There is no way back up from the second level on purpose:
+ * the menu is one tap away again, and a back row spends the top of a short menu on navigation.
+ */
+@Composable
+private fun LocalSortControl(
     sort: SourceModelFilter.Sort.Selection,
+    dateAxis: LocalDateAxis?,
+    availableDateAxes: List<LocalDateAxis>,
     onSelectKey: (Int) -> Unit,
+    onSelectDateAxis: (LocalDateAxis) -> Unit,
     onToggleDirection: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    // Which level of the menu is showing: the keys, or the dates the date key offers. Reset when
+    // the menu opens rather than when it closes, so the level stays put while the menu fades out
+    // instead of snapping back to the keys under the reader's finger.
+    var pickingDate by remember { mutableStateOf(false) }
+    val fullLabel = sortLabel(sort.index, dateAxis)
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-        TooltipBox(
-            positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-            tooltip = {
-                PlainTooltip {
-                    Text(stringResource(MR.strings.action_sort))
-                }
-            },
-            state = rememberTooltipState(),
+        Surface(
+            color = containerColor,
+            contentColor = contentColor,
+            shape = RoundedCornerShape(7.dp),
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                shape = RoundedCornerShape(7.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clickable { menuExpanded = true }
-                        .padding(start = 9.dp, end = 7.dp),
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TooltipBox(
+                    positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                    tooltip = {
+                        PlainTooltip {
+                            Text(fullLabel)
+                        }
+                    },
+                    state = rememberTooltipState(),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.height(36.dp),
+                    Box(
+                        modifier = Modifier
+                            .clickable {
+                                pickingDate = false
+                                menuExpanded = true
+                            }
+                            .padding(start = 9.dp, end = 7.dp),
                     ) {
-                        Icon(
-                            imageVector = localSortIcon(sort.index),
-                            contentDescription = stringResource(localSortLabel(sort.index)),
-                            modifier = Modifier.size(19.dp),
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = stringResource(localSortLabel(sort.index)),
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 64.dp),
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.height(36.dp),
+                        ) {
+                            if (sort.index == LocalSource.ORDER_BY_DATE) {
+                                DateAxisIcon(
+                                    axis = dateAxis ?: LocalDateAxis.Imported,
+                                    discColor = containerColor,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = localSortIcon(sort.index),
+                                    contentDescription = fullLabel,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = if (sort.index == LocalSource.ORDER_BY_DATE) {
+                                    stringResource((dateAxis ?: LocalDateAxis.Imported).shortName)
+                                } else {
+                                    stringResource(sortChipLabel(sort.index))
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 64.dp),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            if (pickingDate) {
+                                val menuColor = MenuDefaults.containerColor
+                                availableDateAxes.forEach { axis ->
+                                    DropdownMenuItem(
+                                        text = { Text(text = stringResource(axis.fullName)) },
+                                        leadingIcon = {
+                                            DateAxisIcon(
+                                                axis = axis,
+                                                discColor = menuColor,
+                                                modifier = Modifier.size(19.dp),
+                                            )
+                                        },
+                                        modifier = selectedRowModifier(axis == dateAxis),
+                                        onClick = {
+                                            menuExpanded = false
+                                            onSelectDateAxis(axis)
+                                        },
+                                    )
+                                }
+                            } else {
+                                LOCAL_SORT_KEYS.forEach { key ->
+                                    DropdownMenuItem(
+                                        text = { Text(text = stringResource(sortChipLabel(key))) },
+                                        leadingIcon = {
+                                            // The date key opens a level of its own, so its icon
+                                            // carries a "more" dot where the others carry nothing:
+                                            // the row looks like an entry into something.
+                                            if (key == LocalSource.ORDER_BY_DATE) {
+                                                CalendarWithBadge(
+                                                    badge = Icons.Outlined.MoreHoriz,
+                                                    discColor = MenuDefaults.containerColor,
+                                                    modifier = Modifier.size(19.dp),
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = localSortIcon(key),
+                                                    contentDescription = null,
+                                                )
+                                            }
+                                        },
+                                        modifier = selectedRowModifier(key == sort.index),
+                                        onClick = {
+                                            // The date key opens its own level rather than
+                                            // selecting anything: which date to use is the choice.
+                                            if (key == LocalSource.ORDER_BY_DATE) {
+                                                pickingDate = true
+                                            } else {
+                                                menuExpanded = false
+                                                onSelectKey(key)
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                VerticalDivider(
+                    modifier = Modifier.height(20.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                TooltipBox(
+                    positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                    tooltip = {
+                        PlainTooltip {
+                            Text(
+                                stringResource(
+                                    if (sort.ascending) MR.strings.action_asc else MR.strings.action_desc,
+                                ),
+                            )
+                        }
+                    },
+                    state = rememberTooltipState(),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clickable(onClick = onToggleDirection)
+                            .size(36.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Icon(
                             imageVector = if (sort.ascending) {
                                 Icons.Outlined.ArrowUpward
@@ -1279,46 +1559,8 @@ private fun LocalSortChip(
                             contentDescription = stringResource(
                                 if (sort.ascending) MR.strings.action_asc else MR.strings.action_desc,
                             ),
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(16.dp),
                         )
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        LOCAL_SORT_KEYS.forEach { key ->
-                            DropdownMenuItem(
-                                text = { Text(text = stringResource(localSortLabel(key))) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = localSortIcon(key),
-                                        contentDescription = null,
-                                    )
-                                },
-                                trailingIcon = if (key == sort.index) {
-                                    {
-                                        Icon(
-                                            imageVector = if (sort.ascending) {
-                                                Icons.Outlined.ArrowUpward
-                                            } else {
-                                                Icons.Outlined.ArrowDownward
-                                            },
-                                            contentDescription = null,
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    if (key == sort.index) {
-                                        onToggleDirection()
-                                    } else {
-                                        onSelectKey(key)
-                                    }
-                                },
-                            )
-                        }
                     }
                 }
             }
