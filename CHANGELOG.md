@@ -91,6 +91,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Reader: swiping for a random work no longer keeps landing on the same one. The memory behind it cooled a single chapter rather than the work, so a work you had just left came straight back wearing one of its other unread chapters, and the window held only ten entries against a library of thousands of chapters — measured on a library of 405 works, a third of the swipes repeated a work already seen. It now cools the work, holds fifty of them, and never jumps to the one you are reading; on that same library the first 35 swipes are now all different works
 
 ## [Unreleased]
+### Fixed
+- Work page: long-pressing the work's own title no longer selects a chapter. In the local library's cover grid the long press is arbitrated by the grid itself, and it resolved the card under the finger through the same hit test a drag uses — one that falls back to the nearest cell from anywhere in the list. A press on the title, the description or the chapter header was therefore answered with whichever chapter happened to be closest, so the title's own copy/search selection came up together with a chapter selection. A press now has to land on a card to be claimed; the fallback still applies to a drag, where the finger legitimately leaves the cards
 
 ## [v2.2.5] - 2026-09-14
 ### Added

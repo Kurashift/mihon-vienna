@@ -250,9 +250,27 @@ class ChapterGridDragState(
 
     fun toRoot(local: Offset): Offset = listTopLeft + local
 
+    /**
+     * The card a press at [point] may claim, or null when the press is not on a card at all.
+     *
+     * Strict on purpose: the grid only takes a press that lands on a card. The fallback in
+     * [slotAt] is there to resolve a drag target mid-gesture, where the finger legitimately
+     * leaves the cards; letting it answer for a press let the arbiter claim a card from anywhere
+     * in the list, so a long press on the work's own title resolved to whichever chapter happened
+     * to be nearest and selected it.
+     */
     fun cellIdAt(point: Offset, slopPx: Float): Long? =
-        slotAt(point, slopPx)?.let { items.getOrNull(it)?.id }
+        gridSlotAt(
+            point = point,
+            slopPx = slopPx,
+            bounds = slotBounds,
+            allowFallback = false,
+            columns = columns,
+            columnPitchPx = columnPitch,
+            isVisible = ::isVisible,
+        )?.let { items.getOrNull(it)?.id }
 
+    /** The cell a dragged finger is over, which may lie beside or past the laid-out cards. */
     private fun slotAt(point: Offset, slopPx: Float): Int? =
         gridSlotAt(
             point = point,
