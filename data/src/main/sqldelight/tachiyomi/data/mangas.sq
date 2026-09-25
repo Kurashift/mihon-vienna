@@ -166,6 +166,18 @@ SELECT url, date_added
 FROM mangas
 WHERE source = :sourceId;
 
+-- Every row of the source, chapter-bearing or not.
+--
+-- The shelf is addressed by url, so anything turning a listed url back into a database id reads
+-- this rather than getMangaProgressBySource: that one joins chapters and therefore omits a work
+-- whose chapters are not in the database yet - a folder that has never been opened, or one whose
+-- rows went with an earlier pass. Selection and the random pool both need the translation to
+-- cover every listed work, so neither may inherit the progress query's scope.
+getMangaIdsBySourceId:
+SELECT url, _id
+FROM mangas
+WHERE source = :sourceId;
+
 getDuplicateLibraryManga:
 WITH
 track_dupes AS (

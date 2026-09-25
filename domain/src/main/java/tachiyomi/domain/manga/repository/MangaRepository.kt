@@ -76,6 +76,16 @@ interface MangaRepository {
      */
     suspend fun getDateAddedBySourceId(sourceId: Long): Map<String, Long>
 
+    /**
+     * Database id of every row of the source, keyed by url, chapter-bearing or not.
+     *
+     * The shelf is addressed by url while selection and the random pool work on ids, so the
+     * translation has to cover every listed work. [getMangaProgressBySource] cannot serve it:
+     * that one joins chapters, so a work whose chapters are not in the database yet - a folder
+     * that has never been opened - is simply absent from it.
+     */
+    suspend fun getMangaIdsBySourceId(sourceId: Long): Map<String, Long>
+
     suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount>
 
     fun getMangaProgressBySourceAsFlow(sourceId: Long): Flow<List<MangaProgressByMangaId>>

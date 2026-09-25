@@ -155,6 +155,13 @@ class MangaRepositoryImpl(
             .associate { it.url to it.date_added }
     }
 
+    override suspend fun getMangaIdsBySourceId(sourceId: Long): Map<String, Long> {
+        return database.mangasQueries
+            .getMangaIdsBySourceId(sourceId) { url, id -> url to id }
+            .awaitAsList()
+            .toMap()
+    }
+
     override suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount> {
         return database.mangasQueries
             .getDuplicateLibraryManga(id, title, MangaMapper::mapMangaWithChapterCount)

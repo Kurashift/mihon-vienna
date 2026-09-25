@@ -519,12 +519,21 @@ class BrowseSourceViewModel(
         } else {
             null
         }
+        // The url -> id translation for selection and the random pool. Only the local source needs
+        // it: its listing comes from the file system and is matched against the database by url,
+        // while a remote listing is already made of database rows.
+        val mangaIdsByUrl = if (source is LocalSource) {
+            async { mangaRepository.getMangaIdsBySourceId(sourceId) }
+        } else {
+            null
+        }
         val local = source as? LocalSource
         val directory = local?.let {
             async { refreshLocalDirectorySnapshot(it, forceDirectoryCheck) }
         }
 
         progressSnapshot.value = progress.await()
+        mangaIdsByUrl?.await()?.let { mangaIdsByUrlInternal.value = it }
         val favoriteIds = favorites.await()
         val favoritesChanged = hasLoadedFavoriteSnapshot && favoriteIdsInternal.value != favoriteIds
         favoriteIdsInternal.value = favoriteIds
@@ -681,16 +690,19 @@ class BrowseSourceViewModel(
     val progressContextState: StateFlow<ProgressContext> = progressContext
 
     /**
-     * url -> manga id for every manga that still has chapters.
+     * url -> manga id for every work of this source that has a row, chapter-bearing or not.
      *
-     * [distinctUntilChanged] is what keeps this cheap: reading a chapter rewrites the progress
-     * rows without changing this mapping, and without it every single read would re-filter the
-     * whole random pool for nothing.
+     * Read from the shelf rather than derived from [progressSnapshot]: that snapshot comes from a
+     * query joining chapters, so a work whose chapters are not in the database yet - a folder
+     * that has never been opened - has no row there at all and would translate to nothing. The
+     * listing still shows it, so select-all, invert and the random pool each silently dropped it
+     * while the toolbar went on counting it.
+     *
+     * Filled by [refreshVisibleSnapshots], the same moment the progress snapshot is, so the two
+     * stay consistent with each other and with the listing they are matched against.
      */
-    private val mangaIdByUrl: StateFlow<Map<String, Long>> = progressSnapshot
-        .map { list -> list.associate { it.url to it.mangaId } }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    private val mangaIdsByUrlInternal = MutableStateFlow<Map<String, Long>>(emptyMap())
+    private val mangaIdByUrl: StateFlow<Map<String, Long>> = mangaIdsByUrlInternal
 
     private val listingAndSnapshot: Flow<Pair<Listing, LocalListingSnapshot?>> = combine(
         state.map { it.listing }.distinctUntilChanged(),
@@ -993,7 +1005,15 @@ class BrowseSourceViewModel(
                     listingUrls = when (listing) {
                         Listing.Popular -> snapshot.allUrls
                         Listing.Latest -> snapshot.latestUrls
-                        is Listing.Search -> null
+                        // The local library is browsed with a blank query, so its search state is
+                        // the whole listing and belongs to the snapshot like the two above. Left
+                        // to the search branch it carried no urls at all, which made every listing
+                        // change produce identical args: distinctUntilChanged then dropped the
+                        // re-emission and the number kept its old value until something unrelated
+                        // moved - a filter tap, or the next visit. Reading the snapshot here is
+                        // also what the list itself is built from, so the two agree by
+                        // construction. A real search still defines its own result set.
+                        is Listing.Search -> snapshot.allUrls.takeIf { listing.query.isNullOrBlank() }
                     },
                     readingFilter = filter,
                     markFilter = markFilter,

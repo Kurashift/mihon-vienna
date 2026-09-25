@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -13,6 +14,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import tachiyomi.source.local.io.Archive
@@ -134,6 +136,17 @@ class LocalEntryDeletionService(
      * Deletes a whole manga directory. The database row is only dropped once every file in the
      * directory is gone, otherwise the leftover files would be re-indexed under a new identity
      * on the next scan and silently lose their history.
+     *
+     * A directory that is already gone counts as deleted rather than as a failure: the files are
+     * in the state this call asks for, so only the records are left to drop. Without that, a card
+     * whose directory disappeared behind the app's back - deleted through a file manager, or
+     * removed by an earlier pass that did not finish - can never be deleted from the library at
+     * all, because the removal it reports as failed has already happened.
+     *
+     * "Gone" is only accepted when two independent reads agree - see [directoryIsConfirmedGone].
+     * The records dropped here are not rebuildable (history, bookmarks, chapter titles and the
+     * custom cover all go with the row), so a provider that merely failed to answer has to come
+     * back as a failure and be retried by the reader, never as a deletion.
      */
     suspend fun deleteManga(manga: MangaEntry): Result = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -143,12 +156,14 @@ class LocalEntryDeletionService(
                 return@withLock Result(deleted = 0, failed = listOf(manga.title))
             }
 
-            val deleted = runCatching {
-                val dir = base.findFile(manga.url)
-                dir != null && deleteRecursively(dir)
-            }.onFailure {
-                logcat(LogPriority.ERROR, it) { "Failed to delete ${manga.title}" }
-            }.getOrDefault(false)
+            val dir = runCatching { base.findFile(manga.url) }.getOrNull()
+            val deleted = if (dir != null) {
+                runCatching { deleteRecursively(dir) }.onFailure {
+                    logcat(LogPriority.ERROR, it) { "Failed to delete ${manga.title}" }
+                }.getOrDefault(false)
+            } else {
+                directoryIsConfirmedGone(manga.url)
+            }
 
             if (!deleted) {
                 return@withLock Result(deleted = 0, failed = listOf(manga.title))
@@ -241,6 +256,37 @@ class LocalEntryDeletionService(
         return base.findFile(parts[0])?.findFile(parts[1])
     }
 
+    /**
+     * Whether [mangaUrl]'s directory is really absent rather than merely unreadable.
+     *
+     * Two reads that fail for different reasons have to agree: the base directory's own child
+     * lookup, and the per-entry document query, which does not go through the provider's child
+     * list at all. A provider that is briefly unable to answer either one leaves the removal
+     * unconfirmed, and the caller reports a failure the reader can retry - never a deletion.
+     *
+     * The records that follow a confirmed removal cannot be rebuilt: history, bookmarks, chapter
+     * titles and the custom cover all go with the row, so the cheap answer here is the wrong one.
+     */
+    private suspend fun directoryIsConfirmedGone(mangaUrl: String): Boolean {
+        // The provider may still be serving the directory out of a cached listing; drop that
+        // first, exactly as the bulk removal check does before it decides.
+        fileSystem.refreshBaseDirectoryMetadata()
+        val base = fileSystem.getBaseDirectory() ?: return false
+
+        repeat(DIRECTORY_REMOVAL_CONFIRMATION_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(DIRECTORY_REMOVAL_CONFIRMATION_DELAY_MILLIS)
+            if (runCatching { base.findFile(mangaUrl) }.getOrNull() != null) return false
+            val state = runCatching { fileSystem.createMangaDirectoryEntryStateLookup()(mangaUrl) }
+                .getOrDefault(LocalSourceDirectoryEntryState.UNKNOWN)
+            if (state == LocalSourceDirectoryEntryState.MISSING) {
+                logcat(LogPriority.INFO) { "Directory $mangaUrl is confirmed gone" }
+                return true
+            }
+        }
+        logcat(LogPriority.INFO) { "Directory $mangaUrl could not be confirmed gone" }
+        return false
+    }
+
     private fun localSource(): LocalSource? =
         sourceManager.get(LocalSource.ID) as? LocalSource
 
@@ -273,5 +319,13 @@ class LocalEntryDeletionService(
          * as empty once its chapters are gone and may be removed.
          */
         private val GENERATED_FILE_NAMES = setOf("cover.jpg", "ComicInfo.xml", ".nomedia")
+
+        /**
+         * How often an absent directory is re-checked before its removal is treated as confirmed.
+         * A document provider that is mid-refresh can answer "no such child" for a directory that
+         * is still there, so one answer is not enough to drop records that cannot be rebuilt.
+         */
+        private const val DIRECTORY_REMOVAL_CONFIRMATION_ATTEMPTS = 2
+        private const val DIRECTORY_REMOVAL_CONFIRMATION_DELAY_MILLIS = 150L
     }
 }

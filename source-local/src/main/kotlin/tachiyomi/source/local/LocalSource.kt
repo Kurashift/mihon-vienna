@@ -793,7 +793,37 @@ class LocalSource(
                 publishListingSnapshot(updated)
             }
         }
+        forgetChapterNamesEntry(mangaUrl)
         listingRevisionInternal.update { it + 1 }
+    }
+
+    /**
+     * Drops [mangaUrl] from the chapter-name index as well as the listing index.
+     *
+     * The listing index is not the only record of a work: when it is missing or older than
+     * [LISTING_MAX_AGE], the listing is recovered from the chapter-name index, and an entry left
+     * there brings a deleted card back on a later cold start - the removal looks like it worked
+     * until the app is reopened. Both copies go, so "deleted" stays deleted.
+     *
+     * Taken after the listing lock has been released, never inside it: the chapter-name lookup
+     * holds this lock while it reads the listing, so nesting them the other way round would
+     * deadlock the two.
+     */
+    private suspend fun forgetChapterNamesEntry(mangaUrl: String) = withIOContext {
+        chapterNamesMutex.withLock {
+            val persisted = loadPersistedChapterNamesIndex()
+            if (mangaUrl in persisted) {
+                saveChapterNamesIndex(
+                    index = (persisted - mangaUrl).mapValues { (_, names) -> names.toList() },
+                    baseUri = fileSystem.getBaseDirectoryIdentityUri(),
+                    baseDirLastModified = fileSystem.getBaseDirectory()?.lastModified() ?: -1L,
+                    now = System.currentTimeMillis(),
+                )
+            }
+            cachedChapterNames?.let { cached ->
+                if (mangaUrl in cached) cachedChapterNames = cached - mangaUrl
+            }
+        }
     }
 
     private data class ListingIndex(

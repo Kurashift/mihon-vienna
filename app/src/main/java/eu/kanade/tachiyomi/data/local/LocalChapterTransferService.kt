@@ -413,7 +413,16 @@ class LocalChapterTransferService(
         }.getOrDefault(false)
     }
 
-    /** Removes only a truly empty local manga directory after all of its chapters moved. */
+    /**
+     * Removes only a truly empty local manga directory after all of its chapters moved.
+     *
+     * The listing entry goes with the directory. Leaving it behind is how a moved-away work comes
+     * back as a card whose folder no longer exists: the persisted indexes outlive the folder, and
+     * the chapter-name index alone is enough to rebuild the listing from on a later cold start.
+     * Such a card cannot even be deleted, because the deletion path treats the absent directory as
+     * a failure. The database row is deliberately kept - it is what a re-created folder of the same
+     * name would find again.
+     */
     private suspend fun cleanupEmptySourceDirectory(mangaId: Long) {
         val manga = runCatching { mangaRepository.getMangaById(mangaId) }.getOrNull() ?: return
         val chapters = runCatching { chapterRepository.getChapterByMangaId(mangaId) }.getOrNull() ?: return
@@ -421,10 +430,13 @@ class LocalChapterTransferService(
         val directory = fileSystem.getBaseDirectory()?.findFile(manga.url) ?: return
         val remaining = directory.listFiles().orEmpty()
             .filterNot { it.name.orEmpty().equals(".nomedia", ignoreCase = true) }
-        if (remaining.isEmpty()) {
-            directory.delete()
+        if (remaining.isEmpty() && directory.delete()) {
+            localSource()?.removeListingEntry(manga.url)
         }
     }
+
+    private fun localSource(): LocalSource? =
+        Injekt.get<SourceManager>().get(LocalSource.ID) as? LocalSource
 
     internal data class Candidate(val file: UniFile, val name: String)
 
