@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +40,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import com.mikepenz.markdown.model.markdownDimens
 import eu.kanade.presentation.manga.components.MarkdownRender
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
@@ -48,8 +50,34 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 
 private val DialogCornerRadius = 28.dp
-private val DialogMaxWidth = 420.dp
 
+/**
+ * Ceiling for the dialog on wide screens, so it does not stretch into a single line of text on a
+ * tablet or in landscape. The width itself is requested by the content — see [NewUpdateContent].
+ */
+private val DialogMaxWidth = 640.dp
+
+/**
+ * Share of the screen the dialog asks for.
+ *
+ * It has to ask: without [DialogProperties.usePlatformDefaultWidth] turned off, the window is sized
+ * by the platform dialog theme at roughly two thirds of the screen, and any width set inside is only
+ * an upper bound that the window never grows to meet. The release notes are the reason this matters
+ * — they carry Markdown tables, and at the default width their second column was cut off entirely.
+ */
+private const val DialogWidthFraction = 0.95f
+
+/** Padding between the card edge and its content, notes and button row alike. */
+private val ContentHorizontalPadding = 16.dp
+
+/**
+ * The dialog that announces a new release, and shows what is in it.
+ *
+ * The body is whatever the release notes say, rendered as Markdown. Anything that has to be read
+ * before installing therefore belongs *in those notes*, written in plain Markdown: this dialog is
+ * drawn by the version already on the device, so a warning only reaches the people it is for if the
+ * release they are running can already render it.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewUpdateScreen(
@@ -61,6 +89,7 @@ fun NewUpdateScreen(
 ) {
     BasicAlertDialog(
         onDismissRequest = onRejectUpdate,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         NewUpdateContent(
             versionName = versionName,
@@ -83,7 +112,8 @@ private fun NewUpdateContent(
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.85f
     Surface(
         modifier = Modifier
-            .sizeIn(minWidth = 280.dp, maxWidth = DialogMaxWidth)
+            .fillMaxWidth(DialogWidthFraction)
+            .widthIn(max = DialogMaxWidth)
             .heightIn(max = maxHeight),
         shape = RoundedCornerShape(DialogCornerRadius),
         color = AlertDialogDefaults.containerColor,
@@ -102,7 +132,7 @@ private fun NewUpdateContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(
-                                horizontal = MaterialTheme.padding.large,
+                                horizontal = ContentHorizontalPadding,
                                 vertical = MaterialTheme.padding.medium,
                             ),
                         shape = RoundedCornerShape(16.dp),
@@ -111,6 +141,11 @@ private fun NewUpdateContent(
                         MarkdownRender(
                             content = changelogInfo,
                             flavour = remember { GFMFlavourDescriptor() },
+                            // Narrower cells than the library's 160dp default, which is sized for a
+                            // full-width page: a two column table asked for 320dp, and a table that
+                            // does not fit is put in a horizontally scrolling box that the card's
+                            // rounded corners then clip — the second column simply vanished.
+                            dimens = markdownDimens(tableCellWidth = 120.dp),
                             modifier = Modifier.padding(MaterialTheme.padding.medium),
                         )
                     }
@@ -136,7 +171,7 @@ private fun NewUpdateContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
-                        horizontal = MaterialTheme.padding.large,
+                        horizontal = ContentHorizontalPadding,
                         vertical = MaterialTheme.padding.medium,
                     ),
                 horizontalArrangement = Arrangement.spacedBy(
@@ -237,12 +272,16 @@ private fun NewUpdateScreenPreview() {
             NewUpdateContent(
                 versionName = "v0.99.9",
                 changelogInfo = """
-                    ## Yay
-                    Foobar
+                    ## 装之前先备份
 
-                    ### More info
-                    - Hello
-                    - World
+                    这一版不能直接覆盖安装，需要先卸载再重装。
+
+                    | 步骤 | 操作 |
+                    | --- | --- |
+                    | 1 | 设置 → 数据与存储 → 创建备份 |
+                    | 2 | 卸载旧版 |
+                    | 3 | 安装新版 |
+                    | 4 | 从备份恢复 |
                 """.trimIndent(),
                 onOpenInBrowser = {},
                 onAcceptUpdate = {},

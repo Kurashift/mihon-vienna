@@ -41,10 +41,12 @@ import com.mikepenz.markdown.model.DefaultMarkdownInlineContent
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import com.mikepenz.markdown.model.MarkdownAnnotator
 import com.mikepenz.markdown.model.MarkdownColors
+import com.mikepenz.markdown.model.MarkdownDimens
 import com.mikepenz.markdown.model.MarkdownPadding
 import com.mikepenz.markdown.model.MarkdownTypography
 import com.mikepenz.markdown.model.NoOpImageTransformerImpl
 import com.mikepenz.markdown.model.markdownAnnotator
+import com.mikepenz.markdown.model.markdownDimens
 import com.mikepenz.markdown.model.rememberMarkdownState
 import org.intellij.markdown.MarkdownTokenTypes.Companion.HTML_TAG
 import org.intellij.markdown.flavours.MarkdownFlavourDescriptor
@@ -75,6 +77,7 @@ fun MarkdownRender(
     flavour: MarkdownFlavourDescriptor = SimpleMarkdownFlavourDescriptor,
     annotator: MarkdownAnnotator = remember { markdownAnnotator() },
     loadImages: Boolean = true,
+    dimens: MarkdownDimens = markdownDimens(),
 ) {
     Markdown(
         markdownState = rememberMarkdownState(
@@ -86,6 +89,7 @@ fun MarkdownRender(
         colors = getMarkdownColors(),
         typography = getMarkdownTypography(),
         padding = markdownPadding,
+        dimens = dimens,
         components = markdownComponents,
         imageTransformer = remember(loadImages) {
             if (loadImages) Coil3ImageTransformerImpl else NoOpImageTransformerImpl()
