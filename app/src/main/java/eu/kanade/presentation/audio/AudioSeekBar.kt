@@ -1,29 +1,25 @@
 package eu.kanade.presentation.audio
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.components.seekBarGestures
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 
+/**
+ * The progress bar of the floating reader bar, with the elapsed and total times underneath.
+ *
+ * The bar itself is [AudioProgressBar], which is also what the player page draws — this only adds
+ * the two labels and the local drag preview the gesture needs.
+ */
 @Composable
 fun AudioSeekBar(
     controller: AudioPlayerController,
@@ -36,20 +32,19 @@ fun AudioSeekBar(
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
 
     Column(modifier = modifier) {
-        AudioSlimProgress(
+        AudioProgressBar(
             positionMs = position,
             durationMs = duration,
+            bufferedMs = state.bufferedPositionMs,
             // Buffering deliberately does not dim this bar: a seek always round-trips through
             // STATE_BUFFERING, so tying the colours to it made every jump flicker.
-            seekEnabled = duration > 0,
+            enabled = duration > 0,
             onSeek = { dragPosition = it.coerceIn(0, duration) },
             onSeekFinished = {
                 dragPosition?.let(controller::seekTo)
                 dragPosition = null
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(20.dp),
+            modifier = Modifier.fillMaxWidth(),
         )
         if (showTimes) {
             Row(
@@ -75,79 +70,5 @@ fun AudioSeekBar(
     }
 }
 
-@Composable
-private fun AudioSlimProgress(
-    positionMs: Long,
-    durationMs: Long,
-    seekEnabled: Boolean,
-    onSeek: (Long) -> Unit,
-    onSeekFinished: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val progressColor = MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
-    // The gesture reads these instead of using them as pointerInput keys: restarting the coroutine
-    // mid-press would cancel it before onSeekFinished runs, which is exactly how the seek used to
-    // get dropped. It is also what lets the preview position update under a running drag.
-    val currentDuration by rememberUpdatedState(durationMs)
-    val currentSeekEnabled by rememberUpdatedState(seekEnabled)
-    val currentPosition by rememberUpdatedState(positionMs)
-    val currentOnSeek by rememberUpdatedState(onSeek)
-    val currentOnSeekFinished by rememberUpdatedState(onSeekFinished)
-
-    Box(
-        modifier = modifier.seekBarGestures(
-            enabled = { currentSeekEnabled && currentDuration > 0 },
-            thumbFraction = {
-                if (currentDuration > 0) {
-                    currentPosition.toFloat() / currentDuration.toFloat()
-                } else {
-                    0f
-                }
-            },
-            valueAt = { fraction -> (fraction * currentDuration).toLong() },
-            // Drag reports the preview position; the caller only forwards it to the player when
-            // the gesture ends, so scrubbing a long track does not issue a seek per frame.
-            onValue = currentOnSeek,
-            onFinished = currentOnSeekFinished,
-        ),
-    ) {
-        val fraction = if (durationMs > 0) {
-            positionMs.toFloat() / durationMs.toFloat()
-        } else {
-            0f
-        }
-
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.CenterStart),
-        ) {
-            val trackHeight = 4.dp.toPx()
-            val y = size.height / 2f
-            val corner = CornerRadius(trackHeight / 2f)
-            drawRoundRect(
-                color = trackColor,
-                topLeft = Offset(0f, y - trackHeight / 2f),
-                size = Size(size.width, trackHeight),
-                cornerRadius = corner,
-            )
-            if (fraction > 0f) {
-                drawRoundRect(
-                    color = progressColor,
-                    topLeft = Offset(0f, y - trackHeight / 2f),
-                    size = Size(size.width * fraction, trackHeight),
-                    cornerRadius = corner,
-                )
-                drawCircle(
-                    color = progressColor,
-                    radius = 4.5.dp.toPx(),
-                    center = Offset(size.width * fraction, y),
-                )
-            }
-        }
-    }
-}
-
 /** OpenType feature tag for tabular (equal-width) numerals. */
-private const val TABULAR_FIGURES = "tnum"
+internal const val TABULAR_FIGURES = "tnum"

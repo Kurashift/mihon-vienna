@@ -9,7 +9,7 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeDown
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,20 +55,21 @@ fun AudioVolumeControl(
                 modifier = Modifier.size(if (compact) 18.dp else 21.dp),
             )
         }
-        Slider(
-            value = (dragValue ?: state.mediaVolume.toFloat()).coerceIn(0f, maximum.toFloat()),
-            onValueChange = { value ->
-                dragValue = value
-                val target = value.roundToInt()
+        AudioVolumeBar(
+            value = (dragValue ?: state.mediaVolume.toFloat()).roundToInt().coerceIn(0, maximum),
+            max = maximum,
+            enabled = !state.isMediaVolumeFixed,
+            // The page's own background, so the thumb's ring reads as a cut-out rather than a disc
+            // of a slightly different shade sitting on the track.
+            ringColor = MaterialTheme.colorScheme.background,
+            onValue = { target ->
+                dragValue = target.toFloat()
                 if (target != state.mediaVolume) controller.setMediaVolume(target)
             },
-            onValueChangeFinished = {
+            onValueFinished = {
                 dragValue = null
                 controller.refreshSystemVolume()
             },
-            valueRange = 0f..maximum.toFloat(),
-            steps = (maximum - 1).coerceAtLeast(0),
-            enabled = !state.isMediaVolumeFixed,
             modifier = Modifier.weight(1f),
         )
         IconButton(

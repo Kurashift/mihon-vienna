@@ -49,7 +49,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -265,25 +264,40 @@ fun AudioPlayerContent(
                         .fillMaxWidth(),
                 )
 
-                Slider(
-                    value = position.toFloat(),
-                    onValueChange = { dragPosition = it.toLong() },
-                    onValueChangeFinished = {
-                        dragPosition?.let(onSeek)
-                        dragPosition = null
-                    },
-                    valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                AudioProgressBar(
+                    positionMs = position,
+                    durationMs = duration,
+                    bufferedMs = state.bufferedPositionMs,
                     // Buffering no longer disables the slider: doing so swapped the whole track to
                     // the greyed-out colours for as long as the seek took, which read as a black
                     // bar flickering on every jump even when it was served from the disk cache.
                     enabled = duration > 0,
+                    // The ring is painted in the page's own background so the thumb reads as sitting
+                    // on the track rather than being part of it.
+                    ringColor = MaterialTheme.colorScheme.background,
+                    onSeek = { dragPosition = it.coerceIn(0, duration) },
+                    onSeekFinished = {
+                        dragPosition?.let(onSeek)
+                        dragPosition = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(formatDuration(position), style = MaterialTheme.typography.labelSmall)
-                    Text(formatDuration(duration), style = MaterialTheme.typography.labelSmall)
+                    // Tabular figures, like the floating bar: these tick every half second, and
+                    // proportional digits make the label twitch as 1s swaps in for 8s.
+                    Text(
+                        text = formatDuration(position),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = formatDuration(duration),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Spacer(Modifier.height(4.dp))
 
