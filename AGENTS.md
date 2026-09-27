@@ -39,6 +39,11 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 不要把构建日志、安装日志、一次性脚本、临时导出、截图、中间数据留在根目录。需要保留的写进 `docs/`，不需要的直接删除。提交信息文件（`git commit -F` 用的）用完即删，不要入库。
 - 工具与 IDE 的本地状态目录（`.codebuddy/`、`.dsh/`、`__pycache__/`、`gradle/build-logic/bin/`）由 `.gitignore` 忽略，不要提交。
 - **密钥绝不入库**：token、密码、签名密钥一律放 `secrets.properties`（已在 `.gitignore` 中忽略），从文件里读取。不得写进源码、文档、提交信息、构建脚本或对话里。新增同类文件必须同步登记进 `.gitignore`。一旦误提交，立刻在 GitHub Settings 里吊销并重新签发，不要只删文件。
+- **签名密钥在仓库外，清理文件时不要碰**：`D:\DATA\keys\mihon-release.keystore`（别名 `mihon`，密码在仓库根的 `keystore.properties`，同样不入库）。该目录已加隐藏 + 系统属性并放了 `README-请勿删除.md`。
+  - 它是应用的签名身份：**文件丢失无法恢复**（无法从 APK 反推），且新密钥签出的包无法覆盖安装到老用户手机上，只能让用户卸载重装、丢本地数据。
+  - 2026-09-27 已因误删发生过一次（清理文件时连同目录一起删掉）：全盘与卷影副本均无备份，只能换新密钥，手机上 `app.mihon.dev` 的阅读进度、已读标记、书架分类全部丢失，靠 `autobackup` 的 `.tachibk` 才恢复。
+  - 因此：**任何清理临时文件、缓存、磁盘空间的操作，都不要包含 `D:\DATA\keys`**；不确定某个目录能否删时，先确认它不在 `keys` 下再动手。
+  - 备份现状：本机 `D:\DATA\keys\backup\` 有一份校验过哈希的副本（另有换密钥前的旧版 APK 与数据备份留档）。密钥与密码建议分开存放到云盘或移动硬盘。
 - Windows 上 PowerShell 对部分中文路径和中文参数会编码损坏。处理文件、写提交信息时优先用 Python（`pathlib` / `__file__`）或 `git commit -F <UTF-8 文件>`，不要把中文直接写在命令行参数里。
 - `git status` 里一长串 i18n 语言文件显示 modified、但 `git diff` 为空，多半是行尾或索引噪音。不要把空 diff 推进去；新文案只保证 `base`、`zh-rCN`、`zh-rTW` 同步即可，其余语言留给上游。
 
