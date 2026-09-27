@@ -1201,7 +1201,10 @@ class AudioPlayerController(
         override fun onPlayerError(error: PlaybackException) {
             clearBufferingState()
             logcat(LogPriority.ERROR, error) { "Audio playback failed for ${state.item?.trackTitle}" }
-            recoverFromStaleTrackTree(error) || retryOrSkipPlayback(error)
+            // Stale-tree recovery is tried first and only once: it is a fix, whereas the path below
+            // either retries the same address or moves the user on to another track.
+            if (recoverFromStaleTrackTree(error)) return
+            retryOrSkipPlayback(error)
         }
     }
 
