@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
 import eu.kanade.tachiyomi.data.audio.AudioPageCache
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
+import eu.kanade.tachiyomi.data.audio.AudioTrackCache
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.cache.CoverCache
@@ -158,7 +159,8 @@ class AppModule(val app: Application) : InjektModule {
                 .addInterceptor(UserAgentInterceptor(networkHelper::defaultUserAgentProvider))
                 .build()
         }
-        addSingletonFactory { KikoeruApi(get(), get(), get()) }
+        addSingletonFactory { AudioTrackCache() }
+        addSingletonFactory { KikoeruApi(get(), get(), get(), get()) }
         addSingletonFactory { AudioCategoryCache(get(), get()) }
         addSingletonFactory { AudioPageCache() }
         addSingletonFactory { AudioFavoriteStore(get(), get()) }

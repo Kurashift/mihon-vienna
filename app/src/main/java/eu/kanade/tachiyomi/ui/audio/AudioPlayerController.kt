@@ -180,7 +180,17 @@ class AudioPlayerController(
         StandaloneDatabaseProvider(context),
     )
 
+    /**
+     * The playback stack reads media through its own client, stripped of the disk cache the JSON
+     * calls rely on.
+     *
+     * The CDN answers media with a four hour `max-age`, so that 20 MiB cache was filling with
+     * multi-megabyte audio and pushing the work and track trees it was sized for straight back out
+     * — the opposite of what it is for. Media is cached once, by the 512 MiB `SimpleCache` below,
+     * which is the copy playback actually reads again.
+     */
     private val playbackClient = client.newBuilder()
+        .cache(null)
         .addInterceptor { chain ->
             val token = basePreferences.audioAuthToken.get()
             val request = if (token.isBlank()) {
@@ -864,6 +874,62 @@ class AudioPlayerController(
         playbackRetryJob = null
     }
 
+    /**
+     * Re-resolves the current work once when its stream has simply stopped answering.
+     *
+     * A resolve step now reads a tree that can be up to `AudioTrackCache.MAX_AGE` old, so a track
+     * can be handed an address the backend has since replaced. That is the one failure a retry
+     * cannot fix by repeating itself: every attempt would rebuild the same address from the same
+     * tree. Dropping the tree and asking again is the only way out, and it keeps the track the user
+     * asked for instead of moving them on to the next one.
+     *
+     * Only for a response that says the address is gone — 404/410, and 403 once a signed URL has
+     * expired. Transport failures and server errors are [retryOrSkipPlayback]'s business: those are
+     * the backend being unavailable, not the tree being wrong, and re-resolving would only add a
+     * request to a call that is already going to be retried.
+     *
+     * Returns false when this was not that kind of failure, so the caller carries on as before.
+     */
+    private fun recoverFromStaleTrackTree(error: PlaybackException): Boolean {
+        val item = state.item ?: return false
+        if (playbackRetryCount > 0) return false
+        val responseCode = error.responseCodeOrNull() ?: return false
+        if (responseCode !in GONE_RESPONSE_CODES) return false
+
+        // Only worth another resolve when the address came from a tree that may have been reused:
+        // one that was fetched for this very start has already failed on its own merits, and asking
+        // again would repeat that failure instead of fixing it.
+        if (!api.invalidateTracks(item.workId)) return false
+        playbackRetryCount++
+        publish(state.copy(isLoading = true, isPlaying = false, error = null))
+        val startIndex = player.currentMediaItemIndex
+        // Read the position off the state rather than the player: the player has just failed and
+        // has nothing to report, while the progress loop has been publishing where the track was.
+        val startPositionMs = state.positionMs.coerceAtLeast(0)
+        val playWhenReady = player.playWhenReady
+        scope.launch {
+            // No URI guard here, unlike the retry above: the point of this path is that the address
+            // may come back different, and a resolve that lands on the same one is still the answer
+            // worth acting on — the tree behind it has been replaced since.
+            val resolvedItems = runCatching {
+                resolveLegacyWorkStreams(items.takeIf { it.isNotEmpty() } ?: listOf(item), startIndex)
+            }.getOrNull()
+            if (resolvedItems.isNullOrEmpty()) return@launch
+            beginPlayback(resolvedItems, startIndex, startPositionMs, playWhenReady)
+        }
+        return true
+    }
+
+    /** The status of the failing request, or null when the request never got one. */
+    private fun PlaybackException.responseCodeOrNull(): Int? {
+        var current: Throwable? = cause
+        while (current != null) {
+            if (current is HttpDataSource.InvalidResponseCodeException) return current.responseCode
+            current = current.cause
+        }
+        return null
+    }
+
     private fun PlaybackException.isTransientNetworkError(): Boolean {
         var current: Throwable? = cause
         var hasIoCause = false
@@ -1135,7 +1201,7 @@ class AudioPlayerController(
         override fun onPlayerError(error: PlaybackException) {
             clearBufferingState()
             logcat(LogPriority.ERROR, error) { "Audio playback failed for ${state.item?.trackTitle}" }
-            retryOrSkipPlayback(error)
+            recoverFromStaleTrackTree(error) || retryOrSkipPlayback(error)
         }
     }
 
@@ -1167,6 +1233,12 @@ class AudioPlayerController(
         val VOLUME_PROTECTION_VERIFY_DELAYS_MS = listOf(150L, 500L, 1_000L)
         val PLAYBACK_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
         val RETRYABLE_HTTP_CODES = setOf(408, 429) + (500..599)
+
+        /**
+         * Responses that mean the address itself is gone rather than the backend being busy.
+         * See [recoverFromStaleTrackTree].
+         */
+        val GONE_RESPONSE_CODES = setOf(403, 404, 410)
 
         private var volumeProtectionApplied = false
         private var lastActiveAt = 0L

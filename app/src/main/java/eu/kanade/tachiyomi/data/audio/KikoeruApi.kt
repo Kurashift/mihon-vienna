@@ -31,6 +31,7 @@ class KikoeruApi(
     private val client: OkHttpClient,
     private val json: Json,
     private val basePreferences: BasePreferences,
+    private val trackCache: AudioTrackCache = AudioTrackCache(),
 ) {
 
     /**
@@ -108,14 +109,34 @@ class KikoeruApi(
         }
     }
 
+    /**
+     * The tree of files making up a work.
+     *
+     * Served from [trackCache] when it was asked for recently, so the player's resolve step does not
+     * put a round trip in front of the first note. [refresh] skips that copy: it is what a retry
+     * after a broken stream needs, because the tree is then the prime suspect.
+     */
     suspend fun fetchTracks(
         workId: Long,
+        refresh: Boolean = false,
     ): List<TrackNode> = withIOContext {
+        if (!refresh) trackCache.get(workId)?.let { return@withIOContext it }
         val url = "$BASE_URL/api/tracks/$workId"
-        with(json) {
+        val nodes: List<TrackNode> = with(json) {
             executeWithRetry(url) { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
         }
+        trackCache.put(workId, nodes)
+        nodes
     }
+
+    /**
+     * Forgets the cached tree of [workId], so the next [fetchTracks] goes to the backend.
+     *
+     * True when there was a cached tree to drop. False when there was none, which is the answer the
+     * caller needs: a stream that failed despite coming from a tree fetched moments ago is not
+     * going to be fixed by asking for that tree again.
+     */
+    fun invalidateTracks(workId: Long): Boolean = trackCache.remove(workId)
 
     // The three dictionaries below are large and slow, and every one of them now has a persisted
     // copy to fall back on, so they give up sooner than the work feeds do.
