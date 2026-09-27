@@ -68,4 +68,35 @@ class AudioProgressBarTest {
             }
         }
     }
+
+    @Test
+    fun `volume segments are laid out across the full width`() {
+        // The 15 the target device reports: each slot takes a fifteenth of the bar.
+        val geometry = segmentGeometry(width = 300f, total = 15, gap = 2f)
+
+        assertEquals(20f, geometry.slotWidth)
+        assertEquals(18f, geometry.segmentWidth)
+    }
+
+    @Test
+    fun `a segment is always narrower than its slot, leaving the gap`() {
+        val geometry = segmentGeometry(width = 300f, total = 15, gap = 2f)
+
+        assertTrue(geometry.segmentWidth < geometry.slotWidth)
+    }
+
+    @Test
+    fun `the gap never eats a whole slot when the step count is high`() {
+        // The step count is the platform's, not ours: a device reporting hundreds of levels must
+        // still leave something to draw rather than collapsing the row into its gaps.
+        val geometry = segmentGeometry(width = 300f, total = 500, gap = 2f)
+
+        assertTrue(geometry.segmentWidth >= 1f, "segment collapsed to ${geometry.segmentWidth}")
+    }
+
+    @Test
+    fun `a degenerate row reports nothing to draw`() {
+        assertEquals(0f, segmentGeometry(width = 300f, total = 0, gap = 2f).segmentWidth)
+        assertEquals(0f, segmentGeometry(width = 0f, total = 15, gap = 2f).segmentWidth)
+    }
 }

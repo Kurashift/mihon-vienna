@@ -29,17 +29,18 @@ import tachiyomi.presentation.core.components.material.DISABLED_ALPHA
 import kotlin.math.roundToInt
 
 /**
- * The slim bar both the progress and the volume control are drawn from.
+ * The slim progress line, drawn as a continuous track with a ringed dot on it.
  *
- * One drawing routine serves both because they are the same object to the eye — a thin track with a
- * ringed dot on it — and the two used to disagree: the player page drew a stock Material slider
- * (a 16dp pill under a 4×44dp vertical bar, where the handle does not read as a position at all),
- * while the floating reader bar drew this 4dp line. Sharing the routine is what keeps them from
- * drifting apart again.
+ * The player page and the floating reader bar both draw through this, so the two cannot drift apart
+ * the way they had: the player page used to draw a stock Material slider (a 16dp pill under a
+ * 4×44dp vertical bar, where the handle does not read as a position at all) while the reader bar
+ * drew this line.
  *
- * [onFraction] reports a drag in flight and null when it ends, so the caller's own drawing can
- * follow the finger instead of the value it reported — acting on a seek is asynchronous, and a bar
- * that redraws from a stale value fights the finger for the rest of the drag.
+ * The volume control deliberately does *not* share this drawing — see [AudioVolumeBar].
+ *
+ * [onSeek] is called with a drag in flight, so the caller's own drawing can follow the finger
+ * instead of the value it reported: acting on a seek is asynchronous, and a bar that redraws from a
+ * stale value fights the finger for the rest of the drag.
  */
 @Composable
 internal fun AudioProgressBar(
@@ -116,18 +117,23 @@ internal fun AudioProgressBar(
                 progressColor = color,
                 ringColor = ringColor,
                 thumbRadius = thumbRadius,
-                showThumbAtZero = false,
             )
         }
     }
 }
 
 /**
- * The volume control's bar: the same track, without a buffered segment and without a drag preview.
+ * The volume control: a row of discrete segments rather than the progress bar's continuous line.
  *
- * Kept separate from [AudioProgressBar] rather than folded into it with a flag, because the two
- * report in different units — milliseconds the player resolves asynchronously, versus a step index
- * the system applies immediately — and only the progress bar has anything to preview.
+ * The two are deliberately different shapes, because they answer different questions. Progress is
+ * *where in time* the track is — one continuous quantity, drawn as one continuous line. Volume is
+ * *how many of a fixed set of levels* are set — a count, drawn as countable steps. When both were
+ * the same line with a dot on it, the two controls on the same screen were indistinguishable, and
+ * a glance could not tell which one the dot belonged to.
+ *
+ * Segments also say something the line could not: the count of filled steps *is* the volume, so it
+ * can be read without knowing the maximum. Drawn with `steps = maximum`, so the boundary a drag
+ * snaps to is the boundary that is visible.
  */
 @Composable
 internal fun AudioVolumeBar(
@@ -135,22 +141,21 @@ internal fun AudioVolumeBar(
     max: Int,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    ringColor: Color = MaterialTheme.colorScheme.surface,
     onValue: (Int) -> Unit = {},
     onValueFinished: () -> Unit = {},
 ) {
     val maximum = max.coerceAtLeast(1)
-    val progress = (value.toFloat() / maximum.toFloat()).coerceIn(0f, 1f)
-    var dragging by remember { mutableStateOf(false) }
+    val level = value.coerceIn(0, maximum)
+    val progress = level.toFloat() / maximum.toFloat()
     val currentMaximum by rememberUpdatedState(maximum)
     val currentEnabled by rememberUpdatedState(enabled)
     val currentProgress by rememberUpdatedState(progress)
     val currentOnValue by rememberUpdatedState(onValue)
     val currentOnValueFinished by rememberUpdatedState(onValueFinished)
 
-    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = TRACK_ALPHA)
-    val progressColor = MaterialTheme.colorScheme.primary
-    val color = if (enabled) progressColor else progressColor.copy(alpha = DISABLED_ALPHA)
+    val filledColor = MaterialTheme.colorScheme.primary
+    val emptyColor = MaterialTheme.colorScheme.onSurface.copy(alpha = TRACK_ALPHA)
+    val color = if (enabled) filledColor else filledColor.copy(alpha = DISABLED_ALPHA)
 
     Box(
         modifier = modifier
@@ -180,46 +185,76 @@ internal fun AudioVolumeBar(
                 valueAt = { fraction -> (fraction * currentMaximum).roundToInt().coerceIn(0, currentMaximum) },
                 onValue = currentOnValue,
                 onFinished = currentOnValueFinished,
-                onDragFraction = { dragging = it != null },
             ),
     ) {
-        val thumbRadius by animateDpAsState(
-            targetValue = if (dragging) THUMB_RADIUS_DRAGGING else THUMB_RADIUS,
-            label = "audioVolumeThumbRadius",
-        )
         Canvas(modifier = Modifier.fillMaxWidth().align(Alignment.CenterStart)) {
-            drawTrack(
-                fraction = progress,
-                bufferedFraction = null,
-                trackColor = trackColor,
-                bufferedColor = trackColor,
-                progressColor = color,
-                ringColor = ringColor,
-                thumbRadius = thumbRadius,
-                showThumbAtZero = true,
-            )
+            drawSegments(filled = level, total = maximum, filledColor = color, emptyColor = emptyColor)
         }
     }
 }
 
 /**
- * Draws the track, its filled segments and the thumb.
+ * Draws [total] segments across the width, the first [filled] of them in [filledColor].
  *
- * [bufferedFraction] is nullable: the volume bar has nothing buffered, and passing null keeps the
- * whole track at [trackColor] instead of painting a second layer of the same colour over it.
+ * Every segment is drawn, including the unfilled ones: the row of empty slots is what tells the
+ * user how many levels there are to move through, and it is why the filled count is readable on its
+ * own. Segment width shrinks with the count, but the gap between them is fixed, so a segment never
+ * becomes narrower than the gap separating it.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSegments(
+    filled: Int,
+    total: Int,
+    filledColor: Color,
+    emptyColor: Color,
+) {
+    if (total <= 0) return
+    val segmentHeight = SEGMENT_HEIGHT.toPx()
+    val geometry = segmentGeometry(width = size.width, total = total, gap = SEGMENT_GAP.toPx())
+    val y = size.height / 2f
+    val corner = CornerRadius(segmentHeight / 2f)
+
+    for (index in 0 until total) {
+        drawRoundRect(
+            color = if (index < filled) filledColor else emptyColor,
+            topLeft = Offset(index * geometry.slotWidth, y - segmentHeight / 2f),
+            size = Size(geometry.segmentWidth, segmentHeight),
+            cornerRadius = corner,
+        )
+    }
+}
+
+/** Where one segment sits and how wide it is, for a row of [total] segments across [width]. */
+internal data class SegmentGeometry(val slotWidth: Float, val segmentWidth: Float)
+
+/**
+ * Works out the segment row's geometry.
  *
- * The thumb is only drawn once the bar has a value to point at. At zero there is nothing to aim at,
- * and a dot parked on the very start of an empty track reads as a rendering artifact.
+ * The gap is capped at a third of what each slot can afford: the step count comes from the platform
+ * and is not ours to assume, and a device reporting a very high count would otherwise let the gaps
+ * consume the whole width and leave nothing to draw. [segmentWidth] keeps a floor of 1px so a
+ * segment can never vanish or invert.
+ */
+internal fun segmentGeometry(width: Float, total: Int, gap: Float): SegmentGeometry {
+    if (total <= 0 || width <= 0f) return SegmentGeometry(0f, 0f)
+    val slot = width / total
+    val actualGap = gap.coerceAtMost(slot / 3f)
+    return SegmentGeometry(slotWidth = slot, segmentWidth = (slot - actualGap).coerceAtLeast(1f))
+}
+
+/**
+ * Draws the progress track, its buffered segment and the thumb.
+ *
+ * The thumb is only drawn once the bar has a value to point at: at zero there is nothing played to
+ * aim at, and a dot parked on the very start of an empty track reads as a rendering artifact.
  */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTrack(
     fraction: Float,
-    bufferedFraction: Float?,
+    bufferedFraction: Float,
     trackColor: Color,
     bufferedColor: Color,
     progressColor: Color,
     ringColor: Color,
     thumbRadius: Dp,
-    showThumbAtZero: Boolean,
 ) {
     val trackHeight = TRACK_HEIGHT.toPx()
     val y = size.height / 2f
@@ -232,29 +267,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTrack(
         cornerRadius = corner,
     )
 
-    bufferedFraction?.takeIf { it > fraction }?.let { buffered ->
+    if (bufferedFraction > fraction) {
         drawRoundRect(
             color = bufferedColor,
             topLeft = Offset(size.width * fraction, y - trackHeight / 2f),
-            size = Size(size.width * (buffered - fraction), trackHeight),
+            size = Size(size.width * (bufferedFraction - fraction), trackHeight),
             cornerRadius = corner,
         )
     }
 
-    // At zero there is nothing played to point at, and a dot parked on the very start of an empty
-    // track reads as a rendering artifact — so the progress bar hides it. The volume bar must not:
-    // there, zero is a setting the user chose, and a control with no visible handle at all looks
-    // broken rather than set to mute.
-    if (fraction <= 0f && !showThumbAtZero) return
+    if (fraction <= 0f) return
 
-    if (fraction > 0f) {
-        drawRoundRect(
-            color = progressColor,
-            topLeft = Offset(0f, y - trackHeight / 2f),
-            size = Size(size.width * fraction, trackHeight),
-            cornerRadius = corner,
-        )
-    }
+    drawRoundRect(
+        color = progressColor,
+        topLeft = Offset(0f, y - trackHeight / 2f),
+        size = Size(size.width * fraction, trackHeight),
+        cornerRadius = corner,
+    )
 
     // The ring is not decoration: the dot sits on a line the same width as itself, so without a
     // cut-out behind it the exact position is guesswork. Painting it in the background colour is
@@ -297,3 +326,16 @@ private val BAR_HEIGHT = 28.dp
 private val THUMB_RADIUS = 5.dp
 private val THUMB_RADIUS_DRAGGING = 6.dp
 private val RING_WIDTH = 1.5.dp
+
+/**
+ * Volume segments are the same weight as the progress track, only broken into steps.
+ *
+ * Deliberately not taller: a row of thick bars reads as a row of blocks rather than as a control,
+ * and what separates the two controls is the *pattern* — dashes against a solid line — not the
+ * amount of ink. Matching the track's height also keeps them feeling like one family.
+ *
+ * The gap is close to the segment's own height so the breaks stay legible at 4dp; a tighter gap
+ * reads as a solid line that happens to be rendering badly.
+ */
+private val SEGMENT_HEIGHT = TRACK_HEIGHT
+private val SEGMENT_GAP = 3.dp
