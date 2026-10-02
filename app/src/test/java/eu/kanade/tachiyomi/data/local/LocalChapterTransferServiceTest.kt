@@ -160,6 +160,39 @@ class LocalChapterTransferServiceTest {
         assertFalse(service.overlapsPath(a = listOf("primary:Mihon", "local"), b = null))
     }
 
+    @Test
+    fun `a name that a FAT card would reject is cleaned before it is committed`() {
+        // An internal-storage file may legally be called `Ch1?.cbz`; renaming it onto a card
+        // rejects the character and fails the whole import with nothing the reader can act on.
+        assertEquals("Ch1_", chapterDestinationName("Ch1?"))
+        assertEquals("Ch1_ - _copy_", chapterDestinationName("Ch1: - *copy*"))
+        assertEquals("a_b_c_d_e_f_g_h", chapterDestinationName("a|b<c>d\"e*f?g\\h"))
+    }
+
+    @Test
+    fun `a blank name still falls back to Chapter`() {
+        // buildValidFilename answers "(invalid)" for an empty name, which would be a worse
+        // chapter title than the existing fallback.
+        assertEquals("Chapter", chapterDestinationName("   "))
+    }
+
+    @Test
+    fun `a normal name passes through unchanged`() {
+        assertEquals("Chapter 12", chapterDestinationName("Chapter 12"))
+        assertEquals("第 1 话", chapterDestinationName("第 1 话"))
+    }
+
+    @Test
+    fun `a very long name is truncated by bytes without splitting a character`() {
+        val long = "漫".repeat(200)
+
+        val cleaned = chapterDestinationName(long)
+
+        assertTrue(cleaned.toByteArray(Charsets.UTF_8).size <= 229)
+        assertFalse(cleaned.endsWith("\uFFFD"))
+        assertEquals(long.take(cleaned.length), cleaned)
+    }
+
     private fun directory(name: String, vararg children: UniFile): UniFile {
         val file = mockk<UniFile>(relaxed = true)
         every { file.isDirectory } returns true

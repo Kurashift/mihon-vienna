@@ -7,6 +7,7 @@ import androidx.core.net.toUri
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
+import eu.kanade.tachiyomi.util.storage.DiskUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -456,7 +457,7 @@ class LocalChapterTransferService(
             .distinctBy { it.file.uri.toString() }
         val seen = hashSetOf<String>()
         val conflicts = candidates.mapNotNull { candidate ->
-            val normalized = normalizeName(candidate.name.substringBeforeLast('.'))
+            val normalized = normalizeName(chapterDestinationName(candidate.name).substringBeforeLast('.'))
             if (normalized in existingNames || !seen.add(normalized)) candidate.name else null
         }
         ImportPreview(
@@ -505,10 +506,15 @@ class LocalChapterTransferService(
         var skipped = 0
         var failed = 0
         var firstImportedChapterFileName: String? = null
+        // Names this batch has already committed. Cleaning can map two different source names onto
+        // one destination, and re-listing the directory is not enough to catch that: a document
+        // provider may still serve a cached listing, and the second rename would then fail.
+        val committedNames = hashSetOf<String>()
         candidates.forEachIndexed { index, candidate ->
             coroutineContext.ensureActive()
-            val destinationName = candidate.name.trim().ifBlank { "Chapter" }
+            val destinationName = chapterDestinationName(candidate.name)
             if (targetDir.findFile(destinationName) != null ||
+                normalizeName(destinationName.substringBeforeLast('.')) in committedNames ||
                 targetDir.listFiles()?.any {
                     normalizeName(it.name.orEmpty().substringBeforeLast('.')) ==
                         normalizeName(destinationName.substringBeforeLast('.'))
@@ -563,6 +569,7 @@ class LocalChapterTransferService(
                 }
                 withLocalChapterMutationLock(target.url) {
                     if (!staged.renameTo(committedName)) error("Cannot commit imported chapter")
+                    committedNames += normalizeName(destinationName.substringBeforeLast('.'))
                     firstImportedChapterFileName = firstImportedChapterFileName ?: committedName
                     val chapterUrl = "${target.url}/$committedName"
                     if (chapterRepository.getChapterByUrlAndMangaId(chapterUrl, target.id) == null) {
@@ -663,7 +670,7 @@ class LocalChapterTransferService(
             .distinctBy { it.file.uri.toString() }
         val seen = hashSetOf<String>()
         val conflicts = candidates.mapNotNull { candidate ->
-            val normalized = normalizeName(candidate.name.substringBeforeLast('.'))
+            val normalized = normalizeName(chapterDestinationName(candidate.name).substringBeforeLast('.'))
             if (normalized in existingNames || !seen.add(normalized)) candidate.name else null
         }
         return ImportPreview(
@@ -841,3 +848,21 @@ class LocalChapterTransferService(
             name == "comicinfo.xml"
     }
 }
+
+/**
+ * The name a chapter is committed under, cleaned the same way the download path cleans its
+ * directory names.
+ *
+ * The picked file keeps whatever its source allowed, and an internal-storage name may legally
+ * carry characters that a FAT/exFAT card rejects; committing it there would fail the import with
+ * nothing the reader could act on. Bytes are reserved for the extension appended at commit time,
+ * so the truncation cannot eat it.
+ */
+internal fun chapterDestinationName(rawName: String): String {
+    return DiskUtil.buildValidFilename(
+        rawName.trim().ifBlank { "Chapter" },
+        DiskUtil.MAX_FILE_NAME_BYTES - CHAPTER_NAME_RESERVED_BYTES,
+    )
+}
+
+private const val CHAPTER_NAME_RESERVED_BYTES = 11
