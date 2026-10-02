@@ -1,7 +1,27 @@
 package eu.kanade.tachiyomi.ui.local
 
+import eu.kanade.tachiyomi.data.local.LocalChapterTransferService
 import java.text.Normalizer
 import java.util.Locale
+
+/** One picked source that contributed nothing, with the reason it was turned away. */
+internal typealias LocalImportRejection = Pair<String, LocalChapterTransferService.SourceRejection>
+
+/**
+ * The rejections to show after a pick, given what was already on screen.
+ *
+ * Rejections accumulate so that a reader who tries several folders sees every reason, not only
+ * the last batch's. A pick that yields at least one usable source clears them instead: those
+ * reasons were explaining why nothing had appeared, and leaving them above a source that did
+ * appear reads as a fresh failure of the pick that just succeeded.
+ */
+internal fun localImportRejectionsAfterPick(
+    previous: List<LocalImportRejection>,
+    picked: List<LocalImportRejection>,
+    usableSourceCount: Int,
+): List<LocalImportRejection> {
+    return if (usableSourceCount > 0) picked else previous + picked
+}
 
 internal fun localMangaDirectoryName(value: String): String {
     return value.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")

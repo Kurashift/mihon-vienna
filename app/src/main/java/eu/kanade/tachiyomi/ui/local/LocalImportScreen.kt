@@ -185,9 +185,8 @@ data class LocalImportScreen(
         var sourcePreviews by rememberSaveable(stateSaver = sourcePreviewListSaver) {
             mutableStateOf<List<LocalChapterTransferService.SourcePreview>>(emptyList())
         }
-        var rejectedSourceCount by remember { mutableLongStateOf(0L) }
-        var rejectedSourceDetails by remember {
-            mutableStateOf<List<Pair<String, LocalChapterTransferService.SourceRejection>>>(emptyList())
+        var rejectedSources by remember {
+            mutableStateOf<List<LocalImportRejection>>(emptyList())
         }
         var targetId by rememberSaveable { mutableStateOf(fixedTargetMangaId ?: -1L) }
         var mangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
@@ -400,14 +399,14 @@ data class LocalImportScreen(
                 // collection, so the two layouts no longer conflict - and the filter is what used to
                 // refuse exactly that combination.
                 val usable = inspected.mapNotNull { it.preview }
-                val rejected = inspected.filter { it.preview == null }
-                // Both accumulate across picks so the count and the listed reasons never drift
-                // apart: a user who tries several folders sees every rejection, not only the last
-                // batch's.
-                rejectedSourceDetails = rejectedSourceDetails + rejected.mapNotNull { inspection ->
+                val rejected = inspected.mapNotNull { inspection ->
                     inspection.rejection?.let { rejection -> inspection.displayName to rejection }
                 }
-                rejectedSourceCount += rejected.count { it.rejection != null }
+                rejectedSources = localImportRejectionsAfterPick(
+                    previous = rejectedSources,
+                    picked = rejected,
+                    usableSourceCount = usable.size,
+                )
                 val mergedPreviews = (sourcePreviews + usable).distinctBy { it.uri }
                 sourcePreviews = mergedPreviews
                 selectedUris = if (fixedTargetMangaId != null) {
@@ -569,14 +568,14 @@ data class LocalImportScreen(
                         // Rendered outside the branches above: when every pick is rejected nothing
                         // else on screen changes, so this is the only thing telling the user their
                         // pick was seen and why it produced nothing.
-                        if (rejectedSourceCount > 0) {
+                        if (rejectedSources.isNotEmpty()) {
                             Text(
-                                text = "有 $rejectedSourceCount 个来源未被导入：",
+                                text = "有 ${rejectedSources.size} 个来源未被导入：",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
-                            rejectedSourceDetails.forEach { (name, rejection) ->
+                            rejectedSources.forEach { (name, rejection) ->
                                 Text(
                                     text = "· $name：${rejection.reasonText()}",
                                     style = MaterialTheme.typography.bodySmall,

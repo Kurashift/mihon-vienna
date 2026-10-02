@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.local
 
+import eu.kanade.tachiyomi.data.local.LocalChapterTransferService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -196,5 +197,48 @@ class LocalGroupedImportPlanningTest {
     @Test
     fun `an empty batch is not a collection import`() {
         assertFalse(isLocalCollectionImport(emptyList()))
+    }
+
+    @Test
+    fun `rejections accumulate while every pick is turned away`() {
+        val first = listOf("Library" to LocalChapterTransferService.SourceRejection.InsideLibrary)
+        val second = listOf("Empty" to LocalChapterTransferService.SourceRejection.NoContent)
+
+        val afterSecond = localImportRejectionsAfterPick(
+            previous = first,
+            picked = second,
+            usableSourceCount = 0,
+        )
+
+        assertEquals(first + second, afterSecond)
+    }
+
+    @Test
+    fun `a pick that brings in a source clears the reasons nothing had appeared`() {
+        // The reasons explained an empty screen. Leaving them above a source that just appeared
+        // reads as a fresh failure of the pick that succeeded.
+        val stale = listOf("Library" to LocalChapterTransferService.SourceRejection.InsideLibrary)
+
+        val afterGoodPick = localImportRejectionsAfterPick(
+            previous = stale,
+            picked = emptyList(),
+            usableSourceCount = 1,
+        )
+
+        assertEquals(emptyList<LocalImportRejection>(), afterGoodPick)
+    }
+
+    @Test
+    fun `a mixed pick keeps only its own rejection`() {
+        val stale = listOf("Library" to LocalChapterTransferService.SourceRejection.InsideLibrary)
+        val own = listOf("Empty" to LocalChapterTransferService.SourceRejection.NoContent)
+
+        val afterMixedPick = localImportRejectionsAfterPick(
+            previous = stale,
+            picked = own,
+            usableSourceCount = 1,
+        )
+
+        assertEquals(own, afterMixedPick)
     }
 }
