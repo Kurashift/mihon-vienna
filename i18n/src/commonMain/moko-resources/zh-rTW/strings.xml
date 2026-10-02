@@ -64,7 +64,7 @@
     <string name="local_source_refresh_checking_progress">正在核對漫畫：%1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">正在整理有變化的漫畫：%1$d/%2$d</string>
     <string name="local_source_refresh_no_changes">書架一切如常</string>
-    <string name="local_source_refresh_unavailable">無法讀取本機目錄</string>
+    <string name="local_source_refresh_unavailable">讀不到本庫資料夾</string>
     <string name="local_source_refresh_completed">已整理 %d 部漫畫</string>
     <string name="local_source_refresh_completed_with_new">已整理 %1$d 部漫畫，發現 %2$d 個新篇目</string>
     <string name="action_edit">編輯</string>
