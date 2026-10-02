@@ -287,7 +287,7 @@
     <string name="transition_next">接下來：</string>
     <string name="notification_new_chapters">發現新篇目</string>
     <string name="pref_skip_read_chapters">接續下一篇目時略過已讀篇目</string>
-    <string name="pref_skip_read_chapters_summary">從未讀篇目往後接續時，自動跳到下一個未讀篇目；重讀已讀篇目時保持原順序</string>
+    <string name="pref_skip_read_chapters_summary">僅從未讀篇目往後接續時生效</string>
     <string name="pref_remove_after_read">翻閱過後自動刪除</string>
     <string name="transition_no_next">以下空白</string>
     <string name="transition_no_previous">已達盡頭</string>

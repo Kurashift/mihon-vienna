@@ -482,7 +482,7 @@
     <string name="filter_mode_darken">Burn / Darken</string>
     <string name="pref_keep_screen_on">Keep screen on</string>
     <string name="pref_skip_read_chapters">Skip read chapters when advancing</string>
-    <string name="pref_skip_read_chapters_summary">When continuing on from an unread chapter, jump to the next unread chapter. Re-reading from a read chapter keeps the original order.</string>
+    <string name="pref_skip_read_chapters_summary">Only applies when continuing from an unread chapter</string>
     <string name="pref_skip_filtered_chapters">Skip filtered works</string>
     <string name="pref_skip_dupe_chapters">Skip duplicate works</string>
     <string name="pref_reader_navigation">Navigation</string>

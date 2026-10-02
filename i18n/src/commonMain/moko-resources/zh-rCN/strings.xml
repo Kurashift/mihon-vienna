@@ -355,7 +355,7 @@
     <string name="pref_read_with_long_tap">长按显示操作菜单</string>
     <string name="action_open_in_web_view">在 WebView 中打开</string>
     <string name="pref_skip_read_chapters">接续下一篇目时跳过已读篇目</string>
-    <string name="pref_skip_read_chapters_summary">从未读篇目往后接续时，自动跳到下一个未读篇目；重读已读篇目时保持原顺序</string>
+    <string name="pref_skip_read_chapters_summary">仅从未读篇目往后接续时生效</string>
     <string name="pref_color_filter_mode">滤镜混合模式</string>
     <string name="label_help">帮助</string>
     <string name="filter_mode_overlay">叠加</string>

@@ -55,7 +55,7 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
             chapters.currChapter,
             chapters.prevChapter,
             isLocalSource,
-        ) > 0
+        ) - chapters.prevSkippedReadCount > 0
         val nextHasMissingChapters = calculateChapterGap(
             chapters.nextChapter,
             chapters.currChapter,
@@ -67,7 +67,9 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
 
         // Skip transition page if the chapter is loaded & current page is not a transition page
         if (prevHasMissingChapters || forceTransition || chapters.prevChapter?.state !is ReaderChapter.State.Loaded) {
-            newItems.add(ChapterTransition.Prev(chapters.currChapter, chapters.prevChapter))
+            newItems.add(
+                ChapterTransition.Prev(chapters.currChapter, chapters.prevChapter, chapters.prevSkippedReadCount),
+            )
         }
 
         var insertPageLastPage: InsertPage? = null
@@ -94,7 +96,11 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
         currentChapter = chapters.currChapter
 
         // Add next chapter transition and pages.
-        nextTransition = ChapterTransition.Next(chapters.currChapter, chapters.nextChapter, chapters.nextSkippedReadCount)
+        nextTransition = ChapterTransition.Next(
+            chapters.currChapter,
+            chapters.nextChapter,
+            chapters.nextSkippedReadCount,
+        )
             .also {
                 if (
                     nextHasMissingChapters ||

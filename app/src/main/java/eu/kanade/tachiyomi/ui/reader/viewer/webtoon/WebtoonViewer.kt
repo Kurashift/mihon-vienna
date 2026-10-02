@@ -936,6 +936,12 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                     candidate is WebtoonChapterDivider && candidate.hasSameChapters(item)
                 }
             }
+            // Transitions are recreated on every chapter-list rebuild: match them structurally
+            // like dividers, or the viewport anchor would be lost and the reader could jump
+            // whenever a refresh lands while the user is resting on a transition.
+            is ChapterTransition -> adapter.items.indexOfFirst { candidate ->
+                candidate is ChapterTransition && candidate == item
+            }
             else -> adapter.items.indexOf(item)
         }
     }

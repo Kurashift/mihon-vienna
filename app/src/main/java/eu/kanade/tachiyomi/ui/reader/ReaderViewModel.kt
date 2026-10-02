@@ -424,24 +424,37 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         val chapterPos = chapterList.indexOf(chapter)
+        var prevChapter = chapterList.getOrNull(chapterPos - 1)
         var nextChapter = chapterList.getOrNull(chapterPos + 1)
-        var skippedReadCount = 0
-        // Skip-read only applies when advancing onward from a chapter that was still unread when
-        // it became active: finishing fresh reading jumps to the next unread chapter, while
-        // re-reading from an already-read chapter keeps the original order.
-        if (readerPreferences.skipRead.get() && nextChapter != null && !chapter.chapter.read) {
+        var prevSkippedReadCount = 0
+        var nextSkippedReadCount = 0
+        // Skip-read only applies when continuing onward from a chapter that was still unread when
+        // it became active: the chain connects unread chapters on both sides, while re-reading
+        // from an already-read chapter keeps the original order.
+        if (readerPreferences.skipRead.get() && !chapter.chapter.read) {
             val nextUnreadIndex = (chapterPos + 1 until chapterList.size)
                 .firstOrNull { !chapterList[it].chapter.read }
             if (nextUnreadIndex != null) {
                 nextChapter = chapterList[nextUnreadIndex]
-                skippedReadCount = nextUnreadIndex - chapterPos - 1
+                nextSkippedReadCount = nextUnreadIndex - chapterPos - 1
+            }
+            val prevUnreadIndex = (chapterPos - 1 downTo 0)
+                .firstOrNull { !chapterList[it].chapter.read }
+            if (prevUnreadIndex != null) {
+                prevChapter = chapterList[prevUnreadIndex]
+                prevSkippedReadCount = chapterPos - 1 - prevUnreadIndex
+            } else {
+                // Nothing unread comes before: end the chain here instead of linking the unread
+                // run back into read chapters.
+                prevChapter = null
             }
         }
         val newChapters = ViewerChapters(
             chapter,
-            chapterList.getOrNull(chapterPos - 1),
+            prevChapter,
             nextChapter,
-            skippedReadCount,
+            prevSkippedReadCount,
+            nextSkippedReadCount,
         )
 
         withUIContext {
