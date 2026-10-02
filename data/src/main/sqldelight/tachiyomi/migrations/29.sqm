@@ -1,0 +1,21 @@
+-- Restored and newly inserted chapters had total_pages and last_page_read written swapped: the
+-- insert's last_page_read CASE makes :totalPages the earlier parameter, and both callers passed
+-- positionally, so total_pages received the real progress and last_page_read received the real
+-- page count. Read chapters happened to end up with both columns equal, so only unread ones show
+-- it - a 22-page chapter read to page 2 displayed "1/2", one read to page 1 displayed "0/1", and
+-- one never opened displayed no badge at all.
+--
+-- The swap needs in-row proof: the memo's mihon.pageCount is the page count the local scan
+-- recorded, and in a swapped row it necessarily equals last_page_read. Legal rows that also have
+-- last_page_read > total_pages do not carry that fingerprint - a legacy row with an unknown total
+-- (15.sqm bumped its progress, 18.sqm only clamped rows with total_pages > 0) and a row whose
+-- files shrank after a sync - so they are left alone rather than given a made-up denominator.
+UPDATE chapters
+SET total_pages = last_page_read,
+    last_page_read = total_pages
+WHERE read = 0
+  AND last_page_read > total_pages
+  AND (
+      CAST(memo AS TEXT) LIKE '%"mihon.pageCount":' || last_page_read || '}'
+      OR CAST(memo AS TEXT) LIKE '%"mihon.pageCount":' || last_page_read || ',%'
+  );

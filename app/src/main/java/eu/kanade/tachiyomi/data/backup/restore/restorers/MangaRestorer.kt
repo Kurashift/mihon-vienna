@@ -197,10 +197,18 @@ class MangaRestorer(
                         read = true,
                         lastPageRead = dbChapter.lastPageRead,
                     )
-                } else if (updatedChapter.lastPageRead == 0L && dbChapter.lastPageRead != 0L) {
-                    updatedChapter = updatedChapter.copy(
-                        lastPageRead = dbChapter.lastPageRead,
-                    )
+                } else if (!updatedChapter.read && dbChapter.lastPageRead > updatedChapter.lastPageRead) {
+                    // The device's position is further along than the file's, so the file must be
+                    // the older of the two. Only a position that is actually readable counts: at
+                    // or past the page count is the footprint of the swap bug, not a place the
+                    // reader can be, so a damaged row can never override a good one here.
+                    val pageCount = updatedChapter.totalPages.takeIf { it > 0 } ?: dbChapter.totalPages
+                    val deviceProgressUsable = pageCount <= 0 || dbChapter.lastPageRead < pageCount
+                    if (deviceProgressUsable) {
+                        updatedChapter = updatedChapter.copy(
+                            lastPageRead = dbChapter.lastPageRead,
+                        )
+                    }
                 }
                 updatedChapter
             }
@@ -217,27 +225,31 @@ class MangaRestorer(
         val restoredAt = Clock.System.now().toEpochMilliseconds()
         database.transaction {
             chapters.forEach { chapter ->
+                // Named arguments on purpose: the insert's CASE makes :totalPages the earlier of the
+                // two parameters, so the generated order is (totalPages, lastPageRead) rather than
+                // the column order. Positional arguments silently swap progress and page count,
+                // which is what used to surface as a restored chapter showing 1/2 instead of 2/22.
                 database.chaptersQueries.insert(
-                    chapter.mangaId,
-                    chapter.url,
-                    chapter.name,
-                    chapter.scanlator,
-                    chapter.read,
-                    chapter.bookmark,
-                    chapter.lastPageRead,
-                    chapter.totalPages,
-                    chapter.customOrder,
-                    chapter.chapterNumber,
-                    chapter.sourceOrder,
-                    chapter.dateFetch,
-                    chapter.dateUpload,
-                    chapter.version,
-                    chapter.memo,
-                    chapter.translatedName,
+                    mangaId = chapter.mangaId,
+                    url = chapter.url,
+                    name = chapter.name,
+                    scanlator = chapter.scanlator,
+                    read = chapter.read,
+                    bookmark = chapter.bookmark,
+                    totalPages = chapter.totalPages,
+                    lastPageRead = chapter.lastPageRead,
+                    customOrder = chapter.customOrder,
+                    chapterNumber = chapter.chapterNumber,
+                    sourceOrder = chapter.sourceOrder,
+                    dateFetch = chapter.dateFetch,
+                    dateUpload = chapter.dateUpload,
+                    version = chapter.version,
+                    memo = chapter.memo,
+                    translatedName = chapter.translatedName,
                     // A chapter the backup marks as read but whose file predates the timestamp field
                     // gets stamped now, so the read-review list has a stable date for it instead of
                     // falling back to the history timestamp, which moves on every reader open.
-                    chapter.markedReadAt.takeIf { it > 0 } ?: restoredAt.takeIf { chapter.read } ?: 0,
+                    markedReadAt = chapter.markedReadAt.takeIf { it > 0 } ?: restoredAt.takeIf { chapter.read } ?: 0,
                 )
             }
         }

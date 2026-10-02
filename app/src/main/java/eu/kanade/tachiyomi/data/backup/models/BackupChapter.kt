@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.data.backup.models
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.protobuf.ProtoNumber
 import mihon.core.common.extensions.JsonObjectEmptyBytes
 import tachiyomi.data.MemoColumnAdapter
@@ -39,7 +41,19 @@ class BackupChapter(
     var chapterId: Long = 0
 
     fun toChapterImpl(): Chapter {
-        val normalizedLastPageRead = normalizeRestoredLastPageRead(read, lastPageRead, totalPages)
+        val memo = MemoColumnAdapter.decode(this@BackupChapter.memo)
+        val scannedPageCount = memo["mihon.pageCount"]
+            ?.jsonPrimitive
+            ?.intOrNull
+            ?.toLong()
+            ?: 0L
+        val (restoredTotalPages, restoredLastPageRead) = unswapRestoredProgress(
+            read = read,
+            lastPageRead = lastPageRead,
+            totalPages = totalPages,
+            scannedPageCount = scannedPageCount,
+        )
+        val normalizedLastPageRead = normalizeRestoredLastPageRead(read, restoredLastPageRead, restoredTotalPages)
         return Chapter.create().copy(
             url = this@BackupChapter.url,
             name = this@BackupChapter.name,
@@ -53,13 +67,39 @@ class BackupChapter(
             sourceOrder = this@BackupChapter.sourceOrder,
             lastModifiedAt = this@BackupChapter.lastModifiedAt,
             version = this@BackupChapter.version,
-            memo = MemoColumnAdapter.decode(this@BackupChapter.memo),
-            totalPages = this@BackupChapter.totalPages,
+            memo = memo,
+            totalPages = restoredTotalPages,
             customOrder = this@BackupChapter.customOrder,
             translatedName = this@BackupChapter.translatedName,
             markedReadAt = this@BackupChapter.markedReadAt,
         )
     }
+}
+
+/**
+ * A chapter saved while `chapters.sq`'s insert bound `:totalPages` before `:lastPageRead` was
+ * written with the two swapped: `total_pages` received the real reading progress and
+ * `last_page_read` received the real page count. Restoring such a file would otherwise bring back
+ * a denominator made of the chapter's own progress - "1/2" for a 22-page chapter read to page 2.
+ *
+ * The page count the local scan recorded in the chapter's memo is the proof of the swap: in an
+ * affected row `last_page_read` is exactly that count, which an unread chapter can never store
+ * (its progress has to stay below its page count). A row without that count - a cloud chapter,
+ * whose memo is empty - is left exactly as stored.
+ *
+ * @return the page count and the progress to restore, in that order.
+ */
+internal fun unswapRestoredProgress(
+    read: Boolean,
+    lastPageRead: Long,
+    totalPages: Long,
+    scannedPageCount: Long,
+): Pair<Long, Long> {
+    val swapped = !read &&
+        scannedPageCount > 0 &&
+        lastPageRead == scannedPageCount &&
+        totalPages < scannedPageCount
+    return if (swapped) lastPageRead to totalPages else totalPages to lastPageRead
 }
 
 internal fun normalizeRestoredLastPageRead(read: Boolean, lastPageRead: Long, totalPages: Long): Long {

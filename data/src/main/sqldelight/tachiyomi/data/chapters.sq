@@ -147,6 +147,10 @@ UPDATE chapters
 SET version = version + 1
 WHERE _id = :chapterId;
 
+-- The last_page_read CASE references :totalPages, which makes it the first of the two to appear
+-- in the statement. SQLDelight generates parameters in order of first appearance, so the Kotlin
+-- signature is (..., totalPages, lastPageRead, ...) - the reverse of the column order. Callers
+-- must pass these two by name; positional arguments silently swap progress and page count.
 insert:
 INSERT INTO chapters(manga_id, url, name, scanlator, read, bookmark, last_page_read, total_pages, custom_order, chapter_number, source_order, date_fetch, date_upload, last_modified_at, version, is_syncing, memo, translated_name, marked_read_at)
 VALUES (
@@ -196,6 +200,8 @@ VALUES (
 )
 RETURNING _id;
 
+-- Same parameter-order trap as `insert`: the last_page_read CASE references :totalPages first, so
+-- the generated signature puts totalPages before lastPageRead. Keep these calls named.
 update:
 UPDATE chapters
 SET manga_id = coalesce(:mangaId, manga_id),

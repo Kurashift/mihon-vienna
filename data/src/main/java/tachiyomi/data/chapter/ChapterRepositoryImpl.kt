@@ -25,24 +25,27 @@ class ChapterRepositoryImpl(
         return try {
             database.transactionWithResult {
                 chapters.map { chapter ->
+                    // Named arguments on purpose: the insert's CASE makes :totalPages the earlier
+                    // of the two parameters, so the generated order is (totalPages, lastPageRead),
+                    // not the column order. Positional arguments silently swap the two columns.
                     val chapterId = database.chaptersQueries.insertReturningId(
-                        chapter.mangaId,
-                        chapter.url,
-                        chapter.name,
-                        chapter.scanlator,
-                        chapter.read,
-                        chapter.bookmark,
-                        chapter.lastPageRead,
-                        chapter.totalPages,
-                        chapter.customOrder,
-                        chapter.chapterNumber,
-                        chapter.sourceOrder,
-                        chapter.dateFetch,
-                        chapter.dateUpload,
-                        chapter.version,
-                        chapter.memo,
-                        chapter.translatedName,
-                        chapter.markedReadAt,
+                        mangaId = chapter.mangaId,
+                        url = chapter.url,
+                        name = chapter.name,
+                        scanlator = chapter.scanlator,
+                        read = chapter.read,
+                        bookmark = chapter.bookmark,
+                        totalPages = chapter.totalPages,
+                        lastPageRead = chapter.lastPageRead,
+                        customOrder = chapter.customOrder,
+                        chapterNumber = chapter.chapterNumber,
+                        sourceOrder = chapter.sourceOrder,
+                        dateFetch = chapter.dateFetch,
+                        dateUpload = chapter.dateUpload,
+                        version = chapter.version,
+                        memo = chapter.memo,
+                        translatedName = chapter.translatedName,
+                        markedReadAt = chapter.markedReadAt,
                     )
                         .awaitAsOne()
                     chapter.copy(id = chapterId)
