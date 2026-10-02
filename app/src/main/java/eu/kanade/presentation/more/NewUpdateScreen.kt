@@ -65,7 +65,7 @@ private val DialogMaxWidth = 640.dp
  * an upper bound that the window never grows to meet. The release notes are the reason this matters
  * — they carry Markdown tables, and at the default width their second column was cut off entirely.
  */
-private const val DialogWidthFraction = 0.95f
+private const val DIALOG_WIDTH_FRACTION = 0.95f
 
 /** Padding between the card edge and its content, notes and button row alike. */
 private val ContentHorizontalPadding = 16.dp
@@ -112,7 +112,7 @@ private fun NewUpdateContent(
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.85f
     Surface(
         modifier = Modifier
-            .fillMaxWidth(DialogWidthFraction)
+            .fillMaxWidth(DIALOG_WIDTH_FRACTION)
             .widthIn(max = DialogMaxWidth)
             .heightIn(max = maxHeight),
         shape = RoundedCornerShape(DialogCornerRadius),
