@@ -126,4 +126,78 @@ class LocalListingRecoveryTest {
             },
         )
     }
+
+    @Test
+    fun `a glitched first scan does not create an empty index`() {
+        assertFalse(
+            shouldPersistListingAfterScan(
+                scannedEntryCount = 0,
+                persistedEntryCount = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `a healthy scan persists its result even without a previous index`() {
+        assertTrue(
+            shouldPersistListingAfterScan(
+                scannedEntryCount = 552,
+                persistedEntryCount = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `a confirmed transition to an empty library still updates the record`() {
+        assertTrue(
+            shouldPersistListingAfterScan(
+                scannedEntryCount = 0,
+                persistedEntryCount = 552,
+            ),
+        )
+    }
+
+    @Test
+    fun `a readable directory does not trust an empty persisted index`() {
+        assertFalse(
+            shouldReusePersistedListing(
+                isAccessible = true,
+                hasEntries = false,
+                isFresh = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `a readable directory keeps a fresh populated index`() {
+        assertTrue(
+            shouldReusePersistedListing(
+                isAccessible = true,
+                hasEntries = true,
+                isFresh = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `a readable directory rescans a stale populated index`() {
+        assertFalse(
+            shouldReusePersistedListing(
+                isAccessible = true,
+                hasEntries = true,
+                isFresh = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `an unreadable directory falls back to whatever is persisted`() {
+        assertTrue(
+            shouldReusePersistedListing(
+                isAccessible = false,
+                hasEntries = false,
+                isFresh = false,
+            ),
+        )
+    }
 }

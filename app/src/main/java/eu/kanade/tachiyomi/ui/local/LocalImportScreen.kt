@@ -1123,6 +1123,6 @@ private fun LocalChapterTransferService.SourceRejection.reasonText(): String {
         LocalChapterTransferService.SourceRejection.NoContent ->
             "没有找到可导入的本子、压缩包、EPUB 或 PDF"
         LocalChapterTransferService.SourceRejection.InsideLibrary ->
-            "已经在本地库中，无需重复导入"
+            "该目录就是本地库本身，无需导入，请在「本库」页直接查看"
     }
 }

@@ -437,7 +437,11 @@ class LocalSource(
             // so re-entering the local source is instant instead of rescanning every directory.
             val persisted = if (lockedCached == null) {
                 loadListingIndex(baseUri)?.takeIf {
-                    !snapshot.isAccessible || it.isFresh(baseDirLastModified, lockedNow)
+                    shouldReusePersistedListing(
+                        isAccessible = snapshot.isAccessible,
+                        hasEntries = it.entries.isNotEmpty(),
+                        isFresh = it.isFresh(baseDirLastModified, lockedNow),
+                    )
                 }
             } else {
                 null
@@ -730,7 +734,21 @@ class LocalSource(
             )
         }
 
-        if (baseUri != null) {
+        if (dirs.isEmpty()) {
+            logcat(LogPriority.WARN) {
+                "Local listing scan found no manga directories " +
+                    "(baseEntries=${baseFiles.size}, persistedEntries=${index?.entries?.size ?: 0}, " +
+                    "allowEmptyListing=$allowEmptyListing)"
+            }
+        }
+
+        if (
+            baseUri != null &&
+            shouldPersistListingAfterScan(
+                scannedEntryCount = nonEmptyResults.size,
+                persistedEntryCount = index?.entries?.size ?: 0,
+            )
+        ) {
             saveListingIndex(
                 ListingIndex(
                     baseUri = baseUri,
@@ -2631,6 +2649,40 @@ internal fun shouldReuseListingAfterUnexpectedEmptyScan(
 ): Boolean {
     return scannedDirectoryCount == 0 &&
         persistedEntryCount > 0
+}
+
+/**
+ * Whether a listing scan may write its result to the persisted index.
+ *
+ * A scan that found nothing must not create or refresh an empty snapshot: with no prior index
+ * (a fresh install), one transient empty read from the directory would otherwise be persisted,
+ * and every later cold start would then trust that empty record for a full day while the
+ * library sits untouched on disk. Writing an empty result is still allowed when it empties a
+ * previously populated index - that transition only happens behind the confirmed-deletion
+ * checks, so it reflects a real deletion rather than an unread glitch.
+ */
+internal fun shouldPersistListingAfterScan(
+    scannedEntryCount: Int,
+    persistedEntryCount: Int,
+): Boolean {
+    return scannedEntryCount > 0 || persistedEntryCount > 0
+}
+
+/**
+ * Whether a cold start may serve the persisted listing as-is.
+ *
+ * A readable directory is re-scanned rather than trusting an empty persisted index: such an
+ * index can only come from an older version's glitched scan (new ones are no longer written),
+ * and trusting it would keep the library hidden for up to a full day even though the folders
+ * are right there. An unreadable directory confirms nothing, so whatever is persisted - empty
+ * included - remains the last known answer until access returns.
+ */
+internal fun shouldReusePersistedListing(
+    isAccessible: Boolean,
+    hasEntries: Boolean,
+    isFresh: Boolean,
+): Boolean {
+    return !isAccessible || (hasEntries && isFresh)
 }
 
 internal fun resolvedLocalChapterCount(
