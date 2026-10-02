@@ -165,6 +165,7 @@ object SettingsReaderScreen : SearchableSettings {
                 Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.skipRead,
                     title = stringResource(MR.strings.pref_skip_read_chapters),
+                    subtitle = stringResource(MR.strings.pref_skip_read_chapters_summary),
                 ),
                 Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.skipFiltered,

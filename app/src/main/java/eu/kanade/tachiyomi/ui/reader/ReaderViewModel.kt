@@ -217,52 +217,45 @@ class ReaderViewModel @JvmOverloads constructor(
             ?: chapters.firstOrNull()
             ?: error("Chapter list is empty")
 
-        val chaptersForReader = when {
-            (readerPreferences.skipRead.get() || readerPreferences.skipFiltered.get()) -> {
-                val filteredChapters = chapters.filterNot {
-                    when {
-                        readerPreferences.skipRead.get() && it.read -> true
-                        readerPreferences.skipFiltered.get() -> {
-                            (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_READ && !it.read) ||
-                                (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_UNREAD && it.read) ||
-                                (
-                                    manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_DOWNLOADED &&
-                                        !downloadManager.isChapterDownloaded(
-                                            it.name,
-                                            it.scanlator,
-                                            it.url,
-                                            manga.title,
-                                            manga.source,
-                                        )
-                                    ) ||
-                                (
-                                    manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_NOT_DOWNLOADED &&
-                                        downloadManager.isChapterDownloaded(
-                                            it.name,
-                                            it.scanlator,
-                                            it.url,
-                                            manga.title,
-                                            manga.source,
-                                        )
-                                    ) ||
-                                (
-                                    manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_BOOKMARKED && !it.bookmark
-                                    ) ||
-                                (
-                                    manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_NOT_BOOKMARKED && it.bookmark
-                                    )
-                        }
-                        else -> false
-                    }
-                }
-
-                if (filteredChapters.any { it.id == chapterId }) {
-                    filteredChapters
-                } else {
-                    filteredChapters + listOf(selectedChapter)
-                }
+        val chaptersForReader = if (readerPreferences.skipFiltered.get()) {
+            val filteredChapters = chapters.filterNot {
+                (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_READ && !it.read) ||
+                    (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_UNREAD && it.read) ||
+                    (
+                        manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_DOWNLOADED &&
+                            !downloadManager.isChapterDownloaded(
+                                it.name,
+                                it.scanlator,
+                                it.url,
+                                manga.title,
+                                manga.source,
+                            )
+                        ) ||
+                    (
+                        manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_NOT_DOWNLOADED &&
+                            !downloadManager.isChapterDownloaded(
+                                it.name,
+                                it.scanlator,
+                                it.url,
+                                manga.title,
+                                manga.source,
+                            )
+                        ) ||
+                    (
+                        manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_BOOKMARKED && !it.bookmark
+                        ) ||
+                    (
+                        manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_NOT_BOOKMARKED && it.bookmark
+                        )
             }
-            else -> chapters
+
+            if (filteredChapters.any { it.id == chapterId }) {
+                filteredChapters
+            } else {
+                filteredChapters + listOf(selectedChapter)
+            }
+        } else {
+            chapters
         }
 
         chaptersForReader
@@ -431,10 +424,24 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         val chapterPos = chapterList.indexOf(chapter)
+        var nextChapter = chapterList.getOrNull(chapterPos + 1)
+        var skippedReadCount = 0
+        // Skip-read only applies when advancing onward from a chapter that was still unread when
+        // it became active: finishing fresh reading jumps to the next unread chapter, while
+        // re-reading from an already-read chapter keeps the original order.
+        if (readerPreferences.skipRead.get() && nextChapter != null && !chapter.chapter.read) {
+            val nextUnreadIndex = (chapterPos + 1 until chapterList.size)
+                .firstOrNull { !chapterList[it].chapter.read }
+            if (nextUnreadIndex != null) {
+                nextChapter = chapterList[nextUnreadIndex]
+                skippedReadCount = nextUnreadIndex - chapterPos - 1
+            }
+        }
         val newChapters = ViewerChapters(
             chapter,
             chapterList.getOrNull(chapterPos - 1),
-            chapterList.getOrNull(chapterPos + 1),
+            nextChapter,
+            skippedReadCount,
         )
 
         withUIContext {

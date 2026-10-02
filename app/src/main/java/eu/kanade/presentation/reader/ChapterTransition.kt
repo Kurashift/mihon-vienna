@@ -79,7 +79,9 @@ fun ChapterTransition(
                     bottomChapter = goingToChapter,
                     bottomChapterDownloaded = goingToChapterDownloaded,
                     fallbackLabel = stringResource(MR.strings.transition_no_next),
-                    chapterGap = calculateChapterGap(transition.to, transition.from, isLocalSource),
+                    // Chapters skipped over as read exist on disk; they are not missing chapters.
+                    chapterGap = calculateChapterGap(transition.to, transition.from, isLocalSource) -
+                        transition.skippedReadCount,
                     compact = compact,
                 )
             }
