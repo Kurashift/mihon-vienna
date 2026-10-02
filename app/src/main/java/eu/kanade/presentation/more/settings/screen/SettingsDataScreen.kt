@@ -75,7 +75,7 @@ object SettingsDataScreen : SearchableSettings {
                     ),
                     Preference.PreferenceItem.TextPreference(
                         title = stringResource(MR.strings.action_import_local_chapters),
-                        subtitle = "从本地文件夹或压缩包导入本子",
+                        subtitle = stringResource(MR.strings.settings_import_local_chapters_summary),
                         onClick = { navigator.push(LocalImportScreen()) },
                     ),
                 ),

@@ -399,7 +399,11 @@ class MangaScreen(
                         .replace(Regex("[\\\\/:*?\"<>|]"), "_")
                         .take(80)
                         .ifBlank { "chapter_titles" }
-                    val scopeSuffix = if (onlyUntranslated) "_未译名" else ""
+                    val scopeSuffix = if (onlyUntranslated) {
+                        context.stringResource(MR.strings.chapter_title_export_untranslated_suffix)
+                    } else {
+                        ""
+                    }
                     when (format) {
                         ChapterTitleTranslationFormat.JSON -> {
                             exportChapterTitlesJson.launch("${fileName}_zh$scopeSuffix.${format.fileExtension}")

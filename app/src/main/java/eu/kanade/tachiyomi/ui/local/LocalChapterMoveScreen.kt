@@ -89,7 +89,7 @@ data class LocalChapterMoveScreen(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("已选择 ${chapters.size} 个篇目")
+                Text(stringResource(MR.strings.local_move_selected_count, chapters.size))
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     items(mangas, key = { it.id }) { manga ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -111,10 +111,19 @@ data class LocalChapterMoveScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text("${status.completed}/${status.total}：${status.currentName}")
+                    Text(
+                        stringResource(
+                            MR.strings.local_move_progress,
+                            status.completed,
+                            status.total,
+                            status.currentName,
+                        ),
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = navigator::pop, enabled = !moving) { Text("取消") }
+                    TextButton(onClick = navigator::pop, enabled = !moving) {
+                        Text(stringResource(MR.strings.action_cancel))
+                    }
                     Button(
                         onClick = {
                             scope.launch {
@@ -122,7 +131,7 @@ data class LocalChapterMoveScreen(
                             }
                         },
                         enabled = !moving && targetId >= 0 && chapters.isNotEmpty(),
-                    ) { Text("开始移动") }
+                    ) { Text(stringResource(MR.strings.action_move_start)) }
                 }
             }
         }

@@ -20,6 +20,8 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.library.components.MangaCompactGridItem
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 /**
  * Picks one of the existing local collections.
@@ -43,7 +45,7 @@ fun LocalMangaPickerDialog(
         Scaffold(
             topBar = {
                 AppBar(
-                    title = "选择已有合集",
+                    title = stringResource(MR.strings.local_import_pick_collection_title),
                     navigateUp = onDismissRequest,
                 )
             },
@@ -54,7 +56,7 @@ fun LocalMangaPickerDialog(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "暂无可选合集",
+                        text = stringResource(MR.strings.local_import_no_collections),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

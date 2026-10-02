@@ -108,7 +108,11 @@ fun LocalLibraryChapterTitleTranslationsHost(
         onExport = { format, onlyUntranslated ->
             onDismissRequest()
             pendingExportOnlyUntranslated = onlyUntranslated
-            val scopeSuffix = if (onlyUntranslated) "_未译名" else ""
+            val scopeSuffix = if (onlyUntranslated) {
+                context.stringResource(MR.strings.chapter_title_export_untranslated_suffix)
+            } else {
+                ""
+            }
             when (format) {
                 ChapterTitleTranslationFormat.JSON -> {
                     exportJsonLauncher.launch(

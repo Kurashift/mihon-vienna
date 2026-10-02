@@ -33,6 +33,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tachiyomi.core.common.Constants
+import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -295,17 +297,17 @@ class AudioPlaybackService : Service() {
                 add(
                     NotificationCompat.Action(
                         android.R.drawable.ic_media_previous,
-                        "上一首",
+                        stringResource(MR.strings.audio_previous_track),
                         servicePendingIntent(3, ACTION_PREVIOUS),
                     ),
                 )
             }
-            add(NotificationCompat.Action(toggleIcon, "播放/暂停", togglePending))
+            add(NotificationCompat.Action(toggleIcon, stringResource(MR.strings.audio_play_pause), togglePending))
             if (state.hasNext) {
                 add(
                     NotificationCompat.Action(
                         android.R.drawable.ic_media_next,
-                        "下一首",
+                        stringResource(MR.strings.audio_next_track),
                         servicePendingIntent(1, ACTION_NEXT),
                     ),
                 )

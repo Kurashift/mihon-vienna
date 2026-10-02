@@ -1,8 +1,13 @@
 package eu.kanade.tachiyomi.data.track.bangumi.dto
 
+import android.app.Application
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.i18n.MR
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 @Serializable
 data class BGMSearchResult(
@@ -32,7 +37,8 @@ data class BGMSubject(
         title = nameCn.ifBlank { name }
         cover_url = images?.common.orEmpty()
         summary = if (nameCn.isNotBlank()) {
-            "作品原名：$name" + this@BGMSubject.summary?.let { "\n${it.trim()}" }.orEmpty()
+            Injekt.get<Application>().stringResource(MR.strings.track_original_title, name) +
+                this@BGMSubject.summary?.let { "\n${it.trim()}" }.orEmpty()
         } else {
             this@BGMSubject.summary?.trim().orEmpty()
         }

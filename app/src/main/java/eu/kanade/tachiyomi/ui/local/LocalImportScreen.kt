@@ -454,7 +454,7 @@ data class LocalImportScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    ImportSection(title = "导入来源") {
+                    ImportSection(title = stringResource(MR.strings.local_import_section_source)) {
                         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                             if (maxWidth >= 520.dp) {
                                 Row(
@@ -464,14 +464,14 @@ data class LocalImportScreen(
                                     SourceButton(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Outlined.FolderOpen,
-                                        label = "选择文件夹",
+                                        label = stringResource(MR.strings.local_import_select_folder),
                                         enabled = !importing,
                                         onClick = { folderPicker.launch(null) },
                                     )
                                     SourceButton(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Outlined.InsertDriveFile,
-                                        label = "选择文件",
+                                        label = stringResource(MR.strings.local_import_select_file),
                                         enabled = !importing,
                                         onClick = { filePicker.launch(arrayOf("*/*")) },
                                     )
@@ -480,13 +480,13 @@ data class LocalImportScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     SourceButton(
                                         icon = Icons.Outlined.FolderOpen,
-                                        label = "选择文件夹",
+                                        label = stringResource(MR.strings.local_import_select_folder),
                                         enabled = !importing,
                                         onClick = { folderPicker.launch(null) },
                                     )
                                     SourceButton(
                                         icon = Icons.Outlined.InsertDriveFile,
-                                        label = "选择文件",
+                                        label = stringResource(MR.strings.local_import_select_file),
                                         enabled = !importing,
                                         onClick = { filePicker.launch(arrayOf("*/*")) },
                                     )
@@ -495,8 +495,7 @@ data class LocalImportScreen(
                         }
                         if (selectedUris.isEmpty()) {
                             Text(
-                                text = "文件夹：整个文件夹作为一个来源导入\n" +
-                                    "文件：支持 CBZ、ZIP、RAR、7Z、TAR 等压缩包与 EPUB、PDF",
+                                text = stringResource(MR.strings.local_import_source_help),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp),
@@ -506,11 +505,16 @@ data class LocalImportScreen(
                                 // The collection count belongs to the target card, which is where the
                                 // names are; repeating it here only said the same thing twice.
                                 text = if (isCollectionImport) {
-                                    "共 ${sourcePreviews.sumOf { it.candidateNames.size }} 个本子"
+                                    stringResource(
+                                        MR.strings.local_import_work_count,
+                                        sourcePreviews.sumOf { it.candidateNames.size },
+                                    )
                                 } else {
-                                    "已添加 ${sourcePreviews.size} 个来源，共 ${sourcePreviews.sumOf {
-                                        it.candidateNames.size
-                                    }} 个本子"
+                                    stringResource(
+                                        MR.strings.local_import_added_sources,
+                                        sourcePreviews.size,
+                                        sourcePreviews.sumOf { it.candidateNames.size },
+                                    )
                                 },
                                 style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.padding(top = 8.dp),
@@ -526,11 +530,17 @@ data class LocalImportScreen(
                                             // The name a folder gives its collection is stated once, on
                                             // the target card. Here it is only what the source holds.
                                             if (isCollectionImport && preview.groups.isNotEmpty()) {
-                                                "${preview.groups.size} 个合集，共 ${preview.candidateNames.size} 个本子"
+                                                stringResource(
+                                                    MR.strings.local_import_source_collections,
+                                                    preview.groups.size,
+                                                    preview.candidateNames.size,
+                                                )
                                             } else {
-                                                "包含 ${preview.candidateNames.size} 个本子：${preview.candidateNames.take(
-                                                    3,
-                                                ).joinToString("、")}"
+                                                stringResource(
+                                                    MR.strings.local_import_source_works,
+                                                    preview.candidateNames.size,
+                                                    preview.candidateNames.take(3).joinToString("、"),
+                                                )
                                             },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -553,12 +563,18 @@ data class LocalImportScreen(
                                         },
                                         enabled = !importing,
                                     ) {
-                                        Icon(Icons.Outlined.Close, contentDescription = "移除")
+                                        Icon(
+                                            Icons.Outlined.Close,
+                                            contentDescription = stringResource(MR.strings.action_remove),
+                                        )
                                     }
                                 }
                                 if (preview.ignoredGroupCount > 0) {
                                     Text(
-                                        text = "已忽略 ${preview.ignoredGroupCount} 个无法识别为合集的一级文件夹",
+                                        text = stringResource(
+                                            MR.strings.local_import_ignored_groups,
+                                            preview.ignoredGroupCount,
+                                        ),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -570,14 +586,21 @@ data class LocalImportScreen(
                         // pick was seen and why it produced nothing.
                         if (rejectedSources.isNotEmpty()) {
                             Text(
-                                text = "有 ${rejectedSources.size} 个来源未被导入：",
+                                text = stringResource(
+                                    MR.strings.local_import_rejected_header,
+                                    rejectedSources.size,
+                                ),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
                             rejectedSources.forEach { (name, rejection) ->
                                 Text(
-                                    text = "· $name：${rejection.reasonText()}",
+                                    text = stringResource(
+                                        MR.strings.local_import_rejected_entry,
+                                        name,
+                                        rejection.reasonText(),
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -586,14 +609,18 @@ data class LocalImportScreen(
                     }
                 }
                 item {
-                    ImportSection(title = "目标合集") {
+                    ImportSection(title = stringResource(MR.strings.local_import_section_target)) {
                         if (isMultiCollection) {
                             Text(
-                                "按文件夹名称新建或复用 ${collectionList.size} 个合集",
+                                stringResource(MR.strings.local_import_target_multi, collectionList.size),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                "复用 $existingCollectionCount 个，新建 $newCollectionCount 个",
+                                stringResource(
+                                    MR.strings.local_import_target_counts,
+                                    existingCollectionCount,
+                                    newCollectionCount,
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -608,21 +635,24 @@ data class LocalImportScreen(
                             )
                             if (groupedNameCollisions > 0) {
                                 Text(
-                                    "有 $groupedNameCollisions 组文件夹名称在目标目录中会重名，请先调整名称",
+                                    stringResource(
+                                        MR.strings.local_import_name_collision,
+                                        groupedNameCollisions,
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             }
                             if (hasInvalidGroupedName) {
                                 Text(
-                                    "存在无法作为合集名称的空白文件夹，请先调整名称",
+                                    stringResource(MR.strings.local_import_blank_name),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             }
                             if (ambiguousCollectionCount > 0) {
                                 Text(
-                                    "已有合集名称存在歧义，请先在本库中整理同名合集",
+                                    stringResource(MR.strings.local_import_ambiguous_name),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -632,7 +662,7 @@ data class LocalImportScreen(
                                 FilterChip(
                                     selected = targetMode == ImportTargetMode.NEW,
                                     onClick = { targetMode = ImportTargetMode.NEW },
-                                    label = { Text("新建") },
+                                    label = { Text(stringResource(MR.strings.local_import_target_new)) },
                                 )
                                 FilterChip(
                                     selected = targetMode == ImportTargetMode.EXISTING,
@@ -640,7 +670,7 @@ data class LocalImportScreen(
                                         targetMode = ImportTargetMode.EXISTING
                                         showMangaPicker = true
                                     },
-                                    label = { Text("选已有的") },
+                                    label = { Text(stringResource(MR.strings.local_import_target_existing)) },
                                 )
                             }
                             if (targetMode == ImportTargetMode.EXISTING) {
@@ -671,12 +701,14 @@ data class LocalImportScreen(
                                         )
                                     } else {
                                         Text(
-                                            text = "尚未选择合集",
+                                            text = stringResource(MR.strings.local_import_no_target_selected),
                                             modifier = Modifier.weight(1f),
                                             style = MaterialTheme.typography.bodyLarge,
                                         )
                                     }
-                                    TextButton(onClick = { showMangaPicker = true }) { Text("选择合集") }
+                                    TextButton(onClick = { showMangaPicker = true }) {
+                                        Text(stringResource(MR.strings.local_import_select_collection))
+                                    }
                                 }
                             } else {
                                 // Pre-filled with the picked folder's name when there is exactly one
@@ -688,38 +720,44 @@ data class LocalImportScreen(
                                     value = newTitle,
                                     onValueChange = { newTitle = it },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("新建合集名称") },
+                                    label = { Text(stringResource(MR.strings.local_import_new_collection_name)) },
                                     singleLine = true,
                                 )
                             }
                         } else {
                             Text(
-                                text = "当前合集：${mangas.firstOrNull { it.id == fixedTargetMangaId }?.title.orEmpty()}",
+                                text = stringResource(
+                                    MR.strings.local_import_current_collection,
+                                    mangas.firstOrNull { it.id == fixedTargetMangaId }?.title.orEmpty(),
+                                ),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         }
                     }
                 }
                 item {
-                    ImportSection(title = "导入设置") {
-                        Text("篇目保存方式", style = MaterialTheme.typography.bodyMedium)
+                    ImportSection(title = stringResource(MR.strings.local_import_section_settings)) {
+                        Text(
+                            stringResource(MR.strings.local_import_output_mode),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(
                                 selected = output == LocalChapterTransferService.FolderOutput.DIRECTORY,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.DIRECTORY },
                             )
-                            Text("保留文件夹")
+                            Text(stringResource(MR.strings.local_import_output_keep_folders))
                             RadioButton(
                                 selected = output == LocalChapterTransferService.FolderOutput.CBZ,
                                 onClick = { output = LocalChapterTransferService.FolderOutput.CBZ },
                             )
-                            Text("打包成 CBZ")
+                            Text(stringResource(MR.strings.local_import_output_cbz))
                         }
                         Text(
                             text = if (output == LocalChapterTransferService.FolderOutput.CBZ) {
-                                "文件夹来源导入时打包成 CBZ；文件来源原样保存"
+                                stringResource(MR.strings.local_import_output_cbz_help)
                             } else {
-                                "文件夹来源保持文件夹结构；文件来源原样保存"
+                                stringResource(MR.strings.local_import_output_folder_help)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -727,9 +765,9 @@ data class LocalImportScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Switch(checked = deleteSource, onCheckedChange = { deleteSource = it })
                             Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text("导入成功后删除来源")
+                                Text(stringResource(MR.strings.local_import_delete_source))
                                 Text(
-                                    "删除本次导入的来源文件夹或文件",
+                                    stringResource(MR.strings.local_import_delete_source_help),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -739,7 +777,7 @@ data class LocalImportScreen(
                 }
                 transferStatus?.takeUnless { it.state.isFinished }?.let { status ->
                     item {
-                        ImportSection(title = "导入进度") {
+                        ImportSection(title = stringResource(MR.strings.local_import_section_progress)) {
                             LinearProgressIndicator(
                                 progress = {
                                     if (status.totalBytes > 0) {
@@ -752,7 +790,14 @@ data class LocalImportScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            Text("${status.completed}/${status.total}：${status.currentName}")
+                            Text(
+                                stringResource(
+                                    MR.strings.local_import_progress,
+                                    status.completed,
+                                    status.total,
+                                    status.currentName,
+                                ),
+                            )
                         }
                     }
                 }
@@ -762,7 +807,9 @@ data class LocalImportScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        TextButton(onClick = navigator::pop, enabled = !importing) { Text("取消") }
+                        TextButton(onClick = navigator::pop, enabled = !importing) {
+                            Text(stringResource(MR.strings.action_cancel))
+                        }
                         Button(
                             modifier = Modifier.weight(1f),
                             onClick = {
@@ -840,7 +887,7 @@ data class LocalImportScreen(
                                                 (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank())
                                             )
                                     ),
-                        ) { Text("开始导入") }
+                        ) { Text(stringResource(MR.strings.action_import_start)) }
                     }
                 }
             }
@@ -982,7 +1029,10 @@ private fun CollectionNameList(
         }
         if (items.size > COLLECTION_LIST_PREVIEW_LIMIT) {
             Text(
-                text = "还有 ${items.size - COLLECTION_LIST_PREVIEW_LIMIT} 个，点按查看全部",
+                text = stringResource(
+                    MR.strings.local_import_more_items,
+                    items.size - COLLECTION_LIST_PREVIEW_LIMIT,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(vertical = 6.dp),
@@ -1011,7 +1061,7 @@ private fun CollectionNameDialog(
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("本次导入的合集") },
+        title = { Text(stringResource(MR.strings.local_import_collections_title)) },
         text = {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
@@ -1028,14 +1078,14 @@ private fun CollectionNameDialog(
                                 onValueChange = { draft = it },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
-                                label = { Text("合集名称") },
+                                label = { Text(stringResource(MR.strings.local_import_collection_name)) },
                             )
                             TextButton(
                                 onClick = {
                                     onRename(item.key, localMangaDirectoryName(draft))
                                     editingKey = null
                                 },
-                            ) { Text("保存") }
+                            ) { Text(stringResource(MR.strings.action_save)) }
                         }
                     } else {
                         Row(
@@ -1074,9 +1124,9 @@ private fun CollectionNameDialog(
 @Composable
 private fun CollectionStateLabel(exists: Boolean?) {
     val (label, color) = when (exists) {
-        true -> "复用" to MaterialTheme.colorScheme.primary
-        false -> "新建" to MaterialTheme.colorScheme.onSurfaceVariant
-        null -> "名称有歧义" to MaterialTheme.colorScheme.error
+        true -> stringResource(MR.strings.local_import_state_reused) to MaterialTheme.colorScheme.primary
+        false -> stringResource(MR.strings.local_import_state_new) to MaterialTheme.colorScheme.onSurfaceVariant
+        null -> stringResource(MR.strings.local_import_state_ambiguous) to MaterialTheme.colorScheme.error
     }
     Text(
         text = label,
@@ -1115,13 +1165,14 @@ private fun ImportSection(
  * message: an unreadable folder is a permission problem, an empty one is a wrong-folder problem,
  * and a library folder is a "you do not need to import this" problem.
  */
+@Composable
 private fun LocalChapterTransferService.SourceRejection.reasonText(): String {
     return when (this) {
         LocalChapterTransferService.SourceRejection.Unreadable ->
-            "无法读取，可能是权限不足或系统限制的目录"
+            stringResource(MR.strings.local_import_reject_unreadable)
         LocalChapterTransferService.SourceRejection.NoContent ->
-            "没有找到可导入的本子、压缩包、EPUB 或 PDF"
+            stringResource(MR.strings.local_import_reject_no_content)
         LocalChapterTransferService.SourceRejection.InsideLibrary ->
-            "该目录就是本地库本身，无需导入，请在「本库」页直接查看"
+            stringResource(MR.strings.local_import_reject_inside_library)
     }
 }
