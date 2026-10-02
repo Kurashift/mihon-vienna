@@ -2104,7 +2104,7 @@ class LocalSource(
             }
     }
 
-    private fun buildChapterEntry(manga: SManga, chapterFile: UniFile): ChapterIndexEntry {
+    internal fun buildChapterEntry(manga: SManga, chapterFile: UniFile): ChapterIndexEntry {
         val fileName = chapterFile.name.orEmpty()
         val isDirectory = chapterFile.isDirectory
         val lastModified = chapterFile.lastModified()
@@ -2117,54 +2117,60 @@ class LocalSource(
         var hasComicInfo = false
         var pageCount = 0
 
-        val format = Format.valueOf(chapterFile)
-        if (format is Format.Epub) {
-            format.file.epubReader(context).use { epub ->
-                val chapter = SChapter.create().apply {
-                    name = displayName
-                    chapter_number = chapterNumber
-                    scanlator = scanlator
-                    date_upload = dateUpload
-                }
-                epub.fillMetadata(manga, chapter)
-                displayName = chapter.name
-                chapterNumber = chapter.chapter_number
-                scanlator = chapter.scanlator
-                dateUpload = chapter.date_upload
-                pageCount = runCatching { epub.getImagesFromPages().size }.getOrDefault(0)
-            }
-        } else if (format is Format.Pdf) {
-            // A PDF has no ComicInfo.xml, so the only thing worth the open is the page count.
-            // That count is also all that can fail here: a password-protected or corrupt file
-            // must leave the rest of the chapter list readable rather than take it down.
-            pageCount = runCatching {
-                format.file.pdfReader(context).use { it.pageCount }
-            }.getOrDefault(0)
-        } else {
-            getComicInfoForChapter(chapterFile) { stream ->
-                val chapter = SChapter.create().apply {
-                    name = displayName
-                    chapter_number = chapterNumber
-                    scanlator = scanlator
-                    date_upload = dateUpload
-                }
-                if (setChapterDetailsFromComicInfoFile(stream, chapter)) {
-                    hasComicInfo = true
+        // Opening a chapter is the only thing that can fail here, and it must not take down the
+        // whole chapter list of the manga: a password-protected, truncated or otherwise corrupt
+        // file (or a format we cannot parse after all) keeps its file-name entry with no page
+        // count, so it stays visible and deletable while every other chapter scans normally.
+        try {
+            val format = Format.valueOf(chapterFile)
+            if (format is Format.Epub) {
+                format.file.epubReader(context).use { epub ->
+                    val chapter = SChapter.create().apply {
+                        name = displayName
+                        chapter_number = chapterNumber
+                        scanlator = scanlator
+                        date_upload = dateUpload
+                    }
+                    epub.fillMetadata(manga, chapter)
                     displayName = chapter.name
                     chapterNumber = chapter.chapter_number
                     scanlator = chapter.scanlator
+                    dateUpload = chapter.date_upload
+                    pageCount = runCatching { epub.getImagesFromPages().size }.getOrDefault(0)
                 }
-            }
-            pageCount = when (format) {
-                is Format.Directory -> fileSystem.getFilesInDirectory(chapterFile)
-                    .count { !it.isDirectory && ImageUtil.isImagePage(it.name) }
-                is Format.Archive -> chapterFile.archiveReader(context).use { reader ->
-                    reader.useEntries { entries ->
-                        entries.count {
-                            Archive.isPageEntry(it.name, it.isFile) && ImageUtil.isImagePage(it.name)
+            } else if (format is Format.Pdf) {
+                // A PDF has no ComicInfo.xml, so the only thing worth the open is the page count.
+                pageCount = format.file.pdfReader(context).use { it.pageCount }
+            } else {
+                getComicInfoForChapter(chapterFile) { stream ->
+                    val chapter = SChapter.create().apply {
+                        name = displayName
+                        chapter_number = chapterNumber
+                        scanlator = scanlator
+                        date_upload = dateUpload
+                    }
+                    if (setChapterDetailsFromComicInfoFile(stream, chapter)) {
+                        hasComicInfo = true
+                        displayName = chapter.name
+                        chapterNumber = chapter.chapter_number
+                        scanlator = chapter.scanlator
+                    }
+                }
+                pageCount = when (format) {
+                    is Format.Directory -> fileSystem.getFilesInDirectory(chapterFile)
+                        .count { !it.isDirectory && ImageUtil.isImagePage(it.name) }
+                    is Format.Archive -> chapterFile.archiveReader(context).use { reader ->
+                        reader.useEntries { entries ->
+                            entries.count {
+                                Archive.isPageEntry(it.name, it.isFile) && ImageUtil.isImagePage(it.name)
+                            }
                         }
                     }
                 }
+            }
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) {
+                "Failed to read ${chapterFile.name.orEmpty()}; keeping its file-name entry"
             }
         }
 
@@ -2193,7 +2199,7 @@ class LocalSource(
         }
     }
 
-    private data class ChapterIndexEntry(
+    internal data class ChapterIndexEntry(
         val name: String,
         val lastModified: Long,
         val size: Long,
