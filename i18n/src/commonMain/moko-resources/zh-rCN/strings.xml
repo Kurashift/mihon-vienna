@@ -734,7 +734,7 @@
     <string name="remove_manga">即将从书架中删除 \"%s\"</string>
     <string name="popular">热门</string>
     <string name="missing_storage_permission">未授予存储权限</string>
-    <string name="local_source_refresh_unavailable">本地目录读取失败，已保留现有数据</string>
+    <string name="local_source_refresh_unavailable">无法读取本地目录</string>
     <string name="skipped_reason_not_always_update">已跳过，因为作品无需更新</string>
     <string name="action_search_hint">搜索…</string>
     <string name="crash_screen_title">哦豁！</string>
