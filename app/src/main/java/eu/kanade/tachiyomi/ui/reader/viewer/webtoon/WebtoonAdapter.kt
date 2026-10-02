@@ -51,28 +51,25 @@ class WebtoonAdapter(val viewer: WebtoonViewer) : RecyclerView.Adapter<RecyclerV
     fun setChapters(chapters: ViewerChapters, forceTransition: Boolean) {
         val newItems = mutableListOf<Any>()
 
-        // Forces chapter transition if there is missing chapters. Chapters skipped over as read
-        // are not missing, so they are subtracted from the chapter-number gap.
+        // Forces chapter transition if there is missing chapters
         val isLocalSource = viewer.activity.viewModel.manga?.isLocal() == true
         val prevHasMissingChapters = calculateChapterGap(
             chapters.currChapter,
             chapters.prevChapter,
             isLocalSource,
-        ) - chapters.prevSkippedReadCount > 0
+        ) > 0
         val nextHasMissingChapters = calculateChapterGap(
             chapters.nextChapter,
             chapters.currChapter,
             isLocalSource,
-        ) - chapters.nextSkippedReadCount > 0
+        ) > 0
 
         // Add previous chapter pages and transition.
         chapters.prevChapter?.pages?.let(newItems::addAll)
 
         // Skip transition page if the chapter is loaded & current page is not a transition page
         if (prevHasMissingChapters || forceTransition || chapters.prevChapter?.state !is ReaderChapter.State.Loaded) {
-            newItems.add(
-                ChapterTransition.Prev(chapters.currChapter, chapters.prevChapter, chapters.prevSkippedReadCount),
-            )
+            newItems.add(ChapterTransition.Prev(chapters.currChapter, chapters.prevChapter))
         } else {
             newItems.add(
                 WebtoonChapterDivider(
@@ -94,9 +91,7 @@ class WebtoonAdapter(val viewer: WebtoonViewer) : RecyclerView.Adapter<RecyclerV
 
         // Add next chapter transition and pages.
         if (nextHasMissingChapters || forceTransition || chapters.nextChapter?.state !is ReaderChapter.State.Loaded) {
-            newItems.add(
-                ChapterTransition.Next(chapters.currChapter, chapters.nextChapter, chapters.nextSkippedReadCount),
-            )
+            newItems.add(ChapterTransition.Next(chapters.currChapter, chapters.nextChapter))
         } else {
             newItems.add(
                 WebtoonChapterDivider(
