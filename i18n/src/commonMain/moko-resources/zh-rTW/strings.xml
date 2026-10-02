@@ -64,6 +64,7 @@
     <string name="local_source_refresh_checking_progress">正在核對漫畫：%1$d/%2$d</string>
     <string name="refresh_all_chapters_in_progress">正在整理有變化的漫畫：%1$d/%2$d</string>
     <string name="local_source_refresh_no_changes">書架一切如常</string>
+    <string name="local_source_refresh_unavailable">本機目錄讀取失敗，已保留現有資料</string>
     <string name="local_source_refresh_completed">已整理 %d 部漫畫</string>
     <string name="local_source_refresh_completed_with_new">已整理 %1$d 部漫畫，發現 %2$d 個新篇目</string>
     <string name="action_edit">編輯</string>
@@ -369,7 +370,7 @@
     <string name="logout">登出</string>
     <string name="last_used_source">最近使用</string>
     <string name="local_source_help_guide">本機來源指南</string>
-    <string name="local_source_changed">書架有新動靜，下拉同步一下</string>
+    <string name="local_source_changed">書架有更新了，去右上角選單重新整理一下就好</string>
     <string name="information_webview_outdated">請更新 WebView 以獲得更佳的相容性</string>
     <string name="information_webview_required">應用程式運作需要 WebView</string>
     <string name="action_select_inverse">反向選擇</string>

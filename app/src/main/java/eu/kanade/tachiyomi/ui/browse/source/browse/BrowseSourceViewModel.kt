@@ -2326,7 +2326,10 @@ class BrowseSourceViewModel(
                     isRefreshingChapters.value = ChapterRefreshProgress.Checking(completed, total)
                 }
                 if (!scan.isReliable) {
-                    localSourceChanged.value = true
+                    // Nothing was confirmed about the directory, so this is not evidence that the
+                    // shelf changed - only that it could not be read. Raising the banner here made
+                    // it claim there were updates to refresh for, in the same breath as the notice
+                    // saying the refresh had just failed.
                     chapterRefreshEvents.send(
                         ChapterRefreshResult(
                             changedManga = 0,
@@ -2392,8 +2395,9 @@ class BrowseSourceViewModel(
                 if (!hasFailures) {
                     basePreferences.localSourceSyncMtime.set(local.getBaseDirectoryLastModified())
                     local.getMangaDirectorySignature()?.let(basePreferences.localSourceDirectorySignature::set)
+                    // A completed refresh is exactly what the banner was asking for, so it goes.
+                    localSourceChanged.value = false
                 }
-                localSourceChanged.value = hasFailures
                 val changedDirectoryCount = (scan.changedMangaUrls + scan.removedMangaUrls).size
                 chapterRefreshEvents.send(
                     ChapterRefreshResult(
