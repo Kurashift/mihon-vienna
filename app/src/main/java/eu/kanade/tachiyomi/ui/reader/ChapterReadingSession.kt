@@ -26,8 +26,16 @@ internal class ChapterReadingSession(
     } else {
         minOf(2, lastIndex)
     }
+
+    // Entering a partially read chapter from its previous one starts below the saved position, so
+    // scrolling through its first pages (or leaving the reader there) must not downgrade the
+    // stored progress. Persistence stays locked until the user scrolls back to the saved page.
+    private val protectedForwardEntry =
+        entryDirection == ChapterEntryDirection.Forward && !alreadyRead &&
+            lastPageRead in 1 until totalPages
+    private val forwardUnlockIndex = lastPageRead - 1
     private var reachedUnlockBoundary = false
-    private var normalReadingStarted = !protectedBackwardEntry
+    private var normalReadingStarted = !protectedBackwardEntry && !protectedForwardEntry
     private var lastObservedPageIndex: Int? = null
     private var forwardBoundaryCrossed = false
 
@@ -36,22 +44,26 @@ internal class ChapterReadingSession(
      * database persistence remains tied to [onSettled].
      */
     fun onUserPageSelected(pageIndex: Int) {
-        if (!protectedBackwardEntry || pageIndex !in 0..lastIndex) return
+        if (pageIndex !in 0..lastIndex) return
 
-        val previousPageIndex = lastObservedPageIndex
-        lastObservedPageIndex = pageIndex
+        if (protectedBackwardEntry) {
+            val previousPageIndex = lastObservedPageIndex
+            lastObservedPageIndex = pageIndex
 
-        if (pageIndex <= backwardUnlockIndex) {
-            reachedUnlockBoundary = true
+            if (pageIndex <= backwardUnlockIndex) {
+                reachedUnlockBoundary = true
+            }
+
+            if (reachedUnlockBoundary &&
+                previousPageIndex != null &&
+                previousPageIndex <= backwardUnlockIndex &&
+                pageIndex > backwardUnlockIndex
+            ) {
+                normalReadingStarted = true
+            }
         }
 
-        if (reachedUnlockBoundary &&
-            previousPageIndex != null &&
-            previousPageIndex <= backwardUnlockIndex &&
-            pageIndex > backwardUnlockIndex
-        ) {
-            normalReadingStarted = true
-        }
+        maybeUnlockForward(pageIndex)
     }
 
     /** Marks that the user crossed into the next chapter while moving forward. */
@@ -84,12 +96,7 @@ internal class ChapterReadingSession(
         // applied to protected backward entries).
         if (totalPages == 1) return null
 
-        if (!protectedBackwardEntry) {
-            return ChapterProgressDecision(
-                pageIndex = pageIndex,
-                completed = canComplete(pageIndex, completingOnExit),
-            )
-        }
+        maybeUnlockForward(pageIndex)
 
         if (!normalReadingStarted) return null
 
@@ -97,6 +104,19 @@ internal class ChapterReadingSession(
             pageIndex = pageIndex,
             completed = canComplete(pageIndex, completingOnExit),
         )
+    }
+
+    /**
+     * A protected forward entry unlocks once the user's position reaches the saved page again; a
+     * settle there also counts, so a fling that skips the intermediate pages still resumes.
+     */
+    private fun maybeUnlockForward(pageIndex: Int) {
+        if (protectedForwardEntry &&
+            !normalReadingStarted &&
+            pageIndex in forwardUnlockIndex..lastIndex
+        ) {
+            normalReadingStarted = true
+        }
     }
 
     private fun canComplete(pageIndex: Int, completingOnExit: Boolean): Boolean {

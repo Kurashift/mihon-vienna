@@ -189,9 +189,71 @@ class ChapterReadingSessionTest {
         assertFalse(session.canCompleteOnForwardExit())
     }
 
+    @Test
+    fun `forward entry below saved progress does not write its position`() {
+        val session = forwardSession(totalPages = 12, lastPageRead = 8)
+
+        assertNull(session.onSettled(0))
+        assertNull(session.onSettled(6))
+        assertNull(session.onExit(2))
+    }
+
+    @Test
+    fun `forward entry resumes after re-crossing saved progress`() {
+        val session = forwardSession(totalPages = 12, lastPageRead = 8)
+
+        assertNull(session.onSettled(5))
+        assertEquals(7, session.onSettled(7)?.pageIndex)
+        assertEquals(9, session.onSettled(9)?.pageIndex)
+    }
+
+    @Test
+    fun `forward entry settles past saved progress without intermediate observations`() {
+        val session = forwardSession(totalPages = 12, lastPageRead = 8)
+
+        assertEquals(10, session.onSettled(10)?.pageIndex)
+    }
+
+    @Test
+    fun `forward entry into unread chapter is not protected`() {
+        val session = forwardSession(totalPages = 12, lastPageRead = 0)
+
+        assertEquals(0, session.onSettled(0)?.pageIndex)
+        assertEquals(3, session.onSettled(3)?.pageIndex)
+    }
+
+    @Test
+    fun `forward boundary cannot complete while forward entry is still protected`() {
+        val session = forwardSession(totalPages = 12, lastPageRead = 8)
+
+        session.markForwardBoundaryCrossed()
+
+        assertFalse(session.canCompleteOnForwardExit())
+        assertNull(session.onExit(2))
+    }
+
+    @Test
+    fun `forward exit completes after forward entry re-crosses saved progress`() {
+        val session = forwardSession(totalPages = 12, lastPageRead = 8)
+
+        session.markForwardBoundaryCrossed()
+        assertFalse(session.canCompleteOnForwardExit())
+
+        session.onUserPageSelected(7)
+        assertTrue(session.canCompleteOnForwardExit())
+        assertTrue(session.onExit(11)?.completed == true)
+    }
+
     private fun backwardSession(totalPages: Int, lastPageRead: Int = 0) = ChapterReadingSession(
         totalPages = totalPages,
         entryDirection = ChapterEntryDirection.Backward,
+        alreadyRead = false,
+        lastPageRead = lastPageRead,
+    )
+
+    private fun forwardSession(totalPages: Int, lastPageRead: Int = 0) = ChapterReadingSession(
+        totalPages = totalPages,
+        entryDirection = ChapterEntryDirection.Forward,
         alreadyRead = false,
         lastPageRead = lastPageRead,
     )
