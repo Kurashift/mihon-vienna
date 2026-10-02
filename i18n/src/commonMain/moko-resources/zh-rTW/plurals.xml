@@ -42,8 +42,8 @@
     <plurals name="download_amount">
         <item quantity="other">後續 %d 篇</item>
     </plurals>
-    <plurals name="missing_chapters">
-        <item quantity="other">缺漏 %1$s 篇</item>
+    <plurals name="audio_works_count">
+        <item quantity="other">%d 部作品</item>
     </plurals>
     <plurals name="day">
         <item quantity="other">%d 天</item>
