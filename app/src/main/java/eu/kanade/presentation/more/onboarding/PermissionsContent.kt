@@ -41,7 +41,7 @@ import eu.kanade.tachiyomi.util.system.PERMISSION_GET_INSTALLED_APPS
 import eu.kanade.tachiyomi.util.system.isAppListPermissionDefined
 import eu.kanade.tachiyomi.util.system.isAppListPermissionGranted
 import eu.kanade.tachiyomi.util.system.launchAllFilesAccessPermission
-import eu.kanade.tachiyomi.util.system.launchAppDetailsSettings
+import eu.kanade.tachiyomi.util.system.launchAppPermissionSettings
 import eu.kanade.tachiyomi.util.system.launchNotificationSettings
 import eu.kanade.tachiyomi.util.system.launchRequestPackageInstallsPermission
 import eu.kanade.tachiyomi.util.system.telemetryIncluded
@@ -119,7 +119,7 @@ internal fun PermissionList(
             granted = installGranted,
             onClick = {
                 if (installGranted) {
-                    context.launchAppDetailsSettings()
+                    context.launchAppPermissionSettings()
                 } else {
                     context.launchRequestPackageInstallsPermission()
                 }
@@ -152,11 +152,15 @@ internal fun PermissionList(
             subtitle = stringResource(MR.strings.onboarding_permission_ignore_battery_opts_description),
             granted = batteryGranted,
             onClick = {
-                @SuppressLint("BatteryLife")
-                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = "package:${context.packageName}".toUri()
+                if (batteryGranted) {
+                    context.launchAppPermissionSettings()
+                } else {
+                    @SuppressLint("BatteryLife")
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = "package:${context.packageName}".toUri()
+                    }
+                    context.startActivity(intent)
                 }
-                context.startActivity(intent)
             },
         )
 
@@ -176,7 +180,7 @@ internal fun PermissionList(
                 granted = appListGranted,
                 onClick = {
                     if (appListGranted) {
-                        context.launchAppDetailsSettings()
+                        context.launchAppPermissionSettings()
                     } else {
                         appListRequester.launch(PERMISSION_GET_INSTALLED_APPS)
                     }

@@ -179,6 +179,24 @@ fun Context.isAppListPermissionGranted(): Boolean {
     return checkSelfPermission(PERMISSION_GET_INSTALLED_APPS) == PackageManager.PERMISSION_GRANTED
 }
 
+/**
+ * Opens the system screen where this app's permissions can be managed. This is where the user
+ * turns a permission back off, since an app cannot revoke its own. On ROMs that gate package
+ * visibility behind their own permission that is the permission editor; elsewhere it falls back to
+ * the app's details page, which is where Android keeps the permission list.
+ */
+fun Context.launchAppPermissionSettings() {
+    val vendorIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+        putExtra("extra_pkgname", packageName)
+    }
+    runCatching { startActivity(vendorIntent) }
+        .recoverCatching {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()),
+            )
+        }
+}
+
 val Context.isShizukuInstalled: Boolean
     get() = try {
         packageManager.getPermissionInfo(ShizukuProvider.PERMISSION, 0)
@@ -192,12 +210,6 @@ fun Context.launchRequestPackageInstallsPermission() {
         data = "package:$packageName".toUri()
         startActivity(this)
     }
-}
-
-fun Context.launchAppDetailsSettings() {
-    startActivity(
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()),
-    )
 }
 
 fun Context.launchNotificationSettings() {
