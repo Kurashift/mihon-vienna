@@ -28,8 +28,8 @@
     <string name="sort_toast_applied">排序：%1$s</string>
     <string name="filter_toast_applied">只看：%1$s</string>
     <string name="filter_toast_cleared">已显示全部</string>
-    <string name="mark_selection_read_confirmation">把选中的 %1$d 个作品全部标记为已读？其中的所有篇目都会被标记。</string>
-    <string name="mark_selection_unread_confirmation">把选中的 %1$d 个作品全部标记为未读？其中的所有篇目都会被标记。</string>
+    <string name="mark_selection_read_confirmation">选中的 %1$d 个合集下所有篇目都会被标记为已读。</string>
+    <string name="mark_selection_unread_confirmation">选中的 %1$d 个合集下所有篇目都会被标记为未读。</string>
     <string name="action_filter_bookmarked">已添加书签</string>
     <string name="action_filter_unread">未读</string>
     <string name="action_filter_not_finished">剩余</string>
@@ -283,7 +283,7 @@
     <string name="sort_by_number">按编号</string>
     <string name="manga_download">下载</string>
     <string name="download_unread">未读</string>
-    <string name="confirm_delete_chapters">确定要删除所选篇目吗？</string>
+    <string name="confirm_delete_chapters">所选篇目已下载的内容会从设备上删除。</string>
     <string name="manga_tracking_tab">进度记录</string>
     <string name="reading">在读</string>
     <string name="completed">已完结</string>
@@ -340,7 +340,7 @@
     <string name="information_no_recent">最近没有更新</string>
     <string name="information_no_recent_manga">最近没有阅读</string>
     <string name="information_empty_library">书架为空</string>
-    <string name="information_empty_category">尚无分类，点击加号按钮创建分类用来管理书架。</string>
+    <string name="information_empty_category">尚无分类，点按加号按钮创建分类用来管理书架。</string>
     <string name="download_notifier_downloader_title">下载</string>
     <string name="download_notifier_title_error">出错</string>
     <string name="download_notifier_unknown_error">下载时发生意外错误</string>
@@ -447,7 +447,7 @@
     <string name="viewer">阅读模式</string>
     <string name="battery_optimization_setting_activity_not_found">打开系统设置失败</string>
     <string name="pref_refresh_library_covers">刷新书架封面</string>
-    <string name="tracking_info">将阅读进度上传到第三方进度记录平台。在作品页面点击“进度记录”按钮即可设置。</string>
+    <string name="tracking_info">将阅读进度上传到第三方进度记录平台。在作品页面点按「进度记录」按钮即可设置。</string>
     <string name="sort_by_upload_date">按上传日期</string>
     <string name="sort_by_name">按名字</string>
     <string name="label_data">数据</string>
@@ -478,7 +478,7 @@
     <string name="unknown_author">未知作者</string>
     <string name="whats_new">更新日志</string>
     <string name="download_insufficient_space">存储空间不足，无法下载篇目</string>
-    <string name="action_global_search_query">全局搜索 \"%1$s\"</string>
+    <string name="action_global_search_query">全局搜索「%1$s」</string>
     <string name="pref_category_reading_mode">阅读模式</string>
     <string name="pref_category_theme">主题</string>
     <string name="action_sort_date_added">添加日期</string>
@@ -511,13 +511,13 @@
     <string name="pref_incognito_mode_summary">暂停记录阅读历史</string>
     <string name="pref_incognito_mode">无痕模式</string>
     <string name="pref_clear_history">清除历史记录</string>
-    <string name="clear_history_confirmation">你确定吗？所有历史记录都会丢失。</string>
+    <string name="clear_history_confirmation">所有阅读记录都会丢失。</string>
     <string name="action_clear_reading_history">清空阅读记录</string>
     <string name="action_clear_current_list_history">清空阅读记录</string>
     <string name="clear_reading_history_completed">阅读记录已清空</string>
-    <string name="clear_manga_history_confirmation">确定要清空该漫画的阅读记录吗？篇目进度也会一并重置。</string>
-    <string name="clear_source_history_confirmation">确定要清空该图源所有漫画的阅读记录吗？篇目进度也会一并重置。</string>
-    <string name="clear_current_list_history_confirmation">确定要清空当前列表内漫画的阅读记录吗？篇目进度也会一并重置。</string>
+    <string name="clear_manga_history_confirmation">该作品的篇目进度也会一并重置。</string>
+    <string name="clear_source_history_confirmation">该图源所有作品的篇目进度也会一并重置。</string>
+    <string name="clear_current_list_history_confirmation">当前列表内作品的篇目进度也会一并重置。</string>
     <string name="clear_history_completed">历史记录已删除</string>
     <string name="spen_next_page">下一页</string>
     <string name="spen_previous_page">上一页</string>
@@ -562,7 +562,7 @@
     <string name="pref_library_update_categories_details">排除优先于包含，同时属于包含和排除分类的作品不会自动更新。</string>
     <string name="pref_download_new_categories_details">排除优先于包含，同时属于包含和排除分类的作品不会自动下载。</string>
     <string name="pref_category_auto_download">自动下载</string>
-    <string name="action_show_errors">点击查看详情</string>
+    <string name="action_show_errors">点按查看详情</string>
     <string name="update_check_eol">应用不再支持此 Android 版本</string>
     <string name="clipboard_copy_error">复制到剪贴板失败</string>
     <string name="rotation_landscape">横屏</string>
@@ -648,10 +648,10 @@
     <string name="label_warning">警告</string>
     <string name="action_display_language_badge">语言</string>
     <string name="backup_info">你应该将备份数据保存到多个地方。备份可能含有敏感数据（例如储存的密码），分享时请留意。</string>
-    <string name="notification_size_warning">大量更新会损害图源，并可能导致更新变慢、耗电增加。点击了解详情。</string>
+    <string name="notification_size_warning">大量更新会损害图源，并可能导致更新变慢、耗电增加。点按了解详情。</string>
     <string name="connected_to_wifi">仅连接 Wi-Fi 时</string>
     <string name="update_72hour">每 3 天</string>
-    <string name="download_queue_size_warning">警告：批量下载可能导致图源变慢，甚至会使得它们屏蔽 %s。点击了解详情。</string>
+    <string name="download_queue_size_warning">警告：批量下载可能导致图源变慢，甚至会使得它们屏蔽 %s。点按了解详情。</string>
     <string name="ext_update_all">全部更新</string>
     <string name="pref_auto_clear_chapter_cache">启动时清除篇目缓存</string>
     <string name="database_clean">无需清理</string>
@@ -672,7 +672,7 @@
     <string name="skipped_reason_completed">已跳过，因为作品已完结</string>
     <string name="skipped_reason_not_caught_up">已跳过，因为有未读篇目</string>
     <string name="skipped_reason_not_started">已跳过，因为尚未开始阅读</string>
-    <string name="learn_more">点击了解详情</string>
+    <string name="learn_more">点按了解详情</string>
     <string name="rotation_reverse_portrait">反向竖屏</string>
     <string name="action_move_to_top_all_for_series">将作品移到顶部</string>
     <string name="disabled_nav">关闭</string>
@@ -709,7 +709,7 @@
     <string name="pref_app_language">应用语言</string>
     <string name="theme_lavender">薰衣草</string>
     <string name="description_placeholder">无简介</string>
-    <string name="delete_category_confirmation">确定要删除 \"%s\" 分类吗？</string>
+    <string name="delete_category_confirmation">确定要删除「%s」分类吗？</string>
     <string name="delete_category">删除分类</string>
     <string name="internal_error">内部错误：详情请见崩溃日志</string>
     <string name="pref_user_agent_string">默认 User Agent 字符串</string>
@@ -726,7 +726,7 @@
     <string name="are_you_sure">你确定吗？</string>
     <string name="multi_lang">多语言</string>
     <string name="updates_last_update_info">书架上次更新：%s</string>
-    <string name="remove_manga">即将从书架中删除 \"%s\"</string>
+    <string name="remove_manga">即将从书架中删除「%s」</string>
     <string name="popular">热门</string>
     <string name="missing_storage_permission">未授予存储权限</string>
     <string name="local_source_refresh_unavailable">读不到本地库文件夹</string>
@@ -751,7 +751,7 @@
     <string name="download_notifier_cache_renewal">正在扫描已下载篇目</string>
     <string name="action_open_random_manga">随机打开作品</string>
     <string name="information_no_entries_found">此分类没有作品</string>
-    <string name="fdroid_warning">F-Droid 渠道不受官方支持。\n点击了解详情。</string>
+    <string name="fdroid_warning">F-Droid 渠道不受官方支持。\n点按了解详情。</string>
     <string name="action_display_show_continue_reading_button">继续阅读按钮</string>
     <string name="pref_invalidate_download_cache">重建下载索引</string>
     <string name="track_remove_date_conf_title">要删除日期吗？</string>
@@ -785,7 +785,7 @@
     <string name="seconds_short">%d 秒</string>
     <string name="day_short">%d 天</string>
     <string name="hour_short">%d 时</string>
-    <string name="pref_library_update_show_tab_badge">在“更新”图标上显示未读篇数</string>
+    <string name="pref_library_update_show_tab_badge">在「更新」图标上显示未读篇数</string>
     <string name="information_no_manga_category">分类为空</string>
     <string name="copied_to_clipboard_plain">已复制到剪贴板</string>
     <string name="enhanced_services_not_installed">支持以下平台但图源尚未安装：%s</string>
@@ -819,7 +819,7 @@
     <string name="has_results">有结果</string>
     <string name="syncing_library">正在同步书架</string>
     <string name="library_sync_complete">书架同步完成</string>
-    <string name="information_cloudflare_help">点击这里查看 Cloudflare 帮助</string>
+    <string name="information_cloudflare_help">查看 Cloudflare 帮助</string>
     <string name="download_cache_invalidated">重建下载索引</string>
     <string name="track_activity_name">登录进度记录平台</string>
     <string name="create_backup_file_error">创建备份文件失败</string>
@@ -833,7 +833,7 @@
     <string name="notification_updating_progress">正在更新书架… (%s)</string>
     <string name="file_null_uri_error">未选择文件</string>
     <string name="pref_relative_format">相对时间戳</string>
-    <string name="pref_relative_format_summary">显示 \"%1$s\" 而不是 \"%2$s\"</string>
+    <string name="pref_relative_format_summary">显示「%1$s」而不是「%2$s」</string>
     <string name="relative_time_span_never">从未</string>
     <string name="pref_flash_page_summ">减轻墨水屏上的残影</string>
     <string name="last_auto_backup_info">上次自动备份时间：%s</string>
@@ -870,7 +870,7 @@
     <string name="no_location_set">未设置存储位置</string>
     <string name="invalid_backup_file_error">完整错误信息：</string>
     <string name="onboarding_permission_ignore_battery_opts">后台电池使用</string>
-    <string name="ext_permission_install_apps_warning">需要安装插件的权限，点击此处授权。</string>
+    <string name="ext_permission_install_apps_warning">安装插件需要权限，点按授予。</string>
     <string name="private_settings">包含敏感设置（例如进度记录平台的账号信息）</string>
     <string name="pref_storage_location_info">用于自动备份、篇目下载、本地图源。</string>
     <string name="manga_interval_expected_update">预计大约 %1$s 后更新，每 %2$s 检查一次。</string>
@@ -911,7 +911,7 @@
     <string name="pref_flash_with">闪烁颜色</string>
     <string name="pref_flash_style_white">白</string>
     <string name="pref_flash_style_white_black">黑白</string>
-    <string name="file_picker_uri_permission_unsupported">获取永久文件存储权限失败，应用程序可能会出现异常。</string>
+    <string name="file_picker_uri_permission_unsupported">获取永久文件存储权限失败，应用可能会出现异常。</string>
     <string name="pref_flash_page_interval">每隔多少页闪烁</string>
     <string name="invalid_backup_file_json">不支持 JSON 备份</string>
     <string name="invalid_backup_file_unknown">备份文件已损坏</string>
@@ -929,8 +929,8 @@
     <string name="firebase_summary">发送崩溃日志和数据分析，能帮助我们定位并修复问题、改善性能，让后续更新更贴合你的需要。</string>
     <string name="action_sort_random">随机</string>
     <string name="ext_remove">删除</string>
-    <string name="ext_confirm_remove">确定删除？</string>
-    <string name="remove_private_extension_message">确定要删除 \"%s\" 插件吗？</string>
+    <string name="ext_confirm_remove">卸载插件？</string>
+    <string name="remove_private_extension_message">「%s」插件会被卸载。</string>
     <string name="non_library_settings">所有已读作品</string>
     <string name="pref_auto_update_manga_on_mark_read">标记为已读时更新篇目进度</string>
     <string name="trackers_updated_summary">进度记录平台已更新到 %d 篇</string>
@@ -1045,7 +1045,7 @@
     <string name="extensionStoresScreen.addStoreInput.inputLabel">商店索引 URL</string>
     <string name="extensionStoresScreen.addStoreDeeplink.bodyText">是否添加以下插件商店？</string>
     <string name="extensionStoresScreen.deleteStore.title">移除插件商店</string>
-    <string name="extensionStoresScreen.deleteStore.body">是否移除插件商店 \"%1$s\" (%2$s)？</string>
+    <string name="extensionStoresScreen.deleteStore.body">是否移除插件商店「%1$s」（%2$s）？</string>
     <string name="pref_webtoon_vertical_navigator_on_left">将垂直导航栏放在左侧</string>
     <string name="pref_vertical_navigator">在以下模式使用垂直篇目导航</string>
     <string name="pref_vertical_navigator_height">垂直导航栏高度</string>
@@ -1061,7 +1061,7 @@
     <string name="my_lists_entry_count">%1$d 个篇目 · %2$d 部漫画</string>
     <string name="my_lists_share_header">%1$s：共 %2$d 条</string>
     <string name="my_lists_export_failed">导出清单失败</string>
-    <string name="my_lists_empty_hint">在漫画的篇目列表里标记篇目、左滑加入好本子，或者读完整本地篇目，这里就会出现条目。</string>
+    <string name="my_lists_empty_hint">在漫画的篇目列表里标记篇目、左滑加入好本子，或读完整部本地作品，这里就会出现条目。</string>
     <string name="marks_list_title">标记清单</string>
     <string name="marks_list_empty">暂无标记篇目。在篇目列表标记加入吧</string>
     <string name="marks_list_share">分享</string>
@@ -1071,9 +1071,9 @@
     <string name="marks_list_clear">清空清单</string>
     <string name="marks_list_clear_confirm">仅从标记清单中移除，不会删除本地文件。</string>
     <string name="marks_list_remove">移除</string>
-    <string name="marks_list_remove_entry_confirm">从清单中移除“%1$s”？不会删除本地漫画。</string>
+    <string name="marks_list_remove_entry_confirm">从清单中移除「%1$s」？不会删除本地漫画。</string>
     <string name="marks_list_remove_selected_confirm">从清单中移除选中的 %1$d 部漫画及其全部记录？不会删除本地文件。</string>
-    <string name="marks_list_remove_selected_entries_confirm">从清单中移除选中的 %1$d 个篇目？不会删除本地漫画。</string>
+    <string name="marks_list_remove_selected_entries_confirm">选中的 %1$d 个篇目会移出清单，不会删除本地漫画。</string>
     <string name="marks_list_chapter_count">已标记 %1$d 个篇目</string>
     <string name="marks_list_no_others">没有其他标记作品</string>
     <string name="marks_list_search_hint">按漫画名或篇目名搜索</string>
@@ -1199,8 +1199,8 @@
     <string name="local_read_review_count">共有 %1$d 个本地篇目被标为已读完</string>
     <string name="local_read_review_empty">没有被标为已读完的本地篇目</string>
     <string name="local_read_review_clear">全部标记为未读</string>
-    <string name="local_read_review_clear_confirm">将全部 %1$d 个本地篇目标记为未读？本地文件不受影响。</string>
-    <string name="local_read_review_mark_unread_selected_confirm">将选中的 %1$d 个篇目标记为未读？</string>
+    <string name="local_read_review_clear_confirm">全部 %1$d 个本地篇目会标为未读。本地文件不受影响。</string>
+    <string name="local_read_review_mark_unread_selected_confirm">选中的 %1$d 个篇目会标为未读。</string>
     <string name="local_read_review_search_hint">按漫画名或篇目名搜索（原名与译名皆可）</string>
     <string name="local_read_review_group_subtitle">%1$d 个篇目 · 最新篇目 %2$s</string>
     <string name="action_import_local_chapters">导入本地本子</string>
@@ -1291,4 +1291,10 @@
     <string name="settings_import_local_chapters_summary">从本地文件夹或压缩包导入本子</string>
     <string name="track_original_title">作品原名：%1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_未译名</string>
+    <string name="confirm_clear_reading_history_title">清空阅读记录？</string>
+    <string name="confirm_clear_list_title">清空清单？</string>
+    <string name="confirm_remove_from_list_title">从清单中移除？</string>
+    <string name="confirm_mark_all_unread_title">全部标记为未读？</string>
+    <string name="confirm_mark_unread_title">标记为未读？</string>
+    <string name="confirm_mark_read_title">标记为已读？</string>
 </resources>

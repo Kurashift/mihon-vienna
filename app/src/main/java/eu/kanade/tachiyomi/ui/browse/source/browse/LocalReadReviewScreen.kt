@@ -389,6 +389,7 @@ class LocalReadReviewDetailScreen(
 
         if (showClearConfirm) {
             ConfirmDialog(
+                title = stringResource(MR.strings.confirm_mark_all_unread_title),
                 text = stringResource(MR.strings.local_read_review_clear_confirm, chapters.size),
                 confirmText = stringResource(MR.strings.local_read_review_clear),
                 onConfirm = {
@@ -404,6 +405,7 @@ class LocalReadReviewDetailScreen(
 
         pendingUnreadIds?.let { ids ->
             ConfirmDialog(
+                title = stringResource(MR.strings.confirm_mark_unread_title),
                 text = stringResource(MR.strings.local_read_review_mark_unread_selected_confirm, ids.size),
                 confirmText = stringResource(MR.strings.action_mark_as_unread),
                 onConfirm = {

@@ -453,6 +453,7 @@ class MangaScreen(
             null -> {}
             MangaViewModel.Dialog.ClearHistory -> {
                 ClearHistoryDialog(
+                    title = context.stringResource(MR.strings.confirm_clear_reading_history_title),
                     message = context.stringResource(MR.strings.clear_manga_history_confirmation),
                     onDismissRequest = onDismissRequest,
                     onConfirm = viewModel::clearHistory,

@@ -1443,4 +1443,10 @@
     <string name="settings_import_local_chapters_summary">Import works from local folders or archives</string>
     <string name="track_original_title">Original title: %1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_untranslated</string>
+    <string name="confirm_clear_reading_history_title">Clear reading records?</string>
+    <string name="confirm_clear_list_title">Clear list?</string>
+    <string name="confirm_remove_from_list_title">Remove from list?</string>
+    <string name="confirm_mark_all_unread_title">Mark all as unread?</string>
+    <string name="confirm_mark_unread_title">Mark as unread?</string>
+    <string name="confirm_mark_read_title">Mark as read?</string>
 </resources>

@@ -55,7 +55,7 @@ fun DeleteChaptersDialog(
             }
         },
         title = {
-            Text(text = stringResource(MR.strings.are_you_sure))
+            Text(text = stringResource(MR.strings.delete_downloads_for_manga))
         },
         text = {
             Text(text = stringResource(MR.strings.confirm_delete_chapters))

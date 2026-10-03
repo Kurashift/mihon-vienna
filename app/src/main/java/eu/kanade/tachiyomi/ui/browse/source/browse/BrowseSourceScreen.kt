@@ -825,6 +825,7 @@ data class BrowseSourceScreen(
         when (val dialog = state.dialog) {
             BrowseSourceViewModel.Dialog.ClearHistory -> {
                 ClearHistoryDialog(
+                    title = context.stringResource(MR.strings.confirm_clear_reading_history_title),
                     message = context.stringResource(
                         if (viewModel.source is LocalSource) {
                             MR.strings.clear_current_list_history_confirmation
@@ -911,6 +912,9 @@ data class BrowseSourceScreen(
 
             is BrowseSourceViewModel.Dialog.MarkSelectionRead -> {
                 ConfirmDialog(
+                    title = stringResource(
+                        if (dialog.read) MR.strings.confirm_mark_read_title else MR.strings.confirm_mark_unread_title,
+                    ),
                     text = stringResource(
                         if (dialog.read) {
                             MR.strings.mark_selection_read_confirmation

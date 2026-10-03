@@ -9,6 +9,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun ClearHistoryDialog(
+    title: String,
     message: String,
     onDismissRequest: () -> Unit,
     onConfirm: () -> Unit,
@@ -31,7 +32,7 @@ fun ClearHistoryDialog(
             }
         },
         title = {
-            Text(text = stringResource(MR.strings.are_you_sure))
+            Text(text = title)
         },
         text = {
             Text(text = message)

@@ -78,7 +78,7 @@ class ClearDatabaseScreen : Screen() {
                     var keepReadManga by remember { mutableStateOf(true) }
                     AlertDialog(
                         title = {
-                            Text(text = stringResource(MR.strings.are_you_sure))
+                            Text(text = stringResource(MR.strings.pref_clear_database))
                         },
                         text = {
                             Column(

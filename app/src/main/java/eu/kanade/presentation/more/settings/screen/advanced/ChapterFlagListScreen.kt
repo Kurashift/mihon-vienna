@@ -396,6 +396,7 @@ class ChapterFlagListScreen(
 
         if (showClearConfirm) {
             ConfirmDialog(
+                title = stringResource(MR.strings.confirm_clear_list_title),
                 text = stringResource(type.clearConfirmRes),
                 confirmText = stringResource(MR.strings.marks_list_clear),
                 onConfirm = {
@@ -410,6 +411,7 @@ class ChapterFlagListScreen(
 
         pendingRemovalChapterIds?.let { ids ->
             ConfirmDialog(
+                title = stringResource(MR.strings.confirm_remove_from_list_title),
                 text = stringResource(MR.strings.marks_list_remove_selected_entries_confirm, ids.size),
                 confirmText = stringResource(MR.strings.marks_list_remove),
                 onConfirm = {
