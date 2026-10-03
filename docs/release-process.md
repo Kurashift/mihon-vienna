@@ -20,7 +20,8 @@
 
 - `CHANGELOG.md` 顶部新增 `## [vX.Y.Z] - YYYY-MM-DD`，按 Keep a Changelog 格式分 `Added` / `Improved` / `Fixed` / `Other`，底部保留 `## [Unreleased]` 链接区。
 - `docs/release-post-vX.Y.Z.md` 写发布正文，沿用上一版排版（标题 + 引用 + 分节 + 下载表格）。一级标题脚本会自动剥掉，因为 Release 页面自带版本号。
-- 文案必须来自实际改动，不要照抄会话记录。写完检查 `zh-rCN` 和 `zh-rTW` 的 `strings.xml` 是否同步了新增文案，否则用户会看到未翻译的英文。
+- 文案必须来自实际改动，不要照抄会话记录。中文文风按 `docs/writing-style.md`：写具体数字与前后对照，不要替读者下判断、不要空引导句、不要拔高。要卸载重装、会动用户数据、修数据损坏这三类改动写在最前面。
+- 写完检查 `zh-rCN` 和 `zh-rTW` 的 `strings.xml` 是否同步了新增文案，否则用户会看到未翻译的英文。
 
 ## 3. 构建与校验
 

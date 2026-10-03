@@ -34,6 +34,7 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 ## 文档与工作区卫生
 
 - 长篇设计、方案文档一律放 `docs/`；不再维护 AI 交接文档，跨会话记忆写进提交信息或 `CHANGELOG`。
+- 写面向用户的中文（README、`docs/release-post-*.md`、`CHANGELOG` 里 fork 自己的段落、提交信息）时按 `docs/writing-style.md`：写具体数字与前后对照，不替读者下判断、不写空引导句、不拔高。界面文案（`i18n/**/strings.xml`）不在其列。
 - 并行 agent 动手前先看 `git status` 确认他人改动范围，一次只碰最小文件集，不留半成品读写链，做完即删临时笔记。
 - 仓库根目录只保留 `README.md`、`CHANGELOG.md`、`AGENTS.md`、`LICENSE` 等通用文件。
 - 不要把构建日志、安装日志、一次性脚本、临时导出、截图、中间数据留在根目录。需要保留的写进 `docs/`，不需要的直接删除。提交信息文件（`git commit -F` 用的）用完即删，不要入库。
