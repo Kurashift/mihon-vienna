@@ -18,8 +18,8 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.core.preference.asState
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.more.MoreScreen
-import eu.kanade.presentation.more.onboarding.OnboardingEntryPoint
 import eu.kanade.presentation.more.settings.screen.MyListsScreen
+import eu.kanade.presentation.more.settings.screen.PermissionsScreen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadManager
@@ -76,7 +76,7 @@ data object MoreTab : Tab {
             onClickCategories = { navigator.push(CategoryScreen()) },
             onClickStats = { navigator.push(StatsScreen()) },
             onClickDataAndStorage = { navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage)) },
-            onClickPermissions = { navigator.push(OnboardingScreen(OnboardingEntryPoint.Permissions)) },
+            onClickPermissions = { navigator.push(PermissionsScreen()) },
             onClickSettings = { navigator.push(SettingsScreen()) },
             onClickSupport = { navigator.push(SupportUsScreen()) },
             onClickAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },

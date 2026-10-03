@@ -179,23 +179,6 @@ fun Context.isAppListPermissionGranted(): Boolean {
     return checkSelfPermission(PERMISSION_GET_INSTALLED_APPS) == PackageManager.PERMISSION_GRANTED
 }
 
-/**
- * Opens the ROM's per-app permission editor. Some ROMs silently refuse the runtime prompt for
- * [PERMISSION_GET_INSTALLED_APPS], so this is the fallback that always lands somewhere the user
- * can toggle it. Falls back to the app's own details page if the vendor screen is missing.
- */
-fun Context.launchAppListPermissionSettings() {
-    val miuiIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
-        putExtra("extra_pkgname", packageName)
-    }
-    runCatching { startActivity(miuiIntent) }
-        .recoverCatching {
-            startActivity(
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()),
-            )
-        }
-}
-
 val Context.isShizukuInstalled: Boolean
     get() = try {
         packageManager.getPermissionInfo(ShizukuProvider.PERMISSION, 0)
