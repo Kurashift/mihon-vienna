@@ -21,7 +21,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -34,7 +36,6 @@ import androidx.core.net.toUri
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import eu.kanade.presentation.util.rememberRequestPackageInstallsPermissionState
 import eu.kanade.tachiyomi.core.security.PrivacyPreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.util.system.PERMISSION_GET_INSTALLED_APPS
@@ -59,8 +60,12 @@ import uy.kohesive.injekt.api.get
  * Every row is a switch that can be tapped either way. Which page a row opens when it is already
  * granted is decided per permission, because Android only provides a prompt for runtime
  * permissions; the special ones (install apps, all files, battery) can only be changed in system
- * settings, and the ROMs that gate package visibility behind their own permission refuse to
- * deep-link to that entry, so those land on the app's own details page instead.
+ * settings.
+ *
+ * Every granted state is read from the system on each composition and re-read on each tap. Caching
+ * it and only refreshing on resume is not enough: opening this screen from More navigates within
+ * the same activity, so resume never fires, and a cached value would both draw the switch wrong and
+ * make the tap a no-op — a runtime prompt for an already-granted permission is silently dropped.
  */
 @Composable
 internal fun PermissionList(
@@ -72,38 +77,33 @@ internal fun PermissionList(
     val privacyPreferences = remember { Injekt.get<PrivacyPreferences>() }
     val extensionManager = remember { Injekt.get<ExtensionManager>() }
 
-    var notificationGranted by remember { mutableStateOf(false) }
-    var batteryGranted by remember { mutableStateOf(false) }
-    var allFilesAccessGranted by remember { mutableStateOf(false) }
-    var appListGranted by remember { mutableStateOf(false) }
-
-    val installGranted = rememberRequestPackageInstallsPermissionState()
-
     val appListPermissionDefined = remember { context.isAppListPermissionDefined() }
+
+    // Bumped on resume; keyed into the reads below so returning from a system screen redraws them.
+    var refreshKey by remember { mutableIntStateOf(0) }
+
+    val installGranted = remember(refreshKey) { context.canInstallPackages() }
+    val notificationGranted = remember(refreshKey) { context.isNotificationGranted() }
+    val batteryGranted = remember(refreshKey) { context.isIgnoringBatteryOptimizations() }
+    val allFilesAccessGranted = remember(refreshKey) { context.hasAllFilesAccess() }
+    val appListGranted = remember(refreshKey) {
+        appListPermissionDefined && context.isAppListPermissionGranted()
+    }
+
+    // Reload the extensions the ROM was hiding the moment package visibility is granted, whether
+    // that happened in the prompt or on the system screen the app sent the user to.
+    var wasAppListGranted by remember { mutableStateOf(appListGranted) }
+    LaunchedEffect(appListGranted) {
+        if (appListGranted && !wasAppListGranted) {
+            extensionManager.reloadExtensions()
+        }
+        wasAppListGranted = appListGranted
+    }
 
     DisposableEffect(lifecycleOwner.lifecycle) {
         val observer = object : DefaultLifecycleObserver {
             override fun onResume(owner: LifecycleOwner) {
-                notificationGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-                        PackageManager.PERMISSION_GRANTED
-                } else {
-                    true
-                }
-                batteryGranted = context.getSystemService<PowerManager>()!!
-                    .isIgnoringBatteryOptimizations(context.packageName)
-                allFilesAccessGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    Environment.isExternalStorageManager()
-                } else {
-                    true
-                }
-                // Granted while the app was in the background: rescan so the extensions the ROM was
-                // hiding show up without a restart.
-                val appListNowGranted = appListPermissionDefined && context.isAppListPermissionGranted()
-                if (appListNowGranted && !appListGranted) {
-                    extensionManager.reloadExtensions()
-                }
-                appListGranted = appListNowGranted
+                refreshKey++
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -118,7 +118,7 @@ internal fun PermissionList(
             subtitle = stringResource(MR.strings.onboarding_permission_install_apps_description),
             granted = installGranted,
             onClick = {
-                if (installGranted) {
+                if (context.canInstallPackages()) {
                     context.launchAppPermissionSettings()
                 } else {
                     context.launchRequestPackageInstallsPermission()
@@ -138,7 +138,7 @@ internal fun PermissionList(
                 subtitle = stringResource(MR.strings.onboarding_permission_notifications_description),
                 granted = notificationGranted,
                 onClick = {
-                    if (notificationGranted) {
+                    if (context.isNotificationGranted()) {
                         context.launchNotificationSettings()
                     } else {
                         permissionRequester.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -152,7 +152,7 @@ internal fun PermissionList(
             subtitle = stringResource(MR.strings.onboarding_permission_ignore_battery_opts_description),
             granted = batteryGranted,
             onClick = {
-                if (batteryGranted) {
+                if (context.isIgnoringBatteryOptimizations()) {
                     context.launchAppPermissionSettings()
                 } else {
                     @SuppressLint("BatteryLife")
@@ -167,19 +167,15 @@ internal fun PermissionList(
         if (appListPermissionDefined) {
             val appListRequester = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission(),
-            ) { granted ->
-                if (granted) {
-                    appListGranted = true
-                    extensionManager.reloadExtensions()
-                }
-                // A denial is handled by the row still reading false; the user can tap again.
+            ) {
+                // no-op. resulting checks is being done on resume
             }
             PermissionToggleRow(
                 title = stringResource(MR.strings.onboarding_permission_app_list),
                 subtitle = stringResource(MR.strings.onboarding_permission_app_list_description),
                 granted = appListGranted,
                 onClick = {
-                    if (appListGranted) {
+                    if (context.isAppListPermissionGranted()) {
                         context.launchAppPermissionSettings()
                     } else {
                         appListRequester.launch(PERMISSION_GET_INSTALLED_APPS)
@@ -225,6 +221,19 @@ internal fun PermissionList(
         )
     }
 }
+
+private fun android.content.Context.canInstallPackages(): Boolean =
+    packageManager.canRequestPackageInstalls()
+
+private fun android.content.Context.isNotificationGranted(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+private fun android.content.Context.isIgnoringBatteryOptimizations(): Boolean =
+    getSystemService<PowerManager>()!!.isIgnoringBatteryOptimizations(packageName)
+
+private fun android.content.Context.hasAllFilesAccess(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
 @Composable
 private fun PermissionToggleRow(

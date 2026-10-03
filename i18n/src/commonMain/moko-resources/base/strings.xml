@@ -254,7 +254,7 @@
     <string name="onboarding_permission_analytics">Allow analytics</string>
     <string name="onboarding_permission_analytics_description">Send anonymized usage data to improve app features.</string>
     <string name="onboarding_permission_all_files_access">Local library file access</string>
-    <string name="onboarding_permission_all_files_access_description">Read the local library folder directly.</string>
+    <string name="onboarding_permission_all_files_access_description">Read files in the local library folder on this device.</string>
     <string name="onboarding_permission_app_list">Installed apps access</string>
     <string name="onboarding_permission_app_list_description">Find the source extensions installed on this device.</string>
     <string name="onboarding_permission_action_grant">Grant</string>

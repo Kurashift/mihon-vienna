@@ -925,7 +925,7 @@
     <string name="pref_security">安全</string>
     <string name="onboarding_permission_analytics_description">发送匿名的应用数据以提升用户体验</string>
     <string name="onboarding_permission_all_files_access">本库文件访问</string>
-    <string name="onboarding_permission_all_files_access_description">直接读取本库目录的文件。</string>
+    <string name="onboarding_permission_all_files_access_description">读取手机本地的本库目录。</string>
     <string name="onboarding_permission_app_list">应用列表权限</string>
     <string name="onboarding_permission_app_list_description">识别本机已安装的图源插件。</string>
     <string name="pref_firebase">数据分析与崩溃日志</string>

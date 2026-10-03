@@ -943,7 +943,7 @@
     <string name="onboarding_permission_analytics">允許資料分析</string>
     <string name="onboarding_permission_analytics_description">傳送匿名使用資料來改進應用程式功能</string>
     <string name="onboarding_permission_all_files_access">本庫檔案存取</string>
-    <string name="onboarding_permission_all_files_access_description">直接讀取本機目錄的檔案。</string>
+    <string name="onboarding_permission_all_files_access_description">讀取手機本機的本庫目錄。</string>
     <string name="onboarding_permission_app_list">應用程式清單權限</string>
     <string name="onboarding_permission_app_list_description">辨識本機已安裝的來源擴充套件。</string>
     <string name="pref_security">安全</string>
