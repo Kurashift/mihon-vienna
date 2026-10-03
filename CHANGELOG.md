@@ -114,11 +114,31 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Dependencies: flexible-adapter moved from a jitpack commit hash to the Maven Central release upstream uses. The pinned commit is a 2021 build whose artifact jitpack no longer serves, which left the project unable to resolve its dependencies at all once the local cache was cleared
 - **Signing key changed.** The release key was lost, so builds from this version on are signed with a new one. It cannot overwrite an existing install: Android refuses a package whose signature differs, and the app's own data cannot be carried across. Updating therefore means uninstalling first, which erases reading progress, read marks and shelves unless a backup is made beforehand. See the release notes for the exact steps
 
-## [Unreleased]
+## [v2.3.2] - 2026-10-03
+### Improved
+- Reader: a long-strip chapter entered from the previous one now keeps the progress it already had. Sliding forward into a chapter that was left part-read rewrote its stored position with wherever the scroll happened to land, so the chapter's own bookmark was lost the moment it was re-entered; the write is now held until the position reaches the stored page again, and a flick that lands past the end still counts. Opening a chapter directly and scrolling back to an earlier page is unaffected
+- Reader: refreshing the viewport while a chapter transition is on screen no longer jumps position. The transition was matched by object identity, but the object is rebuilt every time, so the match always failed; it is now matched by its from/to chapters
+- Settings: the "skip read chapters" switch gained a subtitle saying it applies in both directions and must be turned off to re-read a chapter
+- Localisation: the local import screen no longer shows Chinese to readers of other languages. Its 49 strings, the chapter-move screen, the collection picker, the audio notification buttons and the export filename suffix were hardcoded in the code and are now resources, so they follow the app language like everything else
+
 ### Fixed
 - Local library: a restored or newly added chapter no longer shows a wrong page ratio. The insert that creates a chapter writes the page count and the reading progress side by side, and its last_page_read value is a CASE that mentions the page count first — so the generated parameters put the page count before the progress while both callers passed them positionally in column order, and the two were stored swapped. A 22-page chapter restored at page 2 read "1/2", one at page 1 read "0/1", and one never opened showed no ratio at all; opening such a chapter also reset its progress, because the reader rewrote the real page count over the number that had been stored as the page count and cleared the progress that was sitting there. Both callers now pass the two by name, and a one-time migration swaps the pairs already stored, using the page count in the chapter's memo as proof so a legal row is never given a made-up denominator
 - Local library: restoring a backup now recognizes a file written while that swap existed, so a chapter's progress and its page count come back the right way round instead of a chapter showing a denominator made of its own progress. The page count the local scan recorded in the chapter's memo is what proves the swap — in an affected row the stored progress equals that count exactly, which an unread chapter can never hold — so a row without that proof, such as a cloud chapter whose memo is empty, is still restored exactly as it was written
 - Local library: a restore no longer lets a chapter's own damaged state overwrite the file's. The merge that picks between the two used to take whichever progress was non-zero, so a row left with its progress at or past its page count — the footprint of the swap above, and not a page a reader can be on — could be kept in preference to the file's valid value. The device's position now only wins when it is a readable one and further along, so a good value can never be replaced by a broken one
+- Local library: a single damaged chapter file no longer takes a whole work's chapter list down with it. Format detection ran unguarded, so one unreadable file aborted the build of the listing; the file is now kept as a name-only entry — still visible, still deletable — and the failure is logged instead
+- Local library: an empty scan is no longer written to disk, and a readable folder no longer trusts an empty index. After a reinstall the library could come back empty and stay that way for up to a day, because the empty result was persisted over a good index; an empty scan now leaves the index alone, and a readable folder that finds an empty index rescans and repairs it
+- Local library: a failed refresh no longer claims the shelf has updates. The banner told the reader to refresh from the menu while the reason it could not be read was the same failure; it now says only that the folder could not be read, and the update flag is left as it was
+- Local library: importing chapters whose names need cleaning no longer fails on external storage. The preview and the import now derive the destination name through the same routine — trimmed, length-capped, with the extension reserved — so a name that FAT or exFAT would reject no longer aborts the import with "Cannot commit imported chapter"
+- Local import: a rejected source's message no longer stays on screen after a later pick succeeds. The rejection list only ever grew, so one bad pick kept its red line up for the rest of the visit even once a usable source had been chosen
+
+### Other
+- Chinese (Simplified): corrected mistranslations (unfinished list, free rotation, source search), unified terminology (chapters, lists, restore) and fixed punctuation and spacing
+- Chinese (Traditional): filled in 149 missing strings — the local library, lists, chapter title translations and audio screens previously fell back to English — and corrected Taiwan wording throughout
+- Dialogs: confirmation titles now name the action instead of a generic "Are you sure?", and bodies state what happens instead of asking the same question again
+- Empty states: the caption under the face now reads as an invitation rather than a report ("nothing to clear" became "there is nothing to clear yet")
+- Removed three stale string keys that no code referenced
+
+## [Unreleased]
 
 ## [v2.2.5] - 2026-09-14
 ### Added
