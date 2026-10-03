@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.extension.util.ExtensionInstaller
 import eu.kanade.tachiyomi.extension.util.ExtensionLoader
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
@@ -46,6 +50,8 @@ class ExtensionManager(
 ) {
 
     val scope = CoroutineScope(SupervisorJob())
+
+    private val reloadMutex = Mutex()
 
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
@@ -129,6 +135,21 @@ class ExtensionManager(
             .associate { it.extension.pkgName to it.extension }
 
         _isInitialized.value = true
+    }
+
+    /**
+     * Re-scans the installed extensions and republishes them.
+     *
+     * Needed when package visibility changes at runtime: ROMs that gate
+     * `getInstalledPackages` behind their own permission (see
+     * `Context.isAppListPermissionDefined`) return nothing until the user grants it, so the list
+     * loaded at startup stays empty until this runs. Serialized so the runtime prompt and the
+     * return-from-settings paths cannot scan concurrently.
+     */
+    fun reloadExtensions() {
+        scope.launch(Dispatchers.IO) {
+            reloadMutex.withLock { initExtensions() }
+        }
     }
 
     /**

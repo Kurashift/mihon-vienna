@@ -1,6 +1,5 @@
 package eu.kanade.presentation.more
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.GetApp
@@ -48,8 +48,7 @@ fun MoreScreen(
     onClickCategories: () -> Unit,
     onClickStats: () -> Unit,
     onClickDataAndStorage: () -> Unit,
-    allFilesAccessGranted: Boolean,
-    onAllFilesAccessClick: () -> Unit,
+    onClickPermissions: () -> Unit,
     onClickSettings: () -> Unit,
     onClickSupport: () -> Unit,
     onClickAbout: () -> Unit,
@@ -159,15 +158,12 @@ fun MoreScreen(
                     onPreferenceClick = onClickDataAndStorage,
                 )
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                item {
-                    SwitchPreferenceWidget(
-                        title = stringResource(MR.strings.pref_local_source_direct_access),
-                        icon = ImageVector.vectorResource(R.drawable.ic_folder_24dp),
-                        checked = allFilesAccessGranted,
-                        onCheckedChanged = { onAllFilesAccessClick() },
-                    )
-                }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.pref_permissions),
+                    icon = Icons.Outlined.AdminPanelSettings,
+                    onPreferenceClick = onClickPermissions,
+                )
             }
 
             item {

@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
+import eu.kanade.presentation.more.onboarding.OnboardingEntryPoint
 import eu.kanade.presentation.more.onboarding.OnboardingScreen
 import eu.kanade.presentation.more.settings.screen.SearchableSettings
 import eu.kanade.presentation.more.settings.screen.SettingsBackupScreen
@@ -17,7 +18,9 @@ import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-class OnboardingScreen : Screen() {
+class OnboardingScreen(
+    private val entryPoint: OnboardingEntryPoint = OnboardingEntryPoint.Start,
+) : Screen() {
 
     @Composable
     override fun Content() {
@@ -33,7 +36,7 @@ class OnboardingScreen : Screen() {
 
         val restoreSettingKey = stringResource(SettingsBackupScreen.restorePreferenceKeyString)
 
-        BackHandler(enabled = !shownOnboardingFlow) {
+        BackHandler(enabled = !shownOnboardingFlow && entryPoint == OnboardingEntryPoint.Start) {
             // Prevent exiting if onboarding hasn't been completed
         }
 
@@ -44,6 +47,7 @@ class OnboardingScreen : Screen() {
                 SearchableSettings.highlightKey = restoreSettingKey
                 navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage))
             },
+            entryPoint = entryPoint,
         )
     }
 }

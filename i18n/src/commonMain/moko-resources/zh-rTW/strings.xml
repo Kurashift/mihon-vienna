@@ -943,7 +943,9 @@
     <string name="onboarding_permission_analytics">允許資料分析</string>
     <string name="onboarding_permission_analytics_description">傳送匿名使用資料來改進應用程式功能</string>
     <string name="onboarding_permission_all_files_access">本庫檔案存取</string>
-    <string name="onboarding_permission_all_files_access_description">授予「所有檔案存取」權限，用於在檔案提供者無法列出檔案時直接讀取你選擇的本機目錄。</string>
+    <string name="onboarding_permission_all_files_access_description">直接讀取本機目錄的檔案。</string>
+    <string name="onboarding_permission_app_list">應用程式清單權限</string>
+    <string name="onboarding_permission_app_list_description">辨識本機已安裝的來源擴充套件。</string>
     <string name="pref_security">安全</string>
     <string name="pref_firebase">資料分析與當機記錄</string>
     <string name="onboarding_permission_crashlytics">傳送當機記錄</string>
@@ -1113,6 +1115,7 @@
     <string name="pref_local_source_direct_access">本機檔案存取</string>
     <string name="pref_local_source_direct_access_summary">僅在本機重新整理無法辨識檔案變化時開啟</string>
     <string name="pref_local_source_direct_access_granted">已開啟，僅用於目前設定的本機目錄</string>
+    <string name="pref_permissions">應用程式權限</string>
     <string name="action_import_local_chapters">匯入本機本子</string>
     <string name="action_import_target">匯入到</string>
     <string name="action_create_local_manga">新增本機漫畫</string>

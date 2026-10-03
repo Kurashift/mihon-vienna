@@ -28,6 +28,12 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!--
+      To view extension packages on ROMs that gate package visibility behind their own
+      permission instead of QUERY_ALL_PACKAGES (MIUI/HyperOS, ColorOS, OriginOS, HarmonyOS).
+      Defined by TAF TTAF 108-2022; absent on AOSP, where it is ignored.
+    -->
+    <uses-permission android:name="com.android.permission.GET_INSTALLED_APPS" />
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

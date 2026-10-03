@@ -888,6 +888,7 @@
     <string name="pref_local_source_direct_access">本库文件访问</string>
     <string name="pref_local_source_direct_access_summary">仅在本库刷新无法识别文件变化时开启</string>
     <string name="pref_local_source_direct_access_granted">已开启，仅用于当前设置的本库目录</string>
+    <string name="pref_permissions">应用权限</string>
     <string name="onboarding_storage_action_select">选择文件夹</string>
     <string name="onboarding_storage_info">选择一个文件夹供 %1$s 存放下载篇目、备份文件等。\n\n推荐使用一个专门的文件夹。\n\n已选文件夹：%2$s</string>
     <string name="onboarding_storage_selection_required">必须选择一个文件夹</string>
@@ -924,7 +925,9 @@
     <string name="pref_security">安全</string>
     <string name="onboarding_permission_analytics_description">发送匿名的应用数据以提升用户体验</string>
     <string name="onboarding_permission_all_files_access">本库文件访问</string>
-    <string name="onboarding_permission_all_files_access_description">授予「所有文件访问」权限，用于在文档提供器无法列出文件时直接读取你选择的本库目录。</string>
+    <string name="onboarding_permission_all_files_access_description">直接读取本库目录的文件。</string>
+    <string name="onboarding_permission_app_list">应用列表权限</string>
+    <string name="onboarding_permission_app_list_description">识别本机已安装的图源插件。</string>
     <string name="pref_firebase">数据分析与崩溃日志</string>
     <string name="firebase_summary">发送崩溃日志和数据分析，能帮助我们定位并修复问题、改善性能，让后续更新更贴合你的需要。</string>
     <string name="action_sort_random">随机</string>

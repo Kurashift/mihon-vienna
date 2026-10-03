@@ -24,14 +24,23 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.InfoScreen
 
+/**
+ * Where the onboarding opens. [Permissions] is used by the in-app entry that sends the user back
+ * to the permission step to grant a permission the ROM withheld, without walking the whole flow.
+ */
+enum class OnboardingEntryPoint {
+    Start,
+    Permissions,
+}
+
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit,
     onRestoreBackup: () -> Unit,
+    entryPoint: OnboardingEntryPoint = OnboardingEntryPoint.Start,
 ) {
     val slideDistance = rememberSlideDistance()
 
-    var currentStep by rememberSaveable { mutableIntStateOf(0) }
     val steps = remember {
         listOf(
             ThemeStep(),
@@ -40,9 +49,20 @@ fun OnboardingScreen(
             GuidesStep(onRestoreBackup = onRestoreBackup),
         )
     }
+
+    var currentStep by rememberSaveable {
+        mutableIntStateOf(
+            when (entryPoint) {
+                OnboardingEntryPoint.Start -> 0
+                OnboardingEntryPoint.Permissions -> steps.indexOfFirst { it is PermissionStep }
+            }.coerceIn(0, steps.lastIndex),
+        )
+    }
     val isLastStep = currentStep == steps.lastIndex
 
-    BackHandler(enabled = currentStep != 0) {
+    // Only the normal flow steps back through the pages. Entered straight at a step (e.g. from the
+    // settings entry), back leaves the flow instead of walking back through pages never seen.
+    BackHandler(enabled = entryPoint == OnboardingEntryPoint.Start && currentStep != 0) {
         currentStep--
     }
 

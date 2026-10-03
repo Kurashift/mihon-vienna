@@ -150,6 +150,52 @@ fun Context.isPackageInstalled(packageName: String): Boolean {
 
 val Context.hasMiuiPackageInstaller get() = isPackageInstalled("com.miui.packageinstaller")
 
+/**
+ * Vendor permission (TAF TTAF 108-2022) that some ROMs — MIUI/HyperOS, ColorOS, OriginOS,
+ * HarmonyOS — require before [PackageManager.getInstalledPackages] returns anything but a
+ * stub list. Declared in the manifest, but AOSP does not define it, so it must be probed.
+ */
+const val PERMISSION_GET_INSTALLED_APPS = "com.android.permission.GET_INSTALLED_APPS"
+
+/**
+ * Returns true if the system defines [PERMISSION_GET_INSTALLED_APPS]. Only such ROMs gate
+ * package visibility behind it; everywhere else the permission is absent and package
+ * visibility works the AOSP way via `QUERY_ALL_PACKAGES`.
+ */
+fun Context.isAppListPermissionDefined(): Boolean {
+    return try {
+        packageManager.getPermissionInfo(PERMISSION_GET_INSTALLED_APPS, 0)
+        true
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
+    }
+}
+
+/**
+ * Returns true if [PERMISSION_GET_INSTALLED_APPS] is granted to this app. Always false where
+ * the permission is not defined, so callers should check [isAppListPermissionDefined] first.
+ */
+fun Context.isAppListPermissionGranted(): Boolean {
+    return checkSelfPermission(PERMISSION_GET_INSTALLED_APPS) == PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * Opens the ROM's per-app permission editor. Some ROMs silently refuse the runtime prompt for
+ * [PERMISSION_GET_INSTALLED_APPS], so this is the fallback that always lands somewhere the user
+ * can toggle it. Falls back to the app's own details page if the vendor screen is missing.
+ */
+fun Context.launchAppListPermissionSettings() {
+    val miuiIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+        putExtra("extra_pkgname", packageName)
+    }
+    runCatching { startActivity(miuiIntent) }
+        .recoverCatching {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()),
+            )
+        }
+}
+
 val Context.isShizukuInstalled: Boolean
     get() = try {
         packageManager.getPermissionInfo(ShizukuProvider.PERMISSION, 0)
@@ -163,6 +209,20 @@ fun Context.launchRequestPackageInstallsPermission() {
         data = "package:$packageName".toUri()
         startActivity(this)
     }
+}
+
+fun Context.launchAppDetailsSettings() {
+    startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()),
+    )
+}
+
+fun Context.launchNotificationSettings() {
+    startActivity(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        },
+    )
 }
 
 fun Context.launchAllFilesAccessPermission() {
