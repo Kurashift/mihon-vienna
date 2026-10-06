@@ -751,6 +751,12 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             currentPage = page
             activity.onPageSelected(page)
             activity.onScrollSettled(page)
+            // An explicit jump bypasses the selection path that preloads adjacent chapters as the
+            // reader closes in on a chapter end. Landing on the last page with the next chapter
+            // still unloaded pins the viewport at the content end: the transition below it can
+            // never scroll into place to be selected, so nothing would ever start its load and
+            // the reader would sit stuck on the final page with no way to move on.
+            requestAdjacentPreload(page)
         } else {
             logcat { "Page $page not found in adapter" }
         }
