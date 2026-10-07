@@ -897,10 +897,10 @@
     <string name="pref_show_coach_marks">重新顯示功能導覽</string>
     <string name="pref_show_coach_marks_summary">一次性提示會在下次進入相應頁面時重新出現</string>
     <string name="coach_fab_locate">點按 · 回到上次在看</string>
-    <string name="coach_fab_random">→ 右拖 · 隨機一本</string>
-    <string name="coach_fab_good_doujin">↑ 上拖 · 好本子</string>
-    <string name="reader_swipe_hint_pager">上滑隨機換一本 · 下滑換好本子</string>
-    <string name="reader_swipe_hint_webtoon">左滑隨機換一本 · 右滑換好本子</string>
+    <string name="coach_fab_random">右拖 · 隨機一本</string>
+    <string name="coach_fab_good_doujin">上拖 · 好本子</string>
+    <string name="reader_swipe_hint_pager">↑ 上滑隨機換一本 · 下滑換好本子 ↓</string>
+    <string name="reader_swipe_hint_webtoon">← 左滑隨機換一本 · 右滑換好本子 →</string>
     <string name="onboarding_action_next">下一步</string>
     <string name="onboarding_description">讓我們先設定一些東西，隨後你隨時可至設定中變更這些選項</string>
     <string name="no_location_set">未設定儲存位置</string>

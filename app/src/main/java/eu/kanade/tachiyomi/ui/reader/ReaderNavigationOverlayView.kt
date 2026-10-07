@@ -112,7 +112,16 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
 
         hintText?.let { hint ->
             // The centre is where the MENU label sits and where the finger lands to steer;
-            // the hint reads as a second line of that same label.
+            // the hint reads as a second line of that same label. A line wider than the
+            // screen (the English one can be) steps its size down until it fits.
+            var hintSize = HINT_TEXT_SIZE
+            hintTextPaint.textSize = hintSize
+            val hintWidth = hintTextPaint.measureText(hint)
+            if (hintWidth > width * 0.9f) {
+                hintSize *= width * 0.9f / hintWidth
+                hintTextPaint.textSize = hintSize
+            }
+            hintTextBorderPaint.textSize = hintSize
             canvas.withTranslation(x = width / 2f, y = height * 0.5f + 110f) {
                 drawText(hint, 0f, 0f, hintTextBorderPaint)
                 drawText(hint, 0f, 0f, hintTextPaint)
@@ -143,5 +152,7 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
         return super.onTouchEvent(event)
     }
 }
+
+private const val HINT_TEXT_SIZE = 44f
 
 private const val FADE_DURATION = 1000L

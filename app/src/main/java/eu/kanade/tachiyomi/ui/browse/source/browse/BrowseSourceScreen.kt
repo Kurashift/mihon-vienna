@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.BookmarkRemove
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Favorite
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.NewReleases
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.SortByAlpha
@@ -864,14 +867,17 @@ data class BrowseSourceScreen(
                 CoachAnnotation(
                     text = stringResource(MR.strings.coach_fab_locate),
                     placement = CoachAnnotationPlacement.Above,
+                    icon = Icons.Outlined.TouchApp,
                 ),
                 CoachAnnotation(
                     text = stringResource(MR.strings.coach_fab_good_doujin),
                     placement = CoachAnnotationPlacement.Above,
+                    icon = Icons.Outlined.KeyboardArrowUp,
                 ),
                 CoachAnnotation(
                     text = stringResource(MR.strings.coach_fab_random),
                     placement = CoachAnnotationPlacement.RightOf,
+                    icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 ),
             )
             LaunchedEffect(fabCoachState) {

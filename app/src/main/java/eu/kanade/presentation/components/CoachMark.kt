@@ -22,10 +22,14 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.VectorPainter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -41,11 +45,13 @@ import kotlinx.coroutines.delay
 /**
  * One annotation of a spotlight step: a short line of white-on-scrim text drawn where the
  * gesture happens — the same face as the reader's tap-zone overlay — instead of a capsule.
- * Arrows travel inside the text itself ("↑ 上拖 · 好本子").
+ * The optional [icon] leads the line, so the arrow sits with the words instead of living
+ * inside them.
  */
 class CoachAnnotation(
     val text: String,
     val placement: CoachAnnotationPlacement,
+    val icon: ImageVector? = null,
 )
 
 enum class CoachAnnotationPlacement {
@@ -160,6 +166,10 @@ fun CoachMarkOverlay(
     }
 
     val textMeasurer = rememberTextMeasurer()
+    val iconPainters = ArrayList<VectorPainter?>(step.annotations.size)
+    for (ann in step.annotations) {
+        iconPainters.add(ann.icon?.let { rememberVectorPainter(it) })
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -181,7 +191,7 @@ fun CoachMarkOverlay(
                 scrimColor = ScrimColor,
             )
             val anchor = step.anchorId?.let { state.anchors[it] } ?: return@Canvas
-            drawCoachAnnotations(textMeasurer, step.annotations, anchor)
+            drawCoachAnnotations(textMeasurer, iconPainters, step.annotations, anchor)
         }
     }
 }
@@ -200,6 +210,7 @@ private fun DrawScope.drawCoachScrim(hole: Rect?, cornerRadiusPx: Float, scrimCo
 
 private fun DrawScope.drawCoachAnnotations(
     textMeasurer: TextMeasurer,
+    iconPainters: List<VectorPainter?>,
     annotations: List<CoachAnnotation>,
     anchor: Rect,
 ) {
@@ -213,30 +224,51 @@ private fun DrawScope.drawCoachAnnotations(
         drawStyle = Stroke(width = 2.dp.toPx()),
     )
     val marginPx = 16.dp.toPx()
+    val iconSizePx = 18.dp.toPx()
+    val iconGapPx = 7.dp.toPx()
+
+    fun lineWidth(ann: CoachAnnotation, measured: androidx.compose.ui.text.TextLayoutResult): Float {
+        return measured.size.width + if (ann.icon != null) iconSizePx + iconGapPx else 0f
+    }
+
+    fun drawLine(ann: CoachAnnotation, painter: VectorPainter?, x: Float, top: Float) {
+        val measured = textMeasurer.measure(ann.text, fillStyle)
+        var textX = x
+        if (painter != null) {
+            val iconTop = top + (measured.size.height - iconSizePx) / 2f
+            with(painter) {
+                draw(
+                    size = Size(iconSizePx, iconSizePx),
+                    colorFilter = ColorFilter.tint(Color.White),
+                )
+            }
+            textX = x + iconSizePx + iconGapPx
+        }
+        drawText(textMeasurer, ann.text, topLeft = Offset(textX, top), style = strokeStyle)
+        drawText(textMeasurer, ann.text, topLeft = Offset(textX, top), style = fillStyle)
+    }
 
     var nextBottom = anchor.top - 14.dp.toPx()
-    annotations
-        .filter { it.placement == CoachAnnotationPlacement.Above }
-        .forEach { ann ->
-            val measured = textMeasurer.measure(ann.text, fillStyle)
-            val x = (anchor.center.x - measured.size.width / 2f)
-                .coerceIn(marginPx, (size.width - marginPx - measured.size.width).coerceAtLeast(marginPx))
-            val top = nextBottom - measured.size.height
-            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = strokeStyle)
-            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = fillStyle)
-            nextBottom = top - 8.dp.toPx()
-        }
+    annotations.forEachIndexed { i, ann ->
+        if (ann.placement != CoachAnnotationPlacement.Above) return@forEachIndexed
+        val measured = textMeasurer.measure(ann.text, fillStyle)
+        val width = lineWidth(ann, measured)
+        val x = (anchor.center.x - width / 2f)
+            .coerceIn(marginPx, (size.width - marginPx - width).coerceAtLeast(marginPx))
+        val top = nextBottom - measured.size.height
+        drawLine(ann, iconPainters[i], x, top)
+        nextBottom = top - 8.dp.toPx()
+    }
 
     var nextCenter = anchor.center.y
-    annotations
-        .filter { it.placement == CoachAnnotationPlacement.RightOf }
-        .forEach { ann ->
-            val measured = textMeasurer.measure(ann.text, fillStyle)
-            val x = (anchor.right + 20.dp.toPx())
-                .coerceAtMost((size.width - marginPx - measured.size.width).coerceAtLeast(marginPx))
-            val top = nextCenter - measured.size.height / 2f
-            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = strokeStyle)
-            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = fillStyle)
-            nextCenter = top + measured.size.height + 8.dp.toPx()
-        }
+    annotations.forEachIndexed { i, ann ->
+        if (ann.placement != CoachAnnotationPlacement.RightOf) return@forEachIndexed
+        val measured = textMeasurer.measure(ann.text, fillStyle)
+        val width = lineWidth(ann, measured)
+        val x = (anchor.right + 20.dp.toPx())
+            .coerceAtMost((size.width - marginPx - width).coerceAtLeast(marginPx))
+        val top = nextCenter - measured.size.height / 2f
+        drawLine(ann, iconPainters[i], x, top)
+        nextCenter = top + measured.size.height + 8.dp.toPx()
+    }
 }
