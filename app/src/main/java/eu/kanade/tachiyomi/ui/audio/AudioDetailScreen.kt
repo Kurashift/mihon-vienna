@@ -68,6 +68,10 @@ class AudioDetailScreen(
             viewModel.load(work)
         }
 
+        // Playback paths enter with a bare snapshot; this is what the header shows until the
+        // metadata fetch fills the tags in, and what gets collected so favourites keep theirs.
+        val headerWork = state.work ?: work
+
         fun navigateBack() {
             navigator.pop()
             if (finishActivityOnBack) activity?.finish()
@@ -80,7 +84,7 @@ class AudioDetailScreen(
         }
 
         AudioDetailContent(
-            work = work,
+            work = headerWork,
             state = state,
             playlistUrls = playlistUrls,
             isFavorite = isFavorite,
@@ -121,7 +125,15 @@ class AudioDetailScreen(
             onToggleFolderPlaylist = { folderPath ->
                 toastPlaylistChange(viewModel.toggleFolderPlaylist(folderPath))
             },
-            onToggleFavorite = { viewModel.toggleFavorite(work) },
+            onToggleFavorite = { viewModel.toggleFavorite(headerWork) },
+            onClickTitle = {
+                // The title's own result page, the same shape a tag chip lands on: one list
+                // narrowed by keyword.
+                val title = headerWork.title
+                if (title.isNotBlank()) {
+                    navigator.push(AudioBrowseScreen(categoryTitle = title, initialFilter = title))
+                }
+            },
             onClickCircle = { name -> onOpenCategory(AudioCategoryField.CIRCLE, name) },
             onClickVa = { name -> onOpenCategory(AudioCategoryField.VA, name) },
             onClickTag = { name -> onOpenCategory(AudioCategoryField.TAG, name) },
@@ -135,6 +147,11 @@ data class AudioDetailState(
     val errorMessage: String? = null,
     val rootNodes: List<TrackNode> = emptyList(),
     val flatTracks: List<AudioPlayItem> = emptyList(),
+    /**
+     * The work the header renders. Entries from the playback paths only carry a bare snapshot,
+     * so [AudioDetailViewModel.load] fills this in from the backend when its tags are missing.
+     */
+    val work: Work? = null,
 )
 
 class AudioDetailViewModel(
@@ -160,6 +177,28 @@ class AudioDetailViewModel(
         _isFavorite.value = favoriteStore.contains(work.id)
         loadGeneration++
         val generation = loadGeneration
+        // Synchronous, ahead of every coroutine: the header must know which work is on screen
+        // before the metadata fetch below can possibly answer.
+        _state.update { it.copy(work = work) }
+        // The work feeds attach tags and VAs to every row, but entries from the player, the mini
+        // bar, history, playlists or the reader hand-off only carry a bare snapshot — those pages
+        // used to show up without their tags. One call fills them in; failing is silent because
+        // the page is fully usable without the chips.
+        if (work.tags.isEmpty()) {
+            viewModelScope.launchIO {
+                try {
+                    val full = api.fetchWork(work.id)
+                    _state.update { current ->
+                        if (current.work?.id != work.id) return@update current
+                        current.copy(work = full)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logcat(LogPriority.ERROR, e) { "Audio work metadata fetch failed" }
+                }
+            }
+        }
         viewModelScope.launchIO {
             _state.update {
                 it.copy(

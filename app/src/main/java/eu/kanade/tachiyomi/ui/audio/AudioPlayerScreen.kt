@@ -22,6 +22,7 @@ import eu.kanade.presentation.audio.AudioPlayerContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.audio.AudioAccountProgress
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
+import eu.kanade.tachiyomi.data.audio.AudioCategoryField
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleDisplayMode
@@ -78,6 +79,8 @@ class AudioPlayerScreen(
             navigator.pop()
             if (finishActivityOnBack) activity?.finish()
         }
+
+        val onOpenCategory = rememberCategoryNavigator(navigator)
 
         if (finishActivityOnBack) {
             BackHandler(onBack = ::navigateBack)
@@ -199,6 +202,7 @@ class AudioPlayerScreen(
                     }
                 }
             },
+            onOpenCircle = { name -> onOpenCategory(AudioCategoryField.CIRCLE, name) },
             onTogglePlay = controller::togglePlay,
             onSeek = controller::seekTo,
             onSeekBy = controller::seekBy,

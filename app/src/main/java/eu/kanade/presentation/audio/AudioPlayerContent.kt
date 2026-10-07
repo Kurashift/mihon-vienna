@@ -2,7 +2,9 @@ package eu.kanade.presentation.audio
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -61,7 +63,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -78,6 +82,7 @@ import eu.kanade.tachiyomi.data.audio.AudioSubtitleState
 import eu.kanade.tachiyomi.data.audio.LyricLine
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerState
+import eu.kanade.tachiyomi.util.system.copyToClipboard
 import kotlinx.coroutines.flow.first
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -98,6 +103,7 @@ fun AudioPlayerContent(
     onCycleSubtitleDisplayMode: () -> Unit,
     onToggleFloatingSubtitle: () -> Unit,
     onOpenWorkDetail: () -> Unit,
+    onOpenCircle: (String) -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
@@ -111,8 +117,28 @@ fun AudioPlayerContent(
     var dragPosition by remember { mutableStateOf<Long?>(null) }
     var showSleepTimer by remember { mutableStateOf(false) }
     val item = state.item
+    val context = LocalContext.current
     val duration = state.durationMs.coerceAtLeast(0)
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
+
+    // Long press copies the shown text and nothing else — no click, so no dead-tap ripple on a
+    // line that is a label. detectTapGestures rather than combinedClickable for exactly that.
+    fun Modifier.copyOnLongPress(text: String?): Modifier {
+        if (text.isNullOrBlank()) return this
+        return pointerInput(text) {
+            detectTapGestures(onLongPress = { context.copyToClipboard(text, text) })
+        }
+    }
+
+    // A real circle name also opens its works list — the same page the details page's circle name
+    // lands on. The work-title fallback shown when the circle is unknown only copies.
+    fun Modifier.circleTextModifier(shown: String, circleName: String?): Modifier {
+        if (circleName == null) return copyOnLongPress(shown)
+        return combinedClickable(
+            onClick = { onOpenCircle(circleName) },
+            onLongClick = { context.copyToClipboard(shown, shown) },
+        )
+    }
 
     Scaffold(
         topBar = { scrollBehavior ->
@@ -200,7 +226,9 @@ fun AudioPlayerContent(
                                 style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.marqueeTitle(),
+                                modifier = Modifier
+                                    .copyOnLongPress(item?.trackTitle)
+                                    .marqueeTitle(),
                             )
                             item?.let { current ->
                                 Spacer(Modifier.height(2.dp))
@@ -210,6 +238,10 @@ fun AudioPlayerContent(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.circleTextModifier(
+                                        shown = current.circleName.ifBlank { current.workTitle },
+                                        circleName = current.circleName.takeIf { it.isNotBlank() },
+                                    ),
                                 )
                             }
                         }
@@ -228,7 +260,9 @@ fun AudioPlayerContent(
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .copyOnLongPress(item?.trackTitle),
                     )
                     if (item != null) {
                         Spacer(Modifier.height(4.dp))
@@ -239,7 +273,12 @@ fun AudioPlayerContent(
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .circleTextModifier(
+                                    shown = item.circleName.ifBlank { item.workTitle },
+                                    circleName = item.circleName.takeIf { it.isNotBlank() },
+                                ),
                         )
                     }
                 }

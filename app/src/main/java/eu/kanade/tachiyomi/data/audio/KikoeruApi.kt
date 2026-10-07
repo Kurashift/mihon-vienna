@@ -110,6 +110,20 @@ class KikoeruApi(
     }
 
     /**
+     * One work's own metadata. The work feeds attach tags and VAs to every row, but the playback
+     * paths only know a work as a bare snapshot (id, title, circle, cover), so a details page
+     * opened from one of those used to show up without its tag chips. Served through the same
+     * default disk cache as the other GETs, so flipping back to a recently visited page costs
+     * no round trip.
+     */
+    suspend fun fetchWork(workId: Long): Work = withIOContext {
+        val url = "$BASE_URL/api/work/$workId"
+        with(json) {
+            executeWithRetry(url) { client.newCall(authenticated(get(url))).awaitSuccess().use { it.parseAs() } }
+        }
+    }
+
+    /**
      * The tree of files making up a work.
      *
      * Served from [trackCache] when it was asked for recently, so the player's resolve step does not

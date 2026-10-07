@@ -2,6 +2,7 @@ package eu.kanade.presentation.audio
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -47,6 +49,7 @@ import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.ui.audio.AudioDetailState
+import eu.kanade.tachiyomi.util.system.copyToClipboard
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
@@ -70,6 +73,7 @@ fun AudioDetailContent(
     onToggleWorkPlaylist: () -> Unit,
     onToggleFolderPlaylist: (String) -> Unit,
     onToggleFavorite: () -> Unit,
+    onClickTitle: () -> Unit,
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
     onClickTag: (String) -> Unit,
@@ -177,6 +181,7 @@ fun AudioDetailContent(
                 item {
                     WorkHeader(
                         work = work,
+                        onClickTitle = onClickTitle,
                         onClickCircle = onClickCircle,
                         onClickVa = onClickVa,
                         onClickTag = onClickTag,
@@ -274,10 +279,12 @@ private fun TrackNode.hasPlayableAudio(): Boolean {
 @Composable
 private fun WorkHeader(
     work: Work,
+    onClickTitle: () -> Unit,
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
     onClickTag: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -302,6 +309,11 @@ private fun WorkHeader(
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
+                    // The manga details header's pair: tap searches the title, long press copies it.
+                    modifier = Modifier.combinedClickable(
+                        onClick = onClickTitle,
+                        onLongClick = { context.copyToClipboard(work.title, work.title) },
+                    ),
                 )
                 Text(
                     text = workMeta(work),
@@ -319,7 +331,10 @@ private fun WorkHeader(
                 text = work.name,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable { onClickCircle(work.name) },
+                modifier = Modifier.combinedClickable(
+                    onClick = { onClickCircle(work.name) },
+                    onLongClick = { context.copyToClipboard(work.name, work.name) },
+                ),
             )
         }
 
