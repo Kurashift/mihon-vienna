@@ -59,7 +59,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.components.CoachMarkState
 import eu.kanade.presentation.components.seekBarGestures
 import eu.kanade.presentation.reader.components.ChapterNavigator
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
@@ -87,7 +86,6 @@ fun ReaderAppBars(
     onOpenInWebView: (() -> Unit)?,
     onOpenInBrowser: (() -> Unit)?,
     onShare: (() -> Unit)?,
-    coachAnchorState: CoachMarkState? = null,
 
     chapterNavigatorType: ChapterNavigatorType,
     verticalNavigatorHeight: Float,
@@ -130,7 +128,6 @@ fun ReaderAppBars(
                 onOpenInWebView = onOpenInWebView,
                 onOpenInBrowser = onOpenInBrowser,
                 onShare = onShare,
-                coachAnchorState = coachAnchorState,
             )
         }
 

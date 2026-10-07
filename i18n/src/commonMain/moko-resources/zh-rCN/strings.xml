@@ -863,12 +863,11 @@
     <string name="onboarding_action_skip">跳过</string>
     <string name="pref_show_coach_marks">重新显示功能引导</string>
     <string name="pref_show_coach_marks_summary">一次性提示会在下次进入相应页面时重新出现</string>
-    <string name="coach_local_fab">点按回到上次在看的那本；按住拖动：向右拖随机开一本，向上拖随机开一本好本子——好本子在阅读器顶栏的红心标</string>
-    <string name="coach_reader_menu">点屏幕中间呼出菜单；翻页时会自动收起，再点中间就能叫回来</string>
-    <string name="coach_reader_random_pager">朝翻页方向的垂直方向滑动页面：上滑随机换一本在读的书，下滑随机换一本好本子</string>
-    <string name="coach_reader_random_webtoon">横向滑动页面：左滑随机换一本在读的书，右滑随机换一本好本子</string>
-    <string name="coach_reader_heart">看到合胃心的，点顶栏的红心标进好本子，随机就从这里抽</string>
-    <string name="coach_tab_reselect">再次点按底部标签有快捷方式：书架开筛选、更新看下载队列、历史直接续读</string>
+    <string name="coach_fab_locate">点按 · 回到上次在看</string>
+    <string name="coach_fab_random">按住右拖 · 随机一本</string>
+    <string name="coach_fab_good_doujin">按住上拖 · 好本子</string>
+    <string name="coach_reader_random_pager">上滑随机换一本 · 下滑换好本子</string>
+    <string name="coach_reader_random_webtoon">左滑随机换一本 · 右滑换好本子</string>
     <string name="onboarding_action_next">下一步</string>
     <string name="action_bar_up_description">返回</string>
     <string name="action_bar_home">回到列表</string>
@@ -1112,7 +1111,6 @@
     <string name="audio_history_clear_confirm">移除全部播放历史，此操作无法撤销。</string>
     <string name="audio_retry">重试</string>
     <string name="audio_load_failed">加载失败</string>
-    <string name="audio_backend_needs_proxy">音声内容需要网络代理才能访问；登录后可同步收听进度</string>
     <string name="audio_buffer_timeout">缓冲超时</string>
     <string name="audio_no_tracks">还没有可播放的音轨</string>
     <string name="audio_empty">还没有结果</string>

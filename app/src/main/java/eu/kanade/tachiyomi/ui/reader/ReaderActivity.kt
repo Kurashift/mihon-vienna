@@ -52,7 +52,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -73,16 +72,13 @@ import eu.kanade.core.util.ifSourcesLoaded
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioQuickPlaySheet
 import eu.kanade.presentation.audio.AudioReaderFloatingBar
-import eu.kanade.presentation.components.CoachMarkOverlay
-import eu.kanade.presentation.components.CoachMarkState
-import eu.kanade.presentation.components.CoachStep
+import eu.kanade.presentation.components.CoachHintPill
 import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
 import eu.kanade.presentation.reader.ReaderPageActionsDialog
 import eu.kanade.presentation.reader.ReaderPageIndicator
 import eu.kanade.presentation.reader.ReadingModeSelectDialog
-import eu.kanade.presentation.reader.appbars.READER_HEART_ANCHOR_ID
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
@@ -116,6 +112,7 @@ import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -151,11 +148,8 @@ class ReaderActivity : BaseActivity() {
         /** How long the reader's own colour and pages take to fade in over the theme background. */
         private const val READER_CONTENT_REVEAL_DURATION_MILLIS = 200L
 
-        /** Anchor id of the synthetic hole the coach marks cut around the screen centre. */
-        private const val READER_CENTER_ANCHOR_ID = "reader_center"
-
-        /** Index of the coach step that points at the good-doujin heart in the top bar. */
-        private const val READER_COACH_HEART_STEP = 2
+        /** How long the swipe hint waits on its own before taking itself off the screen. */
+        private const val READER_HINT_AUTO_DISMISS_MS = 6000L
 
         /**
          * Page-selection events fire for the page the reader opens on, right around the moment
@@ -272,10 +266,9 @@ class ReaderActivity : BaseActivity() {
      * the first real page turn so they never sit between the reader and a reading session.
      */
     private var readerCoachPending = false
-    private var readerCoachMenuForcedOpen = false
     private var readerCoachStartedAt = 0L
     private var readerNavOverlayVisible = false
-    private val readerCoachState = CoachMarkState()
+    private var readerCoachHintText by mutableStateOf("")
 
     var readerCoachActive by mutableStateOf(false)
         private set
@@ -491,7 +484,6 @@ class ReaderActivity : BaseActivity() {
                 state = state,
                 audioAvailable = hasAudioSession,
                 audioVisible = audioVisible,
-                coachAnchorState = if (readerCoachActive) readerCoachState else null,
                 onToggleAudio = {
                     if (audioVisible) {
                         audioController.hideReaderControls()
@@ -566,19 +558,21 @@ class ReaderActivity : BaseActivity() {
                 )
             }
 
-            if (readerCoachActive) {
-                CoachMarkOverlay(
-                    state = readerCoachState,
-                    onFinished = { finishReaderCoach() },
-                    onStepEntered = { step ->
-                        // The heart only exists while the menu is open, so the last step
-                        // opens it; leaving the sequence puts the reader back as it was.
-                        if (step == READER_COACH_HEART_STEP) {
-                            readerCoachMenuForcedOpen = true
-                            setMenuVisibility(true)
-                        }
-                    },
-                )
+            // The one-shot swipe hint: a capsule that lets taps fall through, cleared by the
+            // first real page turn or by its own timer, whichever comes first.
+            CoachHintPill(
+                text = readerCoachHintText,
+                visible = readerCoachActive,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 56.dp),
+            )
+            LaunchedEffect(readerCoachActive) {
+                if (readerCoachActive) {
+                    delay(READER_HINT_AUTO_DISMISS_MS)
+                    finishReaderCoach()
+                }
             }
         }
 
@@ -903,7 +897,6 @@ class ReaderActivity : BaseActivity() {
         state: ReaderViewModel.State,
         audioAvailable: Boolean,
         audioVisible: Boolean,
-        coachAnchorState: CoachMarkState?,
         onToggleAudio: () -> Unit,
         audioControls: (@Composable () -> Unit)?,
     ) {
@@ -949,7 +942,6 @@ class ReaderActivity : BaseActivity() {
             onOpenInWebView = ::openChapterInWebView.takeIf { isHttpSource },
             onOpenInBrowser = ::openChapterInBrowser.takeIf { isHttpSource },
             onShare = ::shareChapter.takeIf { isHttpSource },
-            coachAnchorState = coachAnchorState,
 
             chapterNavigatorType = if (!verticalNavigator) {
                 if (state.viewer is R2LPagerViewer) {
@@ -1302,8 +1294,9 @@ class ReaderActivity : BaseActivity() {
      * bottom menu and delegates the change to the presenter.
      */
     fun onPageSelected(page: ReaderPage, userInitiated: Boolean = false) {
-        // Any page turn that was not itself part of the coach's start-up hands the screen back
-        // to reading: the sequence never sits across an actual page change.
+        armReaderCoach()
+        // Any page turn that was not itself the hint's start-up hands the screen back to
+        // reading: the hint never sits across an actual page change.
         if (readerCoachActive && SystemClock.uptimeMillis() - readerCoachStartedAt > COACH_START_GRACE_MS) {
             finishReaderCoach()
         }
@@ -1320,10 +1313,11 @@ class ReaderActivity : BaseActivity() {
     }
 
     /**
-     * Arms the coach marks if this reader session qualifies: first ever open, a local manga
-     * (the random gestures and the good-doujin heart are local-only), not a benchmark build.
-     * Arming only marks it pending — the sequence itself waits for the navigation overlay to
-     * be gone and the menu to be closed, checked in [maybeStartReaderCoach].
+     * Arms the swipe hint if this reader session qualifies: first ever open, a local manga
+     * (the random gestures are local-only), not a benchmark build. Arming only marks it
+     * pending — the hint waits for the navigation overlay to be gone and the menu to be
+     * closed, checked in [maybeStartReaderCoach]. Armed from both [onInitialPageSelected]
+     * and [onPageSelected]: the webtoon viewer has no page-alignment event of its own.
      */
     private fun armReaderCoach() {
         if (readerCoachActive || readerCoachPending) return
@@ -1344,35 +1338,13 @@ class ReaderActivity : BaseActivity() {
 
     private fun startReaderCoach() {
         // The swipe direction is the one perpendicular to the page turn, and it differs between
-        // the paged and the continuous viewer — the copy says the concrete directions.
-        val randomText = stringResource(
+        // the paged and the continuous viewer — the pill says the concrete directions.
+        readerCoachHintText = stringResource(
             if (viewModel.state.value.viewer is WebtoonViewer) {
                 MR.strings.coach_reader_random_webtoon
             } else {
                 MR.strings.coach_reader_random_pager
             },
-        )
-        // A synthetic hole around the screen centre gives the menu-tap step its target; the
-        // random-gesture step deliberately has no anchor, so its bubble sits centred on the scrim.
-        val metrics = resources.displayMetrics
-        readerCoachState.anchors[READER_CENTER_ANCHOR_ID] = Rect(
-            metrics.widthPixels * 0.32f,
-            metrics.heightPixels * 0.38f,
-            metrics.widthPixels * 0.68f,
-            metrics.heightPixels * 0.62f,
-        )
-        readerCoachState.start(
-            listOf(
-                CoachStep(
-                    anchorId = READER_CENTER_ANCHOR_ID,
-                    text = stringResource(MR.strings.coach_reader_menu),
-                ),
-                CoachStep(text = randomText),
-                CoachStep(
-                    anchorId = READER_HEART_ANCHOR_ID,
-                    text = stringResource(MR.strings.coach_reader_heart),
-                ),
-            ),
         )
         readerCoachStartedAt = SystemClock.uptimeMillis()
         readerCoachActive = true
@@ -1381,11 +1353,7 @@ class ReaderActivity : BaseActivity() {
     private fun finishReaderCoach() {
         if (!readerCoachActive) return
         readerCoachActive = false
-        if (readerCoachMenuForcedOpen) {
-            readerCoachMenuForcedOpen = false
-            setMenuVisibility(false)
-        }
-        // Shown once means shown: skipping is still a completion, so the marks never nag again.
+        // Shown once means shown: ignoring it is still a completion, so the hint never nags again.
         basePreferences.coachReaderShown.set(true)
     }
 

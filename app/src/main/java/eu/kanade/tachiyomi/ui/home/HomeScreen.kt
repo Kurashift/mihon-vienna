@@ -8,7 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -28,13 +26,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,9 +62,7 @@ import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
 import eu.kanade.tachiyomi.ui.updates.UpdatesTab
-import eu.kanade.tachiyomi.util.system.isBenchmarkBuildType
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -82,8 +76,6 @@ import tachiyomi.presentation.core.components.material.NavigationBar
 import tachiyomi.presentation.core.components.material.NavigationRail
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.pluralStringResource
-import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -210,35 +202,6 @@ object HomeScreen : Screen() {
                                     it.Content()
                                 }
                             }
-
-                            val basePreferences = remember { Injekt.get<BasePreferences>() }
-                            val reselectCoachDone by basePreferences.coachTabReselectShown.collectAsState()
-                            val onboardingComplete by basePreferences.shownOnboardingFlow.collectAsState()
-                            var showReselectCoach by remember { mutableStateOf(false) }
-
-                            LaunchedEffect(onboardingComplete, reselectCoachDone) {
-                                if (isBenchmarkBuildType) return@LaunchedEffect
-                                if (!onboardingComplete || reselectCoachDone) return@LaunchedEffect
-                                // Give the tabs a moment to be discovered on their own first.
-                                delay(1200)
-                                showReselectCoach = true
-                                delay(5000)
-                                showReselectCoach = false
-                                basePreferences.coachTabReselectShown.set(true)
-                            }
-                            // The pill lets taps fall through, so switching tabs is what dismisses
-                            // it early — the tab change itself is the shortcut being taught.
-                            LaunchedEffect(tabNavigator.current) {
-                                if (showReselectCoach) {
-                                    showReselectCoach = false
-                                    basePreferences.coachTabReselectShown.set(true)
-                                }
-                            }
-
-                            TabReselectHintPill(
-                                visible = showReselectCoach,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                            )
                         }
                     }
                 }
@@ -345,34 +308,6 @@ object HomeScreen : Screen() {
             },
             alwaysShowLabel = true,
         )
-    }
-
-    /**
-     * The one-shot tab hint: the same face as the root back hint — a capsule floating above the
-     * bottom bar with no pointer-input modifiers, so taps fall through to the bar underneath.
-     * Shown once after onboarding, then never again.
-     */
-    @Composable
-    private fun TabReselectHintPill(visible: Boolean, modifier: Modifier = Modifier) {
-        AnimatedVisibility(
-            visible = visible,
-            enter = fadeIn(tween(90)) + scaleIn(initialScale = 0.9f, animationSpec = tween(90)),
-            exit = fadeOut(tween(150)),
-            modifier = modifier.padding(bottom = 12.dp),
-        ) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.inverseSurface,
-                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                shadowElevation = 3.dp,
-            ) {
-                Text(
-                    text = stringResource(MR.strings.coach_tab_reselect),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
     }
 
     @Composable

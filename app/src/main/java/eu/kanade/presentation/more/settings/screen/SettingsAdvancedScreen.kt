@@ -128,7 +128,6 @@ object SettingsAdvancedScreen : SearchableSettings {
                 onClick = {
                     basePreferences.coachLocalFabShown.set(false)
                     basePreferences.coachReaderShown.set(false)
-                    basePreferences.coachTabReselectShown.set(false)
                     readerPreferences.showNavigationOverlayNewUser.set(true)
                 },
             ),

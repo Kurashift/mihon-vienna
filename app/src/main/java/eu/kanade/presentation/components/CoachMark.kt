@@ -1,16 +1,25 @@
 package eu.kanade.presentation.components
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -18,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.ui.composed
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -27,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -37,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -51,12 +61,20 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
 /**
- * One spotlight step: what the bubble says and which registered anchor it points at. A step
- * with a null [anchorId] — or one whose anchor never reports — renders as a centered,
- * hole-free bubble over the full-screen scrim, which is how whole-screen gestures are taught.
+ * One spotlight step: what the bubble shows and which registered anchor it points at. A step
+ * carries either a sentence ([text]) or a few icon-and-word rows ([iconRows]) — the short form
+ * reads closer to the app's own hint language. A step with a null [anchorId] — or one whose
+ * anchor never reports — renders as a centered, hole-free bubble over the full-screen scrim.
  */
 class CoachStep(
     val anchorId: String? = null,
+    val text: String = "",
+    val iconRows: List<CoachIconRow> = emptyList(),
+)
+
+/** One icon-plus-word line of a [CoachStep] bubble. */
+class CoachIconRow(
+    val icon: ImageVector,
     val text: String,
 )
 
@@ -115,8 +133,8 @@ fun Modifier.coachAnchor(state: CoachMarkState, id: String): Modifier = composed
 
 /**
  * Hands the active [CoachMarkState] down to the control a step points at. Provided only while
- * a sequence may run; a null value tells controls like the good-doujin heart or the browse FAB
- * to skip registering altogether.
+ * a sequence may run; a null value tells controls like the browse FAB to skip registering
+ * altogether.
  */
 val LocalCoachAnchorRegistry = compositionLocalOf<CoachMarkState?> { null }
 
@@ -218,10 +236,29 @@ fun CoachMarkOverlay(
             Column(
                 modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 6.dp),
             ) {
-                Text(
-                    text = step.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (step.text.isNotEmpty()) {
+                    Text(
+                        text = step.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                step.iconRows.forEach { row ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    ) {
+                        Icon(
+                            imageVector = row.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = row.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
                 Text(
                     text = stringResource(MR.strings.onboarding_action_skip),
                     style = MaterialTheme.typography.labelMedium,
@@ -249,4 +286,36 @@ private fun DrawScope.drawCoachScrim(hole: Rect?, cornerRadiusPx: Float, scrimCo
     path.addRoundRect(RoundRect(hole, CornerRadius(cornerRadiusPx)))
     path.fillType = PathFillType.EvenOdd
     drawPath(path, scrimColor)
+}
+
+/**
+ * One-shot non-blocking hint: the same face as the root back-exit hint — a capsule with no
+ * pointer-input modifiers, so taps fall through to whatever runs underneath. Used where a
+ * spotlight would be louder than the message deserves.
+ */
+@Composable
+fun CoachHintPill(
+    text: String,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(90)) + scaleIn(initialScale = 0.9f, animationSpec = tween(90)),
+        exit = fadeOut(tween(150)),
+        modifier = modifier,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.inverseSurface,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            shadowElevation = 3.dp,
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
 }

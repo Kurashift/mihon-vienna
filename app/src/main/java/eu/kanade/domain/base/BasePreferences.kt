@@ -73,11 +73,6 @@ class BasePreferences(
         false,
     )
 
-    val coachTabReselectShown: Preference<Boolean> = preferenceStore.getBoolean(
-        Preference.appStateKey("coach_tab_reselect_shown"),
-        false,
-    )
-
     /** Chapters flagged by the user (duplicate series marked for later cleanup). */
     val markedChapters: Preference<String> = preferenceStore.getString("marked_chapters", "")
 

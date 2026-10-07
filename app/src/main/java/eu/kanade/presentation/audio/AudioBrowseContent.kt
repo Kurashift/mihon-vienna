@@ -266,17 +266,8 @@ fun AudioBrowseContent(
         when {
             state.loading -> LoadingScreen(Modifier.padding(contentPadding))
             state.error -> {
-                // The backend sits behind a proxy-dependent host, so a load failure is most often
-                // the proxy being off. Saying so right where the failure is shown keeps the bare
-                // error from reading as a broken feature.
-                val message = buildString {
-                    append(
-                        state.errorMessage?.let { "${stringResource(MR.strings.audio_load_failed)}: $it" }
-                            ?: stringResource(MR.strings.audio_load_failed),
-                    )
-                    append("\n\n")
-                    append(stringResource(MR.strings.audio_backend_needs_proxy))
-                }
+                val message = state.errorMessage?.let { "${stringResource(MR.strings.audio_load_failed)}: $it" }
+                    ?: stringResource(MR.strings.audio_load_failed)
                 EmptyScreen(
                     message = message,
                     modifier = Modifier.padding(contentPadding),
