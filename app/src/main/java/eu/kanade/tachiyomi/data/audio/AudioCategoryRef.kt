@@ -31,7 +31,13 @@ enum class AudioCategoryField(val pathSegment: String, private val legacyPrefix:
  * same filter in SQL from the id: measurably faster, immune to names containing `$`, spaces or
  * punctuation, and cacheable because the request does not carry `CacheControl.FORCE_NETWORK`.
  *
- * @property title The display name, kept only so the results page can label itself.
+ * @property title The display name, kept so the results page can label itself and — when [id] is
+ * null — so its searches can still be narrowed through the legacy keyword.
+ * @property id The backend id, or null when the on-disk dictionaries could not pin the name to a
+ * single entry. A null id still pins the results page to the name: searches typed on it combine
+ * with the legacy `$prefix:Name$` keyword instead of escaping the category, and clearing the
+ * search returns to the name's own works rather than the unfiltered feeds. The backend resolves
+ * that keyword by name, alias spellings included, so a null id costs only the slower endpoint.
  *
  * Held by [eu.kanade.tachiyomi.ui.audio.AudioBrowseScreen], which is written into a Bundle when
  * the activity stops, so it also has to be [java.io.Serializable] and not only
@@ -41,6 +47,6 @@ enum class AudioCategoryField(val pathSegment: String, private val legacyPrefix:
 @Serializable
 data class AudioCategoryRef(
     val field: AudioCategoryField,
-    val id: String,
+    val id: String?,
     val title: String,
 ) : JavaSerializable

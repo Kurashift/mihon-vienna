@@ -26,6 +26,7 @@ import eu.kanade.tachiyomi.data.audio.AudioPageCache
 import eu.kanade.tachiyomi.data.audio.AudioPageSnapshot
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
+import eu.kanade.tachiyomi.data.audio.AudioSearchCompiler
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.audio.WorksResponse
@@ -43,16 +44,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import okhttp3.CacheControl
+import tachiyomi.core.common.util.lang.SearchTextNormalizer.containsSearch
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
 class AudioBrowseScreen(
     internal val categoryTitle: String? = null,
+    /**
+     * A verbatim keyword the list starts on, used by the details page's title search. Unlike an
+     * [initialCategory] pin it is matched as free text, and its terms are never rewritten into
+     * tag markers: the title means a title, even when a tag happens to share its words.
+     */
     private val initialFilter: String? = null,
     /**
      * Opens on one dictionary entry's works, filtered by id. Mutually exclusive with
@@ -122,8 +130,9 @@ class AudioBrowseScreen(
  * Shared by the browse list and the work details page so a tap on the same name always lands on
  * the same page, whichever list it was tapped in. Resolves the name to a backend id first, which
  * keeps the filter off the URL path and so makes it immune to names containing `$`, spaces or
- * punctuation; the legacy `$name$` keyword is only used when the on-disk dictionaries cannot pin
- * the name to a single entry.
+ * punctuation; when the on-disk dictionaries cannot pin the name to a single entry the page is
+ * still pinned, by name, and its searches go through the legacy `$name$` keyword, which the
+ * backend resolves against alias spellings too.
  *
  * The lookup reads a multi-megabyte snapshot, so it runs on the IO dispatcher and the page is
  * pushed when it answers.
@@ -140,7 +149,9 @@ internal fun rememberCategoryNavigator(navigator: Navigator): (AudioCategoryFiel
                     if (ref != null) {
                         AudioBrowseScreen(categoryTitle = name, initialCategory = ref)
                     } else {
-                        AudioBrowseScreen(categoryTitle = name, initialFilter = field.legacyKeyword(name))
+                        // No id, but the name still pins the page: searches typed on it combine
+                        // with the legacy keyword instead of escaping the category.
+                        AudioBrowseScreen(categoryTitle = name, initialCategory = AudioCategoryRef(field, null, name))
                     },
                 )
             }
@@ -229,10 +240,31 @@ class AudioBrowseViewModel(
     private val playlistStore: AudioPlaylistStore = Injekt.get(),
     private val historyStore: AudioHistoryStore = Injekt.get(),
     private val pageCache: AudioPageCache = Injekt.get(),
+    private val categoryCache: AudioCategoryCache = Injekt.get(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AudioBrowseState())
     val state: StateFlow<AudioBrowseState> = _state.asStateFlow()
+
+    /**
+     * Turns the user's search terms into real tag/circle/VA markers where the dictionaries know
+     * the word. Reads the multi-megabyte snapshot once per distinct keyword.
+     */
+    private val searchCompiler = AudioSearchCompiler { categoryCache.read() }
+
+    /**
+     * Compiled user keywords by raw text, so page two of a search reuses page one's compilation
+     * instead of re-reading the dictionaries per page. Never invalidated: a dictionary refresh
+     * mid-session only shifts what the next distinct keyword resolves to, and the page cache's
+     * own TTL bounds how long a stale compilation can be served from cache anyway.
+     */
+    private val compiledKeywords = ConcurrentHashMap<String, String>()
+
+    /**
+     * Whether the keyword currently in state came from the user's search box (its terms get
+     * compiled) or from a programmatic filter, which is matched verbatim. Read by requestPage.
+     */
+    private var compileCurrentQuery = false
 
     // One sort per sortable tab rather than a single shared one. The work-list tab is a discovery
     // surface, opened most often for a fresh random draw; the favorites tab is a lookup list over
@@ -343,11 +375,12 @@ class AudioBrowseViewModel(
         if (sort != null) workSort.value = sort
         categoryRef = category
         if (categoryRef != null) {
-            // Not search(): the filter is an id, not a keyword, so there is nothing to put in the
-            // search field. The list simply starts narrowed to one dictionary entry.
+            // Not search(): the filter is an id or a pinned name, not a keyword, so there is
+            // nothing to put in the search field. The list simply starts narrowed to the entry.
             switchTo(_state.value.tab, sortOf(_state.value.tab).value, null)
         } else if (initialFilter != null) {
-            search(initialFilter)
+            // A details-page title search: matched verbatim, its terms never become tag markers.
+            submitQuery(initialFilter, compileTerms = false)
         } else {
             // Not refresh(): this runs again whenever the screen is re-entered with a fresh
             // ViewModel, and the point of the page cache is that re-entering inside the TTL
@@ -495,7 +528,21 @@ class AudioBrowseViewModel(
             loadLocalFavorites()
             return
         }
+        submitQuery(query, compileTerms = true)
+    }
+
+    /**
+     * Puts a keyword on the search field and moves to its results.
+     *
+     * [compileTerms] decides whether terms naming a real tag/circle/VA become markers
+     * ([AudioSearchCompiler]). User-typed searches do; a programmatic keyword — the details
+     * page's title search — is matched verbatim, because the title means a title even when a
+     * tag happens to share its words.
+     */
+    private fun submitQuery(query: String, compileTerms: Boolean) {
         val normalized = query.ifBlank { null }
+        // Set before the switch: the coroutine switchTo launches may reach requestPage first.
+        compileCurrentQuery = compileTerms
         _state.update { it.copy(query = normalized) }
         switchTo(_state.value.tab, sortOf(_state.value.tab).value, normalized)
     }
@@ -583,9 +630,10 @@ class AudioBrowseViewModel(
      */
     private fun cacheKeyFor(tab: AudioBrowseTab, sort: AudioSort, query: String?): String {
         val account = if (basePreferences.audioAuthToken.get().isBlank()) "anon" else "user"
-        // A category page is identified by its id, so it must not collide with the same tab left
-        // unfiltered — and it has no keyword, so the taste fallback below would only add noise.
-        val category = categoryRef?.let { "${it.field.pathSegment}:${it.id}" }.orEmpty()
+        // A category page is identified by its id — or by its name when the dictionaries could
+        // not pin one — so it must not collide with the same tab left unfiltered — and it has no
+        // keyword, so the taste fallback below would only add noise.
+        val category = categoryRef?.let { "${it.field.pathSegment}:${it.id ?: it.title}" }.orEmpty()
         val keyword = query.orEmpty().trim().ifBlank {
             if (categoryRef != null) {
                 ""
@@ -675,19 +723,30 @@ class AudioBrowseViewModel(
         // Only a draw carries a seed, and every page of the same draw carries the same one.
         val seed = drawSeed.takeIf { sort.isDraw }
         val effectiveKeyword = query.orEmpty().trim()
+        // Terms the user typed become real tag/circle/VA markers where the dictionaries know the
+        // word, so they filter by the entry rather than by title text. Programmatic keywords (a
+        // details-page title search) are matched verbatim.
+        val searchKeyword = when {
+            effectiveKeyword.isBlank() || !compileCurrentQuery -> effectiveKeyword
+            else -> compiledKeywords.getOrPut(effectiveKeyword) { searchCompiler.compile(effectiveKeyword) }
+        }
         // A keyword typed on a category results page narrows that category instead of escaping it:
         // the entry's filter is combined with the keyword, which the backend parses as an AND.
         // Measured against the live API: `$circle:072LABO$ 舔耳 淫语` answers 45 of that circle's
         // 108 works, all 45 inside it, versus 12164 / 9462 for the bare words catalogue-wide.
         categoryRef?.let { ref ->
-            if (effectiveKeyword.isBlank()) {
-                return api.fetchCategoryWorks(ref.field, ref.id, page, PAGE_SIZE, sort.order, sort.sort, cache, seed)
+            val categoryId = ref.id
+            if (categoryId != null && searchKeyword.isBlank()) {
+                return api.fetchCategoryWorks(ref.field, categoryId, page, PAGE_SIZE, sort.order, sort.sort, cache, seed)
             }
             // The id endpoints accept no keyword, so an intersection can only be expressed in the
-            // legacy syntax. A name containing `$` would break out of the filter — the price of
-            // combining the two, and the reason the unfiltered case still goes by id.
+            // legacy syntax — which is also how a name the dictionaries could not pin to an id
+            // stays pinned at all. A name containing `$` would break out of the filter — the
+            // price of combining the two, and the reason the unfiltered case still goes by id.
+            // Markers must be space-separated from the rest: concatenated ones parse as nothing.
+            val marker = ref.field.legacyKeyword(ref.title)
             return api.search(
-                "${ref.field.legacyKeyword(ref.title)} $effectiveKeyword",
+                if (searchKeyword.isBlank()) marker else "$marker $searchKeyword",
                 page,
                 PAGE_SIZE,
                 sort.order,
@@ -695,8 +754,8 @@ class AudioBrowseViewModel(
                 seed,
             )
         }
-        if (effectiveKeyword.isNotBlank()) {
-            return api.search(effectiveKeyword, page, PAGE_SIZE, sort.order, sort.sort, seed)
+        if (searchKeyword.isNotBlank()) {
+            return api.search(searchKeyword, page, PAGE_SIZE, sort.order, sort.sort, seed)
         }
         return when (tab) {
             AudioBrowseTab.LATEST -> api.fetchWorks(page, PAGE_SIZE, sort.order, sort.sort, cache, seed)
@@ -785,7 +844,7 @@ class AudioBrowseViewModel(
                     work.name,
                     work.tags.joinToString { it.name },
                     work.vas.joinToString { it.name },
-                ).any { it.contains(query, ignoreCase = true) }
+                ).any { it.containsSearch(query) }
             }
             .toList()
         val sorted = when (favoriteSort.value) {
