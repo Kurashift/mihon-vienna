@@ -2,22 +2,9 @@ package eu.kanade.presentation.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,13 +12,10 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -41,47 +25,46 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import tachiyomi.i18n.MR
-import tachiyomi.presentation.core.i18n.stringResource
 
 /**
- * One spotlight step: what the bubble shows and which registered anchor it points at. A step
- * carries either a sentence ([text]) — rendered as one bubble — or a few directional
- * [badges]: small capsules placed in the direction of the gesture they describe, instead of
- * piling every gesture into one block of text. A step with a null [anchorId] — or one whose
- * anchor never reports — renders as a centered, hole-free bubble over the full-screen scrim.
+ * One annotation of a spotlight step: a short line of white-on-scrim text drawn where the
+ * gesture happens — the same face as the reader's tap-zone overlay — instead of a capsule.
+ * Arrows travel inside the text itself ("↑ 上拖 · 好本子").
+ */
+class CoachAnnotation(
+    val text: String,
+    val placement: CoachAnnotationPlacement,
+)
+
+enum class CoachAnnotationPlacement {
+    /** Stacked upward from just above the anchor, horizontally centered on it. */
+    Above,
+
+    /** To the anchor's trailing side, starting vertically centered on it. */
+    RightOf,
+}
+
+/**
+ * One spotlight step: a scrim with a hole over the registered anchor plus a few annotation
+ * lines around it. A step with a null [anchorId] — or one whose anchor never reports — shows
+ * the scrim alone; there is nothing to point at, so the step simply waits to be tapped away.
  */
 class CoachStep(
     val anchorId: String? = null,
-    val text: String = "",
-    val badges: List<CoachBadge> = emptyList(),
+    val annotations: List<CoachAnnotation> = emptyList(),
 )
-
-/** One icon-plus-word capsule anchored to a direction of the spotlight's target. */
-class CoachBadge(
-    val icon: ImageVector,
-    val text: String,
-    val side: CoachBadgeSide,
-)
-
-enum class CoachBadgeSide {
-    /** Stacked above the anchor, horizontally centered on it. */
-    Top,
-
-    /** Placed to the anchor's trailing side, vertically centered on it. */
-    Side,
-}
 
 /**
  * State of one coach-mark sequence. Anchors report their window-space bounds through
@@ -148,16 +131,16 @@ private val ScrimColor = Color(0xB3000000)
 private const val ANCHOR_TIMEOUT_MS = 3000L
 
 /**
- * Full-screen spotlight sequence: a scrim with a hole over the current anchor and a bubble
- * beside it. Tapping anywhere advances; the last tap ends the sequence. The bubble carries a
- * skip action, and Back ends the whole thing.
+ * Full-screen spotlight: a scrim with a hole over the current anchor and the step's
+ * annotation lines drawn beside it, in the reader's white-with-black-stroke style. There is
+ * no separate bubble and no skip button — a tap anywhere moves on, and Back ends the whole
+ * thing, mirroring how the reader's own tap-zone overlay works.
  */
 @Composable
 fun CoachMarkOverlay(
     state: CoachMarkState,
     onFinished: () -> Unit,
     modifier: Modifier = Modifier,
-    onStepEntered: (Int) -> Unit = {},
 ) {
     val step = state.currentStep ?: return
 
@@ -166,19 +149,17 @@ fun CoachMarkOverlay(
         onFinished()
     }
 
-    LaunchedEffect(state.index) {
-        if (state.isActive) onStepEntered(state.index)
-    }
-
-    // A step whose anchor never shows up is skipped silently rather than blocking the rest.
+    // A step whose anchor never shows up ends silently rather than blocking the screen.
     LaunchedEffect(step) {
         val anchorId = step.anchorId ?: return@LaunchedEffect
         delay(ANCHOR_TIMEOUT_MS)
         if (state.anchors[anchorId] == null) {
-            state.advance()
-            if (!state.isActive) onFinished()
+            state.finish()
+            onFinished()
         }
     }
+
+    val textMeasurer = rememberTextMeasurer()
 
     BoxWithConstraints(
         modifier = modifier
@@ -192,141 +173,15 @@ fun CoachMarkOverlay(
     ) {
         val density = LocalDensity.current
         val holePaddingPx = with(density) { 8.dp.toPx() }
-        val cornerPx = with(density) { 12.dp.toPx() }
-        val gapPx = with(density) { 16.dp.toPx() }
-        val marginPx = with(density) { 24.dp.toPx() }
-        val maxWidthPx = constraints.maxWidth.toFloat()
-        val maxHeightPx = constraints.maxHeight.toFloat()
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawCoachScrim(
                 hole = step.anchorId?.let { state.anchors[it] }?.inflate(holePaddingPx),
-                cornerRadiusPx = cornerPx,
+                cornerRadiusPx = with(density) { 12.dp.toPx() },
                 scrimColor = ScrimColor,
             )
-        }
-
-        val anchorRect = step.anchorId?.let { state.anchors[it] }
-
-        // Direction badges: one small capsule per gesture, sitting where the gesture happens.
-        // The top side stacks upward so several of them read as one tidy column.
-        if (anchorRect != null) {
-            val topBadges = step.badges.filter { it.side == CoachBadgeSide.Top }
-            if (topBadges.isNotEmpty()) {
-                var columnSize by remember { mutableStateOf(IntSize.Zero) }
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .onSizeChanged { columnSize = it }
-                        .absoluteOffset {
-                            IntOffset(
-                                (anchorRect.center.x - columnSize.width / 2f).roundToInt(),
-                                (anchorRect.top - with(density) { 44.dp.toPx() } - columnSize.height)
-                                    .roundToInt(),
-                            )
-                        }
-                        .alpha(if (columnSize == IntSize.Zero) 0f else 1f),
-                ) {
-                    topBadges.forEach { badge -> CoachBadgeCapsule(badge) }
-                }
-            }
-            val sideBadges = step.badges.filter { it.side == CoachBadgeSide.Side }
-            if (sideBadges.isNotEmpty()) {
-                var columnSize by remember { mutableStateOf(IntSize.Zero) }
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .onSizeChanged { columnSize = it }
-                        .absoluteOffset {
-                            IntOffset(
-                                (anchorRect.right + with(density) { 44.dp.toPx() }).roundToInt(),
-                                (anchorRect.center.y - columnSize.height / 2f).roundToInt(),
-                            )
-                        }
-                        .alpha(if (columnSize == IntSize.Zero) 0f else 1f),
-                ) {
-                    sideBadges.forEach { badge -> CoachBadgeCapsule(badge) }
-                }
-            }
-        }
-
-        var bubbleSize by remember { mutableStateOf(IntSize.Zero) }
-
-        // Above the anchor when it sits in the lower half, below it otherwise; the bubble is
-        // clamped to the screen on both axes so a corner anchor never pushes it out of view.
-        val rawX = anchorRect?.let { it.center.x - bubbleSize.width / 2f }
-            ?: ((maxWidthPx - bubbleSize.width) / 2f)
-        val rawY = when {
-            anchorRect == null -> (maxHeightPx - bubbleSize.height) / 2f
-            anchorRect.center.y > maxHeightPx / 2f -> anchorRect.top - bubbleSize.height - gapPx
-            else -> anchorRect.bottom + gapPx
-        }
-        val maxX = (maxWidthPx - bubbleSize.width - marginPx).coerceAtLeast(marginPx)
-        val maxY = (maxHeightPx - bubbleSize.height - marginPx).coerceAtLeast(marginPx)
-        val offset = IntOffset(
-            rawX.coerceIn(marginPx, maxX).roundToInt(),
-            rawY.coerceIn(marginPx, maxY).roundToInt(),
-        )
-
-        // The bubble stays invisible until its first measure reports a size, so the very first
-        // frame does not flash it at the top-left corner before the offset is known.
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.inverseSurface,
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-            shadowElevation = 3.dp,
-            modifier = Modifier
-                .onSizeChanged { bubbleSize = it }
-                .widthIn(max = 340.dp)
-                .absoluteOffset { offset }
-                .alpha(if (bubbleSize == IntSize.Zero) 0f else 1f),
-        ) {
-            Column(
-                modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 6.dp),
-            ) {
-                if (step.text.isNotEmpty()) {
-                    Text(
-                        text = step.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Text(
-                    text = stringResource(MR.strings.onboarding_action_skip),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.inversePrimary,
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .clickable {
-                            state.finish()
-                            onFinished()
-                        }
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CoachBadgeCapsule(badge: CoachBadge) {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.inverseSurface,
-        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        shadowElevation = 3.dp,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-        ) {
-            Icon(
-                imageVector = badge.icon,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(text = badge.text, style = MaterialTheme.typography.bodyMedium)
+            val anchor = step.anchorId?.let { state.anchors[it] } ?: return@Canvas
+            drawCoachAnnotations(textMeasurer, step.annotations, anchor)
         }
     }
 }
@@ -341,4 +196,47 @@ private fun DrawScope.drawCoachScrim(hole: Rect?, cornerRadiusPx: Float, scrimCo
     path.addRoundRect(RoundRect(hole, CornerRadius(cornerRadiusPx)))
     path.fillType = PathFillType.EvenOdd
     drawPath(path, scrimColor)
+}
+
+private fun DrawScope.drawCoachAnnotations(
+    textMeasurer: TextMeasurer,
+    annotations: List<CoachAnnotation>,
+    anchor: Rect,
+) {
+    // White fill over a black stroke, exactly how the reader's overlay draws its labels —
+    // the stroke keeps the line legible wherever it slides off the scrim onto bright art.
+    val fontSize = 15.sp
+    val fillStyle = TextStyle(color = Color.White, fontSize = fontSize)
+    val strokeStyle = TextStyle(
+        color = Color.Black,
+        fontSize = fontSize,
+        drawStyle = Stroke(width = 2.dp.toPx()),
+    )
+    val marginPx = 16.dp.toPx()
+
+    var nextBottom = anchor.top - 14.dp.toPx()
+    annotations
+        .filter { it.placement == CoachAnnotationPlacement.Above }
+        .forEach { ann ->
+            val measured = textMeasurer.measure(ann.text, fillStyle)
+            val x = (anchor.center.x - measured.size.width / 2f)
+                .coerceIn(marginPx, (size.width - marginPx - measured.size.width).coerceAtLeast(marginPx))
+            val top = nextBottom - measured.size.height
+            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = strokeStyle)
+            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = fillStyle)
+            nextBottom = top - 8.dp.toPx()
+        }
+
+    var nextCenter = anchor.center.y
+    annotations
+        .filter { it.placement == CoachAnnotationPlacement.RightOf }
+        .forEach { ann ->
+            val measured = textMeasurer.measure(ann.text, fillStyle)
+            val x = (anchor.right + 20.dp.toPx())
+                .coerceAtMost((size.width - marginPx - measured.size.width).coerceAtLeast(marginPx))
+            val top = nextCenter - measured.size.height / 2f
+            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = strokeStyle)
+            drawText(textMeasurer, ann.text, topLeft = Offset(x, top), style = fillStyle)
+            nextCenter = top + measured.size.height + 8.dp.toPx()
+        }
 }

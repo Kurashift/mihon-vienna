@@ -24,8 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.BookmarkRemove
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Favorite
@@ -35,7 +33,6 @@ import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.NewReleases
-import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.SortByAlpha
@@ -98,8 +95,8 @@ import eu.kanade.presentation.browse.components.BrowseSourceToolbar
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
 import eu.kanade.presentation.components.ConfirmDialog
-import eu.kanade.presentation.components.CoachBadge
-import eu.kanade.presentation.components.CoachBadgeSide
+import eu.kanade.presentation.components.CoachAnnotation
+import eu.kanade.presentation.components.CoachAnnotationPlacement
 import eu.kanade.presentation.components.CoachMarkOverlay
 import eu.kanade.presentation.components.CoachMarkState
 import eu.kanade.presentation.components.CoachStep
@@ -861,23 +858,20 @@ data class BrowseSourceScreen(
         // The first-use coach marks are emitted next to the Scaffold on purpose: each Voyager
         // screen is hosted in its own Box, so the later sibling draws above it.
         if (fabCoachState != null) {
-            // One small capsule per gesture, placed in the gesture's own direction: the arrow
-            // sits where the finger travels, and the tap note stands apart from both.
-            val fabCoachBadges = listOf(
-                CoachBadge(
-                    Icons.Outlined.KeyboardArrowUp,
-                    stringResource(MR.strings.coach_fab_good_doujin),
-                    CoachBadgeSide.Top,
+            // One white-on-scrim line per gesture, drawn where the gesture happens — the same
+            // face as the reader's tap-zone overlay, arrows inside the text.
+            val fabCoachAnnotations = listOf(
+                CoachAnnotation(
+                    text = stringResource(MR.strings.coach_fab_locate),
+                    placement = CoachAnnotationPlacement.Above,
                 ),
-                CoachBadge(
-                    Icons.Outlined.TouchApp,
-                    stringResource(MR.strings.coach_fab_locate),
-                    CoachBadgeSide.Top,
+                CoachAnnotation(
+                    text = stringResource(MR.strings.coach_fab_good_doujin),
+                    placement = CoachAnnotationPlacement.Above,
                 ),
-                CoachBadge(
-                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    stringResource(MR.strings.coach_fab_random),
-                    CoachBadgeSide.Side,
+                CoachAnnotation(
+                    text = stringResource(MR.strings.coach_fab_random),
+                    placement = CoachAnnotationPlacement.RightOf,
                 ),
             )
             LaunchedEffect(fabCoachState) {
@@ -892,7 +886,7 @@ data class BrowseSourceScreen(
                     listOf(
                         CoachStep(
                             anchorId = BROWSE_FAB_ANCHOR_ID,
-                            badges = fabCoachBadges,
+                            annotations = fabCoachAnnotations,
                         ),
                     ),
                 )
