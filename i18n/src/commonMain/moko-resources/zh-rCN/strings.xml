@@ -1116,6 +1116,7 @@
     <string name="audio_empty">还没有结果</string>
     <string name="audio_search_hint">搜索 ASMR 作品</string>
     <string name="audio_search_hint_in_category">在 %1$s 中搜索</string>
+    <string name="audio_title_search">搜索 ASMR</string>
     <string name="action_play">播放</string>
     <string name="audio_vas">声优</string>
     <string name="audio_sort">排序</string>

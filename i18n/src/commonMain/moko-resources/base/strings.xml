@@ -1265,6 +1265,7 @@
     <string name="audio_empty">No results</string>
     <string name="audio_search_hint">Search ASMR works</string>
     <string name="audio_search_hint_in_category">Search in %1$s</string>
+    <string name="audio_title_search">Search ASMR</string>
     <string name="action_play">Play</string>
     <string name="audio_vas">Voice actors</string>
     <string name="audio_sort">Sort</string>

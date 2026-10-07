@@ -1,12 +1,7 @@
 package eu.kanade.presentation.manga.components
 
-import android.text.Selection
-import android.text.Spannable
 import android.util.TypedValue
-import android.view.ActionMode
 import android.view.Gravity
-import android.view.Menu
-import android.view.MenuItem
 import android.view.textclassifier.TextClassifier
 import android.widget.TextView
 import androidx.compose.animation.animateContentSize
@@ -79,8 +74,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -109,6 +102,10 @@ import com.mikepenz.markdown.model.markdownAnnotatorConfig
 import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.DropdownMenu
+import eu.kanade.presentation.components.TitleSelectionAction
+import eu.kanade.presentation.components.TitleSelectionCallback
+import eu.kanade.presentation.components.TitleSelectionController
+import eu.kanade.presentation.components.clearTextSelection
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.util.system.copyToClipboard
@@ -146,7 +143,7 @@ fun MangaInfoBox(
     doSearch: (query: String, global: Boolean) -> Unit,
     searchLocal: (query: String) -> Unit,
     onOpenSource: () -> Unit,
-    titleSelection: MangaTitleSelectionController,
+    titleSelection: TitleSelectionController,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier) {
@@ -512,7 +509,7 @@ private fun MangaAndSourceTitlesLarge(
     doSearch: (query: String, global: Boolean) -> Unit,
     searchLocal: (query: String) -> Unit,
     onOpenSource: () -> Unit,
-    titleSelection: MangaTitleSelectionController,
+    titleSelection: TitleSelectionController,
 ) {
     Column(
         modifier = Modifier
@@ -558,7 +555,7 @@ private fun MangaAndSourceTitlesSmall(
     doSearch: (query: String, global: Boolean) -> Unit,
     searchLocal: (query: String) -> Unit,
     onOpenSource: () -> Unit,
-    titleSelection: MangaTitleSelectionController,
+    titleSelection: TitleSelectionController,
 ) {
     Row(
         modifier = Modifier
@@ -617,7 +614,7 @@ private fun ColumnScope.MangaContentInfo(
     // 单行标题表现为「下移一点就全选、上移一点就反选」；而那个边界取自 TextLayoutResult
     // 的尺寸，Modifier 的 padding/height 都影响不到它，上层无法定向修正。原生 TextView
     // 由系统实现选区，斜拖、跨行、越界回收都是标准行为。
-    titleSelection: MangaTitleSelectionController,
+    titleSelection: TitleSelectionController,
     textAlign: TextAlign? = LocalTextStyle.current.textAlign,
 ) {
     val context = LocalContext.current
@@ -644,7 +641,7 @@ private fun ColumnScope.MangaContentInfo(
                 setTextIsSelectable(true)
                 // 关掉 smart text selection 的分类建议：标题只显示文本，用不到 URL/电话等
                 // 智能识别。注意这挡不住 ROM 自己注入的 assist 项（网页搜索/翻译）——那些
-                // 不走 TextClassifier，菜单里仍可能出现，见 MangaTitleSelectionCallback。
+                // 不走 TextClassifier，菜单里仍可能出现，见 TitleSelectionCallback。
                 setTextClassifier(TextClassifier.NO_OP)
                 setBackgroundColor(AndroidColor.TRANSPARENT)
                 includeFontPadding = false
@@ -667,13 +664,19 @@ private fun ColumnScope.MangaContentInfo(
                     currentDoSearch(title, true)
                 }
             }
-            titleView.customSelectionActionModeCallback = MangaTitleSelectionCallback(
+            titleView.customSelectionActionModeCallback = TitleSelectionCallback(
                 textView = titleView,
-                copyLabel = copyLabel,
-                localSearchLabel = localSearchLabel,
-                sourceSearchLabel = sourceSearchLabel,
-                onLocalSearch = { query -> currentSearchLocal(query) },
-                onSourceSearch = { query -> currentDoSearch(query, true) },
+                actions = listOf(
+                    TitleSelectionAction(TITLE_ACTION_COPY, copyLabel) { text ->
+                        context.copyToClipboard(text, text)
+                    },
+                    TitleSelectionAction(TITLE_ACTION_SEARCH_SOURCES, sourceSearchLabel) { text ->
+                        currentDoSearch(text, true)
+                    },
+                    TitleSelectionAction(TITLE_ACTION_SEARCH_LOCAL, localSearchLabel) { text ->
+                        currentSearchLocal(text)
+                    },
+                ),
                 onActionModeCreated = titleSelection::bindActionMode,
                 onActionModeDestroyed = { titleSelection.bindActionMode(null) },
                 onSelectionActiveChange = titleSelection::setActive,
@@ -994,161 +997,3 @@ private const val TITLE_ACTION_COPY = 1
 private const val TITLE_ACTION_SEARCH_LOCAL = 2
 private const val TITLE_ACTION_SEARCH_SOURCES = 3
 
-private val TITLE_ACTION_IDS = setOf(
-    TITLE_ACTION_COPY,
-    TITLE_ACTION_SEARCH_LOCAL,
-    TITLE_ACTION_SEARCH_SOURCES,
-)
-
-/**
- * 标题选区的桥接层。原生 TextView 的选区由系统的 ActionMode 统一管理（点击外部、返回键、
- * 滚动都会由系统收掉），Compose 侧只需要知道「当前有没有选区」以及一个主动清除的入口。
- *
- * 由 [MangaScreen] 持有并 remember，标题所在 item 被回收时通过 [unbindClearAction] 解绑，
- * 避免持有已经 detach 的 TextView。
- */
-class MangaTitleSelectionController internal constructor() {
-    /** 是否有标题选区（ActionMode 是否挂着）。用于返回键拦截和点击抑制。 */
-    var isActive by mutableStateOf(false)
-        private set
-
-    private var actionMode: ActionMode? = null
-    private var clearAction: (() -> Unit)? = null
-
-    internal fun setActive(active: Boolean) {
-        isActive = active
-    }
-
-    internal fun bindActionMode(mode: ActionMode?) {
-        actionMode = mode
-    }
-
-    internal fun bindClearAction(action: () -> Unit) {
-        clearAction = action
-    }
-
-    internal fun unbindClearAction() {
-        actionMode = null
-        clearAction = null
-    }
-
-    // 标题 TextView 在窗口里的位置（boundsInWindow）。点外部拦截用：按下点落在标题内时
-    // 交由 TextView 自己处理（拖手柄、点标题跳搜索），落在外面才清选区。初始 Zero 无所谓，
-    // 因为要长按标题才可能激活选区，那时标题早已布局并上报过真实 rect。
-    private var titleRect: Rect = Rect.Zero
-
-    internal fun updateTitleRect(rect: Rect) {
-        titleRect = rect
-    }
-
-    internal fun isOutsideTitle(position: Offset): Boolean = !titleRect.contains(position)
-
-    /**
-     * 主动收掉选区。优先 finish 掉 ActionMode——这才是彻底的收尾，选区高亮、手柄、
-     * 工具栏会一起消失，和点外部/系统返回键的效果一致。没有 ActionMode 时（例如选区
-     * 存在但工具栏还没起来）退化成直接清空 Selection。
-     */
-    fun clear() {
-        val mode = actionMode
-        if (mode != null) {
-            mode.finish()
-        } else {
-            clearAction?.invoke()
-        }
-    }
-}
-
-private fun TextView.clearTextSelection() {
-    // setTextIsSelectable(true) 会把 buffer 类型切成 SPANNABLE，所以这里通常成立；
-    // 万一不是 Spannable 就无从清除，直接跳过，系统后续仍会按常规流程收掉选区。
-    val text = text as? Spannable ?: return
-    Selection.setSelection(text, 0, 0)
-}
-
-private fun TextView.selectedTextOrNull(): String? {
-    val start = selectionStart
-    val end = selectionEnd
-    if (start < 0 || end < 0 || start == end) return null
-    val text = text ?: return null
-    return text.subSequence(minOf(start, end), maxOf(end, start)).toString()
-}
-
-/**
- * 标题选区的菜单：固定三项（复制 → 云端搜索 → 本地搜索），并尽量删掉系统补进来的项。
- *
- * 注意一个已经实测确认的边界：这个回调**无法保证**工具栏最终只剩这三项。悬浮工具栏每次显示
- * 时才会去读菜单，而 ROM 注入的 assist 项（网页搜索/翻译等）是在这之后异步加进来的，加完立刻
- * 触发工具栏刷新——我们只能在它加完之后动手，永远慢一拍。这里的删除只能保证我们的三项一定在
- * 菜单里（且排在前面），剩下来的系统项由平台决定，删不掉就不要再跟它赛跑。
- */
-private class MangaTitleSelectionCallback(
-    private val textView: TextView,
-    private val copyLabel: String,
-    private val localSearchLabel: String,
-    private val sourceSearchLabel: String,
-    private val onLocalSearch: (String) -> Unit,
-    private val onSourceSearch: (String) -> Unit,
-    private val onActionModeCreated: (ActionMode) -> Unit,
-    private val onActionModeDestroyed: () -> Unit,
-    private val onSelectionActiveChange: (Boolean) -> Unit,
-) : ActionMode.Callback {
-
-    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-        onActionModeCreated(mode)
-        onSelectionActiveChange(true)
-        populateMenu(menu)
-        return true
-    }
-
-    // 这里故意不重新 add：ActionMode 每次内容变化都会回调 onPrepareActionMode，重复
-    // add 会让菜单在两项和三项之间闪。删除系统项必须在这里做——onCreateActionMode 里
-    // 的 menu.clear() 只清得掉那一刻的项，系统 Editor 之后补回来的（尤其是 assist/翻译）
-    // 它管不到。
-    override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
-        menu.removeForeignTitleActions()
-        return true
-    }
-
-    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-        val selectedText = textView.selectedTextOrNull() ?: return false
-        when (item.itemId) {
-            TITLE_ACTION_COPY -> textView.context.copyToClipboard(selectedText, selectedText)
-            TITLE_ACTION_SEARCH_LOCAL -> onLocalSearch(selectedText)
-            TITLE_ACTION_SEARCH_SOURCES -> onSourceSearch(selectedText)
-            else -> return false
-        }
-        mode.finish()
-        return true
-    }
-
-    override fun onDestroyActionMode(mode: ActionMode) {
-        onActionModeDestroyed()
-        onSelectionActiveChange(false)
-    }
-
-    private fun populateMenu(menu: Menu) {
-        menu.clear()
-        // 工具栏只有固定的三项（复制 → 云端搜索 → 本地搜索）：没有 NEVER 项就没有三点
-        // 溢出菜单，系统注入项在 clear 时一起被清掉，prepare 阶段再兜底删一轮。
-        menu.add(Menu.NONE, TITLE_ACTION_COPY, 0, copyLabel)
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-        menu.add(Menu.NONE, TITLE_ACTION_SEARCH_SOURCES, 1, sourceSearchLabel)
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-        menu.add(Menu.NONE, TITLE_ACTION_SEARCH_LOCAL, 2, localSearchLabel)
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-    }
-
-    /**
-     * 把非自建的系统项全部删掉。选区菜单会被系统 Editor 追加内容：全选、翻译、网页搜索
-     * （放大镜）等——全选来自系统，翻译/网页搜索来自 ACTION_PROCESS_TEXT 或 ROM 注入，由
-     * 手机上装的其它应用提供。
-     */
-    private fun Menu.removeForeignTitleActions() {
-        for (index in size() - 1 downTo 0) {
-            val item = getItem(index)
-            if (item.itemId !in TITLE_ACTION_IDS) {
-                removeItem(item.itemId)
-            }
-        }
-    }
-}

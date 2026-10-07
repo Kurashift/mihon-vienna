@@ -90,7 +90,7 @@ import eu.kanade.presentation.manga.components.MangaBottomActionMenu
 import eu.kanade.presentation.manga.components.MangaChapterGridItem
 import eu.kanade.presentation.manga.components.MangaChapterListItem
 import eu.kanade.presentation.manga.components.MangaInfoBox
-import eu.kanade.presentation.manga.components.MangaTitleSelectionController
+import eu.kanade.presentation.components.TitleSelectionController
 import eu.kanade.presentation.manga.components.MangaToolbar
 import eu.kanade.presentation.manga.components.ReadRangeActions
 import eu.kanade.presentation.manga.components.chapterGridDragSource
@@ -452,7 +452,7 @@ private fun MangaScreenSmallImpl(
     // 标题选区由原生 TextView 的 ActionMode 管理。原生 TextView 点击同窗口内其它非可聚焦
     // 区域时不会自动收掉选区，所以「点外部关闭」得自己补：返回键走 BackHandler，点空白处
     // 走下面 Scaffold 上的 pointerInput（只在选区激活时运行，点标题内让位、点标题外 clear）。
-    val titleSelection = remember { MangaTitleSelectionController() }
+    val titleSelection = remember { TitleSelectionController() }
     BackHandler(enabled = titleSelection.isActive) { titleSelection.clear() }
 
     Scaffold(
@@ -907,7 +907,7 @@ fun MangaScreenLargeImpl(
     }
 
     // 同 SmallImpl：返回键 + 点外部关闭各补一路，其余交给系统的 ActionMode。
-    val titleSelection = remember { MangaTitleSelectionController() }
+    val titleSelection = remember { TitleSelectionController() }
     BackHandler(enabled = titleSelection.isActive) { titleSelection.clear() }
 
     Scaffold(

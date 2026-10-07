@@ -126,12 +126,12 @@ class AudioDetailScreen(
                 toastPlaylistChange(viewModel.toggleFolderPlaylist(folderPath))
             },
             onToggleFavorite = { viewModel.toggleFavorite(headerWork) },
-            onClickTitle = {
-                // The title's own result page, the same shape a tag chip lands on: one list
-                // narrowed by keyword.
-                val title = headerWork.title
-                if (title.isNotBlank()) {
-                    navigator.push(AudioBrowseScreen(categoryTitle = title, initialFilter = title))
+            onTitleSearch = { query ->
+                // The query's own result page, the same shape a tag chip lands on: one list
+                // narrowed by keyword. Comes in as the whole title on tap, or as the
+                // hand-picked text from the title's selection menu.
+                if (query.isNotBlank()) {
+                    navigator.push(AudioBrowseScreen(categoryTitle = query, initialFilter = query))
                 }
             },
             onClickCircle = { name -> onOpenCategory(AudioCategoryField.CIRCLE, name) },

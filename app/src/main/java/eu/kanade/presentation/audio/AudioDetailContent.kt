@@ -1,8 +1,16 @@
 package eu.kanade.presentation.audio
 
+import android.graphics.Color as AndroidColor
+import android.text.TextUtils
+import android.util.TypedValue
+import android.view.textclassifier.TextClassifier
+import android.widget.TextView
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -14,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,24 +36,36 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
 import eu.kanade.presentation.audio.components.AudioFolderRow
 import eu.kanade.presentation.audio.components.AudioTrackRow
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.TitleSelectionAction
+import eu.kanade.presentation.components.TitleSelectionCallback
+import eu.kanade.presentation.components.TitleSelectionController
+import eu.kanade.presentation.components.clearTextSelection
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
@@ -73,7 +94,7 @@ fun AudioDetailContent(
     onToggleWorkPlaylist: () -> Unit,
     onToggleFolderPlaylist: (String) -> Unit,
     onToggleFavorite: () -> Unit,
-    onClickTitle: () -> Unit,
+    onTitleSearch: (String) -> Unit,
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
     onClickTag: (String) -> Unit,
@@ -86,7 +107,20 @@ fun AudioDetailContent(
         buildVisibleRows(state.rootNodes, expanded)
     }
 
+    // 标题选区由原生 TextView 的 ActionMode 管理，与漫画详情页一致：返回键走 BackHandler，
+    // 点标题外走 Scaffold 上的 pointerInput（只在选区激活时运行，点标题内让位、点标题外 clear）。
+    val titleSelection = remember { TitleSelectionController() }
+    BackHandler(enabled = titleSelection.isActive) { titleSelection.clear() }
+
     Scaffold(
+        modifier = Modifier.pointerInput(titleSelection.isActive) {
+            if (!titleSelection.isActive) return@pointerInput
+            awaitEachGesture {
+                if (titleSelection.isOutsideTitle(awaitFirstDown(requireUnconsumed = false).position)) {
+                    titleSelection.clear()
+                }
+            }
+        },
         topBar = { scrollBehavior ->
             AppBar(
                 // No title: the header below already carries the work title, and a static
@@ -181,7 +215,8 @@ fun AudioDetailContent(
                 item {
                     WorkHeader(
                         work = work,
-                        onClickTitle = onClickTitle,
+                        titleSelection = titleSelection,
+                        onTitleSearch = onTitleSearch,
                         onClickCircle = onClickCircle,
                         onClickVa = onClickVa,
                         onClickTag = onClickTag,
@@ -279,7 +314,8 @@ private fun TrackNode.hasPlayableAudio(): Boolean {
 @Composable
 private fun WorkHeader(
     work: Work,
-    onClickTitle: () -> Unit,
+    titleSelection: TitleSelectionController,
+    onTitleSearch: (String) -> Unit,
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
     onClickTag: (String) -> Unit,
@@ -304,16 +340,10 @@ private fun WorkHeader(
                     .weight(1f)
                     .padding(start = 16.dp),
             ) {
-                Text(
-                    text = work.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    // The manga details header's pair: tap searches the title, long press copies it.
-                    modifier = Modifier.combinedClickable(
-                        onClick = onClickTitle,
-                        onLongClick = { context.copyToClipboard(work.title, work.title) },
-                    ),
+                SelectableWorkTitle(
+                    title = work.title,
+                    titleSelection = titleSelection,
+                    onTitleSearch = onTitleSearch,
                 )
                 Text(
                     text = workMeta(work),
@@ -369,6 +399,86 @@ private fun WorkHeader(
         }
     }
 }
+
+/**
+ * 标题选区交给原生 TextView，缘由与漫画详情页相同（MangaContentInfo 处有完整说明）：
+ * Compose 的 SelectionContainer 在拖动手柄越过 TextLayoutResult 的排版边界时会整段误选，
+ * 原生 TextView 的斜拖、跨行、越界回收都是系统标准行为。长按进入框选，菜单固定为
+ * 复制 → 搜索 ASMR（作用于框选的文本）；单击仍是搜索整个标题。
+ */
+@Composable
+private fun SelectableWorkTitle(
+    title: String,
+    titleSelection: TitleSelectionController,
+    onTitleSearch: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    // 跟随系统语言，和原生 TextView 的选区菜单保持一致。
+    val copyLabel = remember(context) { context.getString(android.R.string.copy) }
+    val searchLabel = stringResource(MR.strings.audio_title_search)
+    val titleStyle = MaterialTheme.typography.titleMedium
+    val titleColor = LocalContentColor.current.toArgb()
+
+    // AndroidView 的 factory 只跑一次，里面的回调必须拿到最新的搜索 lambda，
+    // 否则重组之后会跳到过期的页面状态。
+    val currentTitleSearch by rememberUpdatedState(onTitleSearch)
+
+    DisposableEffect(titleSelection) {
+        onDispose { titleSelection.unbindClearAction() }
+    }
+
+    AndroidView(
+        factory = { viewContext ->
+            TextView(viewContext).apply {
+                setTextIsSelectable(true)
+                // 关掉 smart text selection 的分类建议：标题只显示文本，用不到 URL/电话等
+                // 智能识别。ROM 自己注入的 assist 项由 TitleSelectionCallback 删除。
+                setTextClassifier(TextClassifier.NO_OP)
+                setBackgroundColor(AndroidColor.TRANSPARENT)
+                includeFontPadding = false
+                maxLines = 3
+                ellipsize = TextUtils.TruncateAt.END
+            }
+        },
+        update = { titleView ->
+            titleView.text = title
+            titleView.setTextColor(titleColor)
+            titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, titleStyle.fontSize.value)
+            // 选区还在（ActionMode 挂着）时不跳搜索：这一下点击只是用来收掉选区的。
+            // 用 ActionMode 的存活状态而不是 hasSelection() 判断，因为系统会在派发
+            // click 之前就把选区清掉，那时 hasSelection() 已经是 false，会误触发跳转。
+            titleView.setOnClickListener {
+                if (title.isNotBlank() && !titleSelection.isActive) {
+                    currentTitleSearch(title)
+                }
+            }
+            titleView.customSelectionActionModeCallback = TitleSelectionCallback(
+                textView = titleView,
+                actions = listOf(
+                    TitleSelectionAction(AUDIO_TITLE_ACTION_COPY, copyLabel) { text ->
+                        context.copyToClipboard(text, text)
+                    },
+                    TitleSelectionAction(AUDIO_TITLE_ACTION_SEARCH, searchLabel) { text ->
+                        currentTitleSearch(text)
+                    },
+                ),
+                onActionModeCreated = titleSelection::bindActionMode,
+                onActionModeDestroyed = { titleSelection.bindActionMode(null) },
+                onSelectionActiveChange = titleSelection::setActive,
+            )
+            titleSelection.bindClearAction { titleView.clearTextSelection() }
+        },
+        modifier = Modifier
+            // 按文字实际宽度收拢：撑满整行时，短标题右侧那片空白也会算进点击区。长标题
+            // 仍受父级宽度约束，正常换行。
+            .wrapContentWidth(align = Alignment.Start)
+            // 上报标题在窗口里的位置，供外层「点外部清选区」判断按下点是否落在标题内。
+            .onGloballyPositioned { titleSelection.updateTitleRect(it.boundsInWindow()) },
+    )
+}
+
+private const val AUDIO_TITLE_ACTION_COPY = 1
+private const val AUDIO_TITLE_ACTION_SEARCH = 2
 
 @Composable
 private fun TagChip(text: String, onClick: (() -> Unit)? = null) {
