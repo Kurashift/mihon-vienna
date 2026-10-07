@@ -3,8 +3,19 @@ package eu.kanade.presentation.components
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -12,41 +23,38 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.VectorPainter
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 /**
- * One annotation of a spotlight step: a short line of white-on-scrim text drawn where the
- * gesture happens — the same face as the reader's tap-zone overlay — instead of a capsule.
- * The optional [icon] leads the line, so the arrow sits with the words instead of living
- * inside them.
+ * One annotation of a spotlight step: an icon plus a short line, sitting where the gesture
+ * happens. Rendered as a plain composable — the same small capsule as the root back-exit
+ * hint — so the text keeps the system's own rendering instead of a hand-drawn imitation.
  */
 class CoachAnnotation(
     val text: String,
@@ -58,14 +66,15 @@ enum class CoachAnnotationPlacement {
     /** Stacked upward from just above the anchor, horizontally centered on it. */
     Above,
 
-    /** To the anchor's trailing side, starting vertically centered on it. */
-    RightOf,
+    /** To the anchor's trailing side, vertically centered on it. */
+    Side,
 }
 
 /**
- * One spotlight step: a scrim with a hole over the registered anchor plus a few annotation
- * lines around it. A step with a null [anchorId] — or one whose anchor never reports — shows
- * the scrim alone; there is nothing to point at, so the step simply waits to be tapped away.
+ * One spotlight step: a scrim with a hole over the registered anchor plus the step's
+ * annotation capsules around it. A step with a null [anchorId] — or one whose anchor never
+ * reports — shows the scrim alone; there is nothing to point at, so it waits to be tapped
+ * away. No skip button: a tap anywhere moves on, Back ends the whole thing.
  */
 class CoachStep(
     val anchorId: String? = null,
@@ -138,9 +147,8 @@ private const val ANCHOR_TIMEOUT_MS = 3000L
 
 /**
  * Full-screen spotlight: a scrim with a hole over the current anchor and the step's
- * annotation lines drawn beside it, in the reader's white-with-black-stroke style. There is
- * no separate bubble and no skip button — a tap anywhere moves on, and Back ends the whole
- * thing, mirroring how the reader's own tap-zone overlay works.
+ * annotation capsules placed around it. Tapping anywhere moves on, and Back ends the whole
+ * thing.
  */
 @Composable
 fun CoachMarkOverlay(
@@ -165,12 +173,6 @@ fun CoachMarkOverlay(
         }
     }
 
-    val textMeasurer = rememberTextMeasurer()
-    val iconPainters = ArrayList<VectorPainter?>(step.annotations.size)
-    for (ann in step.annotations) {
-        iconPainters.add(ann.icon?.let { rememberVectorPainter(it) })
-    }
-
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -183,6 +185,7 @@ fun CoachMarkOverlay(
     ) {
         val density = LocalDensity.current
         val holePaddingPx = with(density) { 8.dp.toPx() }
+        val maxWidthPx = constraints.maxWidth.toFloat()
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawCoachScrim(
@@ -190,8 +193,81 @@ fun CoachMarkOverlay(
                 cornerRadiusPx = with(density) { 12.dp.toPx() },
                 scrimColor = ScrimColor,
             )
-            val anchor = step.anchorId?.let { state.anchors[it] } ?: return@Canvas
-            drawCoachAnnotations(textMeasurer, iconPainters, step.annotations, anchor)
+        }
+
+        val anchorRect = step.anchorId?.let { state.anchors[it] } ?: return@BoxWithConstraints
+
+        // The annotations above the anchor stack as one column whose bottom edge sits just
+        // over the hole; the whole column is clamped horizontally so a wide line over a
+        // corner-anchored target cannot slide off the screen edge.
+        val above = step.annotations.filter { it.placement == CoachAnnotationPlacement.Above }
+        if (above.isNotEmpty()) {
+            var columnSize by remember { mutableStateOf(IntSize.Zero) }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .onSizeChanged { columnSize = it }
+                    .absoluteOffset {
+                        val x = (anchorRect.center.x - columnSize.width / 2f)
+                            .coerceIn(16f, (maxWidthPx - 16f - columnSize.width).coerceAtLeast(16f))
+                        IntOffset(
+                            x.roundToInt(),
+                            (anchorRect.top - with(density) { 10.dp.toPx() } - columnSize.height)
+                                .roundToInt(),
+                        )
+                    }
+                    .alpha(if (columnSize == IntSize.Zero) 0f else 1f),
+            ) {
+                above.forEach { ann -> CoachAnnotationCapsule(ann) }
+            }
+        }
+
+        val side = step.annotations.filter { it.placement == CoachAnnotationPlacement.Side }
+        if (side.isNotEmpty()) {
+            var columnSize by remember { mutableStateOf(IntSize.Zero) }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .onSizeChanged { columnSize = it }
+                    .absoluteOffset {
+                        val x = (anchorRect.right + with(density) { 10.dp.toPx() })
+                            .coerceAtLeast(16f)
+                            .coerceAtMost((maxWidthPx - 16f - columnSize.width).coerceAtLeast(16f))
+                        IntOffset(
+                            x.roundToInt(),
+                            (anchorRect.center.y - columnSize.height / 2f).roundToInt(),
+                        )
+                    }
+                    .alpha(if (columnSize == IntSize.Zero) 0f else 1f),
+            ) {
+                side.forEach { ann -> CoachAnnotationCapsule(ann) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoachAnnotationCapsule(ann: CoachAnnotation) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+        ) {
+            ann.icon?.let {
+                Icon(
+                    imageVector = it,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Text(text = ann.text, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -206,69 +282,4 @@ private fun DrawScope.drawCoachScrim(hole: Rect?, cornerRadiusPx: Float, scrimCo
     path.addRoundRect(RoundRect(hole, CornerRadius(cornerRadiusPx)))
     path.fillType = PathFillType.EvenOdd
     drawPath(path, scrimColor)
-}
-
-private fun DrawScope.drawCoachAnnotations(
-    textMeasurer: TextMeasurer,
-    iconPainters: List<VectorPainter?>,
-    annotations: List<CoachAnnotation>,
-    anchor: Rect,
-) {
-    // White fill over a black stroke, exactly how the reader's overlay draws its labels —
-    // the stroke keeps the line legible wherever it slides off the scrim onto bright art.
-    val fontSize = 15.sp
-    val fillStyle = TextStyle(color = Color.White, fontSize = fontSize)
-    val strokeStyle = TextStyle(
-        color = Color.Black,
-        fontSize = fontSize,
-        drawStyle = Stroke(width = 2.dp.toPx()),
-    )
-    val marginPx = 16.dp.toPx()
-    val iconSizePx = 18.dp.toPx()
-    val iconGapPx = 7.dp.toPx()
-
-    fun lineWidth(ann: CoachAnnotation, measured: androidx.compose.ui.text.TextLayoutResult): Float {
-        return measured.size.width + if (ann.icon != null) iconSizePx + iconGapPx else 0f
-    }
-
-    fun drawLine(ann: CoachAnnotation, painter: VectorPainter?, x: Float, top: Float) {
-        val measured = textMeasurer.measure(ann.text, fillStyle)
-        var textX = x
-        if (painter != null) {
-            val iconTop = top + (measured.size.height - iconSizePx) / 2f
-            with(painter) {
-                draw(
-                    size = Size(iconSizePx, iconSizePx),
-                    colorFilter = ColorFilter.tint(Color.White),
-                )
-            }
-            textX = x + iconSizePx + iconGapPx
-        }
-        drawText(textMeasurer, ann.text, topLeft = Offset(textX, top), style = strokeStyle)
-        drawText(textMeasurer, ann.text, topLeft = Offset(textX, top), style = fillStyle)
-    }
-
-    var nextBottom = anchor.top - 14.dp.toPx()
-    annotations.forEachIndexed { i, ann ->
-        if (ann.placement != CoachAnnotationPlacement.Above) return@forEachIndexed
-        val measured = textMeasurer.measure(ann.text, fillStyle)
-        val width = lineWidth(ann, measured)
-        val x = (anchor.center.x - width / 2f)
-            .coerceIn(marginPx, (size.width - marginPx - width).coerceAtLeast(marginPx))
-        val top = nextBottom - measured.size.height
-        drawLine(ann, iconPainters[i], x, top)
-        nextBottom = top - 8.dp.toPx()
-    }
-
-    var nextCenter = anchor.center.y
-    annotations.forEachIndexed { i, ann ->
-        if (ann.placement != CoachAnnotationPlacement.RightOf) return@forEachIndexed
-        val measured = textMeasurer.measure(ann.text, fillStyle)
-        val width = lineWidth(ann, measured)
-        val x = (anchor.right + 20.dp.toPx())
-            .coerceAtMost((size.width - marginPx - width).coerceAtLeast(marginPx))
-        val top = nextCenter - measured.size.height / 2f
-        drawLine(ann, iconPainters[i], x, top)
-        nextCenter = top + measured.size.height + 8.dp.toPx()
-    }
 }

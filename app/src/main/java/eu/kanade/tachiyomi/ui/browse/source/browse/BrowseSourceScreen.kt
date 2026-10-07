@@ -876,7 +876,7 @@ data class BrowseSourceScreen(
                 ),
                 CoachAnnotation(
                     text = stringResource(MR.strings.coach_fab_random),
-                    placement = CoachAnnotationPlacement.RightOf,
+                    placement = CoachAnnotationPlacement.Side,
                     icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 ),
             )
