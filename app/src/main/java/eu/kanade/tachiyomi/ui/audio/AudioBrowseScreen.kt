@@ -58,8 +58,8 @@ class AudioBrowseScreen(
     internal val categoryTitle: String? = null,
     /**
      * A verbatim keyword the list starts on, used by the details page's title search. Unlike an
-     * [initialCategory] pin it is matched as free text, and its terms are never rewritten into
-     * tag markers: the title means a title, even when a tag happens to share its words.
+     * [initialCategory] pin it is matched as free text, and its spellings are never rewritten:
+     * the title means a title, even when a tag happens to share its words.
      */
     private val initialFilter: String? = null,
     /**
@@ -247,8 +247,9 @@ class AudioBrowseViewModel(
     val state: StateFlow<AudioBrowseState> = _state.asStateFlow()
 
     /**
-     * Turns the user's search terms into real tag/circle/VA markers where the dictionaries know
-     * the word. Reads the multi-megabyte snapshot once per distinct keyword.
+     * Rewrites variant spellings of the user's search terms (處女 → the dictionary's 処女) so
+     * the backend's free-text union finds them. Reads the multi-megabyte snapshot once per
+     * distinct keyword.
      */
     private val searchCompiler = AudioSearchCompiler { categoryCache.read() }
 
@@ -379,7 +380,7 @@ class AudioBrowseViewModel(
             // nothing to put in the search field. The list simply starts narrowed to the entry.
             switchTo(_state.value.tab, sortOf(_state.value.tab).value, null)
         } else if (initialFilter != null) {
-            // A details-page title search: matched verbatim, its terms never become tag markers.
+            // A details-page title search: matched verbatim, its spellings are never rewritten.
             submitQuery(initialFilter, compileTerms = false)
         } else {
             // Not refresh(): this runs again whenever the screen is re-entered with a fresh
@@ -534,10 +535,10 @@ class AudioBrowseViewModel(
     /**
      * Puts a keyword on the search field and moves to its results.
      *
-     * [compileTerms] decides whether terms naming a real tag/circle/VA become markers
-     * ([AudioSearchCompiler]). User-typed searches do; a programmatic keyword — the details
-     * page's title search — is matched verbatim, because the title means a title even when a
-     * tag happens to share its words.
+     * [compileTerms] decides whether the keyword goes through [AudioSearchCompiler]'s variant
+     * rewriting (處女 → the dictionary's 処女). User-typed searches do; a programmatic keyword —
+     * the details page's title search — goes out verbatim, because the title means a title even
+     * when a tag happens to share its words.
      */
     private fun submitQuery(query: String, compileTerms: Boolean) {
         val normalized = query.ifBlank { null }
@@ -723,8 +724,9 @@ class AudioBrowseViewModel(
         // Only a draw carries a seed, and every page of the same draw carries the same one.
         val seed = drawSeed.takeIf { sort.isDraw }
         val effectiveKeyword = query.orEmpty().trim()
-        // Terms the user typed become real tag/circle/VA markers where the dictionaries know the
-        // word, so they filter by the entry rather than by title text. Programmatic keywords (a
+        // Keywords go out as free text — the backend's index unions tag names with title
+        // matches — so the compiler only rewrites variant spellings (處女 → the dictionary's
+        // 処女) that the backend would otherwise never find. Programmatic keywords (a
         // details-page title search) are matched verbatim.
         val searchKeyword = when {
             effectiveKeyword.isBlank() || !compileCurrentQuery -> effectiveKeyword

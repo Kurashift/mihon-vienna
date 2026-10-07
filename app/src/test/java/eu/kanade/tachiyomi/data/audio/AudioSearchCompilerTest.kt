@@ -22,37 +22,37 @@ class AudioSearchCompilerTest {
     private fun compiler(snapshot: AudioCategorySnapshot?) = AudioSearchCompiler { snapshot }
 
     @Test
-    fun `exact dictionary names become markers`() {
-        assertEquals("\$tag:処女\$", compiler(snapshot).compile("処女"))
-        assertEquals("\$circle:梅麻呂\$", compiler(snapshot).compile("梅麻呂"))
-        assertEquals("\$va:春花らん\$", compiler(snapshot).compile("春花らん"))
+    fun `exact dictionary names go out as typed`() {
+        assertEquals("処女", compiler(snapshot).compile("処女"))
+        assertEquals("梅麻呂", compiler(snapshot).compile("梅麻呂"))
+        assertEquals("春花らん", compiler(snapshot).compile("春花らん"))
     }
 
     @Test
-    fun `simplified and traditional spellings reach the dictionary entry`() {
-        assertEquals("\$tag:処女\$", compiler(snapshot).compile("处女"))
-        assertEquals("\$tag:処女\$", compiler(snapshot).compile("處女"))
+    fun `simplified and traditional spellings are rewritten to the dictionary spelling`() {
+        assertEquals("処女", compiler(snapshot).compile("处女"))
+        assertEquals("処女", compiler(snapshot).compile("處女"))
     }
 
     @Test
-    fun `case and width variants reach the entry through normalization`() {
-        assertEquals("\$tag:ASMR\$", compiler(snapshot).compile("ａｓｍｒ"))
+    fun `case and width variants are rewritten to the dictionary spelling`() {
+        assertEquals("ASMR", compiler(snapshot).compile("ａｓｍｒ"))
     }
 
     @Test
-    fun `an exact name wins over its variant lookalikes`() {
+    fun `an exact name is kept even when variant lookalikes exist`() {
         val both = AudioCategorySnapshot(
             tags = listOf(
                 TagItem(id = 1, name = "処女", count = 1),
                 TagItem(id = 2, name = "处女", count = 1),
             ),
         )
-        assertEquals("\$tag:处女\$", compiler(both).compile("处女"))
-        assertEquals("\$tag:処女\$", compiler(both).compile("処女"))
+        assertEquals("处女", compiler(both).compile("处女"))
+        assertEquals("処女", compiler(both).compile("処女"))
     }
 
     @Test
-    fun `a term matching several entries stays free text`() {
+    fun `a term matching several spellings stays as typed`() {
         val ambiguous = AudioCategorySnapshot(
             tags = listOf(TagItem(id = 1, name = "ＡＳＭＲ", count = 1)),
             vas = listOf(VaItem(id = "v", name = "ASMR", count = 1)),
@@ -61,22 +61,22 @@ class AudioSearchCompilerTest {
     }
 
     @Test
-    fun `terms carrying a dollar sign pass through untouched`() {
+    fun `terms carrying a dollar sign go out untouched`() {
         assertEquals("\$tag:x\$ yo", compiler(snapshot).compile("\$tag:x\$ yo"))
     }
 
     @Test
-    fun `dictionary names with a dollar sign are never wrapped`() {
+    fun `dictionary names with a dollar sign are never rewritten`() {
         val odd = AudioCategorySnapshot(tags = listOf(TagItem(id = 1, name = "a\$b", count = 1)))
-        // Misses the exact index only through the full-width b, so the normalized path is what
-        // must refuse to wrap the name.
+        // Misses the exact set only through the full-width b, so the normalized path is what
+        // must refuse the rewrite.
         assertEquals("a\$ｂ", compiler(odd).compile("a\$ｂ"))
     }
 
     @Test
     fun `mixed terms compile in order with single spaces`() {
         assertEquals(
-            "\$tag:処女\$ \$circle:梅麻呂\$ RJ01234567",
+            "処女 梅麻呂 RJ01234567",
             compiler(snapshot).compile("处女　梅麻吕 \t RJ01234567"),
         )
     }
