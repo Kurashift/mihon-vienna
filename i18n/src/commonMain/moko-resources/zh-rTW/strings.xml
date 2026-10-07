@@ -493,6 +493,7 @@
     <string name="audio_history_clear_confirm">移除全部播放紀錄，此操作無法復原。</string>
     <string name="audio_retry">重試</string>
     <string name="audio_load_failed">載入失敗</string>
+    <string name="audio_backend_needs_proxy">音聲內容需要網路代理才能存取；登入後可同步收聽進度</string>
     <string name="audio_buffer_timeout">緩衝逾時</string>
     <string name="audio_no_tracks">還沒有可播放的音軌</string>
     <string name="audio_empty">還沒有結果</string>
@@ -894,6 +895,14 @@
     <string name="onboarding_heading">歡迎！</string>
     <string name="onboarding_guides_returning_user">重新安裝了 %s？</string>
     <string name="onboarding_action_skip">略過</string>
+    <string name="pref_show_coach_marks">重新顯示功能導覽</string>
+    <string name="pref_show_coach_marks_summary">一次性提示會在下次進入相應頁面時重新出現</string>
+    <string name="coach_local_fab">點按回到上次在看的那本；按住拖動：向右拖隨機開一本，向上拖隨機開一本好本子——好本子在閱讀器頂欄的紅心標</string>
+    <string name="coach_reader_menu">點螢幕中間呼出選單；翻頁時會自動收起，再點中間就能叫回來</string>
+    <string name="coach_reader_random_pager">朝翻頁方向的垂直方向滑動頁面：上滑隨機換一本在讀的書，下滑隨機換一本好本子</string>
+    <string name="coach_reader_random_webtoon">橫向滑動頁面：左滑隨機換一本在讀的書，右滑隨機換一本好本子</string>
+    <string name="coach_reader_heart">看到合胃口的，點頂欄的紅心標進好本子，隨機就從這裡抽</string>
+    <string name="coach_tab_reselect">再次點按底部標籤有快捷方式：書架開篩選、更新看下載佇列、歷史直接續讀</string>
     <string name="onboarding_action_next">下一步</string>
     <string name="onboarding_description">讓我們先設定一些東西，隨後你隨時可至設定中變更這些選項</string>
     <string name="no_location_set">未設定儲存位置</string>

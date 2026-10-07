@@ -49,6 +49,7 @@ import eu.kanade.tachiyomi.network.PREF_DOH_QUAD101
 import eu.kanade.tachiyomi.network.PREF_DOH_QUAD9
 import eu.kanade.tachiyomi.network.PREF_DOH_SHECAN
 import eu.kanade.tachiyomi.ui.more.OnboardingScreen
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.isReleaseBuildType
@@ -92,6 +93,7 @@ object SettingsAdvancedScreen : SearchableSettings {
         val basePreferences = remember { Injekt.get<BasePreferences>() }
         val networkPreferences = remember { Injekt.get<NetworkPreferences>() }
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
+        val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
 
         return listOf(
             Preference.PreferenceItem.TextPreference(
@@ -119,6 +121,16 @@ object SettingsAdvancedScreen : SearchableSettings {
             Preference.PreferenceItem.TextPreference(
                 title = stringResource(MR.strings.pref_onboarding_guide),
                 onClick = { navigator.push(OnboardingScreen()) },
+            ),
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(MR.strings.pref_show_coach_marks),
+                subtitle = stringResource(MR.strings.pref_show_coach_marks_summary),
+                onClick = {
+                    basePreferences.coachLocalFabShown.set(false)
+                    basePreferences.coachReaderShown.set(false)
+                    basePreferences.coachTabReselectShown.set(false)
+                    readerPreferences.showNavigationOverlayNewUser.set(true)
+                },
             ),
             Preference.PreferenceItem.TextPreference(
                 title = stringResource(MR.strings.pref_manage_notifications),

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -66,6 +67,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,17 +88,24 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.core.util.ifSourcesLoaded
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.browse.BrowseSourceContent
 import eu.kanade.presentation.browse.MissingSourceScreen
 import eu.kanade.presentation.browse.components.BrowseSourceToolbar
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
 import eu.kanade.presentation.components.ConfirmDialog
+import eu.kanade.presentation.components.CoachMarkOverlay
+import eu.kanade.presentation.components.CoachMarkState
+import eu.kanade.presentation.components.CoachStep
 import eu.kanade.presentation.components.DeleteLocalEntriesDialog
 import eu.kanade.presentation.components.TransientNoticeHost
+import eu.kanade.presentation.components.LocalCoachAnchorRegistry
+import eu.kanade.presentation.components.coachAnchor
 import eu.kanade.presentation.components.rememberTransientNoticeState
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.manga.LocalLibraryChapterTitleTranslationsHost
+import eu.kanade.presentation.browse.components.BROWSE_FAB_ANCHOR_ID
 import eu.kanade.presentation.manga.components.LibraryBottomActionMenu
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
@@ -115,13 +124,17 @@ import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.manga.opensGoodDoujinJump
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
+import eu.kanade.tachiyomi.util.system.isBenchmarkBuildType
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import mihon.feature.migration.dialog.MigrateMangaDialog
 import mihon.presentation.core.util.collectAsLazyPagingItems
 import tachiyomi.core.common.Constants
@@ -135,6 +148,9 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.source.local.LocalSource
+import kotlin.time.Duration.Companion.seconds
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import eu.kanade.tachiyomi.source.model.Filter as SourceModelFilter
 
 /**
@@ -347,6 +363,18 @@ data class BrowseSourceScreen(
 
         val mangaList = viewModel.mangaPagerFlowFlow.collectAsLazyPagingItems()
         val currentMangaList by rememberUpdatedState(mangaList)
+
+        val basePreferences = remember { Injekt.get<BasePreferences>() }
+        // The first-use coach marks for the bottom-start FAB: only the local library carries the
+        // random gestures the bubble teaches, and they run once per install ever.
+        val fabCoachState = if (viewModel.source is LocalSource &&
+            !isBenchmarkBuildType &&
+            !basePreferences.coachLocalFabShown.get()
+        ) {
+            remember { CoachMarkState() }
+        } else {
+            null
+        }
 
         Scaffold(
             topBar = {
@@ -744,81 +772,114 @@ data class BrowseSourceScreen(
                 }
             },
         ) { paddingValues ->
-            BrowseSourceContent(
-                source = viewModel.source,
-                mangaList = mangaList,
-                columns = viewModel.getColumnsPreference(LocalConfiguration.current.orientation),
-                displayMode = viewModel.displayMode,
-                lastReadMangaId = lastReadMangaId,
-                locateMangaId = null,
-                favoriteIds = favoriteIds,
-                progressContext = progressContext,
-                coverUpdates = coverUpdates,
-                trailingSlotCount = trailingSlotCount,
-                wholeList = wholeListShown,
-                // Identity of what the list SHOWS, not of the pages in it: when it changes (a
-                // filter, listing or sort swap), the list opens at its top, the fast scroller
-                // re-anchors to the real position instead of holding the thumb where the previous
-                // listing left it, and the old item keys no longer resolve. Paging growth inside
-                // one listing keeps the key, so the sticky thumb still holds its ground.
-                listKey = BrowseListKey(
-                    listing = state.listing,
-                    readingFilter = readingFilter,
-                    markFilter = markFilter,
-                    sort = sortUi.selection,
-                ),
-                snackbarHostState = snackbarHostState,
-                contentPadding = paddingValues,
-                onWebViewClick = onWebViewClick,
-                onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
-                onLocalSourceHelpClick = onHelpClick,
-                onMangaClick = { manga ->
-                    if (selectionMode) {
-                        viewModel.toggleSelection(manga.id)
-                        return@BrowseSourceContent
-                    }
-                    // Hand over the whole filtered result set so random keeps walking what the
-                    // list shows. Fall back to the loaded page only while the pool is still
-                    // being resolved, so the button is never left without candidates.
-                    val candidates = viewModel.filteredMangaIds.value
-                        .ifEmpty {
-                            mangaList.itemSnapshotList.items
-                                .filterIsInstance<BrowseSourceUiModel.Item>()
-                                .map { item -> item.manga.id }
+            // The registry reaches the bottom-start FAB through the composition tree, so
+            // the three layout roots and their call sites stay untouched by the coach marks.
+            CompositionLocalProvider(LocalCoachAnchorRegistry provides fabCoachState) {
+                BrowseSourceContent(
+                    source = viewModel.source,
+                    mangaList = mangaList,
+                    columns = viewModel.getColumnsPreference(LocalConfiguration.current.orientation),
+                    displayMode = viewModel.displayMode,
+                    lastReadMangaId = lastReadMangaId,
+                    locateMangaId = null,
+                    favoriteIds = favoriteIds,
+                    progressContext = progressContext,
+                    coverUpdates = coverUpdates,
+                    trailingSlotCount = trailingSlotCount,
+                    wholeList = wholeListShown,
+                    // Identity of what the list SHOWS, not of the pages in it: when it changes (a
+                    // filter, listing or sort swap), the list opens at its top, the fast scroller
+                    // re-anchors to the real position instead of holding the thumb where the previous
+                    // listing left it, and the old item keys no longer resolve. Paging growth inside
+                    // one listing keeps the key, so the sticky thumb still holds its ground.
+                    listKey = BrowseListKey(
+                        listing = state.listing,
+                        readingFilter = readingFilter,
+                        markFilter = markFilter,
+                        sort = sortUi.selection,
+                    ),
+                    snackbarHostState = snackbarHostState,
+                    contentPadding = paddingValues,
+                    onWebViewClick = onWebViewClick,
+                    onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
+                    onLocalSourceHelpClick = onHelpClick,
+                    onMangaClick = { manga ->
+                        if (selectionMode) {
+                            viewModel.toggleSelection(manga.id)
+                            return@BrowseSourceContent
                         }
-                    navigator.push(
-                        MangaScreen(
-                            manga.id,
-                            true,
-                            randomCandidates = candidates,
-                            // Under a mark filter the list is exactly the works carrying that
-                            // mark; the work's own page opens showing those chapters.
-                            chapterScope = markFilter.toChapterScope(),
+                        // Hand over the whole filtered result set so random keeps walking what the
+                        // list shows. Fall back to the loaded page only while the pool is still
+                        // being resolved, so the button is never left without candidates.
+                        val candidates = viewModel.filteredMangaIds.value
+                            .ifEmpty {
+                                mangaList.itemSnapshotList.items
+                                    .filterIsInstance<BrowseSourceUiModel.Item>()
+                                    .map { item -> item.manga.id }
+                            }
+                        navigator.push(
+                            MangaScreen(
+                                manga.id,
+                                true,
+                                randomCandidates = candidates,
+                                // Under a mark filter the list is exactly the works carrying that
+                                // mark; the work's own page opens showing those chapters.
+                                chapterScope = markFilter.toChapterScope(),
+                            ),
+                        )
+                    },
+                    onRandomManga = onRandomManga,
+                    onRandomGoodDoujin = onRandomGoodDoujin,
+                    onMangaLongClick = { manga ->
+                        // Picking several works at once is what putting them on a shelf needs, so a
+                        // long press starts a selection instead of acting on the one entry. Adding a
+                        // single work is still one tap away through the selection's own action.
+                        val visible = mangaList.itemSnapshotList.items
+                            .mapNotNull { (it as? BrowseSourceUiModel.Item)?.manga }
+                        if (selectionMode) {
+                            viewModel.toggleRangeSelection(manga.id, visible)
+                        } else {
+                            viewModel.toggleSelection(manga.id)
+                        }
+                    },
+                    selectedIds = selection,
+                    // Everything in the local library is browsed to be read, not to be discovered
+                    // and shelved, so graying out the works already on a shelf just dims most of the
+                    // grid for no gain. The shelf badge still tells them apart.
+                    dimInLibraryCovers = viewModel.source !is LocalSource,
+                    onRefreshChapters = viewModel::refreshAllChapters,
+                    scrollToTopRequest = scrollToTopRequest,
+                )
+            }
+        }
+
+        // The first-use coach marks are emitted next to the Scaffold on purpose: each Voyager
+        // screen is hosted in its own Box, so the later sibling draws above it.
+        if (fabCoachState != null) {
+            val fabCoachText = stringResource(MR.strings.coach_local_fab)
+            LaunchedEffect(fabCoachState) {
+                // An empty library has nothing to jump back to yet: wait (bounded) for the list
+                // and the FAB to exist, and leave the flag untouched so a later visit retries.
+                withTimeoutOrNull(5.seconds) {
+                    snapshotFlow { currentMangaList.itemSnapshotList.items.size }.first { it > 0 }
+                    snapshotFlow { fabCoachState.anchors[BROWSE_FAB_ANCHOR_ID] }.first { it != null }
+                    delay(400)
+                } ?: return@LaunchedEffect
+                fabCoachState.start(
+                    listOf(
+                        CoachStep(
+                            anchorId = BROWSE_FAB_ANCHOR_ID,
+                            text = fabCoachText,
                         ),
-                    )
-                },
-                onRandomManga = onRandomManga,
-                onRandomGoodDoujin = onRandomGoodDoujin,
-                onMangaLongClick = { manga ->
-                    // Picking several works at once is what putting them on a shelf needs, so a
-                    // long press starts a selection instead of acting on the one entry. Adding a
-                    // single work is still one tap away through the selection's own action.
-                    val visible = mangaList.itemSnapshotList.items
-                        .mapNotNull { (it as? BrowseSourceUiModel.Item)?.manga }
-                    if (selectionMode) {
-                        viewModel.toggleRangeSelection(manga.id, visible)
-                    } else {
-                        viewModel.toggleSelection(manga.id)
-                    }
-                },
-                selectedIds = selection,
-                // Everything in the local library is browsed to be read, not to be discovered
-                // and shelved, so graying out the works already on a shelf just dims most of the
-                // grid for no gain. The shelf badge still tells them apart.
-                dimInLibraryCovers = viewModel.source !is LocalSource,
-                onRefreshChapters = viewModel::refreshAllChapters,
-                scrollToTopRequest = scrollToTopRequest,
-            )
+                    ),
+                )
+            }
+            if (fabCoachState.isActive) {
+                CoachMarkOverlay(
+                    state = fabCoachState,
+                    onFinished = { basePreferences.coachLocalFabShown.set(true) },
+                )
+            }
         }
 
         val onDismissRequest = { viewModel.setDialog(null) }

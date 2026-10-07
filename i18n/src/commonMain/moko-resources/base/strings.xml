@@ -238,6 +238,14 @@
     <string name="onboarding_action_next">Next</string>
     <string name="onboarding_action_finish">Get started</string>
     <string name="onboarding_action_skip">Skip</string>
+    <string name="pref_show_coach_marks">Show the feature guides again</string>
+    <string name="pref_show_coach_marks_summary">The one-time hints appear again the next time you enter the corresponding screens</string>
+    <string name="coach_local_fab">Tap to jump back to what you were last reading. Press and drag: right for a random entry, up for a random good doujin — mark them with the heart in the reader top bar.</string>
+    <string name="coach_reader_menu">Tap the middle of the screen to show the menu; it hides again on every page turn — tap the middle to bring it back.</string>
+    <string name="coach_reader_random_pager">Swipe perpendicular to the page turn: up for a random entry you are reading, down for a random good doujin.</string>
+    <string name="coach_reader_random_webtoon">Swipe sideways across the page: left for a random entry you are reading, right for a random good doujin.</string>
+    <string name="coach_reader_heart">Tap the heart in the top bar to put this work on the good-doujin list — the random draws come from there.</string>
+    <string name="coach_tab_reselect">Tap a bottom tab again for shortcuts: Library opens its filters, Updates opens the download queue, History resumes reading.</string>
     <string name="onboarding_storage_info">Select a folder where %1$s will store work downloads, backups, and more.\n\nA dedicated folder is recommended.\n\nSelected folder: %2$s</string>
     <string name="onboarding_storage_action_select">Select a folder</string>
     <string name="onboarding_storage_selection_required">A folder must be selected</string>
@@ -1253,6 +1261,7 @@
     <string name="audio_history_clear_confirm">Removes all play history entries. This cannot be undone.</string>
     <string name="audio_retry">Retry</string>
     <string name="audio_load_failed">Failed to load</string>
+    <string name="audio_backend_needs_proxy">Audio content needs a network proxy to reach its backend; sign in to sync your listening progress.</string>
     <string name="audio_buffer_timeout">Buffering timed out</string>
     <string name="audio_no_tracks">No playable tracks</string>
     <string name="audio_empty">No results</string>

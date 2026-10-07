@@ -2,6 +2,7 @@ package eu.kanade.presentation.reader.appbars
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +26,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
+import eu.kanade.presentation.components.CoachMarkState
 import eu.kanade.presentation.components.TitleOpenHint
+import eu.kanade.presentation.components.coachAnchor
 import eu.kanade.presentation.util.marqueeTitle
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -41,6 +44,7 @@ fun ReaderTopBar(
     onOpenInWebView: (() -> Unit)?,
     onOpenInBrowser: (() -> Unit)?,
     onShare: (() -> Unit)?,
+    coachAnchorState: CoachMarkState? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -104,55 +108,68 @@ fun ReaderTopBar(
             }
         }
 
-        AppBarActions(
-            actions = buildList {
-                // Opening the details screen lives on the tappable title block above. It is not
-                // duplicated as an overflow entry either: local reads have no other overflow item,
-                // so adding one would grow a new ⋮ button to replace the icon just removed.
-                onToggleGoodDoujin?.let {
-                    add(
-                        AppBar.Action(
-                            title = stringResource(
-                                if (goodDoujinMarked) {
-                                    MR.strings.action_remove_from_good_doujin
-                                } else {
-                                    MR.strings.action_add_to_good_doujin
-                                },
-                            ),
-                            icon = if (goodDoujinMarked) {
-                                Icons.Filled.Favorite
-                            } else {
-                                Icons.Outlined.FavoriteBorder
-                            },
-                            onClick = it,
-                        ),
-                    )
-                }
-                onOpenInWebView?.let {
-                    add(
-                        AppBar.OverflowAction(
-                            title = stringResource(MR.strings.action_open_in_web_view),
-                            onClick = it,
-                        ),
-                    )
-                }
-                onOpenInBrowser?.let {
-                    add(
-                        AppBar.OverflowAction(
-                            title = stringResource(MR.strings.action_open_in_browser),
-                            onClick = it,
-                        ),
-                    )
-                }
-                onShare?.let {
-                    add(
-                        AppBar.OverflowAction(
-                            title = stringResource(MR.strings.action_share),
-                            onClick = it,
-                        ),
-                    )
-                }
+        // For local reads this row holds only the good-doujin heart, which is why the
+        // coach mark can anchor its spotlight on the whole actions block.
+        Box(
+            modifier = if (coachAnchorState != null) {
+                Modifier.coachAnchor(coachAnchorState, READER_HEART_ANCHOR_ID)
+            } else {
+                Modifier
             },
-        )
+        ) {
+            AppBarActions(
+                actions = buildList {
+                    // Opening the details screen lives on the tappable title block above. It is not
+                    // duplicated as an overflow entry either: local reads have no other overflow item,
+                    // so adding one would grow a new ⋮ button to replace the icon just removed.
+                    onToggleGoodDoujin?.let {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(
+                                    if (goodDoujinMarked) {
+                                        MR.strings.action_remove_from_good_doujin
+                                    } else {
+                                        MR.strings.action_add_to_good_doujin
+                                    },
+                                ),
+                                icon = if (goodDoujinMarked) {
+                                    Icons.Filled.Favorite
+                                } else {
+                                    Icons.Outlined.FavoriteBorder
+                                },
+                                onClick = it,
+                            ),
+                        )
+                    }
+                    onOpenInWebView?.let {
+                        add(
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.action_open_in_web_view),
+                                onClick = it,
+                            ),
+                        )
+                    }
+                    onOpenInBrowser?.let {
+                        add(
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.action_open_in_browser),
+                                onClick = it,
+                            ),
+                        )
+                    }
+                    onShare?.let {
+                        add(
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.action_share),
+                                onClick = it,
+                            ),
+                        )
+                    }
+                },
+            )
+        }
     }
 }
+
+/** Anchor id under which [ReaderTopBar] registers the good-doujin heart for the coach marks. */
+const val READER_HEART_ANCHOR_ID = "reader_heart"

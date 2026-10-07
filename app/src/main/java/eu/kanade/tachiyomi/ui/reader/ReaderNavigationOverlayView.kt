@@ -22,6 +22,13 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
 
     private var navigation: ViewerNavigation? = null
 
+    /**
+     * Notified when the overlay has finished appearing or disappearing. The first-use coach
+     * marks wait for the "hidden" event so the two full-screen guides never stack on top of
+     * each other on a brand-new install.
+     */
+    var onVisibilityChanged: ((Boolean) -> Unit)? = null
+
     fun setNavigation(navigation: ViewerNavigation, showOnStart: Boolean) {
         val firstLaunch = this.navigation == null
         this.navigation = navigation
@@ -36,6 +43,7 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
             .setDuration(FADE_DURATION)
             .withStartAction {
                 isVisible = true
+                onVisibilityChanged?.invoke(true)
             }
             .withEndAction {
                 viewPropertyAnimator = null
@@ -96,6 +104,7 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
                 .withEndAction {
                     isVisible = false
                     viewPropertyAnimator = null
+                    onVisibilityChanged?.invoke(false)
                 }
             viewPropertyAnimator?.start()
         }

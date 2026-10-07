@@ -12,13 +12,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.paging.compose.LazyPagingItems
+import eu.kanade.presentation.components.LocalCoachAnchorRegistry
 import eu.kanade.presentation.components.RandomGestureFab
+import eu.kanade.presentation.components.coachAnchor
 import eu.kanade.presentation.components.rememberAtListEnd
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceUiModel
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+
+/** Anchor id under which [BrowseSourceLastReadFab] registers itself for the coach marks. */
+const val BROWSE_FAB_ANCHOR_ID = "browse_fab"
 
 /**
  * Floating button shown at the bottom-start of the browse list.
@@ -52,6 +57,12 @@ fun BrowseSourceLastReadFab(
     // once the list has run out of scroll. See RandomGestureFab for the full reasoning.
     val atListEnd = rememberAtListEnd(scrollState)
 
+    // The first-use coach marks anchor their spotlight on this button. The registry arrives
+    // through the composition tree, so the three layouts calling this composable stay untouched.
+    val anchorModifier = LocalCoachAnchorRegistry.current?.let { registry ->
+        Modifier.coachAnchor(registry, BROWSE_FAB_ANCHOR_ID)
+    } ?: Modifier
+
     // Recompute whenever the presented snapshot changes so the button appears
     // as soon as the target manga is loaded, not only when itemCount changes.
     val snapshot = mangaList.itemSnapshotList
@@ -83,7 +94,7 @@ fun BrowseSourceLastReadFab(
             onTap = { onRandomManga?.invoke() },
             onRandomManga = { onRandomManga?.invoke() },
             onRandomGoodDoujin = { onRandomGoodDoujin?.invoke() },
-            modifier = modifier,
+            modifier = modifier.then(anchorModifier),
         )
         return
     }
@@ -113,6 +124,6 @@ fun BrowseSourceLastReadFab(
         },
         onRandomManga = { onRandomManga?.invoke() },
         onRandomGoodDoujin = { onRandomGoodDoujin?.invoke() },
-        modifier = modifier,
+        modifier = modifier.then(anchorModifier),
     )
 }
