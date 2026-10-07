@@ -1,11 +1,6 @@
 package eu.kanade.presentation.components
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -286,36 +281,4 @@ private fun DrawScope.drawCoachScrim(hole: Rect?, cornerRadiusPx: Float, scrimCo
     path.addRoundRect(RoundRect(hole, CornerRadius(cornerRadiusPx)))
     path.fillType = PathFillType.EvenOdd
     drawPath(path, scrimColor)
-}
-
-/**
- * One-shot non-blocking hint: the same face as the root back-exit hint — a capsule with no
- * pointer-input modifiers, so taps fall through to whatever runs underneath. Used where a
- * spotlight would be louder than the message deserves.
- */
-@Composable
-fun CoachHintPill(
-    text: String,
-    visible: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(90)) + scaleIn(initialScale = 0.9f, animationSpec = tween(90)),
-        exit = fadeOut(tween(150)),
-        modifier = modifier,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.inverseSurface,
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-            shadowElevation = 3.dp,
-        ) {
-            Text(
-                text = text,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-    }
 }

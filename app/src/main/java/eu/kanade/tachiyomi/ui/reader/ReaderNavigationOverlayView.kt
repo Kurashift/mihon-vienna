@@ -23,13 +23,15 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
     private var navigation: ViewerNavigation? = null
 
     /**
-     * Notified when the overlay has finished appearing or disappearing. The first-use coach
-     * marks wait for the "hidden" event so the two full-screen guides never stack on top of
-     * each other on a brand-new install.
+     * One small line drawn at the bottom of the overlay while it is visible. The swipe-to-jump
+     * gestures ride on the same "here is how you steer" moment as the tap zones, so the
+     * first-use education is one overlay instead of a second guide chasing it. Null draws
+     * nothing — online sources carry no swipe pools.
      */
-    var onVisibilityChanged: ((Boolean) -> Unit)? = null
+    var hintText: String? = null
 
-    fun setNavigation(navigation: ViewerNavigation, showOnStart: Boolean) {
+    fun setNavigation(navigation: ViewerNavigation, showOnStart: Boolean, hintText: String? = null) {
+        this.hintText = hintText
         val firstLaunch = this.navigation == null
         this.navigation = navigation
         invalidate()
@@ -43,7 +45,6 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
             .setDuration(FADE_DURATION)
             .withStartAction {
                 isVisible = true
-                onVisibilityChanged?.invoke(true)
             }
             .withEndAction {
                 viewPropertyAnimator = null
@@ -65,6 +66,22 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
         textSize = 64f
         style = Paint.Style.STROKE
         strokeWidth = 8f
+    }
+
+    // The hint line is a footnote to the region labels, not one of them: smaller, but with the
+    // same white-on-black-stroke treatment so it reads as part of the same overlay.
+    private val hintTextPaint = Paint().apply {
+        textAlign = Paint.Align.CENTER
+        color = Color.WHITE
+        textSize = 44f
+    }
+
+    private val hintTextBorderPaint = Paint().apply {
+        textAlign = Paint.Align.CENTER
+        color = Color.BLACK
+        textSize = 44f
+        style = Paint.Style.STROKE
+        strokeWidth = 6f
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -92,6 +109,13 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
                 drawText(context.stringResource(region.type.nameRes), x, y, textPaint)
             }
         }
+
+        hintText?.let { hint ->
+            canvas.withTranslation(x = width / 2f, y = height * 0.92f) {
+                drawText(hint, 0f, 0f, hintTextBorderPaint)
+                drawText(hint, 0f, 0f, hintTextPaint)
+            }
+        }
     }
 
     override fun performClick(): Boolean {
@@ -104,7 +128,6 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
                 .withEndAction {
                     isVisible = false
                     viewPropertyAnimator = null
-                    onVisibilityChanged?.invoke(false)
                 }
             viewPropertyAnimator?.start()
         }

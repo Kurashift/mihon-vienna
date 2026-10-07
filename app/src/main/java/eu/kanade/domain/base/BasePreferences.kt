@@ -68,11 +68,6 @@ class BasePreferences(
         false,
     )
 
-    val coachReaderShown: Preference<Boolean> = preferenceStore.getBoolean(
-        Preference.appStateKey("coach_reader_shown"),
-        false,
-    )
-
     /** Chapters flagged by the user (duplicate series marked for later cleanup). */
     val markedChapters: Preference<String> = preferenceStore.getString("marked_chapters", "")
 

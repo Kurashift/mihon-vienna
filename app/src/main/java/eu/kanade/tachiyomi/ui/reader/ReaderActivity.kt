@@ -72,7 +72,6 @@ import eu.kanade.core.util.ifSourcesLoaded
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioQuickPlaySheet
 import eu.kanade.presentation.audio.AudioReaderFloatingBar
-import eu.kanade.presentation.components.CoachHintPill
 import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
@@ -112,7 +111,6 @@ import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -147,16 +145,6 @@ class ReaderActivity : BaseActivity() {
 
         /** How long the reader's own colour and pages take to fade in over the theme background. */
         private const val READER_CONTENT_REVEAL_DURATION_MILLIS = 200L
-
-        /** How long the swipe hint waits on its own before taking itself off the screen. */
-        private const val READER_HINT_AUTO_DISMISS_MS = 6000L
-
-        /**
-         * Page-selection events fire for the page the reader opens on, right around the moment
-         * the coach marks start; the grace window keeps that echo from ending the sequence
-         * before its first bubble is seen.
-         */
-        private const val COACH_START_GRACE_MS = 600L
 
         /**
          * @param returnToManga whether leaving the reader belongs on the manga details screen.
@@ -260,19 +248,6 @@ class ReaderActivity : BaseActivity() {
     fun isSwipeJumpTapSuppressed(): Boolean =
         SystemClock.uptimeMillis() < swipeJumpTapSuppressUntil
 
-    /**
-     * The first-use coach marks: armed on the first reader open of a local manga, started once
-     * the native navigation overlay is out of the way and the menu is closed, and torn down by
-     * the first real page turn so they never sit between the reader and a reading session.
-     */
-    private var readerCoachPending = false
-    private var readerCoachStartedAt = 0L
-    private var readerNavOverlayVisible = false
-    private var readerCoachHintText by mutableStateOf("")
-
-    var readerCoachActive by mutableStateOf(false)
-        private set
-
     var isScrollingThroughPages = false
         private set
 
@@ -328,11 +303,6 @@ class ReaderActivity : BaseActivity() {
         setContentView(binding.root)
         holdFirstReaderFrame()
         binding.setComposeOverlay()
-
-        binding.navigationOverlay.onVisibilityChanged = { visible ->
-            readerNavOverlayVisible = visible
-            if (!visible) maybeStartReaderCoach()
-        }
 
         if (!viewModel.hasValidArgs) {
             finish()
@@ -556,23 +526,6 @@ class ReaderActivity : BaseActivity() {
                             }
                         },
                 )
-            }
-
-            // The one-shot swipe hint: a capsule that lets taps fall through, cleared by the
-            // first real page turn or by its own timer, whichever comes first.
-            CoachHintPill(
-                text = readerCoachHintText,
-                visible = readerCoachActive,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 56.dp),
-            )
-            LaunchedEffect(readerCoachActive) {
-                if (readerCoachActive) {
-                    delay(READER_HINT_AUTO_DISMISS_MS)
-                    finishReaderCoach()
-                }
             }
         }
 
@@ -1294,12 +1247,6 @@ class ReaderActivity : BaseActivity() {
      * bottom menu and delegates the change to the presenter.
      */
     fun onPageSelected(page: ReaderPage, userInitiated: Boolean = false) {
-        armReaderCoach()
-        // Any page turn that was not itself the hint's start-up hands the screen back to
-        // reading: the hint never sits across an actual page change.
-        if (readerCoachActive && SystemClock.uptimeMillis() - readerCoachStartedAt > COACH_START_GRACE_MS) {
-            finishReaderCoach()
-        }
         viewModel.onPageSelected(page, userInitiated)
     }
 
@@ -1309,52 +1256,18 @@ class ReaderActivity : BaseActivity() {
      */
     fun onInitialPageSelected(page: ReaderPage) {
         viewModel.onInitialPageSelected(page)
-        armReaderCoach()
     }
 
     /**
-     * Arms the swipe hint if this reader session qualifies: first ever open, a local manga
-     * (the random gestures are local-only), not a benchmark build. Arming only marks it
-     * pending — the hint waits for the navigation overlay to be gone and the menu to be
-     * closed, checked in [maybeStartReaderCoach]. Armed from both [onInitialPageSelected]
-     * and [onPageSelected]: the webtoon viewer has no page-alignment event of its own.
+     * The swipe-to-jump directions drawn onto the tap-zone overlay, so the first-use education
+     * is one overlay instead of a second guide chasing it. The pools are local-only, so online
+     * sources get nothing; the direction differs between the continuous and the paged viewer.
      */
-    private fun armReaderCoach() {
-        if (readerCoachActive || readerCoachPending) return
-        if (isBenchmarkBuildType) return
-        if (basePreferences.coachReaderShown.get()) return
-        if (viewModel.state.value.manga?.isLocal() != true) return
-        readerCoachPending = true
-        maybeStartReaderCoach()
-    }
-
-    private fun maybeStartReaderCoach() {
-        if (!readerCoachPending || readerCoachActive) return
-        if (readerNavOverlayVisible) return
-        if (viewModel.state.value.menuVisible) return
-        readerCoachPending = false
-        startReaderCoach()
-    }
-
-    private fun startReaderCoach() {
-        // The swipe direction is the one perpendicular to the page turn, and it differs between
-        // the paged and the continuous viewer — the pill says the concrete directions.
-        readerCoachHintText = stringResource(
-            if (viewModel.state.value.viewer is WebtoonViewer) {
-                MR.strings.coach_reader_random_webtoon
-            } else {
-                MR.strings.coach_reader_random_pager
-            },
+    fun swipeHintText(isWebtoon: Boolean): String? {
+        if (viewModel.state.value.manga?.isLocal() != true) return null
+        return stringResource(
+            if (isWebtoon) MR.strings.reader_swipe_hint_webtoon else MR.strings.reader_swipe_hint_pager,
         )
-        readerCoachStartedAt = SystemClock.uptimeMillis()
-        readerCoachActive = true
-    }
-
-    private fun finishReaderCoach() {
-        if (!readerCoachActive) return
-        readerCoachActive = false
-        // Shown once means shown: ignoring it is still a completion, so the hint never nags again.
-        basePreferences.coachReaderShown.set(true)
     }
 
     /**

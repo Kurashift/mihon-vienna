@@ -243,8 +243,8 @@
     <string name="coach_fab_locate">Tap — back to what you were reading</string>
     <string name="coach_fab_random">Drag right — a random entry</string>
     <string name="coach_fab_good_doujin">Drag up — a random good doujin</string>
-    <string name="coach_reader_random_pager">Swipe up for a random entry, down for a random good doujin</string>
-    <string name="coach_reader_random_webtoon">Swipe left for a random entry, right for a random good doujin</string>
+    <string name="reader_swipe_hint_pager">Swipe up for a random entry, down for a random good doujin</string>
+    <string name="reader_swipe_hint_webtoon">Swipe left for a random entry, right for a random good doujin</string>
     <string name="onboarding_storage_info">Select a folder where %1$s will store work downloads, backups, and more.\n\nA dedicated folder is recommended.\n\nSelected folder: %2$s</string>
     <string name="onboarding_storage_action_select">Select a folder</string>
     <string name="onboarding_storage_selection_required">A folder must be selected</string>

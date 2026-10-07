@@ -127,7 +127,6 @@ object SettingsAdvancedScreen : SearchableSettings {
                 subtitle = stringResource(MR.strings.pref_show_coach_marks_summary),
                 onClick = {
                     basePreferences.coachLocalFabShown.set(false)
-                    basePreferences.coachReaderShown.set(false)
                     readerPreferences.showNavigationOverlayNewUser.set(true)
                 },
             ),
