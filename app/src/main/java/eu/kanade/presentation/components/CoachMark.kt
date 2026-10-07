@@ -57,21 +57,31 @@ import tachiyomi.presentation.core.i18n.stringResource
 
 /**
  * One spotlight step: what the bubble shows and which registered anchor it points at. A step
- * carries either a sentence ([text]) or a few icon-and-word rows ([iconRows]) — the short form
- * reads closer to the app's own hint language. A step with a null [anchorId] — or one whose
+ * carries either a sentence ([text]) — rendered as one bubble — or a few directional
+ * [badges]: small capsules placed in the direction of the gesture they describe, instead of
+ * piling every gesture into one block of text. A step with a null [anchorId] — or one whose
  * anchor never reports — renders as a centered, hole-free bubble over the full-screen scrim.
  */
 class CoachStep(
     val anchorId: String? = null,
     val text: String = "",
-    val iconRows: List<CoachIconRow> = emptyList(),
+    val badges: List<CoachBadge> = emptyList(),
 )
 
-/** One icon-plus-word line of a [CoachStep] bubble. */
-class CoachIconRow(
+/** One icon-plus-word capsule anchored to a direction of the spotlight's target. */
+class CoachBadge(
     val icon: ImageVector,
     val text: String,
+    val side: CoachBadgeSide,
 )
+
+enum class CoachBadgeSide {
+    /** Stacked above the anchor, horizontally centered on it. */
+    Top,
+
+    /** Placed to the anchor's trailing side, vertically centered on it. */
+    Side,
+}
 
 /**
  * State of one coach-mark sequence. Anchors report their window-space bounds through
@@ -197,6 +207,50 @@ fun CoachMarkOverlay(
         }
 
         val anchorRect = step.anchorId?.let { state.anchors[it] }
+
+        // Direction badges: one small capsule per gesture, sitting where the gesture happens.
+        // The top side stacks upward so several of them read as one tidy column.
+        if (anchorRect != null) {
+            val topBadges = step.badges.filter { it.side == CoachBadgeSide.Top }
+            if (topBadges.isNotEmpty()) {
+                var columnSize by remember { mutableStateOf(IntSize.Zero) }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .onSizeChanged { columnSize = it }
+                        .absoluteOffset {
+                            IntOffset(
+                                (anchorRect.center.x - columnSize.width / 2f).roundToInt(),
+                                (anchorRect.top - with(density) { 44.dp.toPx() } - columnSize.height)
+                                    .roundToInt(),
+                            )
+                        }
+                        .alpha(if (columnSize == IntSize.Zero) 0f else 1f),
+                ) {
+                    topBadges.forEach { badge -> CoachBadgeCapsule(badge) }
+                }
+            }
+            val sideBadges = step.badges.filter { it.side == CoachBadgeSide.Side }
+            if (sideBadges.isNotEmpty()) {
+                var columnSize by remember { mutableStateOf(IntSize.Zero) }
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .onSizeChanged { columnSize = it }
+                        .absoluteOffset {
+                            IntOffset(
+                                (anchorRect.right + with(density) { 44.dp.toPx() }).roundToInt(),
+                                (anchorRect.center.y - columnSize.height / 2f).roundToInt(),
+                            )
+                        }
+                        .alpha(if (columnSize == IntSize.Zero) 0f else 1f),
+                ) {
+                    sideBadges.forEach { badge -> CoachBadgeCapsule(badge) }
+                }
+            }
+        }
+
         var bubbleSize by remember { mutableStateOf(IntSize.Zero) }
 
         // Above the anchor when it sits in the lower half, below it otherwise; the bubble is
@@ -237,23 +291,6 @@ fun CoachMarkOverlay(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                step.iconRows.forEach { row ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.padding(vertical = 4.dp),
-                    ) {
-                        Icon(
-                            imageVector = row.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            text = row.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
                 Text(
                     text = stringResource(MR.strings.onboarding_action_skip),
                     style = MaterialTheme.typography.labelMedium,
@@ -267,6 +304,29 @@ fun CoachMarkOverlay(
                         .padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun CoachBadgeCapsule(badge: CoachBadge) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shadowElevation = 3.dp,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+        ) {
+            Icon(
+                imageVector = badge.icon,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(text = badge.text, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

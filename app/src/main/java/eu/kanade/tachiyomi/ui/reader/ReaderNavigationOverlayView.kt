@@ -111,7 +111,9 @@ class ReaderNavigationOverlayView(context: Context, attributeSet: AttributeSet) 
         }
 
         hintText?.let { hint ->
-            canvas.withTranslation(x = width / 2f, y = height * 0.92f) {
+            // The centre is where the MENU label sits and where the finger lands to steer;
+            // the hint reads as a second line of that same label.
+            canvas.withTranslation(x = width / 2f, y = height * 0.5f + 110f) {
                 drawText(hint, 0f, 0f, hintTextBorderPaint)
                 drawText(hint, 0f, 0f, hintTextPaint)
             }

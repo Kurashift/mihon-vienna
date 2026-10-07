@@ -24,7 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.BookmarkRemove
-import androidx.compose.material.icons.outlined.Casino
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Favorite
@@ -34,7 +35,7 @@ import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.NewReleases
-import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.SortByAlpha
@@ -76,7 +77,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -98,7 +98,8 @@ import eu.kanade.presentation.browse.components.BrowseSourceToolbar
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
 import eu.kanade.presentation.components.ConfirmDialog
-import eu.kanade.presentation.components.CoachIconRow
+import eu.kanade.presentation.components.CoachBadge
+import eu.kanade.presentation.components.CoachBadgeSide
 import eu.kanade.presentation.components.CoachMarkOverlay
 import eu.kanade.presentation.components.CoachMarkState
 import eu.kanade.presentation.components.CoachStep
@@ -113,7 +114,6 @@ import eu.kanade.presentation.browse.components.BROWSE_FAB_ANCHOR_ID
 import eu.kanade.presentation.manga.components.LibraryBottomActionMenu
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferJob
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseScreen
@@ -861,19 +861,23 @@ data class BrowseSourceScreen(
         // The first-use coach marks are emitted next to the Scaffold on purpose: each Voyager
         // screen is hosted in its own Box, so the later sibling draws above it.
         if (fabCoachState != null) {
-            // Icon and word, one line per gesture: the long-sentence form read like a lecture.
-            val fabCoachRows = listOf(
-                CoachIconRow(
-                    Icons.Outlined.Place,
-                    stringResource(MR.strings.coach_fab_locate),
-                ),
-                CoachIconRow(
-                    Icons.Outlined.Casino,
-                    stringResource(MR.strings.coach_fab_random),
-                ),
-                CoachIconRow(
-                    ImageVector.vectorResource(R.drawable.ic_dice_heart_24dp),
+            // One small capsule per gesture, placed in the gesture's own direction: the arrow
+            // sits where the finger travels, and the tap note stands apart from both.
+            val fabCoachBadges = listOf(
+                CoachBadge(
+                    Icons.Outlined.KeyboardArrowUp,
                     stringResource(MR.strings.coach_fab_good_doujin),
+                    CoachBadgeSide.Top,
+                ),
+                CoachBadge(
+                    Icons.Outlined.TouchApp,
+                    stringResource(MR.strings.coach_fab_locate),
+                    CoachBadgeSide.Top,
+                ),
+                CoachBadge(
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    stringResource(MR.strings.coach_fab_random),
+                    CoachBadgeSide.Side,
                 ),
             )
             LaunchedEffect(fabCoachState) {
@@ -888,7 +892,7 @@ data class BrowseSourceScreen(
                     listOf(
                         CoachStep(
                             anchorId = BROWSE_FAB_ANCHOR_ID,
-                            iconRows = fabCoachRows,
+                            badges = fabCoachBadges,
                         ),
                     ),
                 )

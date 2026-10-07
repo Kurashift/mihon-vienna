@@ -864,8 +864,8 @@
     <string name="pref_show_coach_marks">重新显示功能引导</string>
     <string name="pref_show_coach_marks_summary">一次性提示会在下次进入相应页面时重新出现</string>
     <string name="coach_fab_locate">点按 · 回到上次在看</string>
-    <string name="coach_fab_random">按住右拖 · 随机一本</string>
-    <string name="coach_fab_good_doujin">按住上拖 · 好本子</string>
+    <string name="coach_fab_random">右拖 · 随机一本</string>
+    <string name="coach_fab_good_doujin">上拖 · 好本子</string>
     <string name="reader_swipe_hint_pager">上滑随机换一本 · 下滑换好本子</string>
     <string name="reader_swipe_hint_webtoon">左滑随机换一本 · 右滑换好本子</string>
     <string name="onboarding_action_next">下一步</string>
