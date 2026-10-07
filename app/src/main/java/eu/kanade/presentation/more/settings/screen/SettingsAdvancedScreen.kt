@@ -9,10 +9,13 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.collectAsState
@@ -22,13 +25,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.extension.interactor.TrustExtension
+import eu.kanade.presentation.components.TransientNoticeHost
+import eu.kanade.presentation.components.TransientNoticeState
+import eu.kanade.presentation.components.rememberTransientNoticeState
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.advanced.ClearDatabaseScreen
 import eu.kanade.presentation.more.settings.screen.debug.DebugInfoScreen
@@ -80,6 +89,31 @@ import java.io.File
 
 object SettingsAdvancedScreen : SearchableSettings {
 
+    /**
+     * The one-shot feedback for the coach-mark reset entry. The state is remembered by the
+     * overridden [Content] below and read from [getPreferences]'s click handler — the same
+     * reach-around as [SearchableSettings.highlightKey].
+     */
+    private var resetNoticeState: TransientNoticeState? = null
+
+    @Composable
+    override fun Content() {
+        val state = rememberTransientNoticeState()
+        resetNoticeState = state
+        DisposableEffect(Unit) {
+            onDispose { resetNoticeState = null }
+        }
+        Box {
+            super.Content()
+            TransientNoticeHost(
+                state = state,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 48.dp),
+            )
+        }
+    }
+
     @ReadOnlyComposable
     @Composable
     override fun getTitleRes() = MR.strings.pref_category_advanced
@@ -94,6 +128,7 @@ object SettingsAdvancedScreen : SearchableSettings {
         val networkPreferences = remember { Injekt.get<NetworkPreferences>() }
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
         val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
+        val resetDoneText = stringResource(MR.strings.coach_reset_done)
 
         return listOf(
             Preference.PreferenceItem.TextPreference(
@@ -124,10 +159,10 @@ object SettingsAdvancedScreen : SearchableSettings {
             ),
             Preference.PreferenceItem.TextPreference(
                 title = stringResource(MR.strings.pref_show_coach_marks),
-                subtitle = stringResource(MR.strings.pref_show_coach_marks_summary),
                 onClick = {
                     basePreferences.coachLocalFabShown.set(false)
                     readerPreferences.showNavigationOverlayNewUser.set(true)
+                    resetNoticeState?.show(resetDoneText)
                 },
             ),
             Preference.PreferenceItem.TextPreference(

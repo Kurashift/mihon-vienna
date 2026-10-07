@@ -239,7 +239,7 @@
     <string name="onboarding_action_finish">Get started</string>
     <string name="onboarding_action_skip">Skip</string>
     <string name="pref_show_coach_marks">Show the feature guides again</string>
-    <string name="pref_show_coach_marks_summary">The one-time hints appear again the next time you enter the corresponding screens</string>
+    <string name="coach_reset_done">Feature guides reset</string>
     <string name="coach_fab_locate">Tap — back to what you were reading</string>
     <string name="coach_fab_random">Drag right — a random entry</string>
     <string name="coach_fab_good_doujin">Drag up — a good doujin</string>

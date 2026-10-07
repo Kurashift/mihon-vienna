@@ -895,7 +895,7 @@
     <string name="onboarding_guides_returning_user">重新安裝了 %s？</string>
     <string name="onboarding_action_skip">略過</string>
     <string name="pref_show_coach_marks">重新顯示功能導覽</string>
-    <string name="pref_show_coach_marks_summary">一次性提示會在下次進入相應頁面時重新出現</string>
+    <string name="coach_reset_done">功能導覽已重置</string>
     <string name="coach_fab_locate">點按 · 回到上次在看</string>
     <string name="coach_fab_random">右拖 · 隨機一本</string>
     <string name="coach_fab_good_doujin">上拖 · 好本子</string>
