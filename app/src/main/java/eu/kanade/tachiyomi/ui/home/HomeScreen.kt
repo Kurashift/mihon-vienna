@@ -3,11 +3,16 @@ package eu.kanade.tachiyomi.ui.home
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
@@ -18,12 +23,14 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRailItem
@@ -45,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
+import androidx.compose.ui.util.lerp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
@@ -273,7 +281,7 @@ object HomeScreen : Screen() {
                     scope.launch { tab.onReselect(navigator) }
                 }
             },
-            icon = { NavigationIconItem(tab) },
+            icon = { NavigationIconItem(tab, selected) },
             label = {
                 Text(
                     text = tab.options.title,
@@ -301,7 +309,7 @@ object HomeScreen : Screen() {
                     scope.launch { tab.onReselect(navigator) }
                 }
             },
-            icon = { NavigationIconItem(tab) },
+            icon = { NavigationIconItem(tab, selected) },
             label = {
                 Text(
                     text = tab.options.title,
@@ -315,7 +323,7 @@ object HomeScreen : Screen() {
     }
 
     @Composable
-    private fun NavigationIconItem(tab: eu.kanade.presentation.util.Tab) {
+    private fun NavigationIconItem(tab: eu.kanade.presentation.util.Tab, selected: Boolean) {
         BadgedBox(
             badge = {
                 when {
@@ -361,37 +369,106 @@ object HomeScreen : Screen() {
                             }
                         }
                     }
-                    tab is MoreTab -> {
-                        val incognito by produceState(
-                            initialValue = Injekt.get<BasePreferences>().incognitoMode.get(),
-                        ) {
-                            Injekt.get<BasePreferences>().incognitoMode.changes()
-                                .collectLatest { value = it }
-                        }
-                        if (incognito) {
-                            // Primary instead of the default error red: incognito is a standing
-                            // mode, not something waiting for attention like the count badges.
-                            Badge(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_glasses_24dp),
-                                    contentDescription = stringResource(MR.strings.pref_incognito_mode),
-                                    modifier = Modifier.size(12.dp),
-                                )
-                            }
-                        }
-                    }
                 }
             },
         ) {
+            Box {
+                Icon(
+                    painter = tab.options.icon!!,
+                    contentDescription = tab.options.title,
+                )
+                if (tab is MoreTab) {
+                    IncognitoGlassesMark(
+                        selected = selected,
+                        modifier = Modifier.align(Alignment.TopEnd),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Drawn inside the empty upper half of the "more" glyph, above its right dot, in the icon's
+     * own colour: a variant of the icon rather than a badge stacked on top of it. It fades and
+     * scales in when incognito is switched on, and rides that dot's bounce when the tab is
+     * selected or left, so the two never move apart. Mark and glyph mirror together with the
+     * layout direction, so the same dot stays under the mark either way.
+     */
+    @Composable
+    private fun IncognitoGlassesMark(
+        selected: Boolean,
+        modifier: Modifier = Modifier,
+    ) {
+        val incognito by produceState(
+            initialValue = Injekt.get<BasePreferences>().incognitoMode.get(),
+        ) {
+            Injekt.get<BasePreferences>().incognitoMode.changes()
+                .collectLatest { value = it }
+        }
+        val dotOffsetDp = rememberMoreDotOffsetDp(selected)
+
+        AnimatedVisibility(
+            visible = incognito,
+            enter = fadeIn(animationSpec = tween(220)) +
+                scaleIn(initialScale = 0.6f, animationSpec = tween(220)),
+            exit = fadeOut(animationSpec = tween(140)) +
+                scaleOut(targetScale = 0.6f, animationSpec = tween(140)),
+            modifier = modifier,
+        ) {
             Icon(
-                painter = tab.options.icon!!,
-                contentDescription = tab.options.title,
+                painter = painterResource(R.drawable.ic_glasses_24dp),
+                contentDescription = stringResource(MR.strings.pref_incognito_mode),
+                modifier = Modifier
+                    .offset(x = 2.dp, y = (-2).dp + dotOffsetDp.dp)
+                    .size(12.dp),
+                tint = LocalContentColor.current,
             )
         }
     }
+
+    /**
+     * Drives the mark along the bounce of that dot. `anim_more_enter.xml` counts its 833 ms
+     * timeline in both directions — forwards on selection, backwards on leaving — so the driver
+     * does the same and [moreDotOffsetDp] turns that clock into the offset.
+     */
+    @Composable
+    private fun rememberMoreDotOffsetDp(selected: Boolean): Float {
+        val time by animateFloatAsState(
+            targetValue = if (selected) MoreGlyphDurationMillis else 0f,
+            animationSpec = tween(durationMillis = MoreGlyphDurationMillis.toInt(), easing = LinearEasing),
+            label = "moreDotOffset",
+        )
+        return moreDotOffsetDp(time)
+    }
+
+    /**
+     * Vertical offset of the dot at [timeMillis] of that timeline, in dp. Read off the same file:
+     * it holds until 217 ms, rises 128 units (1080 units across 24 dp, so 2.84 dp) by 317 ms,
+     * dips 36 units past its resting spot by 450 ms and settles back by 517 ms.
+     */
+    private fun moreDotOffsetDp(timeMillis: Float): Float {
+        val units = when {
+            timeMillis < 217f -> 0f
+            timeMillis < 317f -> lerp(0f, -128f, moreDotEase((timeMillis - 217f) / 100f))
+            timeMillis < 450f -> lerp(-128f, 36f, moreDotEase((timeMillis - 317f) / 133f))
+            timeMillis < 517f -> lerp(36f, 0f, moreDotEase((timeMillis - 450f) / 67f))
+            else -> 0f
+        }
+        return units / 45f
+    }
+
+    private fun moreDotEase(fraction: Float): Float =
+        MoreDotEasing.transform(fraction.coerceIn(0f, 1f))
+
+    /** Timeline length of `anim_more_enter.xml`, in milliseconds. */
+    @Suppress("ConstPropertyName")
+    private const val MoreGlyphDurationMillis = 833f
+
+    /**
+     * Easing of every step of that bounce, from
+     * `pathInterpolator: M 0,0 c0.5,0 0.5,1 1,1`.
+     */
+    private val MoreDotEasing = CubicBezierEasing(0.5f, 0f, 0.5f, 1f)
 
     suspend fun search(query: String) {
         librarySearchEvent.send(query)
