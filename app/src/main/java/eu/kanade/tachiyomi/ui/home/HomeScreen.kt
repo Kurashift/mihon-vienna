@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +55,7 @@ import eu.kanade.presentation.components.BottomNavFabLift
 import eu.kanade.presentation.components.LocalBottomNavFabPadding
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
+import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.browse.OnlineSourceCenterScreen
 import eu.kanade.tachiyomi.ui.browse.source.local.LocalSourceTab
@@ -76,6 +79,7 @@ import tachiyomi.presentation.core.components.material.NavigationBar
 import tachiyomi.presentation.core.components.material.NavigationRail
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.pluralStringResource
+import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -353,6 +357,28 @@ object HomeScreen : Screen() {
                                 Text(
                                     text = count.toString(),
                                     modifier = Modifier.semantics { contentDescription = desc },
+                                )
+                            }
+                        }
+                    }
+                    tab is MoreTab -> {
+                        val incognito by produceState(
+                            initialValue = Injekt.get<BasePreferences>().incognitoMode.get(),
+                        ) {
+                            Injekt.get<BasePreferences>().incognitoMode.changes()
+                                .collectLatest { value = it }
+                        }
+                        if (incognito) {
+                            // Primary instead of the default error red: incognito is a standing
+                            // mode, not something waiting for attention like the count badges.
+                            Badge(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_glasses_24dp),
+                                    contentDescription = stringResource(MR.strings.pref_incognito_mode),
+                                    modifier = Modifier.size(12.dp),
                                 )
                             }
                         }
