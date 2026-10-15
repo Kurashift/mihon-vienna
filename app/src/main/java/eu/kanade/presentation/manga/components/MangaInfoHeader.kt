@@ -996,4 +996,3 @@ private val DETAIL_COVER_MAX_WIDTH = 120.dp
 private const val TITLE_ACTION_COPY = 1
 private const val TITLE_ACTION_SEARCH_LOCAL = 2
 private const val TITLE_ACTION_SEARCH_SOURCES = 3
-

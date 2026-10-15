@@ -1,6 +1,5 @@
 package eu.kanade.presentation.audio
 
-import android.graphics.Color as AndroidColor
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.textclassifier.TextClassifier
@@ -77,6 +76,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.EmptyScreenAction
 import tachiyomi.presentation.core.screens.LoadingScreen
+import android.graphics.Color as AndroidColor
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

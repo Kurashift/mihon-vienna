@@ -80,6 +80,7 @@ import androidx.compose.ui.zIndex
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.components.BottomNavFabLift
 import eu.kanade.presentation.components.RandomGestureFab
+import eu.kanade.presentation.components.TitleSelectionController
 import eu.kanade.presentation.components.rememberAtListEnd
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
 import eu.kanade.presentation.manga.components.ChapterGridDragState
@@ -90,7 +91,6 @@ import eu.kanade.presentation.manga.components.MangaBottomActionMenu
 import eu.kanade.presentation.manga.components.MangaChapterGridItem
 import eu.kanade.presentation.manga.components.MangaChapterListItem
 import eu.kanade.presentation.manga.components.MangaInfoBox
-import eu.kanade.presentation.components.TitleSelectionController
 import eu.kanade.presentation.manga.components.MangaToolbar
 import eu.kanade.presentation.manga.components.ReadRangeActions
 import eu.kanade.presentation.manga.components.chapterGridDragSource

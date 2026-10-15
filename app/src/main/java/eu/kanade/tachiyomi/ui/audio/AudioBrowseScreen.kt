@@ -739,7 +739,16 @@ class AudioBrowseViewModel(
         categoryRef?.let { ref ->
             val categoryId = ref.id
             if (categoryId != null && searchKeyword.isBlank()) {
-                return api.fetchCategoryWorks(ref.field, categoryId, page, PAGE_SIZE, sort.order, sort.sort, cache, seed)
+                return api.fetchCategoryWorks(
+                    ref.field,
+                    categoryId,
+                    page,
+                    PAGE_SIZE,
+                    sort.order,
+                    sort.sort,
+                    cache,
+                    seed,
+                )
             }
             // The id endpoints accept no keyword, so an intersection can only be expressed in the
             // legacy syntax — which is also how a name the dictionaries could not pin to an id
