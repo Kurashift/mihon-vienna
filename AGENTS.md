@@ -4,7 +4,7 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 
 ## 项目与构建
 
-- 默认在 `main` 分支工作。动手前先 `git fetch` 并看 `git status`：远端可能已有别人的提交（例如网页改 README），本地脏工作区也不要假设只有自己的改动。
+- 改动走分支、经 PR 合入 `main`（规则见「验证与交付」末条）。动手前先 `git fetch` 并看 `git status`：远端可能已有别人的提交（例如网页改 README），本地脏工作区也不要假设只有自己的改动。
 - **交付**只用 `vienna`：`:app:assembleVienna`。它保留 applicationId `app.mihon.dev`，以便原位覆盖升级、保留用户数据。
 - 未经明确要求，不要为交付或安装而构建 `debug`、`localFirst`、`preview`、`release` 等其他变体。这些变体沿用上游原样保留（删除会影响 `vienna` 继承的混淆签名配置、Baseline Profile 生成与将来合并上游），不要动它们。
 - 上面这条只约束**交付产物**，不约束**验证行为**。改完代码后该做的编译检查与单元测试照常执行，不必为此征求同意：
@@ -80,4 +80,4 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 验收现场统计时，需明确排除少量已知损坏且在未 Root 状态下无法删除的文件，不得把它们计入对数或误报为回归。
 - 未经用户明确同意，不得把清除应用数据、撤销存储权限、重建整个本地库、删除索引或重新导入文件当作修复捷径。
 - Agent 完成一个编译通过、自洽的改动单元后，可以主动 commit 并推送，不必等用户要求；半成品、临时插桩、未验证的中间态不提交也不推送。推送前遵守下一条的 fetch / rebase 规则。提交前用 `git status` 确认改动范围：发现并行会话进行中的改动，只提交自己名下的文件，不要把别人的工作扫进自己的提交。
-- 推送前再 `git fetch`。若 `origin/main` 已超前，先 rebase 再推；已经打好的 annotated tag 必须删掉按新 commit 重打，否则 tag 会停在 rebase 前的提交上。`git ls-remote --tags` 和 `git rev-parse vX.Y.Z` 返回的是 tag object，核对指向必须用 `vX.Y.Z^{commit}`。
+- 推送前先 `git fetch`；落后就 rebase。`main` 开了分支保护：改动只能经 PR 合入——切分支、推分支、开 PR，等 `Build & Test App` 变绿再合并；直接 `git push origin main` 会被 GitHub 拒绝。tag 不受分支保护限制，但必须打在合并后的 `main` 上，已推送的 annotated tag 要删掉重打（`git ls-remote --tags` 与 `git rev-parse vX.Y.Z` 返回的是 tag object，核对指向用 `vX.Y.Z^{commit}`）。
