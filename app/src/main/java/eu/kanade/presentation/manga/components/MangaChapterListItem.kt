@@ -41,7 +41,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -115,7 +114,9 @@ fun MangaChapterListItem(
                     onLongClick = onLongClick,
                 )
                 .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 12.dp),
-            verticalAlignment = if (cover != null) Alignment.Top else Alignment.CenterVertically,
+            // 整行顶部对齐：在线行的标题因此钉在固定高度上，下面再出现标记或汉化组名，
+            // 也只会往下多排一行，不会把标题和进度顶起来。
+            verticalAlignment = Alignment.Top,
         ) {
             if (cover != null) {
                 Box(
@@ -140,7 +141,15 @@ fun MangaChapterListItem(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .let { if (cover != null) it.heightIn(min = 144.dp) else it },
+                    .let {
+                        if (cover != null) {
+                            it.heightIn(min = 144.dp)
+                        } else {
+                            // 让标题行与 40dp 的下载按钮居中对齐，位置固定；标题行本身只占 20dp，
+                            // 多出来的这段就是标记和汉化组名要占的地方。
+                            it.padding(top = NoCoverTitleTopInset)
+                        }
+                    },
                 // 本地封面把整列拉高到封面同高，上下撑开；在线无封面时恢复紧凑排列。
                 verticalArrangement = if (cover != null) Arrangement.SpaceBetween else Arrangement.spacedBy(6.dp),
             ) {
@@ -168,7 +177,7 @@ fun MangaChapterListItem(
                     ) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.Top,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 text = title,
@@ -180,10 +189,7 @@ fun MangaChapterListItem(
                                     .weight(1f)
                                     .alignByBaseline(),
                             )
-                            // Reading progress shares the title's line instead of taking one of its
-                            // own: online chapter names are short, and a lone number on a second
-                            // line never lined up with anything. Cover rows keep printing it in the
-                            // right rail, so this is the no-cover branch only.
+                            // 进度与标题按基线对齐，同处一行；在线行的标记不在这行，不跟标题抢宽度。
                             if (cover == null && readProgress != null) {
                                 Text(
                                     text = readProgress,
@@ -219,13 +225,25 @@ fun MangaChapterListItem(
                             }
                         }
                     } else if (scanlator != null || goodDoujinMarked || bookmark || flagMarked) {
-                        ChapterInfoLine(
-                            scanlator = scanlator,
-                            goodDoujinMarked = goodDoujinMarked,
-                            bookmark = bookmark,
-                            flagMarked = flagMarked,
-                            metadataStyle = metadataStyle,
-                        )
+                        // 在线行的第二行：汉化组名在左，标记靠右，正好落在进度值下方。两样都没有时
+                        // 整行不排，普通在线篇目就是干净的一行标题加进度。
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = scanlator.orEmpty(),
+                                style = metadataStyle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            ChapterMarks(
+                                goodDoujinMarked = goodDoujinMarked,
+                                bookmark = bookmark,
+                                flagMarked = flagMarked,
+                            )
+                        }
                     }
                 }
             }
@@ -340,18 +358,16 @@ fun MangaChapterListItem(
 }
 
 /**
- * Second line of a chapter row without a cover: the marks and the scanlator. It is laid out only
- * when there is something to show, so a plain online chapter — no marks, no scanlator — stays a
- * single line instead of reserving an empty one.
+ * 在线篇目的标记，排在标题下面那一行的右端，也就是进度值的正下方。标题钉在固定高度上，
+ * 所以打标、取消都只影响这一行自身。带封面的行不走这里，它的标记仍在右侧轨道上。
  */
 @Composable
-private fun ChapterInfoLine(
-    scanlator: String?,
+private fun ChapterMarks(
     goodDoujinMarked: Boolean,
     bookmark: Boolean,
     flagMarked: Boolean,
-    metadataStyle: TextStyle,
 ) {
+    if (!goodDoujinMarked && !bookmark && !flagMarked) return
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -378,13 +394,6 @@ private fun ChapterInfoLine(
                 size = 14.dp,
             )
         }
-        Text(
-            text = scanlator.orEmpty(),
-            style = metadataStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
     }
 }
 
@@ -472,3 +481,9 @@ internal fun swipeAction(
 }
 
 internal val swipeActionThreshold = 56.dp
+
+/**
+ * 在线行标题的顶部留白：下载按钮 40dp、标题行 20dp，两者居中对齐时上方正好差 10dp。
+ * 标题因此固定在行顶往下 10dp 处，下面的标记与汉化组名只让这一行往下长。
+ */
+private val NoCoverTitleTopInset = 10.dp
