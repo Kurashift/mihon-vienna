@@ -38,7 +38,15 @@
 
 ABI 选择：`arm64-v8a`（手机/平板）、`x86_64`（模拟器）、`armeabi-v7a`（老旧 32 位）、`universal`（全架构，体积最大，前三个都不合适时才用）。
 
-## 4. 提交与推送
+## 4. 提交、PR 与推送
+
+`main` 开了分支保护：改动只能经 PR 合并，且 `Build & Test App` 检查通过；直接 `git push origin main` 会被 GitHub 拒绝。tag 不受分支保护限制，照常推送。
+
+先建分支，不要在 `main` 上直接提交：
+
+```powershell
+git switch -c release-vX.Y.Z
+```
 
 暂存后先确认清单里没有 `secrets.properties`、构建日志、截图等不该入库的文件。
 
@@ -50,19 +58,26 @@ git add CHANGELOG.md docs/release-post-vX.Y.Z.md app/build.gradle.kts app/src i1
 
 ```powershell
 git commit -F <UTF-8 编码的提交信息文件>
-git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin release-vX.Y.Z
 ```
 
-打完 tag 校验它指向的提交：
+在 GitHub 上开 PR（base 选 `main`），等 `Build & Test App` 绿了再合并，合并后删掉该分支，本地同步：
 
 ```powershell
+git switch main
+git pull --ff-only
+```
+
+tag 打在合并后的 `main` 上，再校验它指向的提交：
+
+```powershell
+git tag -a vX.Y.Z -m "vX.Y.Z"
 git rev-parse vX.Y.Z^{commit}
 ```
 
 注意 `git ls-remote --tags` 和 `git rev-parse vX.Y.Z` 返回的是 **tag object**，不是 commit。判断是否一致必须用 `^{commit}` 或 `git log -1 <sha>`，否则会误判成远端与本地不一致。
 
 ```powershell
-git push origin main
 git push origin vX.Y.Z
 ```
 

@@ -1,13 +1,9 @@
 name: Build & Test
 on:
+  # No paths filter here on purpose: this workflow is a required status check
+  # for main, and a filtered-out pull request (docs-only, for example) would
+  # never report a result, leaving that PR unmergeable.
   pull_request:
-    paths:
-      - '**'
-      - '!**.md'
-      - '!i18n/src/commonMain/moko-resources/**/strings.xml'
-      - '!i18n/src/commonMain/moko-resources/**/plurals.xml'
-      - 'i18n/src/commonMain/moko-resources/base/strings.xml'
-      - 'i18n/src/commonMain/moko-resources/base/plurals.xml'
   push:
     branches:
       - main
