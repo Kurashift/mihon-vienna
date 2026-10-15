@@ -167,7 +167,7 @@ fun MangaChapterListItem(
                         },
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.Top,
                         ) {
                             Text(
@@ -176,7 +176,27 @@ fun MangaChapterListItem(
                                 color = LocalContentColor.current.copy(alpha = if (read) DISABLED_ALPHA else 1f),
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .alignByBaseline(),
                             )
+                            // Reading progress shares the title's line instead of taking one of its
+                            // own: online chapter names are short, and a lone number on a second
+                            // line never lined up with anything. Cover rows keep printing it in the
+                            // right rail, so this is the no-cover branch only.
+                            if (cover == null && readProgress != null) {
+                                Text(
+                                    text = readProgress,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (read) {
+                                        metadataStyle.color
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    },
+                                    maxLines = 1,
+                                    modifier = Modifier.alignByBaseline(),
+                                )
+                            }
                         }
                         ProvideTextStyle(value = metadataStyle) {
                             if (subtitle != null) {
@@ -198,11 +218,9 @@ fun MangaChapterListItem(
                                 )
                             }
                         }
-                    } else {
+                    } else if (scanlator != null || goodDoujinMarked || bookmark || flagMarked) {
                         ChapterInfoLine(
                             scanlator = scanlator,
-                            readProgress = readProgress,
-                            read = read,
                             goodDoujinMarked = goodDoujinMarked,
                             bookmark = bookmark,
                             flagMarked = flagMarked,
@@ -322,15 +340,13 @@ fun MangaChapterListItem(
 }
 
 /**
- * Second line of a chapter row without a cover: markers, scanlator and reading progress side by
- * side. The line is laid out even when all of them are empty, so a row keeps its height when
- * progress first appears after the chapter is opened.
+ * Second line of a chapter row without a cover: the marks and the scanlator. It is laid out only
+ * when there is something to show, so a plain online chapter — no marks, no scanlator — stays a
+ * single line instead of reserving an empty one.
  */
 @Composable
 private fun ChapterInfoLine(
     scanlator: String?,
-    readProgress: String?,
-    read: Boolean,
     goodDoujinMarked: Boolean,
     bookmark: Boolean,
     flagMarked: Boolean,
@@ -369,14 +385,6 @@ private fun ChapterInfoLine(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        if (readProgress != null) {
-            Text(
-                text = readProgress,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                color = if (read) metadataStyle.color else MaterialTheme.colorScheme.primary,
-            )
-        }
     }
 }
 
