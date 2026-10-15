@@ -65,12 +65,6 @@ object Notifications {
     const val ID_LOCAL_TRANSFER_COMPLETE = -802
 
     /**
-     * Notification channel used for Incognito Mode
-     */
-    const val CHANNEL_INCOGNITO_MODE = "incognito_mode_channel"
-    const val ID_INCOGNITO_MODE = -701
-
-    /**
      * Notification channel and ids used for extension updates.
      */
     private const val GROUP_APK_UPDATES = "group_apk_updates"
@@ -96,6 +90,7 @@ object Notifications {
         "library_skipped_channel",
         "app_apk_update_channel",
         "audio_playback_channel",
+        "incognito_mode_channel",
     )
 
     /**
@@ -168,9 +163,6 @@ object Notifications {
                     setGroup(GROUP_BACKUP_RESTORE)
                     setShowBadge(false)
                     setSound(null, null)
-                },
-                buildNotificationChannel(CHANNEL_INCOGNITO_MODE, IMPORTANCE_LOW) {
-                    setName(context.stringResource(MR.strings.pref_incognito_mode))
                 },
                 buildNotificationChannel(CHANNEL_EXTENSIONS_UPDATE, IMPORTANCE_DEFAULT) {
                     setGroup(GROUP_APK_UPDATES)

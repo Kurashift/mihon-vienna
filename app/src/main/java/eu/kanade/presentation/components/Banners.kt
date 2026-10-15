@@ -36,8 +36,6 @@ import tachiyomi.presentation.core.i18n.stringResource
 
 val DownloadedOnlyBannerBackgroundColor
     @Composable get() = MaterialTheme.colorScheme.tertiary
-val IncognitoModeBannerBackgroundColor
-    @Composable get() = MaterialTheme.colorScheme.primary
 val IndexingBannerBackgroundColor
     @Composable get() = MaterialTheme.colorScheme.secondary
 
@@ -61,7 +59,6 @@ fun WarningBanner(
 @Composable
 fun AppStateBanners(
     downloadedOnlyMode: Boolean,
-    incognitoMode: Boolean,
     indexing: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -96,29 +93,12 @@ fun AppStateBanners(
         }.fastMap { it.measure(constraints) }
         val downloadedOnlyHeight = downloadedOnlyPlaceable.fastMaxBy { it.height }?.height ?: 0
 
-        val incognitoPlaceable = subcompose(2) {
-            AnimatedVisibility(
-                visible = incognitoMode,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
-            ) {
-                val top = (mainInsetsTop - indexingHeight - downloadedOnlyHeight).coerceAtLeast(0)
-                IncognitoModeBanner(
-                    modifier = Modifier.windowInsetsPadding(WindowInsets(top = top)),
-                )
-            }
-        }.fastMap { it.measure(constraints) }
-        val incognitoHeight = incognitoPlaceable.fastMaxBy { it.height }?.height ?: 0
-
-        layout(constraints.maxWidth, indexingHeight + downloadedOnlyHeight + incognitoHeight) {
+        layout(constraints.maxWidth, indexingHeight + downloadedOnlyHeight) {
             indexingPlaceable.fastForEach {
                 it.place(0, 0)
             }
             downloadedOnlyPlaceable.fastForEach {
                 it.place(0, indexingHeight)
-            }
-            incognitoPlaceable.fastForEach {
-                it.place(0, indexingHeight + downloadedOnlyHeight)
             }
         }
     }
@@ -134,21 +114,6 @@ private fun DownloadedOnlyModeBanner(modifier: Modifier = Modifier) {
             .padding(4.dp)
             .then(modifier),
         color = MaterialTheme.colorScheme.onTertiary,
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.labelMedium,
-    )
-}
-
-@Composable
-private fun IncognitoModeBanner(modifier: Modifier = Modifier) {
-    Text(
-        text = stringResource(MR.strings.pref_incognito_mode),
-        modifier = Modifier
-            .background(IncognitoModeBannerBackgroundColor)
-            .fillMaxWidth()
-            .padding(4.dp)
-            .then(modifier),
-        color = MaterialTheme.colorScheme.onPrimary,
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.labelMedium,
     )

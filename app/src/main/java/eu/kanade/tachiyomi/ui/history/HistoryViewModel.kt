@@ -4,6 +4,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.viewModelScope
 import eu.kanade.core.util.insertSeparators
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.presentation.history.HistoryUiModel
@@ -49,6 +50,7 @@ import uy.kohesive.injekt.api.get
 
 class HistoryViewModel(
     private val addTracks: AddTracks = Injekt.get(),
+    private val basePreferences: BasePreferences = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
     private val getChapter: GetChapter = Injekt.get(),
     private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
@@ -83,6 +85,10 @@ class HistoryViewModel(
                         .flowOn(Dispatchers.IO)
                 }
                 .collect { newList -> mutableState.update { it.copy(list = newList) } }
+        }
+        viewModelScope.launch {
+            basePreferences.incognitoMode.changes()
+                .collect { incognito -> mutableState.update { it.copy(incognitoMode = incognito) } }
         }
     }
 
@@ -329,6 +335,7 @@ class HistoryViewModel(
         val list: List<HistoryUiModel>? = null,
         val selection: Set<Long> = emptySet(),
         val dialog: Dialog? = null,
+        val incognitoMode: Boolean = false,
     )
 
     sealed interface Dialog {

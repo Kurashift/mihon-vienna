@@ -43,15 +43,15 @@ data class ReaderChapter(
     /**
      * The 0-based page index this chapter should open at, based on the stored reading progress.
      *
-     * Chapters with stored progress resume at that page (fully-read chapters open at the last
-     * page they finished on); unread chapters start at the first page.
+     * Unfinished chapters with stored progress resume at that page. Fully-read chapters start at
+     * the first page like unread ones: reopening a finished chapter means reading it again.
      *
      * @param totalPages the number of pages of this chapter, defaults to the loaded page count.
      */
     fun resumePageIndex(totalPages: Int = pages?.size ?: 0): Int {
         val lastPageRead = chapter.last_page_read
         return when {
-            chapter.read && totalPages > 0 -> totalPages - 1
+            chapter.read -> 0
             // A stored page equal to the total page count is only valid for a chapter already
             // marked as read. Unread chapters in this state (legacy data where total_pages was
             // persisted as 0) would otherwise open on the last page and be completed instantly.

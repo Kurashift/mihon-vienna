@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -114,6 +115,7 @@ fun MangaChapterListItem(
                     onLongClick = onLongClick,
                 )
                 .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 12.dp),
+            verticalAlignment = if (cover != null) Alignment.Top else Alignment.CenterVertically,
         ) {
             if (cover != null) {
                 Box(
@@ -186,14 +188,26 @@ fun MangaChapterListItem(
                             }
                         }
                     }
-                    ProvideTextStyle(value = metadataStyle) {
-                        if (scanlator != null) {
-                            Text(
-                                text = scanlator,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                    if (cover != null) {
+                        ProvideTextStyle(value = metadataStyle) {
+                            if (scanlator != null) {
+                                Text(
+                                    text = scanlator,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
+                    } else {
+                        ChapterInfoLine(
+                            scanlator = scanlator,
+                            readProgress = readProgress,
+                            read = read,
+                            goodDoujinMarked = goodDoujinMarked,
+                            bookmark = bookmark,
+                            flagMarked = flagMarked,
+                            metadataStyle = metadataStyle,
+                        )
                     }
                 }
             }
@@ -285,52 +299,16 @@ fun MangaChapterListItem(
                         }
                     }
                 } else {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        if (read) {
-                            StatusIcon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = stringResource(MR.strings.action_mark_as_read),
-                                size = 18.dp,
-                            )
-                        }
-                        // 顺序按视觉权重排：好本子的红心比旗子更容易被一眼认出，放在已读之后。
-                        if (goodDoujinMarked) {
-                            StatusIcon(
-                                imageVector = Icons.Filled.Favorite,
-                                contentDescription = stringResource(
-                                    MR.strings.action_add_to_good_doujin,
-                                ),
-                                tint = GOOD_DOUJIN_HEART_COLOR,
-                            )
-                        }
-                        if (flagMarked) {
-                            StatusIcon(
-                                imageVector = Icons.Filled.Flag,
-                                contentDescription = stringResource(MR.strings.action_mark_duplicate),
-                            )
-                        }
-                        if (bookmark) {
-                            StatusIcon(
-                                imageVector = Icons.Filled.Bookmark,
-                                contentDescription = stringResource(
-                                    MR.strings.action_filter_bookmarked,
-                                ),
-                            )
-                        }
-                        // Multi-select only disables the tap; the 40dp slot stays so rows never shrink.
-                        ChapterDownloadIndicator(
-                            enabled = downloadIndicatorEnabled,
-                            downloadStateProvider = downloadStateProvider,
-                            downloadProgressProvider = downloadProgressProvider,
-                            onClick = { onDownloadClick?.invoke(it) },
-                        )
-                    }
+                    // Multi-select only disables the tap; the 40dp slot stays so rows never shrink.
+                    ChapterDownloadIndicator(
+                        enabled = downloadIndicatorEnabled,
+                        downloadStateProvider = downloadStateProvider,
+                        downloadProgressProvider = downloadProgressProvider,
+                        onClick = { onDownloadClick?.invoke(it) },
+                    )
                 }
 
-                if (readProgress != null) {
+                if (cover != null && readProgress != null) {
                     Text(
                         text = readProgress,
                         style = MaterialTheme.typography.labelMedium,
@@ -339,6 +317,65 @@ fun MangaChapterListItem(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Second line of a chapter row without a cover: markers, scanlator and reading progress side by
+ * side. The line is laid out even when all of them are empty, so a row keeps its height when
+ * progress first appears after the chapter is opened.
+ */
+@Composable
+private fun ChapterInfoLine(
+    scanlator: String?,
+    readProgress: String?,
+    read: Boolean,
+    goodDoujinMarked: Boolean,
+    bookmark: Boolean,
+    flagMarked: Boolean,
+    metadataStyle: TextStyle,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (goodDoujinMarked) {
+            StatusIcon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = stringResource(MR.strings.action_add_to_good_doujin),
+                size = 14.dp,
+                tint = GOOD_DOUJIN_HEART_COLOR,
+            )
+        }
+        if (bookmark) {
+            StatusIcon(
+                imageVector = Icons.Filled.Bookmark,
+                contentDescription = stringResource(MR.strings.action_filter_bookmarked),
+                size = 14.dp,
+            )
+        }
+        if (flagMarked) {
+            StatusIcon(
+                imageVector = Icons.Filled.Flag,
+                contentDescription = stringResource(MR.strings.action_mark_duplicate),
+                size = 14.dp,
+            )
+        }
+        Text(
+            text = scanlator.orEmpty(),
+            style = metadataStyle,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (readProgress != null) {
+            Text(
+                text = readProgress,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                color = if (read) metadataStyle.color else MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

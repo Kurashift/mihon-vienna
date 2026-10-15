@@ -2,18 +2,22 @@ package eu.kanade.presentation.history
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
@@ -106,10 +110,10 @@ fun HistoryScreen(
             if (it == null) {
                 LoadingScreen(Modifier.padding(contentPadding))
             } else if (it.isEmpty()) {
-                val msg = if (!state.searchQuery.isNullOrEmpty()) {
-                    MR.strings.no_results_found
-                } else {
-                    MR.strings.information_no_recent_manga
+                val msg = when {
+                    !state.searchQuery.isNullOrEmpty() -> MR.strings.no_results_found
+                    state.incognitoMode -> MR.strings.history_incognito_note
+                    else -> MR.strings.information_no_recent_manga
                 }
                 EmptyScreen(
                     stringRes = msg,
@@ -119,6 +123,7 @@ fun HistoryScreen(
                 HistoryScreenContent(
                     history = it,
                     selection = state.selection,
+                    incognitoMode = state.incognitoMode,
                     contentPadding = contentPadding,
                     onClickCover = { history -> onClickCover(history.mangaId) },
                     onClickResume = { history -> onClickResume(history.chapterId) },
@@ -134,6 +139,7 @@ fun HistoryScreen(
 private fun HistoryScreenContent(
     history: List<HistoryUiModel>,
     selection: Set<Long>,
+    incognitoMode: Boolean,
     contentPadding: PaddingValues,
     onClickCover: (HistoryWithRelations) -> Unit,
     onClickResume: (HistoryWithRelations) -> Unit,
@@ -143,6 +149,11 @@ private fun HistoryScreenContent(
     FastScrollLazyColumn(
         contentPadding = contentPadding,
     ) {
+        if (incognitoMode) {
+            item(key = "history-incognito-note", contentType = "incognito-note") {
+                HistoryIncognitoNote()
+            }
+        }
         items(
             items = history,
             key = {
@@ -179,6 +190,18 @@ private fun HistoryScreenContent(
             }
         }
     }
+}
+
+@Composable
+private fun HistoryIncognitoNote() {
+    Text(
+        text = stringResource(MR.strings.history_incognito_note),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 sealed interface HistoryUiModel {

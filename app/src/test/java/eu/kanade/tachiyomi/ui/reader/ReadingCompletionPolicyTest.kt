@@ -12,14 +12,14 @@ import tachiyomi.domain.chapter.model.Chapter
 class ReadingCompletionPolicyTest {
 
     @Test
-    fun `completed chapter resumes at final page even with legacy partial progress`() {
+    fun `completed chapter reopens at first page even with legacy partial progress`() {
         val chapter = ChapterImpl().apply {
             read = true
             last_page_read = 8
             total_pages = 12
         }
 
-        assertEquals(11, ReaderChapter(chapter).resumePageIndex(12))
+        assertEquals(0, ReaderChapter(chapter).resumePageIndex(12))
     }
 
     @Test

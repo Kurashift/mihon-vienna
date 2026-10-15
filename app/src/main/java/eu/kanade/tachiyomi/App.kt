@@ -1,15 +1,9 @@
 package eu.kanade.tachiyomi
 
-import android.annotation.SuppressLint
 import android.app.Application
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.webkit.WebView
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -46,8 +40,6 @@ import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.WebViewUtil
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
-import eu.kanade.tachiyomi.util.system.cancelNotification
-import eu.kanade.tachiyomi.util.system.notify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -58,12 +50,10 @@ import mihon.core.migration.Migrator
 import mihon.core.migration.migrations.migrations
 import mihon.telemetry.TelemetryConfig
 import org.conscrypt.Conscrypt
-import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.i18n.MR
 import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -76,9 +66,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     private val privacyPreferences: PrivacyPreferences by injectLazy()
     private val networkPreferences: NetworkPreferences by injectLazy()
 
-    private val disableIncognitoReceiver = DisableIncognitoReceiver()
-
-    @SuppressLint("LaunchActivityFromNotification")
     override fun onCreate() {
         super<Application>.onCreate()
         patchInjekt()
@@ -106,35 +93,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
-
-        // Show notification to disable Incognito Mode when it's enabled
-        basePreferences.incognitoMode.changes()
-            .onEach { enabled ->
-                if (enabled) {
-                    disableIncognitoReceiver.register()
-                    notify(
-                        Notifications.ID_INCOGNITO_MODE,
-                        Notifications.CHANNEL_INCOGNITO_MODE,
-                    ) {
-                        setContentTitle(stringResource(MR.strings.pref_incognito_mode))
-                        setContentText(stringResource(MR.strings.notification_incognito_text))
-                        setSmallIcon(R.drawable.ic_glasses_24dp)
-                        setOngoing(true)
-
-                        val pendingIntent = PendingIntent.getBroadcast(
-                            this@App,
-                            0,
-                            Intent(ACTION_DISABLE_INCOGNITO_MODE).setPackage(BuildConfig.APPLICATION_ID),
-                            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
-                        )
-                        setContentIntent(pendingIntent)
-                    }
-                } else {
-                    disableIncognitoReceiver.unregister()
-                    cancelNotification(Notifications.ID_INCOGNITO_MODE)
-                }
-            }
-            .launchIn(scope)
 
         privacyPreferences.analytics
             .changes()
@@ -254,33 +212,4 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             logcat(LogPriority.ERROR, e) { "Failed to modify notification channels" }
         }
     }
-
-    private inner class DisableIncognitoReceiver : BroadcastReceiver() {
-        private var registered = false
-
-        override fun onReceive(context: Context, intent: Intent) {
-            basePreferences.incognitoMode.set(false)
-        }
-
-        fun register() {
-            if (!registered) {
-                ContextCompat.registerReceiver(
-                    this@App,
-                    this,
-                    IntentFilter(ACTION_DISABLE_INCOGNITO_MODE),
-                    ContextCompat.RECEIVER_NOT_EXPORTED,
-                )
-                registered = true
-            }
-        }
-
-        fun unregister() {
-            if (registered) {
-                unregisterReceiver(this)
-                registered = false
-            }
-        }
-    }
 }
-
-private const val ACTION_DISABLE_INCOGNITO_MODE = "tachi.action.DISABLE_INCOGNITO_MODE"
