@@ -1266,6 +1266,7 @@
     <string name="audio_load_failed">Failed to load</string>
     <string name="audio_buffer_timeout">Buffering timed out</string>
     <string name="audio_no_tracks">No playable tracks</string>
+    <string name="audio_similar_works">Similar works</string>
     <string name="audio_empty">No results</string>
     <string name="audio_search_hint">Search ASMR works</string>
     <string name="audio_search_hint_in_category">Search in %1$s</string>
@@ -1274,6 +1275,7 @@
     <string name="audio_vas">Voice actors</string>
     <string name="audio_sort">Sort</string>
     <string name="audio_sort_release_desc">Release ↓</string>
+    <string name="audio_sort_collected">Collected ↓</string>
     <string name="audio_sort_rating_desc">Rating ↓</string>
     <string name="audio_sort_dl_desc">Downloads ↓</string>
     <string name="audio_sales">Sales</string>
@@ -1309,6 +1311,17 @@
     <string name="audio_username">Username</string>
     <string name="audio_password">Password</string>
     <string name="audio_login_failed">Login failed, check username and password</string>
+    <string name="audio_register">Register</string>
+    <string name="audio_register_title">Create account</string>
+    <string name="audio_register_failed">Registration failed, try a different username</string>
+    <string name="audio_register_hint">Username and password need at least 5 characters each</string>
+    <string name="audio_switch_to_register">No account? Register</string>
+    <string name="audio_switch_to_login">Already have an account? Sign in</string>
+    <string name="audio_backend">Line</string>
+    <string name="audio_backend_remeasure">Re-measure</string>
+    <string name="audio_backend_measuring">Measuring…</string>
+    <string name="audio_backend_unreachable">Unreachable</string>
+    <string name="audio_backend_latency">%1$d ms</string>
     <string name="audio_tab_recommended">Recommended</string>
     <string name="audio_tab_popular">Popular</string>
     <string name="audio_tab_latest">Latest</string>

@@ -150,6 +150,69 @@ class AudioTrackCatalogTest {
         assertEquals("wav", catalog.rootNodes.single().mediaStreamUrl)
     }
 
+    @Test
+    fun `mirrored format copy is folded back into the folder it duplicates`() {
+        val nodes = listOf(
+            folder(
+                "04_mp3形式（320kbps_48KHz）",
+                folder("01_通常ver", audio("track01.mp3", "mp3-2", 10)),
+                folder("02_nonSE（液体音無し）", audio("track01_nonSE.mp3", "mp3-1", 10)),
+            ),
+            folder("01_通常ver", audio("track01.wav", "wav-1", 100)),
+            folder("02_nonSE（液体音無し）", audio("track02_nonSE.wav", "wav-2", 100)),
+        )
+
+        val catalog = nodes.buildAudioTrackCatalog(WORK)
+
+        assertEquals(
+            listOf("01_通常ver", "02_nonSE（液体音無し）"),
+            catalog.rootNodes.folderTitles(),
+        )
+        assertEquals(
+            listOf("track01_nonSE.mp3", "track02_nonSE.wav"),
+            catalog.rootNodes.last().children.map { it.title },
+        )
+        // Row keys come from these paths, so a repeat is a crash, not a cosmetic issue.
+        val paths = catalog.rootNodes.folderPaths()
+        assertEquals(paths.distinct(), paths)
+    }
+
+    @Test
+    fun `a hoisted folder reports the path the page shows it under`() {
+        val nodes = listOf(
+            folder(
+                "04_mp3形式（320kbps_48KHz）",
+                folder("02_nonSE（液体音無し）", audio("track01.mp3", "mp3-1", 10)),
+            ),
+        )
+
+        val catalog = nodes.buildAudioTrackCatalog(WORK)
+
+        assertEquals(listOf("02_nonSE（液体音無し）"), catalog.rootNodes.folderTitles())
+        assertEquals("02_nonSE（液体音無し）", catalog.tracks.single().folderPath)
+    }
+
+    @Test
+    fun `an entry the tree lists twice is kept once`() {
+        val nodes = listOf(
+            folder("Disc", audio("01.mp3", "same", 10), audio("01.mp3", "same", 10)),
+        )
+
+        val catalog = nodes.buildAudioTrackCatalog(WORK)
+
+        assertEquals(1, catalog.tracks.size)
+        assertEquals(1, catalog.rootNodes.single().children.size)
+    }
+
+    private fun List<TrackNode>.folderPaths(parent: String = ""): List<String> = flatMap { node ->
+        if (node.type != "folder") {
+            emptyList()
+        } else {
+            val path = if (parent.isEmpty()) node.title else "$parent/${node.title}"
+            listOf(path) + node.children.folderPaths(path)
+        }
+    }
+
     private fun List<TrackNode>.folderTitles(): List<String> = flatMap { node ->
         if (node.type == "folder") listOf(node.title) + node.children.folderTitles() else emptyList()
     }
