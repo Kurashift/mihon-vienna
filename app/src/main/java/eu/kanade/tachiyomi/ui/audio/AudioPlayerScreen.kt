@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,7 +21,6 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioPlayerContent
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.data.audio.AudioAccountProgress
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
 import eu.kanade.tachiyomi.data.audio.AudioCategoryField
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
@@ -72,6 +72,7 @@ class AudioPlayerScreen(
 
         val currentItem = controller.state.item
         var isFavorite by remember { mutableStateOf(false) }
+        val accountRevision by accountSync.revision.collectAsState()
 
         // When the reader handed playback over, going up has to tear down this Activity so the
         // reader underneath is revealed again.
@@ -94,8 +95,14 @@ class AudioPlayerScreen(
             AudioPlaybackService.start(context)
         }
 
-        LaunchedEffect(currentItem?.workId) {
-            isFavorite = currentItem?.let { favoriteStore.contains(it.workId) } == true
+        LaunchedEffect(currentItem?.workId, accountRevision) {
+            isFavorite = currentItem?.let { item ->
+                if (accountSync.isSignedIn()) {
+                    accountSync.isMarked(item.workId)
+                } else {
+                    favoriteStore.contains(item.workId)
+                }
+            } == true
         }
 
         // Subtitles are owned by the controller so they survive leaving this screen, but a track
@@ -132,12 +139,15 @@ class AudioPlayerScreen(
 
         val toggleFavorite = {
             currentItem?.let { item ->
-                isFavorite = favoriteStore.toggle(item.toWorkSnapshot())
+                val mark = !isFavorite
+                isFavorite = mark
+                if (mark) favoriteStore.add(item.toWorkSnapshot()) else favoriteStore.remove(item.workId)
                 coroutineScope.launch {
-                    accountSync.updateProgress(
-                        item.workId,
-                        AudioAccountProgress.MARKED.takeIf { isFavorite },
-                    )
+                    if (!accountSync.isSignedIn()) return@launch
+                    if (accountSync.setMarked(item.toWorkSnapshot(), mark)) return@launch
+                    // The account refused the write; put the button and the local copy back.
+                    isFavorite = !mark
+                    if (mark) favoriteStore.remove(item.workId) else favoriteStore.add(item.toWorkSnapshot())
                 }
             }
             Unit

@@ -24,7 +24,7 @@ object AudioCacheInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val response = chain.proceed(request)
-        if (!request.url.host.equals(API_HOST, ignoreCase = true)) return response
+        if (!request.url.host.startsWith(API_HOST_PREFIX, ignoreCase = true)) return response
         // The category dictionaries are owned by AudioCategoryCache: letting OkHttp keep a second
         // copy of the same multi-megabyte payload would only double the disk cost.
         if (request.url.encodedPath in UNCACHED_PATHS) return response
@@ -41,7 +41,12 @@ object AudioCacheInterceptor : Interceptor {
             .build()
     }
 
-    private const val API_HOST = "api.asmr-200.com"
+    /**
+     * Matches every mirror the audio section can point at — api.asmr.one and the numbered
+     * api.asmr-100/200/300.com hosts. A single host name would have quietly stopped caching the
+     * moment the user switched sites in the host picker.
+     */
+    private const val API_HOST_PREFIX = "api.asmr"
 
     /** `order` value of the work feed that must never be replayed from disk. */
     private const val RANDOM_ORDER = "random"

@@ -92,6 +92,15 @@ class BasePreferences(
     /** JWT token from the audio backend login. */
     val audioAuthToken: Preference<String> = preferenceStore.getString("audio_auth_token", "")
 
+    /**
+     * API base URL of the audio backend site the user picked, empty for the default.
+     *
+     * Stored as the full URL rather than an index so an install that chose a host keeps it even if
+     * the shipped list is reordered. The four sites share accounts and catalogue, so a switch does
+     * not invalidate [audioAuthToken].
+     */
+    val audioBackendUrl: Preference<String> = preferenceStore.getString("audio_backend_url", "")
+
     /** Preferred audio stream quality for the ASMR backend. */
     val audioQuality: Preference<String> = preferenceStore.getString("audio_quality", "fluent_first")
 
@@ -128,6 +137,17 @@ class BasePreferences(
     val audioFloatingSubtitleY: Preference<Int> = preferenceStore.getInt(
         "audio_floating_subtitle_y",
         UNSET_POSITION,
+    )
+
+    /**
+     * Where the reader's audio bar sits across the width, as a fraction of the distance it can
+     * travel. A fraction rather than a pixel offset is what lets the spot survive a rotation or a
+     * different screen: the travel itself changes with the reader's width, and a pixel offset
+     * picked on the wide one would come back clamped to an edge on the narrow one.
+     */
+    val audioReaderBarOffsetFraction: Preference<Float> = preferenceStore.getFloat(
+        "audio_reader_bar_offset_fraction",
+        0f,
     )
 
     companion object {

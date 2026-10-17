@@ -21,20 +21,20 @@ class AudioFavoriteStore(
     @Synchronized
     fun contains(workId: Long): Boolean = load().any { it.id == workId }
 
-    /** Toggles [work] and returns true when it is collected after the operation. */
+    /** Collects [work]; a work already present keeps the copy it already has. */
     @Synchronized
-    fun toggle(work: Work): Boolean {
-        val current = load().toMutableList()
-        val existingIndex = current.indexOfFirst { it.id == work.id }
-        return if (existingIndex >= 0) {
-            current.removeAt(existingIndex)
-            save(current)
-            false
-        } else {
-            current.add(0, work)
-            save(current)
-            true
-        }
+    fun add(work: Work) {
+        val current = load()
+        if (current.any { it.id == work.id }) return
+        save(listOf(work) + current)
+    }
+
+    /** Drops [workId] from the local copy. */
+    @Synchronized
+    fun remove(workId: Long) {
+        val current = load()
+        if (current.none { it.id == workId }) return
+        save(current.filterNot { it.id == workId })
     }
 
     /** Non-destructively adds account works while keeping all existing local favourites. */

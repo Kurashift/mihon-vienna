@@ -403,6 +403,12 @@ fun SearchToolbar(
     actionModeCounter: Int = 0,
     onCancelActionMode: () -> Unit = {},
     actionModeActions: @Composable RowScope.() -> Unit = {},
+    /**
+     * Overrides the counter as the source of truth for being in action mode. A caller that tracks
+     * the mode itself passes it in: unticking the last row must not drop the user out of a mode
+     * they are still working in, which a counter alone cannot express.
+     */
+    actionMode: Boolean? = null,
     scrollBehavior: TopAppBarScrollBehavior? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
@@ -410,9 +416,7 @@ fun SearchToolbar(
     val focusRequester = remember { FocusRequester() }
     val searchHistoryStore = rememberSearchHistoryStore()
     var historyExpanded by remember(historyKey) { mutableStateOf(false) }
-    val isActionMode by remember(actionModeCounter) {
-        derivedStateOf { actionModeCounter > 0 }
-    }
+    val isActionMode = actionMode ?: (actionModeCounter > 0)
 
     AppBar(
         modifier = modifier,
