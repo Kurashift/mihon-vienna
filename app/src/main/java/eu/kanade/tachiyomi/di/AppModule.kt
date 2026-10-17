@@ -167,7 +167,7 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { AudioAccountSync(get(), get(), get()) }
         addSingletonFactory { AudioHistoryStore(get(), get()) }
         addSingletonFactory { AudioPlaylistStore(get(), get()) }
-        addSingletonFactory { AudioPlayerController(get(), get(), get(), get(), get(), get()) }
+        addSingletonFactory { AudioPlayerController(get(), get(), get(), get(), get()) }
         addSingletonFactory { SearchHistoryStore(get(), get()) }
 
         addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get()) }

@@ -28,8 +28,6 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.tachiyomi.data.audio.AudioAccountProgress
-import eu.kanade.tachiyomi.data.audio.AudioAccountSync
 import eu.kanade.tachiyomi.data.audio.AudioHistoryEntry
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
@@ -96,7 +94,6 @@ class AudioPlayerController(
     private val historyStore: AudioHistoryStore,
     client: OkHttpClient,
     private val api: KikoeruApi,
-    private val accountSync: AudioAccountSync,
     private val basePreferences: BasePreferences,
 ) {
 
@@ -159,7 +156,6 @@ class AudioPlayerController(
     private var lastPeriodicHistoryAt = 0L
     private var headphonesWarningToast: Toast? = null
     private var startGeneration = 0
-    private var completionCandidateWorkId: Long? = null
 
     /**
      * Stops playback when the headphones are unplugged, so the track never jumps out of the
@@ -359,9 +355,6 @@ class AudioPlayerController(
         playWhenReady: Boolean = true,
     ) {
         items = newItems
-        completionCandidateWorkId = newItems[startIndex].workId.takeIf { workId ->
-            startIndex == newItems.indexOfFirst { it.workId == workId }
-        }
         applyVolumeProtection()
         applyRepeatMode()
         player.setMediaItems(
@@ -466,7 +459,6 @@ class AudioPlayerController(
             .takeIf { player.mediaItemCount > 0 }
             ?: state.index
         val target = (current + step + items.size) % items.size
-        completionCandidateWorkId = null
         player.seekTo(target, resumePositionFor(items.getOrNull(target)))
         play()
     }
@@ -512,7 +504,6 @@ class AudioPlayerController(
 
     fun random() {
         if (items.size <= 1) return
-        completionCandidateWorkId = null
         applyVolumeProtection()
         val current = player.currentMediaItemIndex
         val target = items.indices.filterNot { it == current }.random()
@@ -614,7 +605,6 @@ class AudioPlayerController(
         player.volume = 1f
         player.setPlaybackSpeed(1f)
         items = emptyList()
-        completionCandidateWorkId = null
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         sleepTimerEndsAt = 0L
@@ -1107,26 +1097,8 @@ class AudioPlayerController(
         )
     }
 
-    private fun syncAccountProgress(item: AudioPlayItem?, progress: AudioAccountProgress) {
-        val workId = item?.workId ?: return
-        scope.launch { accountSync.updateProgress(workId, progress) }
-    }
-
     private inner class PlayerListener : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            val previousItem = state.item
-            val previousIndex = state.index
-            if (
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-                previousItem != null &&
-                completionCandidateWorkId == previousItem.workId &&
-                previousIndex == items.indexOfLast { it.workId == previousItem.workId }
-            ) {
-                syncAccountProgress(previousItem, AudioAccountProgress.LISTENED)
-            }
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
-                completionCandidateWorkId = null
-            }
             stopPlaybackRetry()
             playbackRetryCount = 0
             recordHistory()
@@ -1137,14 +1109,6 @@ class AudioPlayerController(
             )
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 resumeCurrentTrack()
-            }
-            val currentItem = state.item
-            if (
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-                currentItem != null &&
-                state.index == items.indexOfFirst { it.workId == currentItem.workId }
-            ) {
-                completionCandidateWorkId = currentItem.workId
             }
             markBufferingStarted()
         }
@@ -1172,14 +1136,6 @@ class AudioPlayerController(
                         ),
                     )
                     recordHistory()
-                    val item = state.item
-                    if (
-                        item != null &&
-                        completionCandidateWorkId == item.workId &&
-                        state.index == items.indexOfLast { it.workId == item.workId }
-                    ) {
-                        syncAccountProgress(item, AudioAccountProgress.LISTENED)
-                    }
                 }
                 Player.STATE_IDLE -> clearBufferingState()
             }
@@ -1195,7 +1151,6 @@ class AudioPlayerController(
             recordHistory()
             // Only worth watching for the headphones being pulled out while audio is audible.
             setBecomingNoisyReceiverRegistered(isPlaying)
-            if (isPlaying) syncAccountProgress(state.item, AudioAccountProgress.LISTENING)
         }
 
         override fun onPlayerError(error: PlaybackException) {

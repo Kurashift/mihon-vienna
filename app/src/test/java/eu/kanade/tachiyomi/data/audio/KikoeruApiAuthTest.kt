@@ -52,4 +52,31 @@ class KikoeruApiAuthTest {
             ),
         )
     }
+
+    // The two shapes the backend refuses a sign-in or a registration with. Both carry a sentence
+    // the dialog shows as-is, which is the whole reason the response is read by hand.
+    @Test
+    fun `auth error text reads a refused credential`() {
+        assertEquals(
+            "用户 dsh_probe_0913 已存在.",
+            authErrorText("""{"error":"用户 dsh_probe_0913 已存在."}"""),
+        )
+    }
+
+    @Test
+    fun `auth error text reads a field validation failure`() {
+        assertEquals(
+            "用户名长度至少为 5",
+            authErrorText(
+                """{"errors":[{"value":"ab","msg":"用户名长度至少为 5","param":"name","location":"body"}]}""",
+            ),
+        )
+    }
+
+    @Test
+    fun `auth error text ignores a body without a reason`() {
+        assertNull(authErrorText("{}"))
+        assertNull(authErrorText(""))
+        assertNull(authErrorText("<html>cloudflare</html>"))
+    }
 }

@@ -499,6 +499,7 @@
     <string name="audio_load_failed">載入失敗</string>
     <string name="audio_buffer_timeout">緩衝逾時</string>
     <string name="audio_no_tracks">還沒有可播放的音軌</string>
+    <string name="audio_similar_works">相似作品</string>
     <string name="audio_empty">還沒有結果</string>
     <string name="audio_search_hint">搜尋 ASMR 作品</string>
     <string name="audio_search_hint_in_category">在 %1$s 中搜尋</string>
@@ -506,6 +507,7 @@
     <string name="audio_vas">聲優</string>
     <string name="audio_sort">排序</string>
     <string name="audio_sort_release_desc">發售日期 ↓</string>
+    <string name="audio_sort_collected">收藏時間 ↓</string>
     <string name="audio_sort_rating_desc">評分 ↓</string>
     <string name="audio_sort_dl_desc">下載量 ↓</string>
     <string name="audio_sales">銷量</string>
@@ -540,6 +542,17 @@
     <string name="audio_username">使用者名稱</string>
     <string name="audio_password">密碼</string>
     <string name="audio_login_failed">登入失敗，請檢查使用者名稱與密碼</string>
+    <string name="audio_register">註冊</string>
+    <string name="audio_register_title">註冊帳號</string>
+    <string name="audio_register_failed">註冊失敗，請換個使用者名稱再試</string>
+    <string name="audio_register_hint">使用者名稱與密碼各至少 5 個字元</string>
+    <string name="audio_switch_to_register">沒有帳號？註冊</string>
+    <string name="audio_switch_to_login">已有帳號？登入</string>
+    <string name="audio_backend">線路</string>
+    <string name="audio_backend_remeasure">重新測速</string>
+    <string name="audio_backend_measuring">測速中…</string>
+    <string name="audio_backend_unreachable">無法連線</string>
+    <string name="audio_backend_latency">%1$d ms</string>
     <string name="audio_tab_recommended">推薦</string>
     <string name="audio_tab_popular">熱門</string>
     <string name="audio_tab_latest">最新</string>

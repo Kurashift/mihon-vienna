@@ -46,7 +46,11 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
                             baseName = baseName.normalizedKey(),
                             trackNumber = baseName.trackNumber(),
                             extension = extension,
-                            folderPath = ancestors.joinToString("/"),
+                            // The page drops the format/subtitle containers when it builds the tree,
+                            // so the folder a track reports has to drop them too: a track living in
+                            // `04_mp3形式…/02_nonSE（液体音無し）` is shown under `02_nonSE（液体音無し）`,
+                            // and a folder row looks its tracks up by exactly this string.
+                            folderPath = ancestors.filterNot { it.isVariantContainer() }.joinToString("/"),
                         )
                     }
                 }
@@ -118,34 +122,77 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
         )
     }
 
-    fun prune(nodes: List<TrackNode>): List<TrackNode> = nodes.flatMap { node ->
+    fun prune(nodes: List<TrackNode>): List<TrackNode> = nodes
+        .flatMap { node ->
+            when (node.type) {
+                "folder" -> {
+                    val children = prune(node.children)
+                    when {
+                        children.isEmpty() -> emptyList()
+                        node.title.isVariantContainer() -> children
+                        else -> listOf(node.copy(children = children))
+                    }
+                }
+                "audio" -> {
+                    val selected = selectedByOriginalUrl[node.mediaStreamUrl.orEmpty()]
+                    if (selected == null) {
+                        emptyList()
+                    } else {
+                        listOf(
+                            node.copy(
+                                mediaStreamUrl = selected.streamUrl,
+                                streamLowQualityUrl = null,
+                            ),
+                        )
+                    }
+                }
+                else -> emptyList()
+            }
+        }
+        .mergeMirroredFolders()
+
+    return AudioTrackCatalog(rootNodes = prune(this), tracks = tracks)
+}
+
+/**
+ * Folds folders that ended up with one title under one parent back into a single node.
+ *
+ * A work can ship the same folders twice: a lossless set at the root and an `04_mp3形式…` copy
+ * beside it. [buildAudioTrackCatalog] hoists the copy's children so the container itself never
+ * shows, which leaves two folders with the same name side by side - something a real directory
+ * cannot hold. They are one folder in two encodings, so their children belong in one node.
+ *
+ * One node per folder is also what the detail page needs: it keys its rows by folder path, and a
+ * repeated path made Compose throw "Key ... was already used" as soon as the page opened.
+ *
+ * A mirrored copy is often shorter than the folder it duplicates (the lossless set carries tracks
+ * the mp3 copy skipped), so its children are appended rather than replacing anything, and a track
+ * both copies list under the same URL is kept once.
+ */
+private fun List<TrackNode>.mergeMirroredFolders(): List<TrackNode> {
+    if (size < 2) return this
+    val merged = ArrayList<TrackNode>(size)
+    val folderIndexByTitle = HashMap<String, Int>(size)
+    val audioUrls = HashSet<String>(size)
+    for (node in this) {
         when (node.type) {
             "folder" -> {
-                val children = prune(node.children)
-                when {
-                    children.isEmpty() -> emptyList()
-                    node.title.isVariantContainer() -> children
-                    else -> listOf(node.copy(children = children))
-                }
-            }
-            "audio" -> {
-                val selected = selectedByOriginalUrl[node.mediaStreamUrl.orEmpty()]
-                if (selected == null) {
-                    emptyList()
+                val index = folderIndexByTitle[node.title]
+                if (index == null) {
+                    folderIndexByTitle[node.title] = merged.size
+                    merged += node
                 } else {
-                    listOf(
-                        node.copy(
-                            mediaStreamUrl = selected.streamUrl,
-                            streamLowQualityUrl = null,
-                        ),
+                    val existing = merged[index]
+                    merged[index] = existing.copy(
+                        children = (existing.children + node.children).mergeMirroredFolders(),
                     )
                 }
             }
-            else -> emptyList()
+            "audio" -> if (audioUrls.add(node.mediaStreamUrl.orEmpty())) merged += node
+            else -> merged += node
         }
     }
-
-    return AudioTrackCatalog(rootNodes = prune(this), tracks = tracks)
+    return merged
 }
 
 private data class SelectedAudio(
