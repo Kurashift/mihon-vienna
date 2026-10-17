@@ -1110,6 +1110,9 @@
     <string name="audio_history_empty">还没有播放记录</string>
     <string name="audio_history_clear">清空历史</string>
     <string name="audio_history_clear_confirm">移除全部播放历史，此操作无法撤销。</string>
+    <string name="audio_history_play_all">播放全部</string>
+    <string name="audio_history_remove">从历史中移除</string>
+    <string name="audio_history_remove_selected_confirm">从历史中移除选中的 %1$d 部作品？</string>
     <string name="audio_retry">重试</string>
     <string name="audio_load_failed">加载失败</string>
     <string name="audio_buffer_timeout">缓冲超时</string>
@@ -1166,6 +1169,7 @@
     <string name="audio_tab_favorites">收藏</string>
     <string name="audio_favorite_add">收藏作品</string>
     <string name="audio_favorite_remove">取消收藏</string>
+    <string name="audio_favorite_remove_selected_confirm">取消收藏选中的 %1$d 部作品？</string>
     <string name="audio_subtitle">歌词</string>
     <string name="audio_subtitle_loading">正在载入字幕…</string>
     <string name="audio_subtitle_unavailable">这条音轨没有随附字幕</string>

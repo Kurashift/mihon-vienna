@@ -20,7 +20,6 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.PlaylistRemove
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -42,6 +41,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.audio.components.AudioBottomAction
+import eu.kanade.presentation.audio.components.AudioBottomActionMenu
 import eu.kanade.presentation.audio.components.AudioCover
 import eu.kanade.presentation.audio.components.AudioFolderRow
 import eu.kanade.presentation.audio.components.AudioQueueRow
@@ -145,57 +146,43 @@ fun AudioPlaylistContent(
                 },
                 navigateUp = navigateUp,
                 actions = {
-                    if (selectionMode) {
+                    if (groups.isNotEmpty()) {
                         AppBarActions(
-                            listOf(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.action_select_all),
-                                    icon = Icons.Outlined.SelectAll,
-                                    onClick = {
-                                        selectionMode = true
-                                        selected = allUrls.toSet()
-                                    },
-                                ),
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.action_select_inverse),
-                                    icon = Icons.Outlined.FlipToBack,
-                                    onClick = {
-                                        selectionMode = true
-                                        selected = allUrls - selected
-                                    },
-                                ),
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.audio_playlist_remove),
-                                    icon = Icons.Outlined.PlaylistRemove,
-                                    enabled = selected.isNotEmpty(),
-                                    // A lone track was picked by long press, so the intent is
-                                    // already unambiguous; anything larger can hide a whole
-                                    // collapsed work.
-                                    onClick = {
-                                        if (selected.size > 1) {
-                                            showRemoveDialog = true
-                                        } else {
-                                            onRemoveSelected(selected)
-                                            exitSelection()
-                                        }
-                                    },
-                                ),
-                            ),
-                        )
-                    } else if (groups.isNotEmpty()) {
-                        AppBarActions(
-                            listOf(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.audio_playlist_play_all),
-                                    icon = Icons.Outlined.PlayArrow,
-                                    onClick = onPlayAll,
-                                ),
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.audio_playlist_clear),
-                                    icon = Icons.Outlined.DeleteSweep,
-                                    onClick = { showClearDialog = true },
-                                ),
-                            ),
+                            if (selectionMode) {
+                                // Playing the queue is not what a selection is for, so play-all
+                                // steps aside. Clearing stays: it acts on the same list the ticks
+                                // are going on, and it sits rightmost, after the two pickers.
+                                listOf(
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.action_select_all),
+                                        icon = Icons.Outlined.SelectAll,
+                                        onClick = { selected = allUrls.toSet() },
+                                    ),
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.action_select_inverse),
+                                        icon = Icons.Outlined.FlipToBack,
+                                        onClick = { selected = allUrls - selected },
+                                    ),
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.audio_playlist_clear),
+                                        icon = Icons.Outlined.DeleteSweep,
+                                        onClick = { showClearDialog = true },
+                                    ),
+                                )
+                            } else {
+                                listOf(
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.audio_playlist_play_all),
+                                        icon = Icons.Outlined.PlayArrow,
+                                        onClick = onPlayAll,
+                                    ),
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.audio_playlist_clear),
+                                        icon = Icons.Outlined.DeleteSweep,
+                                        onClick = { showClearDialog = true },
+                                    ),
+                                )
+                            },
                         )
                     }
                 },
@@ -204,7 +191,32 @@ fun AudioPlaylistContent(
                 scrollBehavior = scrollBehavior,
             )
         },
-        bottomBar = bottomBar,
+        bottomBar = {
+            if (selectionMode) {
+                AudioBottomActionMenu(
+                    visible = true,
+                    actions = listOf(
+                        AudioBottomAction(
+                            title = stringResource(MR.strings.audio_playlist_remove),
+                            icon = Icons.Outlined.Delete,
+                            enabled = selected.isNotEmpty(),
+                            // A lone track was picked by long press, so the intent is already
+                            // unambiguous; anything larger can hide a whole collapsed work.
+                            onClick = {
+                                if (selected.size > 1) {
+                                    showRemoveDialog = true
+                                } else {
+                                    onRemoveSelected(selected)
+                                    exitSelection()
+                                }
+                            },
+                        ),
+                    ),
+                )
+            } else {
+                bottomBar()
+            }
+        },
     ) { contentPadding ->
         if (groups.isEmpty()) {
             EmptyScreen(

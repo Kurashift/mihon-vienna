@@ -1259,6 +1259,9 @@
     <string name="audio_history_empty">No play history yet</string>
     <string name="audio_history_clear">Clear history</string>
     <string name="audio_history_clear_confirm">Removes all play history entries. This cannot be undone.</string>
+    <string name="audio_history_play_all">Play all</string>
+    <string name="audio_history_remove">Remove from history</string>
+    <string name="audio_history_remove_selected_confirm">Remove the selected %1$d works from history?</string>
     <string name="audio_retry">Retry</string>
     <string name="audio_load_failed">Failed to load</string>
     <string name="audio_buffer_timeout">Buffering timed out</string>
@@ -1315,6 +1318,7 @@
     <string name="audio_tab_favorites">Favorites</string>
     <string name="audio_favorite_add">Collect work</string>
     <string name="audio_favorite_remove">Remove from collection</string>
+    <string name="audio_favorite_remove_selected_confirm">Remove the selected %1$d works from your collection?</string>
     <string name="audio_subtitle">Lyrics</string>
     <string name="audio_subtitle_loading">Loading subtitles…</string>
     <string name="audio_subtitle_unavailable">This track does not include subtitles</string>
