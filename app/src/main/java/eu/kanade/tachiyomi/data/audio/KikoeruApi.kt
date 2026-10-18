@@ -314,6 +314,25 @@ class KikoeruApi(
     }
 
     /**
+     * Reports one listen milestone to the recommender.
+     *
+     * Anonymous by design: the profile is keyed by [recommenderUuid] rather than by the token, and
+     * the answer is a bare count nothing reads. Whether a listen is worth reporting is the caller's
+     * decision; this only delivers it.
+     */
+    suspend fun sendFeedback(type: String, recommenderUuid: String, workId: Long) = withIOContext {
+        val url = "$baseUrl/api/recommender/feedback"
+        val body = buildJsonObject {
+            put("type", type)
+            put("recommenderUuid", recommenderUuid)
+            put("itemId", workId)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        executeWithRetry(url) {
+            client.newCall(POST(url, body = body)).awaitSuccess().close()
+        }
+    }
+
+    /**
      * The works the backend considers similar to [workId], for the row under a work's track list.
      *
      * Answers without a token — this reads content, not account state — and an id the backend does
