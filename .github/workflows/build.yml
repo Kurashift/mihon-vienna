@@ -4,9 +4,11 @@ on:
   # for main, and a filtered-out pull request (docs-only, for example) would
   # never report a result, leaving that PR unmergeable.
   pull_request:
-  push:
-    branches:
-      - main
+  # No push trigger on purpose: main only moves by merging a pull request, and that request has
+  # already run this job against the same tree — a squash merge keeps the tree identical, so the
+  # run after the merge repeated work that had just passed. workflow_dispatch keeps a way to run
+  # the checks on main by hand after a merge or a settings change.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
