@@ -85,6 +85,7 @@ import eu.kanade.presentation.components.BottomNavFabLift
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
 import eu.kanade.presentation.components.LocalDeletionHost
+import eu.kanade.presentation.more.UpdateAvailableDialog
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -95,6 +96,7 @@ import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
+import eu.kanade.tachiyomi.data.updater.AppUpdateState
 import eu.kanade.tachiyomi.extension.api.ExtensionApi
 import eu.kanade.tachiyomi.ui.audio.AudioDetailScreen
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerScreen
@@ -104,6 +106,7 @@ import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.deeplink.DeepLinkScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
+import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
 import eu.kanade.tachiyomi.ui.more.OnboardingScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.util.system.dpToPx
@@ -306,6 +309,7 @@ class MainActivity : BaseActivity() {
 
                 if (!isBenchmarkBuildType) {
                     if (isLaunch) CheckForUpdates()
+                    ShowUpdatePrompt(navigator)
                     ShowOnboarding()
                     ShowDonationCampaign()
                 }
@@ -421,6 +425,54 @@ class MainActivity : BaseActivity() {
                 logcat(LogPriority.ERROR, e)
             }
         }
+    }
+
+    /**
+     * Asks, once per launch, whether to install the release the background check found.
+     *
+     * The check itself only records the result, and the More tab carries the red dot for it. This
+     * is the louder half, and each answer is remembered somewhere different: 忽略更新 writes the
+     * release's version to preferences, 知道了 keeps it in memory for this process only, and
+     * 更新日志 opens the same release-notes dialog the About screen's own check opens.
+     *
+     * Skipped while the first-use onboarding is on screen, so two full-screen surfaces never
+     * compete on the very first launch.
+     */
+    @Composable
+    private fun ShowUpdatePrompt(navigator: Navigator) {
+        if (!updaterEnabled) return
+
+        val release by AppUpdateState.availableRelease.collectAsState()
+        val answered by AppUpdateState.promptAnswered.collectAsState()
+        val ignoredVersions = remember { preferences.ignoredUpdateVersion.changes() }
+        val ignoredVersion by ignoredVersions.collectAsState(
+            initial = preferences.ignoredUpdateVersion.get(),
+        )
+
+        val current = release ?: return
+        if (answered || ignoredVersion == current.version || navigator.lastItem is OnboardingScreen) {
+            return
+        }
+
+        UpdateAvailableDialog(
+            versionName = current.version,
+            onIgnore = {
+                preferences.ignoredUpdateVersion.set(current.version)
+                AppUpdateState.dismissPrompt()
+            },
+            onDismiss = AppUpdateState::dismissPrompt,
+            onOpenChangelog = {
+                AppUpdateState.dismissPrompt()
+                navigator.push(
+                    NewUpdateScreen(
+                        versionName = current.version,
+                        changelogInfo = current.info,
+                        releaseLink = current.releaseLink,
+                        downloadLink = current.downloadLink,
+                    ),
+                )
+            },
+        )
     }
 
     @Composable

@@ -182,6 +182,10 @@
     <string name="update_check_confirm">下載</string>
     <string name="update_check_no_new_updates">沒有可用的更新</string>
     <string name="update_check_notification_update_available">有可用的更新！</string>
+    <string name="update_available_title">有可用的更新</string>
+    <string name="update_available_message">已發佈 %1$s，可以直接覆蓋安裝。</string>
+    <string name="update_available_ignore">忽略更新</string>
+    <string name="update_available_later">知道了</string>
     <string name="information_no_downloads">還沒有下載</string>
     <string name="download_notifier_title_error">錯誤</string>
     <string name="download_notifier_text_only_wifi">沒有可用的 Wi-Fi 連線</string>
