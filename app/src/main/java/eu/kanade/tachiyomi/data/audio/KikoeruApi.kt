@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.audio
 
 import android.os.SystemClock
 import eu.kanade.domain.base.BasePreferences
+import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.HttpException
 import eu.kanade.tachiyomi.network.POST
@@ -10,10 +11,16 @@ import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.parseAs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import okhttp3.CacheControl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -35,6 +42,40 @@ class KikoeruApi(
 ) {
 
     /**
+     * The site the host picker currently has selected.
+     *
+     * Read per request rather than captured in the constructor: switching hosts has to take effect
+     * on the next call without rebuilding the client, the account sync or the page cache, all of
+     * which hold this instance. An empty preference means nobody has picked one yet, which is the
+     * host the section shipped with.
+     */
+    private val baseUrl: String
+        get() = basePreferences.audioBackendUrl.get().ifBlank { AudioBackend.DEFAULT.apiBaseUrl }
+
+    /**
+     * Round-trips the cheapest endpoint a mirror serves, for the host picker's latency column.
+     *
+     * Two attempts, cheapest wins: the first request to a host pays for the TLS handshake, so a
+     * single sample measures DNS and a key exchange more than it measures the route. Null means the
+     * host did not answer at all, which the picker shows as unreachable rather than as a slow one.
+     */
+    suspend fun measureLatency(apiBaseUrl: String): Long? = withIOContext {
+        var best: Long? = null
+        repeat(LATENCY_SAMPLES) {
+            val started = SystemClock.elapsedRealtime()
+            val answered = runCatching {
+                client.newCall(GET("$apiBaseUrl/api/health", cache = CacheControl.FORCE_NETWORK))
+                    .execute()
+                    .use { it.isSuccessful }
+            }.getOrDefault(false)
+            if (!answered) return@repeat
+            val elapsed = SystemClock.elapsedRealtime() - started
+            best = best?.coerceAtMost(elapsed) ?: elapsed
+        }
+        best
+    }
+
+    /**
      * @param seed Seed of the random draw, sent as `seed=` when [order] is `random`.
      *
      * Measured against the live API: `order=random` without a seed answers the *same* page on every
@@ -51,7 +92,7 @@ class KikoeruApi(
         cache: CacheControl? = null,
         seed: Long? = null,
     ): WorksResponse = withIOContext {
-        val url = "$BASE_URL/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed)
+        val url = "$baseUrl/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed)
         with(json) {
             executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
         }
@@ -80,7 +121,7 @@ class KikoeruApi(
         seed: Long? = null,
     ): WorksResponse = withIOContext {
         val encodedId = URLEncoder.encode(id, "UTF-8")
-        val url = "$BASE_URL/api/${field.pathSegment}/$encodedId/works" +
+        val url = "$baseUrl/api/${field.pathSegment}/$encodedId/works" +
             "?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed)
         with(json) {
             executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
@@ -98,7 +139,7 @@ class KikoeruApi(
         // Keyword goes in the URL path (the backend only parses the advanced
         // "$tag:xxx$" filter syntax there, not via a query parameter).
         val encoded = URLEncoder.encode(keyword, "UTF-8").replace("+", "%20")
-        val url = "$BASE_URL/api/search/$encoded?page=$page&pageSize=$pageSize&order=$order&sort=$sort" +
+        val url = "$baseUrl/api/search/$encoded?page=$page&pageSize=$pageSize&order=$order&sort=$sort" +
             seedParam(seed)
         with(json) {
             executeWithRetry(url) {
@@ -117,7 +158,7 @@ class KikoeruApi(
      * no round trip.
      */
     suspend fun fetchWork(workId: Long): Work = withIOContext {
-        val url = "$BASE_URL/api/work/$workId"
+        val url = "$baseUrl/api/work/$workId"
         with(json) {
             executeWithRetry(url) { client.newCall(authenticated(get(url))).awaitSuccess().use { it.parseAs() } }
         }
@@ -135,7 +176,7 @@ class KikoeruApi(
         refresh: Boolean = false,
     ): List<TrackNode> = withIOContext {
         if (!refresh) trackCache.get(workId)?.let { return@withIOContext it }
-        val url = "$BASE_URL/api/tracks/$workId"
+        val url = "$baseUrl/api/tracks/$workId"
         val nodes: List<TrackNode> = with(json) {
             executeWithRetry(url) { client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() } }
         }
@@ -155,7 +196,7 @@ class KikoeruApi(
     // The three dictionaries below are large and slow, and every one of them now has a persisted
     // copy to fall back on, so they give up sooner than the work feeds do.
     suspend fun fetchTags(): List<TagItem> = withIOContext {
-        val url = "$BASE_URL/api/tags/"
+        val url = "$baseUrl/api/tags/"
         with(json) {
             executeWithRetry(url, DICTIONARY_ATTEMPTS) {
                 client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() }
@@ -164,7 +205,7 @@ class KikoeruApi(
     }
 
     suspend fun fetchVas(): List<VaItem> = withIOContext {
-        val url = "$BASE_URL/api/vas/"
+        val url = "$baseUrl/api/vas/"
         with(json) {
             executeWithRetry(url, DICTIONARY_ATTEMPTS) {
                 client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() }
@@ -173,7 +214,7 @@ class KikoeruApi(
     }
 
     suspend fun fetchCircles(): List<CircleItem> = withIOContext {
-        val url = "$BASE_URL/api/circles/"
+        val url = "$baseUrl/api/circles/"
         with(json) {
             executeWithRetry(url, DICTIONARY_ATTEMPTS) {
                 client.newCall(authenticated(GET(url))).awaitSuccess().use { it.parseAs() }
@@ -182,20 +223,68 @@ class KikoeruApi(
     }
 
     /** Logs in and returns the JWT token + user profile. */
-    suspend fun login(name: String, password: String): AuthResponse = withIOContext {
-        val url = "$BASE_URL/api/auth/me"
+    suspend fun login(name: String, password: String): AuthResponse = authenticate("/api/auth/me", name, password)
+
+    /**
+     * Creates an account and signs it in with the same request: the backend answers a registration
+     * with the body a login returns, token included, so there is no second round trip and no
+     * "sign in again" step in between.
+     *
+     * The endpoint takes no email and no invite code — a name and a password of at least five
+     * characters each is the whole requirement.
+     */
+    suspend fun register(name: String, password: String): AuthResponse = authenticate("/api/auth/reg", name, password)
+
+    /**
+     * Posts credentials to one of the two auth endpoints.
+     *
+     * Deliberately not routed through [executeWithRetry]: a rejected credential answers with the
+     * reason in its body (422 for a short name, "用户 xxx 已存在." for a taken one), and
+     * [awaitSuccess] closes the response and throws a bare code before anyone can read it. Reading
+     * the body here turns the backend's own wording into the message the dialog shows.
+     *
+     * Retries are for the transport only. A 4xx is a decision, so it is thrown on the first
+     * attempt; a 5xx or a dropped connection is retried like the read paths are.
+     */
+    private suspend fun authenticate(path: String, name: String, password: String): AuthResponse = withIOContext {
+        val url = "$baseUrl$path"
         val body = buildJsonObject {
             put("name", name)
             put("password", password)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
-        with(json) {
-            executeWithRetry(url) { client.newCall(POST(url, body = body)).awaitSuccess().use { it.parseAs() } }
+
+        var lastError: Exception? = null
+        repeat(MAX_ATTEMPTS) { attempt ->
+            try {
+                return@withIOContext client.newCall(POST(url, body = body)).execute().use { response ->
+                    val text = response.body.string()
+                    if (response.isSuccessful) {
+                        json.decodeFromString<AuthResponse>(text)
+                    } else {
+                        val reason = authErrorText(text)
+                        if (response.code in 400..499) {
+                            throw AudioAuthException(response.code, reason)
+                        }
+                        throw IOException(reason ?: "HTTP ${response.code}")
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AudioAuthException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < MAX_ATTEMPTS - 1) {
+                    delay(RETRY_BACKOFF_MILLIS shl attempt)
+                }
+            }
         }
+        throw lastError ?: IOException("auth request failed")
     }
 
     /** Popular works (backend recommender), ordered by rank signals. */
     suspend fun fetchPopular(page: Int, pageSize: Int): WorksResponse = withIOContext {
-        val url = "$BASE_URL/api/recommender/popular"
+        val url = "$baseUrl/api/recommender/popular"
         val body = buildJsonObject {
             put("keyword", "")
             put("page", page)
@@ -210,7 +299,7 @@ class KikoeruApi(
 
     /** Personalized recommendations keyed by an anonymous UUID. */
     suspend fun fetchRecommended(recommenderUuid: String, page: Int, pageSize: Int): WorksResponse = withIOContext {
-        val url = "$BASE_URL/api/recommender/recommend-for-user"
+        val url = "$baseUrl/api/recommender/recommend-for-user"
         val body = buildJsonObject {
             put("keyword", "")
             put("recommenderUuid", recommenderUuid)
@@ -224,10 +313,60 @@ class KikoeruApi(
         }
     }
 
-    /** Account collection/listening states shown by the website's "Favourites" section. */
-    suspend fun fetchAccountWorks(progress: AudioAccountProgress, page: Int): WorksResponse = withIOContext {
-        val encodedProgress = URLEncoder.encode(progress.wireValue, "UTF-8")
-        val url = "$BASE_URL/api/review?order=updated_at&sort=desc&page=$page&filter=$encodedProgress"
+    /**
+     * Reports one listen milestone to the recommender.
+     *
+     * Anonymous by design: the profile is keyed by [recommenderUuid] rather than by the token, and
+     * the answer is a bare count nothing reads. Whether a listen is worth reporting is the caller's
+     * decision; this only delivers it.
+     */
+    suspend fun sendFeedback(type: String, recommenderUuid: String, workId: Long) = withIOContext {
+        val url = "$baseUrl/api/recommender/feedback"
+        val body = buildJsonObject {
+            put("type", type)
+            put("recommenderUuid", recommenderUuid)
+            put("itemId", workId)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        executeWithRetry(url) {
+            client.newCall(POST(url, body = body)).awaitSuccess().close()
+        }
+    }
+
+    /**
+     * The works the backend considers similar to [workId], for the row under a work's track list.
+     *
+     * Answers without a token — this reads content, not account state — and an id the backend does
+     * not know comes back as an empty list rather than an error, so there is nothing here to branch
+     * on. The keyword and playlist fields the site sends are left empty: a details page carries no
+     * filter of its own, and the app does not collect into playlists.
+     */
+    suspend fun fetchNeighbors(workId: Long): List<Work> = withIOContext {
+        val url = "$baseUrl/api/recommender/item-neighbors"
+        val body = buildJsonObject {
+            put("keyword", "")
+            put("itemId", workId)
+            putJsonArray("localSubtitledWorks") {}
+            putJsonArray("withPlaylistStatus") {}
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        with(json) {
+            executeWithRetry(url) {
+                client.newCall(authenticated(POST(url, body = body)))
+                    .awaitSuccess()
+                    .use { it.parseAs<WorksResponse>() }
+            }.works
+        }
+    }
+
+    /**
+     * Account collection rows, the same list the website's "Favourites" section renders.
+     *
+     * @param progress One state to narrow the list to, or null for every row. Null is what the
+     * site's "my review" tab asks for, and it is the only way to see a row whose state was cleared:
+     * the endpoint rejects an empty `filter` and answers such rows only in the unfiltered list.
+     */
+    suspend fun fetchAccountWorks(progress: AudioAccountProgress?, page: Int): WorksResponse = withIOContext {
+        val filter = progress?.let { "&filter=${URLEncoder.encode(it.wireValue, "UTF-8")}" }.orEmpty()
+        val url = "$baseUrl/api/review?order=updated_at&sort=desc&page=$page&pageSize=$ACCOUNT_PAGE_SIZE$filter"
         with(json) {
             executeWithRetry(url) {
                 client.newCall(authenticated(GET(url, cache = CacheControl.FORCE_NETWORK)))
@@ -237,9 +376,22 @@ class KikoeruApi(
         }
     }
 
+    /**
+     * Deletes one account row, which is the website's delete action in the review editor.
+     *
+     * Clearing the state instead leaves the row in place: it keeps showing up in the site's list
+     * with no state at all, which is what made an uncollect look like it never reached the account.
+     */
+    suspend fun deleteAccountReview(workId: Long) = withIOContext {
+        val url = "$baseUrl/api/review?work_id=$workId"
+        executeWithRetry(url) {
+            client.newCall(authenticated(DELETE(url))).awaitSuccess().close()
+        }
+    }
+
     /** Updates only the account-level listening state, preserving rating and review text. */
     suspend fun updateAccountProgress(workId: Long, progress: AudioAccountProgress?) = withIOContext {
-        val url = "$BASE_URL/api/review"
+        val url = "$baseUrl/api/review"
         val body = buildAccountProgressBody(workId, progress).toRequestBody(JSON_MEDIA_TYPE)
         executeWithRetry(url) {
             client.newCall(authenticated(PUT(url, body = body))).awaitSuccess().close()
@@ -253,7 +405,7 @@ class KikoeruApi(
             try {
                 return@withIOContext executeWithRetry(candidate) {
                     val request = GET(candidate, cache = CacheControl.FORCE_NETWORK).let { request ->
-                        if (candidate.startsWith(BASE_URL, ignoreCase = true)) authenticated(request) else request
+                        if (candidate.startsWith(baseUrl, ignoreCase = true)) authenticated(request) else request
                     }
                     client.newCall(request).awaitSuccess().use { response ->
                         response.body.string()
@@ -321,10 +473,15 @@ class KikoeruApi(
     }
 
     private companion object {
-        const val BASE_URL = "https://api.asmr-200.com"
         const val MAX_ATTEMPTS = 3
         const val DICTIONARY_ATTEMPTS = 2
         const val RETRY_BACKOFF_MILLIS = 400L
+
+        /** Latency samples per host in the picker; the cheapest of them is shown. */
+        const val LATENCY_SAMPLES = 2
+
+        /** The account list is read in one pass; 100 is the largest page the endpoint accepts. */
+        const val ACCOUNT_PAGE_SIZE = 100
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }
 }
@@ -356,3 +513,27 @@ internal fun Request.withAudioAuthorization(token: String): Request {
         .header("Authorization", "Bearer $token")
         .build()
 }
+
+/**
+ * A sign-in or registration the backend refused, carrying its own wording so the dialog can say
+ * 用户 xxx 已存在. rather than a generic failure line.
+ *
+ * [statusCode] is kept because the two refusals lead somewhere different: a 422 is a field the
+ * user can fix in place, while a taken name means going back to the login half of the dialog.
+ */
+class AudioAuthException(val statusCode: Int, message: String?) :
+    IOException(message?.takeIf { it.isNotBlank() } ?: "HTTP $statusCode")
+
+/**
+ * Pulls the reason out of a failed auth response. The backend answers two shapes:
+ * `{"error":"用户 xxx 已存在."}` and `{"errors":[{"value":"ab","msg":"用户名长度至少为 5",…}]}`.
+ *
+ * Returns null for a body that carries neither, so the caller can fall back to its own wording
+ * instead of showing an empty line.
+ */
+internal fun authErrorText(body: String): String? = runCatching {
+    val root = Json.parseToJsonElement(body).jsonObject
+    root["error"]?.jsonPrimitive?.contentOrNull
+        ?: root["errors"]?.jsonArray?.firstOrNull()
+            ?.jsonObject?.get("msg")?.jsonPrimitive?.contentOrNull
+}.getOrNull()?.takeIf { it.isNotBlank() }

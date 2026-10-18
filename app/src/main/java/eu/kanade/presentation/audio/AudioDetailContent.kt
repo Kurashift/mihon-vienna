@@ -14,15 +14,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -98,6 +102,7 @@ fun AudioDetailContent(
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
     onClickTag: (String) -> Unit,
+    onClickNeighbor: (Work) -> Unit,
 ) {
     var expanded by remember(state.rootNodes) { mutableStateOf(emptySet<String>()) }
     val audioIndexByUrl = remember(state.flatTracks) {
@@ -260,10 +265,91 @@ fun AudioDetailContent(
                         )
                     }
                 }
+                if (state.neighbors.isNotEmpty()) {
+                    item { NeighborRow(state.neighbors, onClickNeighbor) }
+                }
             }
         }
     }
 }
+
+/**
+ * The works the backend considers similar, as one line under the track list.
+ *
+ * At the bottom on purpose: this page is a work and its tracks, and this row is what a reader who
+ * has scrolled to the end is looking for next.
+ */
+@Composable
+private fun NeighborRow(
+    works: List<Work>,
+    onClick: (Work) -> Unit,
+) {
+    Column(modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)) {
+        Text(
+            text = stringResource(MR.strings.audio_similar_works),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(works, key = { it.id }) { work ->
+                NeighborCard(work = work, onClick = { onClick(work) })
+            }
+        }
+    }
+}
+
+/**
+ * One card of the similar row: cover on top, title under it.
+ *
+ * Deliberately not the grid card. That one puts the cover beside the text and sizes both from a
+ * fixed card height, so at this width the cover takes most of the card and leaves the title a strip
+ * too narrow to read a work's name in. Stacking the two hands the title the full card width, which
+ * is what titles this long need.
+ */
+@Composable
+private fun NeighborCard(work: Work, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(NEIGHBOR_CARD_WIDTH)
+            .clip(RoundedCornerShape(NEIGHBOR_CARD_CORNER))
+            .clickable(onClick = onClick),
+    ) {
+        AsyncImage(
+            model = work.mainCoverUrl ?: work.thumbnailCoverUrl ?: work.samCoverUrl,
+            contentDescription = work.title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(NEIGHBOR_CARD_CORNER)),
+            contentScale = ContentScale.Crop,
+        )
+        Text(
+            text = work.title,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = NEIGHBOR_TITLE_MAX_LINES,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        Text(
+            text = work.name,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+/** Narrow enough that the next card peeks in, wide enough for two lines of a long title. */
+private val NEIGHBOR_CARD_WIDTH = 150.dp
+
+private val NEIGHBOR_CARD_CORNER = 6.dp
+
+private const val NEIGHBOR_TITLE_MAX_LINES = 2
 
 private data class TreeRow(
     val key: String,

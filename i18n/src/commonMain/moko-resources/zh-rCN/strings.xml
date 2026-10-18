@@ -1117,6 +1117,7 @@
     <string name="audio_load_failed">加载失败</string>
     <string name="audio_buffer_timeout">缓冲超时</string>
     <string name="audio_no_tracks">还没有可播放的音轨</string>
+    <string name="audio_similar_works">相似作品</string>
     <string name="audio_empty">还没有结果</string>
     <string name="audio_search_hint">搜索 ASMR 作品</string>
     <string name="audio_search_hint_in_category">在 %1$s 中搜索</string>
@@ -1125,6 +1126,7 @@
     <string name="audio_vas">声优</string>
     <string name="audio_sort">排序</string>
     <string name="audio_sort_release_desc">发售日期 ↓</string>
+    <string name="audio_sort_collected">收藏时间 ↓</string>
     <string name="audio_sort_rating_desc">评分 ↓</string>
     <string name="audio_sort_dl_desc">下载量 ↓</string>
     <string name="audio_sales">销量</string>
@@ -1160,6 +1162,17 @@
     <string name="audio_username">用户名</string>
     <string name="audio_password">密码</string>
     <string name="audio_login_failed">登录失败，请检查用户名和密码</string>
+    <string name="audio_register">注册</string>
+    <string name="audio_register_title">注册账号</string>
+    <string name="audio_register_failed">注册失败，请换个用户名再试</string>
+    <string name="audio_register_hint">用户名和密码各至少 5 个字符</string>
+    <string name="audio_switch_to_register">没有账号？注册</string>
+    <string name="audio_switch_to_login">已有账号？登录</string>
+    <string name="audio_backend">线路</string>
+    <string name="audio_backend_remeasure">重新测速</string>
+    <string name="audio_backend_measuring">测速中…</string>
+    <string name="audio_backend_unreachable">不可达</string>
+    <string name="audio_backend_latency">%1$d ms</string>
     <string name="audio_tab_recommended">推荐</string>
     <string name="audio_tab_popular">热门</string>
     <string name="audio_tab_latest">最新</string>

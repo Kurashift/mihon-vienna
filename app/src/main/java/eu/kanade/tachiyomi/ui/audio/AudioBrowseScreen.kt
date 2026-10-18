@@ -17,6 +17,8 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioBrowseContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
+import eu.kanade.tachiyomi.data.audio.AudioAuthException
+import eu.kanade.tachiyomi.data.audio.AudioBackend
 import eu.kanade.tachiyomi.data.audio.AudioCategoryCache
 import eu.kanade.tachiyomi.data.audio.AudioCategoryField
 import eu.kanade.tachiyomi.data.audio.AudioCategoryRef
@@ -27,12 +29,17 @@ import eu.kanade.tachiyomi.data.audio.AudioPageSnapshot
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.AudioSearchCompiler
+import eu.kanade.tachiyomi.data.audio.AuthResponse
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.audio.WorksResponse
+import eu.kanade.tachiyomi.data.audio.recommenderUuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -82,6 +89,7 @@ class AudioBrowseScreen(
         val sort by viewModel.sort.collectAsState()
         val workListSort by viewModel.workListSort.collectAsState()
         val auth by viewModel.auth.collectAsState()
+        val backend by viewModel.backend.collectAsState()
         val onOpenCategory = rememberCategoryNavigator(navigator)
 
         LaunchedEffect(Unit) {
@@ -93,6 +101,9 @@ class AudioBrowseScreen(
                 // order than in a fresh shuffle of it.
                 sort = AudioSort.RELEASE_DESC.takeUnless { isLibraryScreen },
             )
+            // Returning from a details page re-enters this composition with the view model intact,
+            // so the list it kept has to be rebuilt from the account state it may have outgrown.
+            viewModel.refreshFavoritesIfShowing()
         }
 
         AudioBrowseContent(
@@ -101,6 +112,7 @@ class AudioBrowseScreen(
             sort = sort,
             workListSort = workListSort,
             auth = auth,
+            backend = backend,
             audioQuality = audioController.state.audioQuality,
             showTabs = categoryTitle == null,
             bottomBar = { AudioMiniPlayerNavigationBar() },
@@ -118,8 +130,13 @@ class AudioBrowseScreen(
             onSortChange = viewModel::setSort,
             onSelectTab = viewModel::setTab,
             onLogin = viewModel::login,
+            onRegister = viewModel::register,
+            onClearAuthError = viewModel::clearAuthError,
             onLogout = viewModel::logout,
+            onSelectBackend = viewModel::selectBackend,
+            onMeasureBackends = viewModel::measureBackends,
             onCycleAudioQuality = audioController::cycleAudioQuality,
+            onUncollectSelected = viewModel::uncollect,
         )
     }
 }
@@ -172,6 +189,8 @@ enum class AudioSort(
      * instead of adding to it.
      */
     val isDraw: Boolean = false,
+    /** Only meaningful over the account's collection, so the sort sheet hides it elsewhere. */
+    val favoritesOnly: Boolean = false,
 ) {
     // Listed first because it is what the work-list tab is opened for most often; [AudioSort.entries]
     // is also the order of the sort sheet, so it sits at the top there too.
@@ -192,6 +211,18 @@ enum class AudioSort(
         "desc",
         MR.strings.audio_sort_create_desc,
         MR.strings.audio_tab_sort_create,
+    ),
+
+    /**
+     * The order the favourites tab opens on: the account answers with the newest collection first,
+     * so this sort keeps the response order instead of reordering it.
+     */
+    COLLECTED_DESC(
+        "updated_at",
+        "desc",
+        MR.strings.audio_sort_collected,
+        MR.strings.audio_tab_favorites,
+        favoritesOnly = true,
     ),
 }
 
@@ -230,6 +261,27 @@ data class AudioAuthState(
     val loading: Boolean = false,
     val username: String? = null,
     val error: String? = null,
+    /**
+     * Whether [error] is the backend's own sentence (a taken username, a wrong password) or a
+     * transport failure. Only the first is worth showing verbatim; the second gets the dialog's
+     * localised line, because an IOException message is "timeout" at best and an English stack
+     * trace at worst.
+     */
+    val errorFromServer: Boolean = false,
+)
+
+/**
+ * State of the host picker in the browse toolbar.
+ *
+ * [current] is the full API base URL rather than an enum so a stored host that the shipped list no
+ * longer offers still resolves to a working request; the picker itself only ever shows entries of
+ * [AudioBackend].
+ */
+data class AudioBackendState(
+    val current: String = AudioBackend.DEFAULT.apiBaseUrl,
+    /** API base URL to cheapest measured round trip; null for a host that did not answer. */
+    val latency: Map<String, Long?> = emptyMap(),
+    val measuring: Boolean = false,
 )
 
 class AudioBrowseViewModel(
@@ -274,7 +326,7 @@ class AudioBrowseViewModel(
     // list also scrambled the favorites. The tab row names the work-list tab after its own sort,
     // which is how it reads 推荐 / 热门 / 随机 / 收藏.
     private val workSort = MutableStateFlow(AudioSort.RANDOM)
-    private val favoriteSort = MutableStateFlow(AudioSort.RELEASE_DESC)
+    private val favoriteSort = MutableStateFlow(AudioSort.COLLECTED_DESC)
 
     /** Sort of the work-list tab, which is what that tab is named after. */
     val workListSort: StateFlow<AudioSort> = workSort.asStateFlow()
@@ -296,6 +348,13 @@ class AudioBrowseViewModel(
         ),
     )
     val auth: StateFlow<AudioAuthState> = _auth.asStateFlow()
+
+    private val _backend = MutableStateFlow(
+        AudioBackendState(
+            current = basePreferences.audioBackendUrl.get().ifBlank { AudioBackend.DEFAULT.apiBaseUrl },
+        ),
+    )
+    val backend: StateFlow<AudioBackendState> = _backend.asStateFlow()
 
     /** Bumped on every refresh/search so stale in-flight pages never overwrite newer ones. */
     private var loadGeneration = 0
@@ -342,12 +401,19 @@ class AudioBrowseViewModel(
         if (_auth.value.username != null) {
             viewModelScope.launchIO {
                 accountSync.synchronize()
-                if (_state.value.tab == AudioBrowseTab.FAVORITES) loadLocalFavorites()
+                if (_state.value.tab == AudioBrowseTab.FAVORITES) loadFavorites()
             }
         }
         viewModelScope.launch {
             basePreferences.audioFavorites.changes().collect {
-                if (_state.value.tab == AudioBrowseTab.FAVORITES) loadLocalFavorites()
+                if (_state.value.tab == AudioBrowseTab.FAVORITES) loadFavorites()
+            }
+        }
+        // The account rows are not a preference, so the local copy above cannot report a mark made
+        // on the detail page or by another device. The sync publishes its own revision for that.
+        viewModelScope.launch {
+            accountSync.revision.collect {
+                if (_state.value.tab == AudioBrowseTab.FAVORITES) loadFavorites()
             }
         }
         viewModelScope.launch {
@@ -361,7 +427,7 @@ class AudioBrowseViewModel(
                 if (username != null) {
                     viewModelScope.launchIO {
                         accountSync.synchronize()
-                        if (_state.value.tab == AudioBrowseTab.FAVORITES) loadLocalFavorites()
+                        if (_state.value.tab == AudioBrowseTab.FAVORITES) loadFavorites()
                     }
                 }
             }
@@ -391,47 +457,117 @@ class AudioBrowseViewModel(
     }
 
     private val recommenderUuid: String
-        get() {
-            val existing = basePreferences.audioRecommenderUuid.get()
-            if (existing.isNotBlank()) return existing
-            return java.util.UUID.randomUUID().toString().also { basePreferences.audioRecommenderUuid.set(it) }
-        }
+        get() = basePreferences.recommenderUuid()
 
     fun setTab(tab: AudioBrowseTab) {
         if (_state.value.tab == tab) return
         _state.update { it.copy(tab = tab) }
+        // The favourites tab renders the account list, so entering it asks the backend instead of
+        // repainting whatever the last sync left behind.
+        if (tab == AudioBrowseTab.FAVORITES && accountSync.isSignedIn()) {
+            viewModelScope.launchIO { accountSync.synchronize(force = true) }
+        }
         switchTo(tab, sortOf(tab).value, _state.value.query)
     }
 
-    fun login(name: String, password: String) {
-        _auth.update { it.copy(loading = true, error = null) }
+    fun login(name: String, password: String) = authenticate(name, password, register = false)
+
+    fun register(name: String, password: String) = authenticate(name, password, register = true)
+
+    /**
+     * One path for both halves of the account dialog. The backend answers a registration with the
+     * same token a login returns, so the two differ only in which endpoint they post to and in
+     * which wording a failure gets.
+     */
+    private fun authenticate(name: String, password: String, register: Boolean) {
+        _auth.update { it.copy(loading = true, error = null, errorFromServer = false) }
         viewModelScope.launchIO {
             try {
-                val response = api.login(name, password)
-                basePreferences.audioAuthToken.set(response.token)
-                basePreferences.audioUsername.set(response.user.name)
-                response.user.recommenderUuid?.let { basePreferences.audioRecommenderUuid.set(it) }
-                _auth.update { it.copy(loading = false, username = response.user.name, error = null) }
-                accountSync.synchronize(force = true)
-                // Recommendations are keyed by account, so everything fetched anonymously is wrong
-                // the moment we are signed in.
-                pageCache.clear()
-                if (_state.value.tab == AudioBrowseTab.FAVORITES) loadLocalFavorites()
-                if (_state.value.tab == AudioBrowseTab.RECOMMENDED) refresh()
+                val response = if (register) api.register(name, password) else api.login(name, password)
+                completeAuth(response)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "Audio login failed" }
-                _auth.update { it.copy(loading = false, error = e.message) }
+                logcat(LogPriority.ERROR, e) { "Audio ${if (register) "registration" else "login"} failed" }
+                val refusal = e as? AudioAuthException
+                _auth.update {
+                    it.copy(
+                        loading = false,
+                        // Empty rather than null: the dialog shows a line for any non-null value,
+                        // and only a server sentence is worth printing verbatim.
+                        error = refusal?.message ?: "",
+                        errorFromServer = refusal?.message != null,
+                    )
+                }
             }
         }
+    }
+
+    /**
+     * Shared tail of a successful sign-in and a successful registration.
+     *
+     * Registration lands here for the same reason a login does: the account is already signed in
+     * by the time the response arrives, and the works fetched anonymously are keyed to no account,
+     * so the page cache has to go either way.
+     */
+    private suspend fun completeAuth(response: AuthResponse) {
+        basePreferences.audioAuthToken.set(response.token)
+        basePreferences.audioUsername.set(response.user.name)
+        response.user.recommenderUuid?.let { basePreferences.audioRecommenderUuid.set(it) }
+        _auth.update { it.copy(loading = false, username = response.user.name, error = null, errorFromServer = false) }
+        accountSync.synchronize(force = true)
+        // Recommendations are keyed by account, so everything fetched anonymously is wrong
+        // the moment we are signed in.
+        pageCache.clear()
+        if (_state.value.tab == AudioBrowseTab.FAVORITES) loadFavorites()
+        if (_state.value.tab == AudioBrowseTab.RECOMMENDED) refresh()
+    }
+
+    /** Drops a refusal line when the dialog switches between signing in and registering. */
+    fun clearAuthError() {
+        _auth.update { it.copy(error = null, errorFromServer = false) }
+    }
+
+    /**
+     * Times every host in the picker, in parallel.
+     *
+     * Nothing is measured until the sheet is opened. Four round trips on every visit to the browse
+     * page would be spent on a choice most users make once, and on a metered connection they would
+     * be spent before the first cover loads.
+     */
+    fun measureBackends() {
+        if (_backend.value.measuring) return
+        _backend.update { it.copy(measuring = true, latency = emptyMap()) }
+        viewModelScope.launchIO {
+            val results = coroutineScope {
+                AudioBackend.entries.map { backend ->
+                    async { backend.apiBaseUrl to api.measureLatency(backend.apiBaseUrl) }
+                }.awaitAll()
+            }.toMap()
+            _backend.update { it.copy(measuring = false, latency = results) }
+        }
+    }
+
+    /**
+     * Switches the section to another site.
+     *
+     * The token survives the move: it is issued by asmr.one and every mirror accepts it, so the
+     * user is not signed out. What does not survive is the page cache — every row on screen was
+     * fetched from the old host — so it is dropped and the current tab is asked for again.
+     */
+    fun selectBackend(apiBaseUrl: String) {
+        if (apiBaseUrl == _backend.value.current) return
+        basePreferences.audioBackendUrl.set(apiBaseUrl)
+        _backend.update { it.copy(current = apiBaseUrl) }
+        pageCache.clear()
+        refresh()
     }
 
     fun logout() {
         accountSync.resetSession()
         basePreferences.audioAuthToken.set("")
         basePreferences.audioUsername.set("")
-        _auth.update { it.copy(username = null, error = null) }
+        _auth.update { it.copy(username = null, error = null, errorFromServer = false) }
         pageCache.clear()
         // Recommendations are account specific, so what is on screen is stale the instant we
         // sign out. Other tabs do not depend on the account and would just flash for nothing.
@@ -526,7 +662,7 @@ class AudioBrowseViewModel(
     fun search(query: String) {
         if (_state.value.tab == AudioBrowseTab.FAVORITES) {
             _state.update { it.copy(query = query.ifBlank { null }) }
-            loadLocalFavorites()
+            loadFavorites()
             return
         }
         submitQuery(query, compileTerms = true)
@@ -657,7 +793,10 @@ class AudioBrowseViewModel(
         val currentTab = _state.value.tab
         val currentSort = sortOf(currentTab).value
         if (currentTab == AudioBrowseTab.FAVORITES) {
-            loadLocalFavorites()
+            // A pull to refresh is the one path that asks for the account's rows as they are now;
+            // every other reload repaints the copy the last sync left.
+            if (forceNetwork && accountSync.isSignedIn()) accountSync.synchronize(force = true)
+            loadFavorites()
             return
         }
         val baseKey = cacheKeyFor(currentTab, currentSort, query)
@@ -845,9 +984,49 @@ class AudioBrowseViewModel(
         }
     }
 
-    private fun loadLocalFavorites() {
+    /**
+     * Repaints the favourites tab from what is already in memory.
+     *
+     * The screen leaves composition while a details page sits on top of it, so coming back rebuilds
+     * it while the view model keeps the list it last built. Running this on entry means an
+     * uncollect made on that details page is gone before the list is drawn again, with no network
+     * round trip and no dependency on when a sync happened to finish.
+     */
+    fun refreshFavoritesIfShowing() {
+        if (_state.value.tab == AudioBrowseTab.FAVORITES) loadFavorites()
+    }
+
+    /**
+     * Drops the works from the collection — the same write the heart on a details page makes, run
+     * over a selection.
+     *
+     * The account row is what the list is built from, so each uncollect removes it (a `DELETE`,
+     * not a state change) and the local cache goes with it. Rows drop out of the tab on their own:
+     * there is no empty "uncollected" state to show.
+     */
+    fun uncollect(workIds: Set<Long>) {
+        if (workIds.isEmpty()) return
+        viewModelScope.launchIO {
+            accountSync.uncollectAll(workIds)
+            workIds.forEach { favoriteStore.remove(it) }
+            refreshFavoritesIfShowing()
+        }
+    }
+
+    /**
+     * The favourites tab: the works the account holds as collected, the local copy otherwise.
+     *
+     * Only collected rows count. The account also keeps a row for anything that was rated or played
+     * on the website, and showing those here is what made the tab disagree with the heart.
+     */
+    private fun loadFavorites() {
         val query = _state.value.query.orEmpty().trim()
-        val filtered = favoriteStore.load()
+        val source = if (accountSync.isSignedIn() && accountSync.hasLoaded()) {
+            accountSync.markedWorks()
+        } else {
+            favoriteStore.load()
+        }
+        val filtered = source
             .asSequence()
             .filter { work ->
                 query.isBlank() || listOf(
@@ -859,6 +1038,9 @@ class AudioBrowseViewModel(
             }
             .toList()
         val sorted = when (favoriteSort.value) {
+            // The source is already newest-collected-first: the account answers ordered by
+            // updated_at, and the local copy prepends on every add.
+            AudioSort.COLLECTED_DESC -> filtered
             AudioSort.RELEASE_DESC, AudioSort.CREATE_DESC -> filtered.sortedByDescending { it.release.orEmpty() }
             AudioSort.RATING_DESC -> filtered.sortedByDescending { it.rateAverage2dp ?: 0.0 }
             AudioSort.DL_DESC -> filtered
@@ -870,8 +1052,7 @@ class AudioBrowseViewModel(
                 refreshing = false,
                 error = false,
                 errorMessage = null,
-                works = sorted,
-                page = 1,
+                works = sorted, page = 1,
                 totalCount = sorted.size,
                 loadingMore = false,
                 loadMoreError = false,
