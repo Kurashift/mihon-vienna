@@ -130,6 +130,7 @@ class LibraryViewModel(
                     showSystemCategory = showSystemCategory,
                     categories = categories,
                     favorites = filteredFavorites,
+                    searchQuery = searchQuery,
                     tracksMap = tracksMap,
                     loggedInTrackerIds = trackingFilters.keys,
                 )
@@ -151,12 +152,22 @@ class LibraryViewModel(
                     data.favorites
                         .applyGrouping(data.categories, data.showSystemCategory)
                         .applySort(data.favoritesById, data.tracksMap, data.loggedInTrackerIds)
+                        // Resolved against the same snapshot the rows were grouped and sorted from.
+                        // Looking them up later read whichever filter pass was current at draw time,
+                        // so for the moment between a search being applied and the grouping catching
+                        // up the shelf was drawn as the short result set - and the list, which keys
+                        // its scroll position on the rows, clamped the reader's offset to its end.
+                        .mapValues { (_, ids) -> ids.mapNotNull { data.favoritesById[it] } } to
+                        data.searchQuery
                 }
-                .collectLatest {
+                .collectLatest { (grouped, appliedSearchQuery) ->
                     mutableState.update { state ->
                         state.copy(
                             isLoading = false,
-                            groupedFavorites = it,
+                            groupedFavorites = grouped,
+                            // Travels with the rows it describes, so the list never reads a keyword
+                            // from one filter pass and rows from another.
+                            appliedSearchQuery = appliedSearchQuery,
                         )
                     }
                 }
@@ -861,6 +872,15 @@ class LibraryViewModel(
         val showSystemCategory: Boolean = false,
         val categories: List<Category> = emptyList(),
         val favorites: List<LibraryItem> = emptyList(),
+        /**
+         * The keyword [favorites] was filtered with, as opposed to the one in the search field.
+         *
+         * The filtering is debounced, so for a moment the field already names a different keyword
+         * than the rows on screen. The list keys its scroll position on the rows, not the field:
+         * keying on the field would hand the previous list's offset to a list it does not
+         * describe, and clearing a search would clamp the shelf to the length of the results.
+         */
+        val searchQuery: String? = null,
         val tracksMap: Map</* Manga */ Long, List<Track>> = emptyMap(),
         val loggedInTrackerIds: Set<Long> = emptySet(),
     ) {
@@ -872,6 +892,12 @@ class LibraryViewModel(
         val isInitialized: Boolean = false,
         val isLoading: Boolean = true,
         val searchQuery: String? = null,
+        /**
+         * The keyword the rows in [groupedFavorites] were filtered with, as opposed to the one in
+         * the search field. Updated in the same step as the rows, so the list never keys its scroll
+         * position on a keyword that does not describe what is on screen; see [LibraryData.searchQuery].
+         */
+        val appliedSearchQuery: String? = null,
         val selection: Set</* Manga */ Long> = setOf(),
         val hasActiveFilters: Boolean = false,
         val showCategoryTabs: Boolean = false,
@@ -880,7 +906,12 @@ class LibraryViewModel(
         val dialog: Dialog? = null,
         val libraryData: LibraryData = LibraryData(),
         private val activeCategoryIndex: Int = 0,
-        private val groupedFavorites: Map<Category, List</* LibraryItem */ Long>> = emptyMap(),
+        /**
+         * The rows of each category, already resolved against the filter pass they were grouped
+         * from; see the grouping collector. Ids are not kept: resolving them at draw time could read
+         * a different pass and hand the list a length the reader's offset does not belong to.
+         */
+        private val groupedFavorites: Map<Category, List<LibraryItem>> = emptyMap(),
     ) {
         val displayedCategories: List<Category> = groupedFavorites.keys.toList()
 
@@ -915,7 +946,7 @@ class LibraryViewModel(
         }
 
         fun getItemsForCategory(category: Category): List<LibraryItem> {
-            return groupedFavorites[category].orEmpty().mapNotNull { libraryData.favoritesById[it] }
+            return groupedFavorites[category].orEmpty()
         }
 
         fun getItemCountForCategory(category: Category): Int? {

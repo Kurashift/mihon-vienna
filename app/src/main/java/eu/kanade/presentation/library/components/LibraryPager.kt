@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -34,6 +38,8 @@ fun LibraryPager(
     hasActiveFilters: Boolean,
     selection: Set<Long>,
     searchQuery: String?,
+    /** The keyword the rows were built with; [searchQuery] is what the search field holds. */
+    appliedSearchQuery: String?,
     onGlobalSearchClicked: () -> Unit,
     getCategoryForPage: (Int) -> Category,
     getDisplayMode: (Int) -> PreferenceMutableState<LibraryDisplayMode>,
@@ -54,6 +60,21 @@ fun LibraryPager(
         }
         val category = getCategoryForPage(page)
         val items = getItemsForCategory(category)
+
+        // One scroll position per keyword, held above the branch below: a keyword that matches
+        // nothing composes the empty screen in place of the list, and a state created inside the
+        // list started over at the top — which is why clearing a search landed at the top of the
+        // shelf instead of where the user was. The keyword the library was browsed with (empty)
+        // keeps its own slot, so the results scroll without moving the shelf underneath.
+        //
+        // The slot follows [appliedSearchQuery] rather than [searchQuery]: the filter is debounced,
+        // so the field names a new keyword while the old rows are still on screen. Switching on
+        // the field would attach the shelf's offset to the short result set for that moment and
+        // clamp it there for good.
+        val scrollStates = rememberSaveable(saver = categoryScrollStatesSaver) {
+            mutableMapOf<String, CategoryScrollStates>()
+        }
+        val scrollState = scrollStates.getOrPut(appliedSearchQuery.orEmpty()) { CategoryScrollStates() }
 
         if (items.isEmpty()) {
             LibraryPagerEmptyScreen(
@@ -83,6 +104,7 @@ fun LibraryPager(
                 LibraryList(
                     items = items,
                     contentPadding = contentPadding,
+                    state = scrollState.list,
                     selection = selection,
                     onClick = onClickManga,
                     onLongClick = onLongClickManga,
@@ -97,6 +119,7 @@ fun LibraryPager(
                     showTitle = displayMode is LibraryDisplayMode.CompactGrid,
                     columns = columns,
                     contentPadding = contentPadding,
+                    gridState = scrollState.grid,
                     selection = selection,
                     onClick = onClickManga,
                     onLongClick = onLongClickManga,
@@ -110,6 +133,7 @@ fun LibraryPager(
                     items = items,
                     columns = columns,
                     contentPadding = contentPadding,
+                    gridState = scrollState.grid,
                     selection = selection,
                     onClick = onClickManga,
                     onLongClick = onLongClickManga,
@@ -121,6 +145,54 @@ fun LibraryPager(
         }
     }
 }
+
+/**
+ * Scroll positions of one category, in both shapes the library can take: a list and a grid.
+ *
+ * Both are held because the display mode can be switched between visits; the unused one simply
+ * stays where it was.
+ */
+private class CategoryScrollStates(
+    val list: LazyListState = LazyListState(),
+    val grid: LazyGridState = LazyGridState(),
+)
+
+/**
+ * Saved form of a category's scroll positions: one (keyword, list index, list offset, grid index,
+ * grid offset) row per keyword.
+ *
+ * The states belong to a composition that is disposed whenever the list gives way to the empty or
+ * loading screen, so only their primitives travel through the saved state.
+ */
+private val categoryScrollStatesSaver = listSaver<MutableMap<String, CategoryScrollStates>, Any>(
+    save = { states ->
+        states.flatMap { (query, state) ->
+            listOf(
+                query,
+                state.list.firstVisibleItemIndex,
+                state.list.firstVisibleItemScrollOffset,
+                state.grid.firstVisibleItemIndex,
+                state.grid.firstVisibleItemScrollOffset,
+            )
+        }
+    },
+    restore = { saved ->
+        mutableMapOf<String, CategoryScrollStates>().apply {
+            saved.chunked(SCROLL_STATE_SAVED_FIELDS).forEach { fields ->
+                put(
+                    fields[0] as String,
+                    CategoryScrollStates(
+                        list = LazyListState(fields[1] as Int, fields[2] as Int),
+                        grid = LazyGridState(fields[3] as Int, fields[4] as Int),
+                    ),
+                )
+            }
+        }
+    },
+)
+
+/** Fields one keyword occupies in [categoryScrollStatesSaver]. */
+private const val SCROLL_STATE_SAVED_FIELDS = 5
 
 @Composable
 private fun LibraryPagerEmptyScreen(
