@@ -2,6 +2,7 @@ package eu.kanade.presentation.library.components
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -15,6 +16,7 @@ internal fun LibraryCompactGrid(
     showTitle: Boolean,
     columns: Int,
     contentPadding: PaddingValues,
+    gridState: LazyGridState,
     selection: Set<Long>,
     onClick: (LibraryManga) -> Unit,
     onLongClick: (LibraryManga) -> Unit,
@@ -26,6 +28,7 @@ internal fun LibraryCompactGrid(
         modifier = Modifier.fillMaxSize(),
         columns = columns,
         contentPadding = contentPadding,
+        state = gridState,
     ) {
         globalSearchItem(searchQuery, onGlobalSearchClicked)
 

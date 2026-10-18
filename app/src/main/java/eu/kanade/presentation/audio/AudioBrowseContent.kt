@@ -2,6 +2,7 @@ package eu.kanade.presentation.audio
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,22 +21,28 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +64,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -66,18 +75,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import eu.kanade.presentation.audio.components.AudioBottomAction
+import eu.kanade.presentation.audio.components.AudioBottomActionMenu
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.SearchToolbar
+import eu.kanade.tachiyomi.data.audio.AudioBackend
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.TagRef
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.search.SearchHistoryScope
 import eu.kanade.tachiyomi.ui.audio.AudioAuthState
+import eu.kanade.tachiyomi.ui.audio.AudioBackendState
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseState
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseTab
 import eu.kanade.tachiyomi.ui.audio.AudioSort
@@ -99,6 +113,7 @@ fun AudioBrowseContent(
     /** Sort of the work-list tab, which is what that tab is named after. */
     workListSort: AudioSort,
     auth: AudioAuthState,
+    backend: AudioBackendState,
     audioQuality: AudioQualityMode,
     showTabs: Boolean,
     bottomBar: @Composable () -> Unit,
@@ -113,14 +128,64 @@ fun AudioBrowseContent(
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onSortChange: (AudioSort) -> Unit,
+    /** Turns the subtitle filter on or off; the state is [AudioBrowseState.subtitlesOnly]. */
+    onSetSubtitles: (Boolean) -> Unit,
     onSelectTab: (AudioBrowseTab) -> Unit,
     onLogin: (String, String) -> Unit,
-    onLogout: () -> Unit,
+    /** Creates an account and signs into it; the backend answers with a token either way. */
+    onRegister: (String, String) -> Unit,
+    onClearAuthError: () -> Unit,
+    /** Opens the account page, where the password is changed, the email is managed and the
+     * session is ended. */
+    onOpenAccount: () -> Unit,
+    /** Switches the section to another mirror of the audio backend. */
+    onSelectBackend: (String) -> Unit,
+    onMeasureBackends: () -> Unit,
     onCycleAudioQuality: () -> Unit,
+    /** Drops the selected works from the account's collection, one row per work. */
+    onUncollectSelected: (Set<Long>) -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf<String?>(null) }
     var showSortSheet by remember { mutableStateOf(false) }
     var showLoginDialog by remember { mutableStateOf(false) }
+    var showBackendSheet by remember { mutableStateOf(false) }
+    // Only the favourites tab is made of rows the account owns, so it is the only one that can be
+    // collected or dropped in bulk. Selection lives here rather than in the view model: it is
+    // screen state, and the one action it produces is the only thing that needs the account.
+    //
+    // Mode and selection are tracked separately for the same reason as the playlist: unticking the
+    // last work must not drop the user out of the mode they are still working in.
+    var favoriteSelectionMode by remember { mutableStateOf(false) }
+    var selectedWorkIds by remember { mutableStateOf(emptySet<Long>()) }
+    var showUncollectDialog by remember { mutableStateOf(false) }
+    val favoritesSelectable = state.tab == AudioBrowseTab.FAVORITES && auth.username != null
+    val favoriteIds = remember(state.works) { state.works.mapTo(mutableSetOf()) { it.id } }
+
+    fun exitFavoriteSelection() {
+        favoriteSelectionMode = false
+        selectedWorkIds = emptySet()
+    }
+
+    fun toggleWorkSelection(id: Long) {
+        favoriteSelectionMode = true
+        selectedWorkIds = if (id in selectedWorkIds) selectedWorkIds - id else selectedWorkIds + id
+    }
+
+    // Leaving the tab, signing out or clearing the list all end a selection that can no longer act
+    // on anything. An empty selection is a normal state while selecting, so only a non-empty one
+    // that no longer matches a row is dropped.
+    LaunchedEffect(favoritesSelectable) {
+        if (!favoritesSelectable) exitFavoriteSelection()
+    }
+    LaunchedEffect(state.works) {
+        if (favoriteSelectionMode && selectedWorkIds.isNotEmpty() && selectedWorkIds.none { it in favoriteIds }) {
+            selectedWorkIds = emptySet()
+        }
+    }
+    BackHandler(enabled = favoriteSelectionMode) {
+        exitFavoriteSelection()
+    }
+
     val audioQualityAction = if (showTabs) {
         AppBar.OverflowAction(
             title = stringResource(
@@ -145,6 +210,13 @@ fun AudioBrowseContent(
         if (showLoginDialog && auth.username != null) showLoginDialog = false
     }
 
+    // Hosts are timed the first time the sheet opens and the numbers are kept for the session;
+    // the sheet's own remeasure button is how they are refreshed. Measuring on every visit to the
+    // page would spend four round trips on a choice most users make once.
+    LaunchedEffect(showBackendSheet) {
+        if (showBackendSheet && backend.latency.isEmpty()) onMeasureBackends()
+    }
+
     Scaffold(
         topBar = { scrollBehavior ->
             Column {
@@ -166,7 +238,31 @@ fun AudioBrowseContent(
                     },
                     titleContent = { AppBarTitle(title) },
                     navigateUp = navigateUp,
+                    // While collecting in bulk the search field steps aside for the counter, and the
+                    // selection actions live in the bar at the bottom.
+                    actionModeCounter = selectedWorkIds.size,
+                    actionMode = favoriteSelectionMode,
+                    onCancelActionMode = ::exitFavoriteSelection,
+                    // Select-all and invert live in the top bar, rightmost, as they do in every
+                    // other selection screen; only the removal action sits at the bottom.
+                    actionModeActions = {
+                        AppBarActions(
+                            listOf(
+                                AppBar.Action(
+                                    title = stringResource(MR.strings.action_select_all),
+                                    icon = Icons.Outlined.SelectAll,
+                                    onClick = { selectedWorkIds = favoriteIds.toSet() },
+                                ),
+                                AppBar.Action(
+                                    title = stringResource(MR.strings.action_select_inverse),
+                                    icon = Icons.Outlined.FlipToBack,
+                                    onClick = { selectedWorkIds = favoriteIds - selectedWorkIds },
+                                ),
+                            ),
+                        )
+                    },
                     actions = {
+                        if (favoriteSelectionMode) return@SearchToolbar
                         IconButton(onClick = onClickHistory) {
                             Icon(
                                 imageVector = Icons.Outlined.History,
@@ -190,17 +286,50 @@ fun AudioBrowseContent(
                                     title = stringResource(MR.strings.audio_categories),
                                     onClick = onClickCategories,
                                 ),
+                                // A filter, not a sort. The entry reads as a state — the value
+                                // after the colon is what the list is doing right now — and the
+                                // tap switches it, which is the same shape as the quality entry
+                                // above. No check mark: the menu is as wide as its longest entry,
+                                // and a marker pinned to the right edge of a short one just frames
+                                // the empty space next to it.
+                                //
+                                // Left out of the favourites tab: that list is held locally, so
+                                // there is no request the flag could narrow and the entry would sit
+                                // there doing nothing when tapped.
+                                if (state.tab != AudioBrowseTab.FAVORITES) {
+                                    AppBar.OverflowAction(
+                                        title = stringResource(
+                                            if (state.subtitlesOnly) {
+                                                MR.strings.audio_filter_subtitles
+                                            } else {
+                                                MR.strings.audio_filter_all
+                                            },
+                                        ),
+                                        onClick = { onSetSubtitles(!state.subtitlesOnly) },
+                                    )
+                                } else {
+                                    null
+                                },
                                 audioQualityAction,
                                 AppBar.OverflowAction(
-                                    title = if (auth.username != null) {
-                                        stringResource(MR.strings.audio_logout)
-                                    } else {
-                                        stringResource(MR.strings.audio_login)
-                                    },
-                                    onClick = {
-                                        if (auth.username != null) onLogout() else showLoginDialog = true
-                                    },
+                                    title = stringResource(MR.strings.audio_backend),
+                                    onClick = { showBackendSheet = true },
                                 ),
+                                // The account entry is the same slot either way: signing in while
+                                // signed out, the account page while signed in. The toolbar keeps
+                                // one icon (history) and the menu carries everything else, so a
+                                // narrow screen does not lose the title to a row of icons.
+                                if (auth.username == null) {
+                                    AppBar.OverflowAction(
+                                        title = stringResource(MR.strings.audio_login),
+                                        onClick = { showLoginDialog = true },
+                                    )
+                                } else {
+                                    AppBar.OverflowAction(
+                                        title = stringResource(MR.strings.audio_account),
+                                        onClick = onOpenAccount,
+                                    )
+                                },
                             ),
                         )
                     },
@@ -261,8 +390,47 @@ fun AudioBrowseContent(
                 }
             }
         },
-        bottomBar = bottomBar,
+        bottomBar = {
+            if (favoriteSelectionMode) {
+                AudioBottomActionMenu(
+                    visible = true,
+                    actions = listOf(
+                        AudioBottomAction(
+                            title = stringResource(MR.strings.audio_favorite_remove),
+                            icon = Icons.Outlined.Delete,
+                            enabled = selectedWorkIds.isNotEmpty(),
+                            onClick = {
+                                if (selectedWorkIds.size > 1) {
+                                    showUncollectDialog = true
+                                } else {
+                                    onUncollectSelected(selectedWorkIds)
+                                    exitFavoriteSelection()
+                                }
+                            },
+                        ),
+                    ),
+                )
+            } else {
+                bottomBar()
+            }
+        },
     ) { contentPadding ->
+        // One scroll position per tab and keyword, kept above the branches below. Searching
+        // reloads the list, which composes the loading screen (and the empty screen, while the
+        // keyword still matches nothing) in place of the grid; a state created inside that grid
+        // went with it and every keyword came back at the top. Keying by keyword also keeps the
+        // list the user was browsing untouched by the results scrolling in its own slot.
+        //
+        // The keyword is [AudioBrowseState.listQuery], the one the rows were built for, not the one
+        // in the search field: switching slots the instant the field changes would hand the old
+        // rows to a state that does not describe them, and the browsing list's offset would be
+        // clamped to the length of the result set it was briefly attached to.
+        //
+        // Saveable rather than remembered for the same reason: opening a work pushes a details
+        // page on top of this one, which disposes this composition.
+        val gridStates = rememberSaveable(saver = gridStatesSaver) {
+            mutableMapOf<WorkListSlot, LazyGridState>()
+        }
         when {
             state.loading -> LoadingScreen(Modifier.padding(contentPadding))
             state.error -> {
@@ -285,7 +453,24 @@ fun AudioBrowseContent(
                 modifier = Modifier.padding(contentPadding),
             )
             else -> {
-                val gridState = rememberLazyGridState()
+                val gridState = gridStates.getOrPut(WorkListSlot(state.tab, state.listQuery.orEmpty())) {
+                    LazyGridState()
+                }
+                // Favourites open at the top only when a work actually lands there — the one just
+                // collected, which is the first row. Coming back from a work that was merely
+                // played must keep the position the user left, so the first row is compared
+                // against the one seen last instead of the tab alone triggering the jump. While a
+                // keyword is up the rows are a filtered subset, so the comparison is left alone:
+                // otherwise clearing the search would read as a new first row and jump to the top.
+                var favoritesFirstId by rememberSaveable { mutableStateOf(FAVORITES_NO_FIRST_ROW) }
+                LaunchedEffect(state.tab, state.query, state.works.firstOrNull()?.id) {
+                    if (state.tab != AudioBrowseTab.FAVORITES || state.query != null) return@LaunchedEffect
+                    val firstId = state.works.firstOrNull()?.id ?: return@LaunchedEffect
+                    if (favoritesFirstId != FAVORITES_NO_FIRST_ROW && firstId != favoritesFirstId) {
+                        gridState.scrollToItem(0)
+                    }
+                    favoritesFirstId = firstId
+                }
                 // Read through rememberUpdatedState so appending a page no longer tears down and
                 // restarts the scroll observer — the flow only needs the latest count, not to be
                 // resubscribed whenever it changes.
@@ -325,8 +510,21 @@ fun AudioBrowseContent(
                                 if (index > 0) WorkSeparator()
                                 WorkGridItem(
                                     work = work,
-                                    onClick = { onClickWork(work) },
+                                    onClick = {
+                                        if (favoriteSelectionMode) {
+                                            toggleWorkSelection(work.id)
+                                        } else {
+                                            onClickWork(work)
+                                        }
+                                    },
                                     onClickTag = onClickTag,
+                                    selectionMode = favoriteSelectionMode,
+                                    selected = work.id in selectedWorkIds,
+                                    onLongClick = if (favoritesSelectable) {
+                                        { toggleWorkSelection(work.id) }
+                                    } else {
+                                        null
+                                    },
                                 )
                             }
                         }
@@ -361,6 +559,10 @@ fun AudioBrowseContent(
     if (showSortSheet) {
         AudioSortSheet(
             current = sort,
+            // Collection order only means something over the account's own list.
+            options = AudioSort.entries.filter {
+                !it.favoritesOnly || state.tab == AudioBrowseTab.FAVORITES
+            },
             onDismiss = { showSortSheet = false },
             onSelect = {
                 onSortChange(it)
@@ -369,11 +571,53 @@ fun AudioBrowseContent(
         )
     }
 
+    // Only for more than one work: a lone card was picked deliberately, and asking again would be
+    // a second confirmation for one decision.
+    if (showUncollectDialog) {
+        AlertDialog(
+            onDismissRequest = { showUncollectDialog = false },
+            title = { Text(stringResource(MR.strings.audio_favorite_remove)) },
+            text = {
+                Text(stringResource(MR.strings.audio_favorite_remove_selected_confirm, selectedWorkIds.size))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUncollectDialog = false
+                        onUncollectSelected(selectedWorkIds)
+                        exitFavoriteSelection()
+                    },
+                ) {
+                    Text(stringResource(MR.strings.action_ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUncollectDialog = false }) {
+                    Text(stringResource(MR.strings.action_cancel))
+                }
+            },
+        )
+    }
+
+    if (showBackendSheet) {
+        AudioBackendSheet(
+            state = backend,
+            onSelect = { apiBaseUrl ->
+                onSelectBackend(apiBaseUrl)
+                showBackendSheet = false
+            },
+            onRemeasure = onMeasureBackends,
+            onDismiss = { showBackendSheet = false },
+        )
+    }
+
     if (showLoginDialog) {
         LoginDialog(
             auth = auth,
             onDismiss = { showLoginDialog = false },
             onLogin = onLogin,
+            onRegister = onRegister,
+            onClearAuthError = onClearAuthError,
         )
     }
 }
@@ -383,21 +627,30 @@ internal fun WorkGridItem(
     work: Work,
     onClick: () -> Unit,
     onClickTag: (String) -> Unit,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Card(
-        onClick = onClick,
+        // The card is its own tap target rather than the `onClick` overload, so a long press can
+        // start a selection the way it does on every row in the app.
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(WORK_CARD_HEIGHT)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         // Fixed total height, so no card ever sits taller or shorter than its neighbours.
         // The tag row is a strip along the bottom edge — full card width, under the cover as
         // well as the text — which is both where it reads as its own band and where it has the
         // most room to show tags. The strip is reserved even when a work carries no tags:
         // dropping it grew the cover into the freed space, which made those rows read as a
         // different, larger card than every other one in the list.
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(WORK_CARD_HEIGHT),
         shape = RoundedCornerShape(WORK_CARD_CORNER),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
         ),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -409,9 +662,7 @@ internal fun WorkGridItem(
                     .weight(1f),
                 verticalAlignment = Alignment.Top,
             ) {
-                AsyncImage(
-                    model = work.mainCoverUrl ?: work.thumbnailCoverUrl ?: work.samCoverUrl,
-                    contentDescription = work.title,
+                Box(
                     modifier = Modifier
                         .fillMaxHeight()
                         // Square off the row's height, so every cover is the same size and the
@@ -421,8 +672,25 @@ internal fun WorkGridItem(
                         // bottom edge always lands mid-card, where a rounded corner would punch
                         // a notch out of the card's fill.
                         .clip(RoundedCornerShape(topStart = WORK_CARD_CORNER)),
-                    contentScale = ContentScale.Crop,
-                )
+                ) {
+                    AsyncImage(
+                        model = work.mainCoverUrl ?: work.thumbnailCoverUrl ?: work.samCoverUrl,
+                        contentDescription = work.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                    // A card has no leading slot to put a checkbox in, so it sits on the cover —
+                    // the same corner the eye already starts from on every row.
+                    if (selectionMode) {
+                        Checkbox(
+                            checked = selected,
+                            onCheckedChange = null,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(2.dp),
+                        )
+                    }
+                }
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -545,6 +813,7 @@ internal fun formatCompactCount(value: Int): String {
 @Composable
 private fun AudioSortSheet(
     current: AudioSort,
+    options: List<AudioSort>,
     onDismiss: () -> Unit,
     onSelect: (AudioSort) -> Unit,
 ) {
@@ -565,7 +834,7 @@ private fun AudioSortSheet(
             // Grouped so accessibility reports the entries as one radio set rather than five
             // unrelated clickable rows.
             Column(modifier = Modifier.selectableGroup()) {
-                AudioSort.entries.forEach { option ->
+                options.forEach { option ->
                     SortOptionRow(
                         option = option,
                         selected = option == current,
@@ -652,18 +921,49 @@ private fun WorkSeparator() {
     }
 }
 
+/**
+ * The account dialog: one form, two states.
+ *
+ * Registration lives inside the sign-in panel rather than behind its own entry, because the
+ * backend exposes both through the same credential pair and answers either with a token — the
+ * only difference is which endpoint it posts to. Switching is a text button in the button row, so
+ * the panel keeps exactly two fields and never grows a second screen.
+ *
+ * That button is named after the state it leads to — 注册 while signing in, 登录 while registering
+ * — rather than phrasing the choice as a question ("没有账号？注册"). The dialog already says which
+ * half it is in its title, so the question mark only added words to read before the tap.
+ */
 @Composable
 internal fun LoginDialog(
     auth: AudioAuthState,
     onDismiss: () -> Unit,
     onLogin: (String, String) -> Unit,
+    onRegister: (String, String) -> Unit,
+    onClearAuthError: () -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var register by remember { mutableStateOf(false) }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    val canSubmit = !auth.loading &&
+        name.trim().length >= MIN_AUTH_FIELD_LENGTH &&
+        password.length >= MIN_AUTH_FIELD_LENGTH
+
+    fun submit() {
+        if (!canSubmit) return
+        if (register) onRegister(name.trim(), password) else onLogin(name.trim(), password)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(MR.strings.audio_login_title)) },
+        title = {
+            Text(
+                stringResource(
+                    if (register) MR.strings.audio_register_title else MR.strings.audio_login_title,
+                ),
+            )
+        },
         text = {
             Column {
                 OutlinedTextField(
@@ -677,13 +977,49 @@ internal fun LoginDialog(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text(stringResource(MR.strings.audio_password)) },
-                    visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
+                    visualTransformation = if (passwordVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    // Registration signs the account in on the spot, so a typo here is not a
+                    // failed attempt to retype later: it is a password nobody knows, on an account
+                    // with no reset flow. One tap to read it back is cheaper than a second field.
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) {
+                                    Icons.Outlined.VisibilityOff
+                                } else {
+                                    Icons.Outlined.Visibility
+                                },
+                                contentDescription = null,
+                            )
+                        }
+                    },
                 )
+                if (register) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(MR.strings.audio_register_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (auth.error != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = stringResource(MR.strings.audio_login_failed),
+                        // The backend's own sentence when it refused the credentials — "用户 xxx
+                        // 已存在." says where to go next, which no generic line can. A transport
+                        // failure has no such sentence and falls back to the localised one.
+                        text = if (auth.errorFromServer && !auth.error.isNullOrBlank()) {
+                            auth.error
+                        } else {
+                            stringResource(
+                                if (register) MR.strings.audio_register_failed else MR.strings.audio_login_failed,
+                            )
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -692,8 +1028,8 @@ internal fun LoginDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onLogin(name.trim(), password) },
-                enabled = !auth.loading && name.isNotBlank() && password.isNotBlank(),
+                onClick = ::submit,
+                enabled = canSubmit,
             ) {
                 if (auth.loading) {
                     CircularProgressIndicator(
@@ -701,19 +1037,111 @@ internal fun LoginDialog(
                         strokeWidth = 2.dp,
                     )
                 } else {
-                    Text(stringResource(MR.strings.audio_login))
+                    Text(
+                        stringResource(
+                            if (register) MR.strings.audio_register else MR.strings.audio_login,
+                        ),
+                    )
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(MR.strings.action_cancel))
+            Row {
+                TextButton(
+                    onClick = {
+                        register = !register
+                        onClearAuthError()
+                    },
+                ) {
+                    // Named after the state it switches to, not the state the user is in.
+                    Text(
+                        stringResource(
+                            if (register) MR.strings.audio_login else MR.strings.audio_register,
+                        ),
+                    )
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(MR.strings.action_cancel))
+                }
             }
         },
     )
 }
 
 private const val LOAD_MORE_THRESHOLD = 8
+
+/**
+ * The host picker: one row per site the publisher lists, cheapest first.
+ *
+ * Latency is the only thing that separates these hosts — same catalogue, same accounts, same
+ * reviews, and a token minted on one is accepted by the others — so the sheet is a list of round
+ * trips rather than a list of features. A host that did not answer is named as unreachable instead
+ * of showing no number at all: "unreachable" and "not measured yet" call for different reactions.
+ */
+@Composable
+internal fun AudioBackendSheet(
+    state: AudioBackendState,
+    onSelect: (String) -> Unit,
+    onRemeasure: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(bottom = 12.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(MR.strings.audio_backend),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onRemeasure, enabled = !state.measuring) {
+                    Text(stringResource(MR.strings.audio_backend_remeasure))
+                }
+            }
+            AudioBackend.sortedByLatency(state.latency).forEach { backend ->
+                val selected = backend.apiBaseUrl.equals(state.current, ignoreCase = true)
+                val latency = state.latency[backend.apiBaseUrl]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(selected = selected, onClick = { onSelect(backend.apiBaseUrl) })
+                        .height(SORT_OPTION_HEIGHT)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = selected, onClick = null)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = backend.siteHost,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = when {
+                            latency != null -> stringResource(MR.strings.audio_backend_latency, latency)
+                            state.measuring -> stringResource(MR.strings.audio_backend_measuring)
+                            // Nothing measured yet: an empty cell rather than a wrong verdict.
+                            state.latency.isEmpty() -> ""
+                            else -> stringResource(MR.strings.audio_backend_unreachable)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Shortest username and password the backend accepts. Shared with the account page's password
+ * dialog so the two cannot drift into disagreeing about what is long enough.
+ */
+internal const val MIN_AUTH_FIELD_LENGTH = 5
 
 /** Minimum row height of a sort-sheet entry: the M3 single-line list tile height. */
 private val SORT_OPTION_HEIGHT = 56.dp
@@ -777,3 +1205,49 @@ internal fun AudioTabDivider() {
             .background(MaterialTheme.colorScheme.outlineVariant),
     )
 }
+
+/**
+ * One list the work grid can show: a tab, and the keyword it is showing (empty while browsing).
+ *
+ * The two dimensions are separate slots rather than one, so a keyword's results scroll on their
+ * own and the list the user was browsing keeps the position they left it at.
+ */
+private data class WorkListSlot(val tab: AudioBrowseTab, val query: String)
+
+/**
+ * Saved form of the work list's scroll positions: one (tab, keyword, index, offset) row each,
+ * rebuilt into [LazyGridState]s on restore.
+ *
+ * The states themselves belong to a composition that can be disposed two ways — a details page
+ * pushed on top of the list, or the grid replaced by the loading screen while a keyword loads —
+ * so only their primitives travel through the saved state.
+ */
+private val gridStatesSaver = listSaver<MutableMap<WorkListSlot, LazyGridState>, Any>(
+    save = { states ->
+        states.flatMap { (slot, state) ->
+            listOf(
+                slot.tab.name,
+                slot.query,
+                state.firstVisibleItemIndex,
+                state.firstVisibleItemScrollOffset,
+            )
+        }
+    },
+    restore = { saved ->
+        mutableMapOf<WorkListSlot, LazyGridState>().apply {
+            saved.chunked(GRID_STATE_SAVED_FIELDS).forEach { fields ->
+                val tab = AudioBrowseTab.entries.firstOrNull { it.name == fields[0] } ?: return@forEach
+                put(
+                    WorkListSlot(tab, fields[1] as String),
+                    LazyGridState(fields[2] as Int, fields[3] as Int),
+                )
+            }
+        }
+    },
+)
+
+/** Fields one slot occupies in [gridStatesSaver]: tab, keyword, first visible index and offset. */
+private const val GRID_STATE_SAVED_FIELDS = 4
+
+/** Stands in for "no first row seen yet". Work ids are positive, so no row can carry it. */
+private const val FAVORITES_NO_FIRST_ROW = -1L

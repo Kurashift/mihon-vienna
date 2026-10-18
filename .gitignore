@@ -48,6 +48,10 @@ gradle/build-logic/bin/
 /_ctx_out/
 /generated-images/
 
+# 临时垃圾目录：下横线开头、英文命名（如 _tmp/）。所有临时产物都集中在这里，
+# 任务结束整个删掉。见 AGENTS.md「文档与工作区卫生」。
+/_*/
+
 # JVM crash dumps. A test JVM that dies from memory pressure drops these beside
 # whichever module it was running for, not in the root.
 hs_err_pid*.log

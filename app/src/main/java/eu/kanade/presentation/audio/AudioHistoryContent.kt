@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,12 +25,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FlipToBack
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.AlertDialog
@@ -39,7 +35,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -74,8 +69,6 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
-import java.text.DateFormat
-import java.util.Date
 import kotlin.math.roundToInt
 
 /** How far the row slides to reveal the delete button: one comfortable icon touch target. */
@@ -89,21 +82,20 @@ fun AudioHistoryContent(
     /** Work the player is on, so the row it belongs to reads as playing, as it does in the queue. */
     currentWorkId: Long?,
     bottomBar: @Composable () -> Unit,
+    tabRow: @Composable () -> Unit = {},
     navigateUp: () -> Unit,
     onClear: () -> Unit,
     onRemoveWork: (AudioHistoryGroup) -> Unit,
     onRemoveSelected: (Set<String>) -> Unit,
     onPlayAll: () -> Unit,
-    onAddToPlaylist: (AudioHistoryEntry) -> Unit,
     onOpenWork: (AudioHistoryGroup) -> Unit,
     onClickEntry: (AudioHistoryEntry) -> Unit,
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
     var showRemoveDialog by remember { mutableStateOf(false) }
-    var expandedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    // Same selection model as the playlist and the rest of the app: long press starts it, the bar
-    // at the bottom acts on it, and unticking the last row keeps the mode open.
+    // Same selection model as the queue and the rest of the app: long press starts it, the bar at
+    // the bottom acts on it, and unticking the last row keeps the mode open.
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     val allKeys = remember(groups) { groups.mapTo(mutableSetOf()) { it.key } }
@@ -134,60 +126,63 @@ fun AudioHistoryContent(
 
     Scaffold(
         topBar = { scrollBehavior ->
-            AppBar(
-                titleContent = {
-                    if (selectionMode) {
-                        AppBarTitle(selected.size.toString())
-                    } else {
-                        AppBarTitle(stringResource(MR.strings.audio_history))
-                    }
-                },
-                navigateUp = navigateUp,
-                actions = {
-                    if (groups.isNotEmpty()) {
-                        AppBarActions(
-                            if (selectionMode) {
-                                // Playing everything is not what a selection is for, so play-all
-                                // steps aside. Clearing stays: it acts on the same list the ticks
-                                // are going on, and it sits rightmost, after the two pickers.
-                                listOf(
-                                    AppBar.Action(
-                                        title = stringResource(MR.strings.action_select_all),
-                                        icon = Icons.Outlined.SelectAll,
-                                        onClick = { selected = allKeys.toSet() },
-                                    ),
-                                    AppBar.Action(
-                                        title = stringResource(MR.strings.action_select_inverse),
-                                        icon = Icons.Outlined.FlipToBack,
-                                        onClick = { selected = allKeys - selected },
-                                    ),
-                                    AppBar.Action(
-                                        title = stringResource(MR.strings.audio_history_clear),
-                                        icon = Icons.Outlined.DeleteSweep,
-                                        onClick = { showClearDialog = true },
-                                    ),
-                                )
-                            } else {
-                                listOf(
-                                    AppBar.Action(
-                                        title = stringResource(MR.strings.audio_history_play_all),
-                                        icon = Icons.Outlined.PlayArrow,
-                                        onClick = onPlayAll,
-                                    ),
-                                    AppBar.Action(
-                                        title = stringResource(MR.strings.audio_history_clear),
-                                        icon = Icons.Outlined.DeleteSweep,
-                                        onClick = { showClearDialog = true },
-                                    ),
-                                )
-                            },
-                        )
-                    }
-                },
-                isActionMode = selectionMode,
-                onCancelActionMode = ::exitSelection,
-                scrollBehavior = scrollBehavior,
-            )
+            Column {
+                AppBar(
+                    titleContent = {
+                        if (selectionMode) {
+                            AppBarTitle(selected.size.toString())
+                        } else {
+                            AppBarTitle(stringResource(MR.strings.audio_history))
+                        }
+                    },
+                    navigateUp = navigateUp,
+                    actions = {
+                        if (groups.isNotEmpty()) {
+                            AppBarActions(
+                                if (selectionMode) {
+                                    // Playing everything is not what a selection is for, so play-all
+                                    // steps aside. Clearing stays: it acts on the same list the ticks
+                                    // are going on, and it sits rightmost, after the two pickers.
+                                    listOf(
+                                        AppBar.Action(
+                                            title = stringResource(MR.strings.action_select_all),
+                                            icon = Icons.Outlined.SelectAll,
+                                            onClick = { selected = allKeys.toSet() },
+                                        ),
+                                        AppBar.Action(
+                                            title = stringResource(MR.strings.action_select_inverse),
+                                            icon = Icons.Outlined.FlipToBack,
+                                            onClick = { selected = allKeys - selected },
+                                        ),
+                                        AppBar.Action(
+                                            title = stringResource(MR.strings.audio_history_clear),
+                                            icon = Icons.Outlined.DeleteSweep,
+                                            onClick = { showClearDialog = true },
+                                        ),
+                                    )
+                                } else {
+                                    listOf(
+                                        AppBar.Action(
+                                            title = stringResource(MR.strings.audio_history_play_all),
+                                            icon = Icons.Outlined.PlayArrow,
+                                            onClick = onPlayAll,
+                                        ),
+                                        AppBar.Action(
+                                            title = stringResource(MR.strings.audio_history_clear),
+                                            icon = Icons.Outlined.DeleteSweep,
+                                            onClick = { showClearDialog = true },
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                    },
+                    isActionMode = selectionMode,
+                    onCancelActionMode = ::exitSelection,
+                    scrollBehavior = scrollBehavior,
+                )
+                tabRow()
+            }
         },
         bottomBar = {
             if (selectionMode) {
@@ -224,21 +219,13 @@ fun AudioHistoryContent(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = contentPadding,
             ) {
-                groups.forEach { group ->
+                groups.forEachIndexed { index, group ->
                     item(key = "work:${group.key}") {
                         HistoryWorkRow(
                             group = group,
-                            expanded = group.key in expandedKeys,
                             selectionMode = selectionMode,
                             selected = group.key in selected,
                             isCurrent = group.workId > 0 && group.workId == currentWorkId,
-                            onToggleExpanded = {
-                                expandedKeys = if (group.key in expandedKeys) {
-                                    expandedKeys - group.key
-                                } else {
-                                    expandedKeys + group.key
-                                }
-                            },
                             onOpenWork = { onOpenWork(group) },
                             onContinue = { onClickEntry(group.latest) },
                             onToggleSelection = { toggle(group.key) },
@@ -246,18 +233,9 @@ fun AudioHistoryContent(
                             onDeleteSwipe = { onRemoveWork(group) },
                         )
                     }
-                    if (group.key in expandedKeys) {
-                        group.entries.forEach { entry ->
-                            item(key = "history:${group.key}:${entry.item.mediaStreamUrl}") {
-                                HistoryTrackRow(
-                                    entry = entry,
-                                    onClick = { onClickEntry(entry) },
-                                    onAddToPlaylist = { onAddToPlaylist(entry) },
-                                )
-                            }
-                        }
+                    if (index != groups.lastIndex) {
+                        item(key = "divider:${group.key}") { HorizontalDivider() }
                     }
-                    item(key = "divider:${group.key}") { HorizontalDivider() }
                 }
             }
         }
@@ -319,11 +297,9 @@ fun AudioHistoryContent(
 @Composable
 private fun HistoryWorkRow(
     group: AudioHistoryGroup,
-    expanded: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
     isCurrent: Boolean,
-    onToggleExpanded: () -> Unit,
     onOpenWork: () -> Unit,
     onContinue: () -> Unit,
     onToggleSelection: () -> Unit,
@@ -414,7 +390,7 @@ private fun HistoryWorkRow(
                     },
                 )
                 .combinedClickable(
-                    onClick = { if (selectionMode) onToggleSelection() else onToggleExpanded() },
+                    onClick = { if (selectionMode) onToggleSelection() else onContinue() },
                     onLongClick = onLongClick,
                 )
                 .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
@@ -444,123 +420,24 @@ private fun HistoryWorkRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                // The track that was left last and where it was left, so the row says whether there
-                // is anything to pick up without being opened first. The position keeps its own
-                // width and the title takes what is left, so a long title never pushes it away.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = latest.item.trackTitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Text(
-                        text = " · ${trackProgress(latest)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-                HistoryProgress(latest)
+                // Only the work and the last track it was left on. Where exactly in that track,
+                // and when, is what the player is for; putting it here made the list read as a log.
+                Text(
+                    text = latest.item.trackTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            if (selectionMode) {
-                // Nothing to play or expand while the row's whole job is to be ticked.
-                Box(modifier = Modifier.size(20.dp))
-            } else {
+            if (!selectionMode) {
                 IconButton(onClick = onContinue) {
                     Icon(
                         Icons.Outlined.PlayArrow,
                         contentDescription = stringResource(MR.strings.audio_history_continue),
                     )
                 }
-                Icon(
-                    imageVector = if (expanded) {
-                        Icons.Outlined.KeyboardArrowDown
-                    } else {
-                        Icons.AutoMirrored.Outlined.KeyboardArrowRight
-                    },
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
             }
         }
     }
-}
-
-@Composable
-private fun HistoryTrackRow(
-    entry: AudioHistoryEntry,
-    onClick: () -> Unit,
-    onAddToPlaylist: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = 28.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            Icons.Outlined.PlayArrow,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp),
-        )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 10.dp),
-        ) {
-            Text(
-                text = entry.item.trackTitle,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = historyMeta(entry),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        IconButton(onClick = onAddToPlaylist) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                contentDescription = stringResource(MR.strings.audio_add_to_playlist),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-private fun historyMeta(entry: AudioHistoryEntry): String {
-    val date = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(entry.lastPlayedAt))
-    return "${trackProgress(entry)} · $date"
-}
-
-/** Where a track was left, as `23:10 / 45:00`, or as the position alone when its length is unknown. */
-private fun trackProgress(entry: AudioHistoryEntry): String {
-    val position = formatDuration(entry.positionMs)
-    val duration = entry.item.durationMs
-    return if (duration > 0) "$position / ${formatDuration(duration)}" else position
-}
-
-/** How far into the track the position is, for the rows that already say it in words. */
-@Composable
-private fun HistoryProgress(entry: AudioHistoryEntry) {
-    val duration = entry.item.durationMs
-    if (duration <= 0) return
-    LinearProgressIndicator(
-        progress = { (entry.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f) },
-        modifier = Modifier
-            .padding(top = 6.dp)
-            .fillMaxWidth()
-            .height(2.dp),
-        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-    )
 }

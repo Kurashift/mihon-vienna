@@ -98,8 +98,9 @@ fun ReaderAppBars(
     onPageIndexChange: (Int) -> Unit,
     onPageIndexChangeFinished: () -> Unit,
 
-    chapterPadOffsetX: Float,
-    onChapterPadOffsetXChange: (Float) -> Unit,
+    chapterPadOffsetFraction: Float,
+    onChapterPadOffsetFractionChange: (Float) -> Unit,
+    onChapterPadOffsetCommitted: () -> Unit,
 
     audioAvailable: Boolean,
     audioVisible: Boolean,
@@ -192,8 +193,9 @@ fun ReaderAppBars(
                         enabledNext = enabledNext,
                         onPreviousChapter = onPreviousChapter,
                         enabledPrevious = enabledPrevious,
-                        offsetX = chapterPadOffsetX,
-                        onOffsetXChange = onChapterPadOffsetXChange,
+                        offsetFraction = chapterPadOffsetFraction,
+                        onOffsetFractionChange = onChapterPadOffsetFractionChange,
+                        onOffsetCommitted = onChapterPadOffsetCommitted,
                     )
                 }
                 audioControls?.invoke()
@@ -234,7 +236,10 @@ fun ReaderAppBars(
  *
  * It still slides horizontally, so it can be moved out from under a thumb that rests on the left.
  * The offset is hoisted because the reader hides its menu on every page turn, which would
- * otherwise reset the pad to the left edge each time.
+ * otherwise reset the pad to the left edge each time, and it is a fraction of the pad's travel
+ * rather than a pixel offset so the same spot comes back after leaving the manga, restarting the
+ * app, or rotating — the travel itself changes with the width, and a pixel offset would end up
+ * clamped to an edge.
  *
  * The double chevron points up/down to match the stack and to stay distinct from the single
  * chevrons used for page turns. The pair swaps for right-to-left manga.
@@ -246,8 +251,9 @@ private fun ChapterPadRow(
     enabledNext: Boolean,
     onPreviousChapter: () -> Unit,
     enabledPrevious: Boolean,
-    offsetX: Float,
-    onOffsetXChange: (Float) -> Unit,
+    offsetFraction: Float,
+    onOffsetFractionChange: (Float) -> Unit,
+    onOffsetCommitted: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val backgroundColor = MaterialTheme.colorScheme
@@ -257,30 +263,40 @@ private fun ChapterPadRow(
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val availableWidthPx = constraints.maxWidth
         var padWidthPx by remember { mutableStateOf(0) }
+        // A pad that has not been measured yet has no travel; using its placeholder zero width
+        // would put a restored offset at the far edge for the first frame.
+        val travelPx = if (padWidthPx <= 0) {
+            0f
+        } else {
+            (availableWidthPx - padWidthPx).coerceAtLeast(0).toFloat()
+        }
         // The gesture below is keyed on Unit so it never restarts mid-drag, which means it would
-        // otherwise capture the offset from the first composition and reset the pad to the left
-        // edge on every event. Reading through rememberUpdatedState keeps it live.
-        val currentOffsetX by rememberUpdatedState(offsetX)
-        val currentOnOffsetXChange by rememberUpdatedState(onOffsetXChange)
+        // otherwise capture the offset and the travel from the first composition and reset the pad
+        // to the left edge on every event. Reading through rememberUpdatedState keeps them live,
+        // including across a rotation, which this activity handles without being rebuilt.
+        val currentOffsetFraction by rememberUpdatedState(offsetFraction)
+        val currentTravelPx by rememberUpdatedState(travelPx)
+        val currentOnOffsetFractionChange by rememberUpdatedState(onOffsetFractionChange)
+        val currentOnOffsetCommitted by rememberUpdatedState(onOffsetCommitted)
 
         Surface(
             modifier = Modifier
                 .padding(start = MaterialTheme.padding.small)
-                .offset { IntOffset(offsetX.roundToInt(), 0) }
-                .onSizeChanged {
-                    padWidthPx = it.width
-                    val maxOffset = (availableWidthPx - it.width).coerceAtLeast(0)
-                    onOffsetXChange(offsetX.coerceIn(0f, maxOffset.toFloat()))
-                }
+                .offset { IntOffset((offsetFraction * travelPx).roundToInt(), 0) }
+                .onSizeChanged { padWidthPx = it.width }
                 .pointerInput(Unit) {
-                    var dragOffset = 0f
                     detectDragGestures(
-                        onDragStart = { dragOffset = currentOffsetX },
+                        onDragEnd = { currentOnOffsetCommitted() },
+                        onDragCancel = { currentOnOffsetCommitted() },
                     ) { change, dragAmount ->
                         change.consume()
-                        val maxOffset = (availableWidthPx - padWidthPx).coerceAtLeast(0)
-                        dragOffset = (dragOffset + dragAmount.x).coerceIn(0f, maxOffset.toFloat())
-                        currentOnOffsetXChange(dragOffset)
+                        // Nothing to travel means nothing to remember; a drag on a pad as wide as
+                        // the screen has no position to land on.
+                        val travel = currentTravelPx
+                        if (travel <= 0f) return@detectDragGestures
+                        currentOnOffsetFractionChange(
+                            (currentOffsetFraction + dragAmount.x / travel).coerceIn(0f, 1f),
+                        )
                     }
                 },
             shape = RoundedCornerShape(24.dp),

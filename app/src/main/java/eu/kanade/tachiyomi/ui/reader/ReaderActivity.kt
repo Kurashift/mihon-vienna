@@ -48,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -425,8 +426,12 @@ class ReaderActivity : BaseActivity() {
         var showAudioSheet by rememberSaveable { mutableStateOf(false) }
         val configuration = LocalConfiguration.current
         val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        var miniBarOffsetX by remember { mutableStateOf(0f) }
-        var fullBarOffsetX by remember { mutableStateOf(0f) }
+        // Where the audio bar was left is remembered across leaving the manga and restarting the
+        // app, and it is shared by the two forms the bar takes: the compact one and the full one
+        // in the app bar are the same block, so it stays put when the menu is toggled.
+        var barOffsetFraction by remember {
+            mutableStateOf(preferences.audioReaderBarOffsetFraction.get().coerceIn(0f, 1f))
+        }
         var miniBarWidthPx by remember { mutableStateOf(0) }
         var fullBarWidthPx by remember { mutableStateOf(0) }
 
@@ -436,6 +441,10 @@ class ReaderActivity : BaseActivity() {
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val readerWidthPx = constraints.maxWidth
+            // The drag callbacks are installed once, so the width they read has to be kept
+            // current: this activity handles rotation itself and is never rebuilt to reinstall
+            // them, and a width frozen at the old orientation would misjudge every drag.
+            val currentReaderWidthPx by rememberUpdatedState(readerWidthPx)
 
             if (!state.menuVisible && showPageNumber) {
                 ReaderPageIndicator(
@@ -474,20 +483,32 @@ class ReaderActivity : BaseActivity() {
                                 onOpenPlaylist = { showAudioSheet = true },
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
-                                    .offset { IntOffset(fullBarOffsetX.roundToInt(), 0) }
-                                    .onSizeChanged {
-                                        fullBarWidthPx = it.width
-                                        val maxOffset = (readerWidthPx - it.width).coerceAtLeast(0)
-                                        fullBarOffsetX = fullBarOffsetX.coerceIn(0f, maxOffset.toFloat())
+                                    .offset {
+                                        IntOffset(
+                                            (barOffsetFraction * travelPx(readerWidthPx, fullBarWidthPx))
+                                                .roundToInt(),
+                                            0,
+                                        )
                                     }
+                                    .onSizeChanged { fullBarWidthPx = it.width }
                                     .fillMaxWidth(if (isLandscape) 0.5f else 1f)
                                     .padding(horizontal = 12.dp)
                                     .pointerInput(Unit) {
-                                        detectDragGestures { change, dragAmount ->
+                                        detectDragGestures(
+                                            onDragEnd = {
+                                                preferences.audioReaderBarOffsetFraction.set(barOffsetFraction)
+                                            },
+                                            onDragCancel = {
+                                                preferences.audioReaderBarOffsetFraction.set(barOffsetFraction)
+                                            },
+                                        ) { change, dragAmount ->
                                             change.consume()
-                                            val maxOffset = (readerWidthPx - fullBarWidthPx).coerceAtLeast(0)
-                                            fullBarOffsetX = (fullBarOffsetX + dragAmount.x)
-                                                .coerceIn(0f, maxOffset.toFloat())
+                                            barOffsetFraction = draggedBarFraction(
+                                                current = barOffsetFraction,
+                                                dragX = dragAmount.x,
+                                                readerWidthPx = currentReaderWidthPx,
+                                                barWidthPx = fullBarWidthPx,
+                                            )
                                         }
                                     },
                             )
@@ -509,20 +530,31 @@ class ReaderActivity : BaseActivity() {
                     onOpenPlaylist = { showAudioSheet = true },
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .offset { IntOffset(miniBarOffsetX.roundToInt(), 0) }
-                        .onSizeChanged {
-                            miniBarWidthPx = it.width
-                            val maxOffset = (readerWidthPx - it.width).coerceAtLeast(0)
-                            miniBarOffsetX = miniBarOffsetX.coerceIn(0f, maxOffset.toFloat())
+                        .offset {
+                            IntOffset(
+                                (barOffsetFraction * travelPx(readerWidthPx, miniBarWidthPx)).roundToInt(),
+                                0,
+                            )
                         }
+                        .onSizeChanged { miniBarWidthPx = it.width }
                         .navigationBarsPadding()
                         .padding(12.dp)
                         .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
+                            detectDragGestures(
+                                onDragEnd = {
+                                    preferences.audioReaderBarOffsetFraction.set(barOffsetFraction)
+                                },
+                                onDragCancel = {
+                                    preferences.audioReaderBarOffsetFraction.set(barOffsetFraction)
+                                },
+                            ) { change, dragAmount ->
                                 change.consume()
-                                val maxOffset = (readerWidthPx - miniBarWidthPx).coerceAtLeast(0)
-                                miniBarOffsetX = (miniBarOffsetX + dragAmount.x)
-                                    .coerceIn(0f, maxOffset.toFloat())
+                                barOffsetFraction = draggedBarFraction(
+                                    current = barOffsetFraction,
+                                    dragX = dragAmount.x,
+                                    readerWidthPx = currentReaderWidthPx,
+                                    barWidthPx = miniBarWidthPx,
+                                )
                             }
                         },
                 )
@@ -868,8 +900,11 @@ class ReaderActivity : BaseActivity() {
 
         // Horizontal position of the chapter jump pad. Hoisted out of the bars because the reader
         // hides its menu on every page turn: state inside the bar would reset the pad to the left
-        // edge each time the menu came back.
-        var chapterPadOffsetX by remember { mutableStateOf(0f) }
+        // edge each time the menu came back. It is also remembered across leaving the manga and
+        // restarting the app, as a fraction of the pad's travel so a rotation keeps the spot.
+        var chapterPadOffsetFraction by remember {
+            mutableStateOf(readerPreferences.chapterPadOffsetFraction.get().coerceIn(0f, 1f))
+        }
 
         // The top bar chapter name follows the same display mode as the chapter list: translated
         // title modes show the translation and only fall back to the original name when missing.
@@ -910,8 +945,11 @@ class ReaderActivity : BaseActivity() {
                 }
             },
             verticalNavigatorHeight = verticalNavigatorHeight / 100f,
-            chapterPadOffsetX = chapterPadOffsetX,
-            onChapterPadOffsetXChange = { chapterPadOffsetX = it },
+            chapterPadOffsetFraction = chapterPadOffsetFraction,
+            onChapterPadOffsetFractionChange = { chapterPadOffsetFraction = it },
+            onChapterPadOffsetCommitted = {
+                readerPreferences.chapterPadOffsetFraction.set(chapterPadOffsetFraction)
+            },
             onNextChapter = ::loadNextChapter,
             enabledNext = state.viewerChapters?.nextChapter != null,
             onPreviousChapter = ::loadPreviousChapter,
@@ -1580,4 +1618,34 @@ class ReaderActivity : BaseActivity() {
             binding.viewerContainer.setLayerType(LAYER_TYPE_HARDWARE, paint)
         }
     }
+}
+
+/** How far the audio bar can travel, which is whatever its own width leaves of the reader. */
+private fun travelPx(readerWidthPx: Int, barWidthPx: Int): Float =
+    // A bar that has not been measured yet has no travel, and treating its placeholder zero width
+    // as a real one would put the restored offset at the far edge for the first frame.
+    if (barWidthPx <= 0) {
+        0f
+    } else {
+        (readerWidthPx - barWidthPx).coerceAtLeast(0).toFloat()
+    }
+
+/**
+ * Where the audio bar lands after being dragged by [dragX], as a fraction of its travel.
+ *
+ * Kept as a fraction of the distance it can move rather than a pixel offset, because that distance
+ * changes with the reader's width: a spot picked in landscape would come back clamped to an edge in
+ * portrait, and the other way round.
+ */
+private fun draggedBarFraction(
+    current: Float,
+    dragX: Float,
+    readerWidthPx: Int,
+    barWidthPx: Int,
+): Float {
+    val travel = travelPx(readerWidthPx, barWidthPx)
+    // Nothing to travel means nothing to remember; keeping the fraction would let a drag on a
+    // full-width bar move the compact one.
+    if (travel <= 0f) return current
+    return (current + dragX / travel).coerceIn(0f, 1f)
 }

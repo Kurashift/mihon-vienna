@@ -28,6 +28,12 @@ import tachiyomi.presentation.core.components.material.PullRefresh
 fun LibraryContent(
     categories: List<Category>,
     searchQuery: String?,
+    /**
+     * The keyword the rows were filtered with, which lags [searchQuery] while the filter debounces.
+     * The list keys its scroll position on this one, so the shelf keeps its offset when a search
+     * is cleared; see [LibraryPager].
+     */
+    appliedSearchQuery: String?,
     selection: Set<Long>,
     contentPadding: PaddingValues,
     currentPage: Int,
@@ -94,6 +100,7 @@ fun LibraryContent(
                 hasActiveFilters = hasActiveFilters,
                 selection = selection,
                 searchQuery = searchQuery,
+                appliedSearchQuery = appliedSearchQuery,
                 onGlobalSearchClicked = onGlobalSearchClicked,
                 getCategoryForPage = { page -> categories[page] },
                 getDisplayMode = getDisplayMode,

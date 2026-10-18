@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,11 +55,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -329,10 +334,32 @@ fun AppBarActions(
                 }
             }
 
+            // The menu is as wide as its longest entry, not as wide as Material allows.
+            //
+            // The width cannot come from the entries themselves: DropdownMenuItem lays its text
+            // out with weight(1f), so an entry that is not told how wide to be collapses to its
+            // padding and clips the title. Measuring the titles up front and handing the result to
+            // the menu keeps the frame tight around the longest one, with every entry stretched to
+            // that width so the whole column is tappable.
+            val itemStyle = MaterialTheme.typography.labelLarge
+            val textMeasurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val menuWidth = remember(overflowActions, itemStyle, density) {
+                val widestPx = overflowActions.maxOf { action ->
+                    textMeasurer.measure(
+                        text = AnnotatedString(action.title),
+                        style = itemStyle,
+                    ).size.width
+                }
+                // DropdownMenuItem's own horizontal content padding, so the longest title lands
+                // inside the frame instead of against it.
+                with(density) { (widestPx + 32.dp.roundToPx()).toDp() }
+            }
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
                 offset = DpOffset(0.dp, 0.dp),
+                modifier = Modifier.width(menuWidth),
                 minWidth = 0.dp,
             ) {
                 overflowActions.forEach { action ->
@@ -340,7 +367,7 @@ fun AppBarActions(
                         text = {
                             Text(
                                 text = action.title,
-                                style = MaterialTheme.typography.labelLarge,
+                                style = itemStyle,
                             )
                         },
                         onClick = {
@@ -403,6 +430,12 @@ fun SearchToolbar(
     actionModeCounter: Int = 0,
     onCancelActionMode: () -> Unit = {},
     actionModeActions: @Composable RowScope.() -> Unit = {},
+    /**
+     * Overrides the counter as the source of truth for being in action mode. A caller that tracks
+     * the mode itself passes it in: unticking the last row must not drop the user out of a mode
+     * they are still working in, which a counter alone cannot express.
+     */
+    actionMode: Boolean? = null,
     scrollBehavior: TopAppBarScrollBehavior? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
@@ -410,9 +443,7 @@ fun SearchToolbar(
     val focusRequester = remember { FocusRequester() }
     val searchHistoryStore = rememberSearchHistoryStore()
     var historyExpanded by remember(historyKey) { mutableStateOf(false) }
-    val isActionMode by remember(actionModeCounter) {
-        derivedStateOf { actionModeCounter > 0 }
-    }
+    val isActionMode = actionMode ?: (actionModeCounter > 0)
 
     AppBar(
         modifier = modifier,

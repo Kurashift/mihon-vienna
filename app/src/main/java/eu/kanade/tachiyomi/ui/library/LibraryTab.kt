@@ -204,6 +204,7 @@ data object LibraryTab : Tab {
                     LibraryContent(
                         categories = state.displayedCategories,
                         searchQuery = state.searchQuery,
+                        appliedSearchQuery = state.appliedSearchQuery,
                         selection = state.selection,
                         contentPadding = contentPadding,
                         currentPage = state.coercedActiveCategoryIndex,

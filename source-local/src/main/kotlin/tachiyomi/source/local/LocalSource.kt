@@ -1639,6 +1639,7 @@ class LocalSource(
      */
     suspend fun scanChapterChanges(
         lastSuccessfulBaseDirectoryLastModified: Long = -1L,
+        reuseUnchangedFolders: Boolean = false,
         onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> },
     ): LocalChapterSyncScan = withIOContext {
         val initialSnapshot = getBaseDirectorySnapshot(forceRefresh = true)
@@ -1735,6 +1736,19 @@ class LocalSource(
                                 canPromoteLegacyIndex && reusablePrevious != null -> reusablePrevious.copy(
                                     directoryLastModified = directoryLastModified,
                                 )
+                                // Listing a folder's files is the expensive half of this scan, and a
+                                // library of several hundred folders pays it on every pass. A folder
+                                // whose own mtime still matches the last recorded one has not had an
+                                // entry added, removed or renamed since, so the recorded fingerprint
+                                // is still its state and its files need not be listed again. Only
+                                // added and removed entries matter here; a file replaced under its
+                                // own name leaves the folder's mtime alone and is not a new chapter,
+                                // so the cheap pass is not blind to anything the import date needs.
+                                reuseUnchangedFolders &&
+                                    reusablePrevious != null &&
+                                    directoryLastModified > 0 &&
+                                    previous?.directoryLastModified == directoryLastModified ->
+                                    reusablePrevious.copy(directoryLastModified = directoryLastModified)
                                 else -> chapterFolderState(
                                     dir = directory,
                                     directoryLastModified = directoryLastModified,

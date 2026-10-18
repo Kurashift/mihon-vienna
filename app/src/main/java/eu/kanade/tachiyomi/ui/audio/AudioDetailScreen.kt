@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,12 +27,16 @@ import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
+import eu.kanade.tachiyomi.data.audio.WorkEdition
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
@@ -53,6 +58,7 @@ class AudioDetailScreen(
         val state by viewModel.state.collectAsState()
         val playlistUrls by viewModel.playlistUrls.collectAsState()
         val isFavorite by viewModel.isFavorite.collectAsState()
+        val scope = rememberCoroutineScope()
         val addedToPlaylistText = stringResource(MR.strings.audio_added_to_playlist)
         val removedFromPlaylistText = stringResource(MR.strings.audio_removed_from_playlist)
 
@@ -137,6 +143,16 @@ class AudioDetailScreen(
             onClickCircle = { name -> onOpenCategory(AudioCategoryField.CIRCLE, name) },
             onClickVa = { name -> onOpenCategory(AudioCategoryField.VA, name) },
             onClickTag = { name -> onOpenCategory(AudioCategoryField.TAG, name) },
+            onClickNeighbor = { neighbor -> navigator.push(AudioDetailScreen(neighbor)) },
+            onClickEdition = { edition ->
+                scope.launch {
+                    val target = viewModel.resolveEdition(edition)
+                    // replace, not push: switching language is the same work seen differently, and
+                    // pushing would leave a stack of details pages behind one back press.
+                    if (target != null) navigator.replace(AudioDetailScreen(target))
+                }
+            },
+            onToggleNeighbors = viewModel::toggleNeighbors,
         )
     }
 }
@@ -152,6 +168,22 @@ data class AudioDetailState(
      * so [AudioDetailViewModel.load] fills this in from the backend when its tags are missing.
      */
     val work: Work? = null,
+    /**
+     * What the backend considers similar to [work], shown as one horizontal line under the track
+     * list. Fetched separately from the tracks so a slow recommender cannot hold the page back,
+     * and left empty when it fails — the page is complete without it.
+     */
+    val neighbors: List<Work> = emptyList(),
+    /**
+     * The other language editions of [work], shown as chips under the circle name. Empty for the
+     * common case of a work that only exists in one language, and empty when the fetch fails.
+     */
+    val editions: List<WorkEdition> = emptyList(),
+    /**
+     * Whether the similar row is showing its cards. Collapsed by default so the track list stays
+     * the page's subject, and kept across works: opening it once means it stays open.
+     */
+    val neighborsExpanded: Boolean = false,
 )
 
 class AudioDetailViewModel(
@@ -162,7 +194,7 @@ class AudioDetailViewModel(
     private val basePreferences: BasePreferences = Injekt.get(),
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(AudioDetailState())
+    private val _state = MutableStateFlow(AudioDetailState(neighborsExpanded = neighborsExpanded.value))
     val state: StateFlow<AudioDetailState> = _state.asStateFlow()
 
     private val _playlistUrls = MutableStateFlow<Set<String>>(emptySet())
@@ -174,7 +206,7 @@ class AudioDetailViewModel(
     private var loadGeneration = 0
 
     fun load(work: Work) {
-        _isFavorite.value = favoriteStore.contains(work.id)
+        _isFavorite.value = isFavorite(work)
         loadGeneration++
         val generation = loadGeneration
         // Synchronous, ahead of every coroutine: the header must know which work is on screen
@@ -192,6 +224,9 @@ class AudioDetailViewModel(
                         if (current.work?.id != work.id) return@update current
                         current.copy(work = full)
                     }
+                    // The fetched work carries the account state the feed row could not, so the
+                    // heart settles on it rather than on the bare snapshot it opened with.
+                    if (_state.value.work?.id == work.id) _isFavorite.value = isFavorite(full)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -207,7 +242,39 @@ class AudioDetailViewModel(
                     errorMessage = null,
                     rootNodes = emptyList(),
                     flatTracks = emptyList(),
+                    neighbors = emptyList(),
+                    editions = emptyList(),
                 )
+            }
+            // Started first and awaited next to the tracks: the live backend answers this in about
+            // the same second the track list takes, so waiting costs a fraction of a second and the
+            // row is already there when the page paints instead of popping in once it has settled.
+            // The budget exists only so a stalled recommender cannot hold the whole page.
+            val neighbors = async {
+                withTimeoutOrNull(NEIGHBOR_BUDGET_MS) {
+                    try {
+                        api.fetchNeighbors(work.id)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logcat(LogPriority.WARN, e) { "Audio neighbour fetch failed" }
+                        emptyList()
+                    }
+                }
+            }
+            // The edition list comes from the same detail response the sibling retry already
+            // reads, so this is a cache hit in the common case.
+            val editions = async {
+                withTimeoutOrNull(NEIGHBOR_BUDGET_MS) {
+                    try {
+                        api.fetchEditions(work.id)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logcat(LogPriority.WARN, e) { "Audio edition fetch failed" }
+                        emptyList()
+                    }
+                }
             }
             try {
                 val nodes = api.fetchTracks(work.id)
@@ -219,13 +286,23 @@ class AudioDetailViewModel(
                     .filter { it.mediaStreamUrl in storedUrls }
                     .map { it.mediaStreamUrl }
                     .toSet()
+                val similar = neighbors.await().orEmpty()
+                val languageEditions = editions.await().orEmpty()
                 _state.update { current ->
                     if (generation != loadGeneration) return@update current
-                    current.copy(loading = false, rootNodes = catalog.rootNodes, flatTracks = flatTracks)
+                    current.copy(
+                        loading = false,
+                        rootNodes = catalog.rootNodes,
+                        flatTracks = flatTracks,
+                        neighbors = similar,
+                        editions = languageEditions,
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                neighbors.cancel()
+                editions.cancel()
                 logcat(LogPriority.ERROR, e) { "Audio detail load failed" }
                 _state.update { current ->
                     if (generation != loadGeneration) return@update current
@@ -233,6 +310,29 @@ class AudioDetailViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Show or hide the similar row. The choice is remembered for the whole session, so opening it
+     * on one work leaves it open on the next — collapsing stays available but is not forced back.
+     */
+    fun toggleNeighbors() {
+        val expanded = !_state.value.neighborsExpanded
+        neighborsExpanded.value = expanded
+        _state.update { it.copy(neighborsExpanded = expanded) }
+    }
+
+    /**
+     * The [Work] behind a language edition. The edition already carries the backend id, so this is
+     * a detail fetch the page would have made anyway, and it arrives with tags and cover filled in.
+     */
+    suspend fun resolveEdition(edition: WorkEdition): Work? = try {
+        api.fetchWork(edition.id)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logcat(LogPriority.WARN, e) { "Audio edition lookup failed" }
+        null
     }
 
     fun toggleInPlaylist(item: AudioPlayItem): Boolean {
@@ -280,12 +380,38 @@ class AudioDetailViewModel(
         refreshPlaylistState()
     }
 
+    /**
+     * Collects or drops [work] on the account, keeping the local copy as the offline answer.
+     *
+     * The button moves first and is put back when the write does not land: a mark that silently
+     * never reached the account is what made the site and the app disagree in the first place.
+     */
     fun toggleFavorite(work: Work) {
-        val isFavorite = favoriteStore.toggle(work)
-        _isFavorite.value = isFavorite
+        val mark = !_isFavorite.value
+        _isFavorite.value = mark
+        if (mark) favoriteStore.add(work) else favoriteStore.remove(work.id)
+        if (!accountSync.isSignedIn()) return
         viewModelScope.launchIO {
-            accountSync.updateProgress(work.id, AudioAccountProgress.MARKED.takeIf { isFavorite })
+            if (accountSync.setMarked(work, mark)) return@launchIO
+            _isFavorite.value = !mark
+            if (mark) favoriteStore.remove(work.id) else favoriteStore.add(work)
         }
+    }
+
+    /**
+     * Whether the account holds [work] as marked.
+     *
+     * Once the account has answered, its answer is the only one that counts. The state carried by
+     * the work itself is a snapshot from whenever the list was fetched, so falling back to it after
+     * an uncollect would read the state that was just deleted and put the heart straight back —
+     * and the next tap would then re-create the row on the account.
+     */
+    private fun isFavorite(work: Work): Boolean {
+        if (!accountSync.isSignedIn()) return favoriteStore.contains(work.id)
+        if (accountSync.hasLoaded() || accountSync.progressOf(work.id) != null) {
+            return accountSync.isMarked(work.id)
+        }
+        return AudioAccountProgress.fromWire(work.progress) == AudioAccountProgress.MARKED
     }
 
     private fun refreshPlaylistState() {
@@ -296,4 +422,22 @@ class AudioDetailViewModel(
             .map { it.mediaStreamUrl }
             .toSet()
     }
+
+    companion object {
+        /**
+         * Outside the ViewModel because every details page builds its own instance: expanding the
+         * similar row on one work should not collapse it again on the next.
+         */
+        private val neighborsExpanded = MutableStateFlow(false)
+    }
 }
+
+/**
+ * How long the details page waits for the similar row before painting without it.
+ *
+ * Measured against the live backend: a direct answer takes about 1.1 s, and the translated-edition
+ * path — direct miss, edition lookup, sibling request — lands at about 0.6 s once the detail
+ * response is cached. Both sit in the same second the track list takes, so this is never reached
+ * in normal use; it only bounds a recommender that stalls.
+ */
+private const val NEIGHBOR_BUDGET_MS = 6_000L

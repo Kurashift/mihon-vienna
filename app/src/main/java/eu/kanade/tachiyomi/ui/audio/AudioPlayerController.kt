@@ -28,8 +28,6 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.tachiyomi.data.audio.AudioAccountProgress
-import eu.kanade.tachiyomi.data.audio.AudioAccountSync
 import eu.kanade.tachiyomi.data.audio.AudioHistoryEntry
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
@@ -38,8 +36,10 @@ import eu.kanade.tachiyomi.data.audio.AudioRepeatMode
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleState
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.LyricLine
+import eu.kanade.tachiyomi.data.audio.RecommenderFeedbackTracker
 import eu.kanade.tachiyomi.data.audio.SubtitleParser
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
+import eu.kanade.tachiyomi.data.audio.recommenderUuid
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -96,7 +96,6 @@ class AudioPlayerController(
     private val historyStore: AudioHistoryStore,
     client: OkHttpClient,
     private val api: KikoeruApi,
-    private val accountSync: AudioAccountSync,
     private val basePreferences: BasePreferences,
 ) {
 
@@ -145,6 +144,8 @@ class AudioPlayerController(
 
     private var items: List<AudioPlayItem> = emptyList()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    private val feedbackTracker = RecommenderFeedbackTracker()
     private var progressJob: Job? = null
     private var subtitleJob: Job? = null
 
@@ -159,7 +160,6 @@ class AudioPlayerController(
     private var lastPeriodicHistoryAt = 0L
     private var headphonesWarningToast: Toast? = null
     private var startGeneration = 0
-    private var completionCandidateWorkId: Long? = null
 
     /**
      * Stops playback when the headphones are unplugged, so the track never jumps out of the
@@ -359,9 +359,6 @@ class AudioPlayerController(
         playWhenReady: Boolean = true,
     ) {
         items = newItems
-        completionCandidateWorkId = newItems[startIndex].workId.takeIf { workId ->
-            startIndex == newItems.indexOfFirst { it.workId == workId }
-        }
         applyVolumeProtection()
         applyRepeatMode()
         player.setMediaItems(
@@ -466,7 +463,6 @@ class AudioPlayerController(
             .takeIf { player.mediaItemCount > 0 }
             ?: state.index
         val target = (current + step + items.size) % items.size
-        completionCandidateWorkId = null
         player.seekTo(target, resumePositionFor(items.getOrNull(target)))
         play()
     }
@@ -512,7 +508,6 @@ class AudioPlayerController(
 
     fun random() {
         if (items.size <= 1) return
-        completionCandidateWorkId = null
         applyVolumeProtection()
         val current = player.currentMediaItemIndex
         val target = items.indices.filterNot { it == current }.random()
@@ -614,7 +609,6 @@ class AudioPlayerController(
         player.volume = 1f
         player.setPlaybackSpeed(1f)
         items = emptyList()
-        completionCandidateWorkId = null
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         sleepTimerEndsAt = 0L
@@ -760,8 +754,12 @@ class AudioPlayerController(
                     notifyService = false,
                 )
                 checkBufferingTimeout(SystemClock.elapsedRealtime())
-                if (player.isPlaying) {
-                    val now = SystemClock.elapsedRealtime()
+                // Ticked every loop, playing or not: a pause has to be seen by the tracker, or the
+                // time spent paused would be counted as listening on the next playing tick.
+                val now = SystemClock.elapsedRealtime()
+                val playing = player.isPlaying
+                reportListenMilestones(now, playing)
+                if (playing) {
                     lastActiveAt = now
                     if (now - lastPeriodicHistoryAt >= PERIODIC_HISTORY_INTERVAL_MS) {
                         recordHistory()
@@ -1096,6 +1094,51 @@ class AudioPlayerController(
         volumeProtectionApplied = !headphonesConnected
     }
 
+    /**
+     * Reports how deep this listen has gone, once per milestone.
+     *
+     * The backend keys its profile by the account's recommender UUID, so a milestone sent while
+     * signed out would build a second profile nobody reads. Those ticks still advance the tracker
+     * and the milestone is dropped, which keeps a later sign-in from replaying the backlog of a
+     * listen that had already happened.
+     */
+    private fun reportListenMilestones(nowMs: Long, playing: Boolean) {
+        val workId = state.item?.workId
+        val due = feedbackTracker.onTick(workId, workId?.let(::workTotalMs) ?: 0L, nowMs, playing)
+        if (workId == null || due.isEmpty()) return
+        if (basePreferences.audioAuthToken.get().isBlank()) {
+            logcat(LogPriority.DEBUG) { "Audio listen feedback skipped: signed out" }
+            return
+        }
+        val uuid = basePreferences.recommenderUuid()
+        due.forEach { milestone ->
+            scope.launch {
+                try {
+                    api.sendFeedback(milestone.wireValue, uuid, workId)
+                    logcat(LogPriority.DEBUG) { "Audio listen feedback sent: ${milestone.wireValue} $workId" }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logcat(LogPriority.DEBUG, e) { "Audio listen feedback failed" }
+                }
+            }
+        }
+    }
+
+    /**
+     * The length of the whole work [workId], summed from the queue.
+     *
+     * The percentage milestones are a share of the work rather than of the track: a five-track work
+     * would otherwise report "heard it out" once per track.
+     */
+    private fun workTotalMs(workId: Long): Long {
+        var total = 0L
+        for (item in items) {
+            if (item.workId == workId) total += item.durationMs
+        }
+        return total
+    }
+
     private fun recordHistory() {
         val item = state.item ?: return
         historyStore.upsert(
@@ -1107,26 +1150,8 @@ class AudioPlayerController(
         )
     }
 
-    private fun syncAccountProgress(item: AudioPlayItem?, progress: AudioAccountProgress) {
-        val workId = item?.workId ?: return
-        scope.launch { accountSync.updateProgress(workId, progress) }
-    }
-
     private inner class PlayerListener : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            val previousItem = state.item
-            val previousIndex = state.index
-            if (
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-                previousItem != null &&
-                completionCandidateWorkId == previousItem.workId &&
-                previousIndex == items.indexOfLast { it.workId == previousItem.workId }
-            ) {
-                syncAccountProgress(previousItem, AudioAccountProgress.LISTENED)
-            }
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
-                completionCandidateWorkId = null
-            }
             stopPlaybackRetry()
             playbackRetryCount = 0
             recordHistory()
@@ -1137,14 +1162,6 @@ class AudioPlayerController(
             )
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 resumeCurrentTrack()
-            }
-            val currentItem = state.item
-            if (
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-                currentItem != null &&
-                state.index == items.indexOfFirst { it.workId == currentItem.workId }
-            ) {
-                completionCandidateWorkId = currentItem.workId
             }
             markBufferingStarted()
         }
@@ -1172,14 +1189,6 @@ class AudioPlayerController(
                         ),
                     )
                     recordHistory()
-                    val item = state.item
-                    if (
-                        item != null &&
-                        completionCandidateWorkId == item.workId &&
-                        state.index == items.indexOfLast { it.workId == item.workId }
-                    ) {
-                        syncAccountProgress(item, AudioAccountProgress.LISTENED)
-                    }
                 }
                 Player.STATE_IDLE -> clearBufferingState()
             }
@@ -1195,7 +1204,6 @@ class AudioPlayerController(
             recordHistory()
             // Only worth watching for the headphones being pulled out while audio is audible.
             setBecomingNoisyReceiverRegistered(isPlaying)
-            if (isPlaying) syncAccountProgress(state.item, AudioAccountProgress.LISTENING)
         }
 
         override fun onPlayerError(error: PlaybackException) {

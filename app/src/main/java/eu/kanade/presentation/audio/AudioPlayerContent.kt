@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.RepeatOne
@@ -103,6 +104,7 @@ fun AudioPlayerContent(
     onCycleSubtitleDisplayMode: () -> Unit,
     onToggleFloatingSubtitle: () -> Unit,
     onOpenWorkDetail: () -> Unit,
+    onOpenQueue: () -> Unit,
     onOpenCircle: (String) -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -140,6 +142,24 @@ fun AudioPlayerContent(
         )
     }
 
+    // Same label, but inside the immersive strip the row itself cycles the display mode, so a line
+    // with no action of its own must pass the tap on. A bare long-press detector consumes it and
+    // would leave that stretch of the row dead, which is what the whole strip is here to avoid.
+    fun Modifier.copyOnLongPressOrCycle(text: String?): Modifier {
+        if (text.isNullOrBlank()) return this
+        return combinedClickable(
+            onClick = onCycleSubtitleDisplayMode,
+            onLongClick = { context.copyToClipboard(text, text) },
+        )
+    }
+
+    // The circle line keeps opening its works list when the name is real; the work-title fallback
+    // is only a label, so it cycles with the rest of the strip.
+    fun Modifier.circleTextOrCycleModifier(shown: String, circleName: String?): Modifier {
+        if (circleName == null) return copyOnLongPressOrCycle(shown)
+        return circleTextModifier(shown, circleName)
+    }
+
     Scaffold(
         topBar = { scrollBehavior ->
             AppBar(
@@ -163,6 +183,13 @@ fun AudioPlayerContent(
                 navigateUp = navigateUp,
                 actions = {
                     if (item != null) {
+                        IconButton(onClick = onOpenQueue) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                                contentDescription = stringResource(MR.strings.audio_playlist),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         IconButton(onClick = onToggleFavorite) {
                             Icon(
                                 imageVector = if (isFavorite) {
@@ -209,15 +236,23 @@ fun AudioPlayerContent(
             ) {
                 Spacer(Modifier.height(if (immersive) 6.dp else 10.dp))
                 if (immersive) {
+                    // The whole strip cycles the display mode, not just the 40dp thumbnail: the art
+                    // used to be the only live pixel in a full-width row, and every tap to its
+                    // right landed on nothing. The lines that own an action keep it, and the rest
+                    // of the row is the way back out of immersive mode.
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                onClickLabel = stringResource(MR.strings.audio_subtitle_display_mode),
+                                onClick = onCycleSubtitleDisplayMode,
+                            ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PlayerCover(
                             coverUrl = item?.coverUrl,
                             contentDescription = item?.workTitle,
                             size = coverSize,
-                            onClick = onCycleSubtitleDisplayMode,
                         )
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -227,7 +262,7 @@ fun AudioPlayerContent(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
-                                    .copyOnLongPress(item?.trackTitle)
+                                    .copyOnLongPressOrCycle(item?.trackTitle)
                                     .marqueeTitle(),
                             )
                             item?.let { current ->
@@ -238,7 +273,7 @@ fun AudioPlayerContent(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.circleTextModifier(
+                                    modifier = Modifier.circleTextOrCycleModifier(
                                         shown = current.circleName.ifBlank { current.workTitle },
                                         circleName = current.circleName.takeIf { it.isNotBlank() },
                                     ),
@@ -522,26 +557,28 @@ fun AudioPlayerContent(
 
 /**
  * Cover art that also cycles the subtitle display mode, so the art is never dead space and the
- * immersive mode still has an obvious way back to a larger layout.
+ * immersive mode still has an obvious way back to a larger layout. In the immersive strip the row
+ * owns that click instead, and the art is left without one so the strip is a single target.
  */
 @Composable
 private fun PlayerCover(
     coverUrl: String?,
     contentDescription: String?,
     size: Dp,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val clickLabel = stringResource(MR.strings.audio_subtitle_display_mode)
+    val clickModifier = onClick?.let { action ->
+        Modifier.clickable(onClickLabel = clickLabel, onClick = action)
+    } ?: Modifier
     AsyncImage(
         model = coverUrl,
         contentDescription = contentDescription,
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(if (size <= 48.dp) 6.dp else 8.dp))
-            .clickable(
-                onClickLabel = stringResource(MR.strings.audio_subtitle_display_mode),
-                onClick = onClick,
-            ),
+            .then(clickModifier),
         contentScale = ContentScale.Crop,
     )
 }

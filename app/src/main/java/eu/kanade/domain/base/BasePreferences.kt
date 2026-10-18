@@ -86,14 +86,58 @@ class BasePreferences(
     /** Schema version of [audioPlaylist]; bump to discard old playlist entries once. */
     val audioPlaylistVersion: Preference<Int> = preferenceStore.getInt("audio_playlist_version", 0)
 
+    /**
+     * Queue sections the user explicitly opened or closed. Sections with no entry here follow the
+     * default: the one holding the current track is open, everything else is closed.
+     */
+    val audioQueueExpandedSections: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_expanded_sections"),
+        emptySet(),
+    )
+    val audioQueueCollapsedSections: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_collapsed_sections"),
+        emptySet(),
+    )
+
+    /**
+     * Folders inside a queued work that the user explicitly opened or closed. Folders with no
+     * entry follow the same rule as works: the one holding the current track is open.
+     */
+    val audioQueueExpandedFolders: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_expanded_folders"),
+        emptySet(),
+    )
+    val audioQueueCollapsedFolders: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_collapsed_folders"),
+        emptySet(),
+    )
+
     /** Locally collected audio works, stored independently from the track play queue. */
     val audioFavorites: Preference<String> = preferenceStore.getString("audio_favorite_works", "")
 
     /** JWT token from the audio backend login. */
     val audioAuthToken: Preference<String> = preferenceStore.getString("audio_auth_token", "")
 
+    /**
+     * API base URL of the audio backend site the user picked, empty for the default.
+     *
+     * Stored as the full URL rather than an index so an install that chose a host keeps it even if
+     * the shipped list is reordered. The four sites share accounts and catalogue, so a switch does
+     * not invalidate [audioAuthToken].
+     */
+    val audioBackendUrl: Preference<String> = preferenceStore.getString("audio_backend_url", "")
+
     /** Preferred audio stream quality for the ASMR backend. */
     val audioQuality: Preference<String> = preferenceStore.getString("audio_quality", "fluent_first")
+
+    /**
+     * Whether the work lists are narrowed to works that ship subtitles.
+     *
+     * A filter rather than a sort: the backend answers it on the work feeds and on search alike,
+     * and changing it re-requests the list. Kept out of the recommended and popular feeds, which
+     * are ordered by the backend rather than browsed.
+     */
+    val audioSubtitlesOnly: Preference<Boolean> = preferenceStore.getBoolean("audio_subtitles_only", false)
 
     /** How much of the audio player screen the subtitle list takes, see AudioSubtitleDisplayMode. */
     val audioSubtitleDisplayMode: Preference<String> = preferenceStore.getString(
@@ -128,6 +172,17 @@ class BasePreferences(
     val audioFloatingSubtitleY: Preference<Int> = preferenceStore.getInt(
         "audio_floating_subtitle_y",
         UNSET_POSITION,
+    )
+
+    /**
+     * Where the reader's audio bar sits across the width, as a fraction of the distance it can
+     * travel. A fraction rather than a pixel offset is what lets the spot survive a rotation or a
+     * different screen: the travel itself changes with the reader's width, and a pixel offset
+     * picked on the wide one would come back clamped to an edge on the narrow one.
+     */
+    val audioReaderBarOffsetFraction: Preference<Float> = preferenceStore.getFloat(
+        "audio_reader_bar_offset_fraction",
+        0f,
     )
 
     companion object {
