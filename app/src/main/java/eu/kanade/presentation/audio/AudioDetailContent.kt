@@ -329,7 +329,8 @@ private fun NeighborRow(
         // break rather than as one more row spacing.
         HorizontalDivider(modifier = Modifier.padding(top = 48.dp))
         // The header is the whole control: a row of cards this tall pushed the track list off the
-        // page on first open, so it starts folded and the count says what is behind it.
+        // page on first open, so it starts folded. No count beside it: the backend always sends the
+        // same 20 works, so the number never told the reader anything the row did not.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -342,12 +343,6 @@ private fun NeighborRow(
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
-            Text(
-                text = works.size.toString(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(4.dp))
             Icon(
                 imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                 contentDescription = null,

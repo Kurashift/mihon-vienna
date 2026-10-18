@@ -97,6 +97,13 @@ internal fun tapFraction(xPx: Float, widthPx: Float): Float {
  * ends. A caller that draws a thumb should follow this rather than the value it reported: acting on
  * a seek is asynchronous, so a long chapter can report a page, have the bar redraw from a stale
  * value, and fight the finger for the rest of the drag.
+ *
+ * Every callback here is captured **once**, when the bar is first composed: the gesture lives in a
+ * `pointerInput(Unit)` block, and restarting it on each new callback would cancel a press in
+ * progress. A callback that closes over a value read during composition therefore keeps that first
+ * value for the life of the bar. Pass a lambda that reads the current state instead —
+ * `{ latestOnChange(it) }` against a `rememberUpdatedState`, not `latestOnChange` — or the bar will
+ * keep acting on numbers from the composition that created it.
  */
 internal fun <T> Modifier.seekBarGestures(
     thumbFraction: () -> Float,

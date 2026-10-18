@@ -340,6 +340,14 @@
     <string name="update_available_message">已发布 %1$s，可以直接覆盖安装。</string>
     <string name="update_available_ignore">忽略更新</string>
     <string name="update_available_later">知道了</string>
+    <string name="update_download_and_install">下载并安装</string>
+    <string name="update_install_title">更新到 %1$s</string>
+    <string name="update_download_progress">%1$s / %2$s</string>
+    <string name="update_download_verifying">校验中…</string>
+    <string name="update_download_failed">下载失败，检查网络后重试。</string>
+    <string name="update_install_permission">允许「安装未知应用」后才能安装。</string>
+    <string name="update_install_grant">去允许</string>
+    <string name="update_install_downgrade">版本 %1$d 低于已装的 %2$d，不能降级安装。</string>
     <string name="information_no_downloads">还没有下载</string>
     <string name="information_no_recent">最近还没更新</string>
     <string name="information_no_recent_manga">最近还没看过</string>

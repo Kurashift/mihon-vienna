@@ -477,7 +477,9 @@ private fun SlimSeekBar(
                     (fraction * latestTotal).roundToInt().coerceIn(1, latestTotal)
                 },
                 onValue = { page -> latestOnChange(page - 1) },
-                onFinished = latestOnFinished,
+                // Read through the state as well: the gesture captures its callbacks once, when the
+                // bar is first composed.
+                onFinished = { latestOnFinished() },
                 onFineSeekChange = { fineSeek = it },
                 onDragFraction = { dragFraction = it },
             ),

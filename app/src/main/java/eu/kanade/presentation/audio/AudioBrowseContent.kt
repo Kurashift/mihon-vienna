@@ -2,6 +2,7 @@ package eu.kanade.presentation.audio
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,7 +55,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -783,22 +783,30 @@ private fun WorkStats(work: Work) {
  * six of these on every card in the list, and filling them all with `primaryContainer` the way
  * the single detail header does would turn each card into a block of colour. The label is what
  * reads as a link, and the ripple confirms the tap.
+ *
+ * Built from `clip`/`background`/`clickable` rather than `Surface(onClick = ...)`, the way the
+ * details page's tag chip is. A clickable Surface puts `minimumInteractiveComponentSize()` above
+ * the modifier that paints the background, so it lays out a 48dp slot and centres the painted
+ * chip inside it: every tag narrower than 48dp then shows a strip of unpainted slot on both
+ * sides, which lands on top of the row's 4dp spacing. Measured off a device screenshot, two
+ * 2-character tags ended up 17dp apart while a 5-character tag sat 5dp from its neighbour, in the
+ * same row. Painting the chip on the node the row measures keeps the gap at the 4dp the strip
+ * asks for. Touch targets are not lost with it: that modifier only reserves layout space, and the
+ * platform expands hit bounds to the minimum at the input layer either way.
  */
 @Composable
 private fun WorkTag(name: String, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(4.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Text(
-            text = name,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-        )
-    }
+    Text(
+        text = name,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 internal fun formatCompactCount(value: Int): String {

@@ -57,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,6 +97,8 @@ import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
+import eu.kanade.tachiyomi.data.updater.AppUpdateProgress
+import eu.kanade.tachiyomi.data.updater.AppUpdateSession
 import eu.kanade.tachiyomi.data.updater.AppUpdateState
 import eu.kanade.tachiyomi.extension.api.ExtensionApi
 import eu.kanade.tachiyomi.ui.audio.AudioDetailScreen
@@ -138,6 +141,7 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.injectLazy
+import java.io.File
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Instant
@@ -435,6 +439,11 @@ class MainActivity : BaseActivity() {
      * release's version to preferences, 知道了 keeps it in memory for this process only, and
      * 更新日志 opens the same release-notes dialog the About screen's own check opens.
      *
+     * 下载并安装 does the whole job here instead of sending the reader to a browser: the APK is
+     * fetched with the app's own client, checked against the release's SHA-256, and handed to the
+     * system installer. The verified file is remembered so the one-time "allow installs" detour
+     * does not download it a second time.
+     *
      * Skipped while the first-use onboarding is on screen, so two full-screen surfaces never
      * compete on the very first launch.
      */
@@ -442,6 +451,9 @@ class MainActivity : BaseActivity() {
     private fun ShowUpdatePrompt(navigator: Navigator) {
         if (!updaterEnabled) return
 
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val session = remember { AppUpdateSession(context, scope) }
         val release by AppUpdateState.availableRelease.collectAsState()
         val answered by AppUpdateState.promptAnswered.collectAsState()
         val ignoredVersions = remember { preferences.ignoredUpdateVersion.changes() }
@@ -454,23 +466,31 @@ class MainActivity : BaseActivity() {
             return
         }
 
+        // Once the system installer has the file there is nothing left for this prompt to say.
+        LaunchedEffect(session.progress) {
+            if (session.progress == AppUpdateProgress.Installing) {
+                AppUpdateState.dismissPrompt()
+            }
+        }
+
         UpdateAvailableDialog(
             versionName = current.version,
+            progress = session.progress,
+            onPrimary = { session.start(current) },
+            onCancel = session::cancel,
             onIgnore = {
+                session.discard()
                 preferences.ignoredUpdateVersion.set(current.version)
                 AppUpdateState.dismissPrompt()
             },
-            onDismiss = AppUpdateState::dismissPrompt,
-            onOpenChangelog = {
+            onDismiss = {
+                session.discard()
                 AppUpdateState.dismissPrompt()
-                navigator.push(
-                    NewUpdateScreen(
-                        versionName = current.version,
-                        changelogInfo = current.info,
-                        releaseLink = current.releaseLink,
-                        downloadLink = current.downloadLink,
-                    ),
-                )
+            },
+            onOpenChangelog = {
+                session.discard()
+                AppUpdateState.dismissPrompt()
+                navigator.push(NewUpdateScreen(current))
             },
         )
     }

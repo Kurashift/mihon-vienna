@@ -183,13 +183,6 @@ fun AudioPlayerContent(
                 navigateUp = navigateUp,
                 actions = {
                     if (item != null) {
-                        IconButton(onClick = onOpenQueue) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
-                                contentDescription = stringResource(MR.strings.audio_playlist),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         IconButton(onClick = onToggleFavorite) {
                             Icon(
                                 imageVector = if (isFavorite) {
@@ -532,6 +525,16 @@ fun AudioPlayerContent(
                         enabled = floatingSubtitleEnabled,
                         onToggle = onToggleFloatingSubtitle,
                     )
+                    // The queue lives beside the transport controls rather than in the app bar: it
+                    // is something you reach for while listening, the same way as repeat and the
+                    // sleep timer, and the bar keeps one slot free for the favourite.
+                    IconButton(onClick = onOpenQueue, enabled = item != null) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                            contentDescription = stringResource(MR.strings.audio_playlist),
+                            tint = LocalContentColor.current,
+                        )
+                    }
                 }
                 if (state.error != null) {
                     TextButton(onClick = onTogglePlay) {

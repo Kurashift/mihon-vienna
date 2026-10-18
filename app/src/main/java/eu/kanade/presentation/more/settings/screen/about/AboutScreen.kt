@@ -123,13 +123,7 @@ object AboutScreen : Screen() {
                                         checkVersion(
                                             context = context,
                                             onAvailableUpdate = { result ->
-                                                val updateScreen = NewUpdateScreen(
-                                                    versionName = result.release.version,
-                                                    changelogInfo = result.release.info,
-                                                    releaseLink = result.release.releaseLink,
-                                                    downloadLink = result.release.downloadLink,
-                                                )
-                                                navigator.push(updateScreen)
+                                                navigator.push(NewUpdateScreen(result.release))
                                             },
                                             onFinish = {
                                                 isCheckingUpdates = false
