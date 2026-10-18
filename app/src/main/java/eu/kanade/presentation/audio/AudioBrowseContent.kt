@@ -64,6 +64,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -380,6 +382,22 @@ fun AudioBrowseContent(
             }
         },
     ) { contentPadding ->
+        // One scroll position per tab and keyword, kept above the branches below. Searching
+        // reloads the list, which composes the loading screen (and the empty screen, while the
+        // keyword still matches nothing) in place of the grid; a state created inside that grid
+        // went with it and every keyword came back at the top. Keying by keyword also keeps the
+        // list the user was browsing untouched by the results scrolling in its own slot.
+        //
+        // The keyword is [AudioBrowseState.listQuery], the one the rows were built for, not the one
+        // in the search field: switching slots the instant the field changes would hand the old
+        // rows to a state that does not describe them, and the browsing list's offset would be
+        // clamped to the length of the result set it was briefly attached to.
+        //
+        // Saveable rather than remembered for the same reason: opening a work pushes a details
+        // page on top of this one, which disposes this composition.
+        val gridStates = rememberSaveable(saver = gridStatesSaver) {
+            mutableMapOf<WorkListSlot, LazyGridState>()
+        }
         when {
             state.loading -> LoadingScreen(Modifier.padding(contentPadding))
             state.error -> {
@@ -402,16 +420,23 @@ fun AudioBrowseContent(
                 modifier = Modifier.padding(contentPadding),
             )
             else -> {
-                // One scroll position per tab. A single shared one carried the offset of whichever
-                // list the user had been on before, so opening the favourites tab landed in the
-                // middle of a list that had just grown at the top.
-                val gridStates = remember { mutableMapOf<AudioBrowseTab, LazyGridState>() }
-                val gridState = gridStates.getOrPut(state.tab) { LazyGridState() }
-                // Favourites open at the top: the work just collected is the first row there, and
-                // the offset left over from the last visit puts it out of sight. Watching the first
-                // row as well covers a list that grows while it is already on screen.
-                LaunchedEffect(state.tab, state.works.firstOrNull()?.id) {
-                    if (state.tab == AudioBrowseTab.FAVORITES) gridState.scrollToItem(0)
+                val gridState = gridStates.getOrPut(WorkListSlot(state.tab, state.listQuery.orEmpty())) {
+                    LazyGridState()
+                }
+                // Favourites open at the top only when a work actually lands there — the one just
+                // collected, which is the first row. Coming back from a work that was merely
+                // played must keep the position the user left, so the first row is compared
+                // against the one seen last instead of the tab alone triggering the jump. While a
+                // keyword is up the rows are a filtered subset, so the comparison is left alone:
+                // otherwise clearing the search would read as a new first row and jump to the top.
+                var favoritesFirstId by rememberSaveable { mutableStateOf(FAVORITES_NO_FIRST_ROW) }
+                LaunchedEffect(state.tab, state.query, state.works.firstOrNull()?.id) {
+                    if (state.tab != AudioBrowseTab.FAVORITES || state.query != null) return@LaunchedEffect
+                    val firstId = state.works.firstOrNull()?.id ?: return@LaunchedEffect
+                    if (favoritesFirstId != FAVORITES_NO_FIRST_ROW && firstId != favoritesFirstId) {
+                        gridState.scrollToItem(0)
+                    }
+                    favoritesFirstId = firstId
                 }
                 // Read through rememberUpdatedState so appending a page no longer tears down and
                 // restarts the scroll observer — the flow only needs the latest count, not to be
@@ -1142,3 +1167,49 @@ internal fun AudioTabDivider() {
             .background(MaterialTheme.colorScheme.outlineVariant),
     )
 }
+
+/**
+ * One list the work grid can show: a tab, and the keyword it is showing (empty while browsing).
+ *
+ * The two dimensions are separate slots rather than one, so a keyword's results scroll on their
+ * own and the list the user was browsing keeps the position they left it at.
+ */
+private data class WorkListSlot(val tab: AudioBrowseTab, val query: String)
+
+/**
+ * Saved form of the work list's scroll positions: one (tab, keyword, index, offset) row each,
+ * rebuilt into [LazyGridState]s on restore.
+ *
+ * The states themselves belong to a composition that can be disposed two ways — a details page
+ * pushed on top of the list, or the grid replaced by the loading screen while a keyword loads —
+ * so only their primitives travel through the saved state.
+ */
+private val gridStatesSaver = listSaver<MutableMap<WorkListSlot, LazyGridState>, Any>(
+    save = { states ->
+        states.flatMap { (slot, state) ->
+            listOf(
+                slot.tab.name,
+                slot.query,
+                state.firstVisibleItemIndex,
+                state.firstVisibleItemScrollOffset,
+            )
+        }
+    },
+    restore = { saved ->
+        mutableMapOf<WorkListSlot, LazyGridState>().apply {
+            saved.chunked(GRID_STATE_SAVED_FIELDS).forEach { fields ->
+                val tab = AudioBrowseTab.entries.firstOrNull { it.name == fields[0] } ?: return@forEach
+                put(
+                    WorkListSlot(tab, fields[1] as String),
+                    LazyGridState(fields[2] as Int, fields[3] as Int),
+                )
+            }
+        }
+    },
+)
+
+/** Fields one slot occupies in [gridStatesSaver]: tab, keyword, first visible index and offset. */
+private const val GRID_STATE_SAVED_FIELDS = 4
+
+/** Stands in for "no first row seen yet". Work ids are positive, so no row can carry it. */
+private const val FAVORITES_NO_FIRST_ROW = -1L
