@@ -54,17 +54,10 @@ jobs:
           name: test-report-${{ github.sha }}
           path: app/build/reports/tests/testDebugUnitTest
 
-      - name: Build app
-        run: ./gradlew assembleVienna -Pinclude-telemetry -Penable-updater
-
-      - name: Upload APK
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: MihonVienna-arm64-v8a-${{ github.sha }}
-          path: app/build/outputs/apk/vienna/MihonVienna-*-arm64-v8a.apk
-
-      - name: Upload mapping
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: mapping-${{ github.sha }}
-          path: app/build/outputs/mapping/vienna
+      # No assemble here on purpose. The APK this project ships is built locally against the
+      # release keystore and published from there, so a CI build was a second, unused artifact:
+      # it accounted for roughly two thirds of the job's runtime and produced the only file that
+      # was ever uploaded (arm64) out of five splits. What it did verify — R8 rules, resource
+      # shrinking, manifest merge — is checked by the release build itself before anything is
+      # published. Format, unit tests and migrations stay: they are the checks that have actually
+      # failed on this repository.
