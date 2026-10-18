@@ -37,6 +37,7 @@ import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.history.model.HistoryWithRelations
+import tachiyomi.domain.history.model.withLocalChapterDisplayMode
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
@@ -95,7 +96,7 @@ class HistoryViewModel(
     private fun List<HistoryWithRelations>.toHistoryUiModels(
         localChapterDisplayMode: Long,
     ): List<HistoryUiModel> {
-        return map { HistoryUiModel.Item(it.hideLocalChapterNumber(localChapterDisplayMode)) }
+        return map { HistoryUiModel.Item(it.applyLocalChapterDisplay(localChapterDisplayMode)) }
             .insertSeparators { before, after ->
                 val beforeDate = before?.item?.readAt?.time?.toLocalDate()
                 val afterDate = after?.item?.readAt?.time?.toLocalDate()
@@ -105,6 +106,20 @@ class HistoryViewModel(
                     else -> null
                 }
             }
+    }
+
+    /**
+     * 历史条目的标题与篇目号都按当前库级显示模式取。
+     *
+     * 标题此前直接读 historyView 里每本 manga 的 `chapter_flags`，那只是「上次打开详情页时」
+     * 写下的快照。改过库级偏好之后，只有打开过详情页的作品会跟着变，其余条目仍停在旧值，
+     * 历史页就新旧混着显示。这里与详情页、阅读器同源套一遍偏好，只作用于展示副本，不写回数据库。
+     */
+    private fun HistoryWithRelations.applyLocalChapterDisplay(
+        localChapterDisplayMode: Long,
+    ): HistoryWithRelations {
+        return withLocalChapterDisplayMode(localChapterDisplayMode)
+            .hideLocalChapterNumber(localChapterDisplayMode)
     }
 
     /**

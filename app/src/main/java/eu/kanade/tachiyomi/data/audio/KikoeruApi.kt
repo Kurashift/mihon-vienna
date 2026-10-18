@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.audio
 
 import android.os.SystemClock
+import android.util.Log
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
@@ -13,12 +14,17 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import okhttp3.CacheControl
@@ -91,8 +97,10 @@ class KikoeruApi(
         sort: String = "desc",
         cache: CacheControl? = null,
         seed: Long? = null,
+        subtitlesOnly: Boolean = false,
     ): WorksResponse = withIOContext {
-        val url = "$baseUrl/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed)
+        val url = "$baseUrl/api/works?page=$page&pageSize=$pageSize&order=$order&sort=$sort" +
+            seedParam(seed) + subtitleParam(subtitlesOnly)
         with(json) {
             executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
         }
@@ -119,10 +127,12 @@ class KikoeruApi(
         sort: String = "desc",
         cache: CacheControl? = null,
         seed: Long? = null,
+        subtitlesOnly: Boolean = false,
     ): WorksResponse = withIOContext {
         val encodedId = URLEncoder.encode(id, "UTF-8")
         val url = "$baseUrl/api/${field.pathSegment}/$encodedId/works" +
-            "?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed)
+            "?page=$page&pageSize=$pageSize&order=$order&sort=$sort" + seedParam(seed) +
+            subtitleParam(subtitlesOnly)
         with(json) {
             executeWithRetry(url) { client.newCall(authenticated(get(url, cache))).awaitSuccess().use { it.parseAs() } }
         }
@@ -135,12 +145,13 @@ class KikoeruApi(
         order: String = "release",
         sort: String = "desc",
         seed: Long? = null,
+        subtitlesOnly: Boolean = false,
     ): WorksResponse = withIOContext {
         // Keyword goes in the URL path (the backend only parses the advanced
         // "$tag:xxx$" filter syntax there, not via a query parameter).
         val encoded = URLEncoder.encode(keyword, "UTF-8").replace("+", "%20")
         val url = "$baseUrl/api/search/$encoded?page=$page&pageSize=$pageSize&order=$order&sort=$sort" +
-            seedParam(seed)
+            seedParam(seed) + subtitleParam(subtitlesOnly)
         with(json) {
             executeWithRetry(url) {
                 client.newCall(authenticated(GET(url, cache = CacheControl.FORCE_NETWORK)))
@@ -282,13 +293,93 @@ class KikoeruApi(
         throw lastError ?: IOException("auth request failed")
     }
 
+    /**
+     * The account as the backend holds it right now: name, group and the bound email.
+     *
+     * The token is the only input — there is no user id to pass — and the answer is deliberately
+     * not cached: this is what the account page reads to say whether an email is bound, and the
+     * website can bind or unlink one while the app is closed.
+     */
+    suspend fun fetchProfile(): AuthUser = withIOContext {
+        val url = "$baseUrl/api/auth/me"
+        with(json) {
+            executeWithRetry(url) {
+                client.newCall(authenticated(GET(url, cache = CacheControl.FORCE_NETWORK)))
+                    .awaitSuccess()
+                    .use { it.parseAs<AuthResponse>() }
+                    .user
+            }
+        }
+    }
+
+    /**
+     * Sets a new password for the signed-in account.
+     *
+     * The backend asks for no current password — the token is the whole proof — so there is
+     * nothing to verify here and nothing to send beyond the new one. The token stays valid
+     * afterwards; the website does not sign the user out either.
+     */
+    suspend fun changePassword(newPassword: String) = withIOContext {
+        postAuthAction(
+            "/api/auth/change-password",
+            buildJsonObject { put("newPassword", newPassword) }.toString(),
+        )
+    }
+
+    /** Detaches the bound email from the account. One request, no parameters. */
+    suspend fun unlinkEmail() = withIOContext {
+        postAuthAction("/api/auth/link-email/unlink")
+    }
+
+    /**
+     * Posts to an account endpoint that answers with no body worth reading.
+     *
+     * Same split as [authenticate]: a 4xx is the backend's decision and is thrown on the first
+     * attempt carrying its own wording, while a dropped connection or a 5xx is retried.
+     */
+    private suspend fun postAuthAction(path: String, json: String? = null) {
+        val url = "$baseUrl$path"
+        val body = json?.toRequestBody(JSON_MEDIA_TYPE)
+        var lastError: Exception? = null
+        repeat(MAX_ATTEMPTS) { attempt ->
+            try {
+                val request = authenticated(if (body == null) POST(url) else POST(url, body = body))
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        val text = response.body.string()
+                        // A rejected token is a dead session, not a wrong password: drop it so the
+                        // browse page flips back to signed out instead of retrying with it.
+                        if (response.code == 401) clearSession()
+                        val reason = authErrorText(text)
+                        if (response.code in 400..499) throw AudioAuthException(response.code, reason)
+                        throw IOException(reason ?: "HTTP ${response.code}")
+                    }
+                }
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AudioAuthException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < MAX_ATTEMPTS - 1) {
+                    delay(RETRY_BACKOFF_MILLIS shl attempt)
+                }
+            }
+        }
+        throw lastError ?: IOException("auth action failed")
+    }
+
     /** Popular works (backend recommender), ordered by rank signals. */
-    suspend fun fetchPopular(page: Int, pageSize: Int): WorksResponse = withIOContext {
+    suspend fun fetchPopular(page: Int, pageSize: Int, subtitlesOnly: Boolean = false): WorksResponse = withIOContext {
         val url = "$baseUrl/api/recommender/popular"
         val body = buildJsonObject {
             put("keyword", "")
             put("page", page)
             put("pageSize", pageSize)
+            // The recommender endpoints take the same flag as the work feeds, as a number in the
+            // body rather than a query parameter. Measured: popular answers 100 rows, 41 with it.
+            put("subtitle", if (subtitlesOnly) 1 else 0)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         with(json) {
             executeWithRetry(url) {
@@ -298,13 +389,19 @@ class KikoeruApi(
     }
 
     /** Personalized recommendations keyed by an anonymous UUID. */
-    suspend fun fetchRecommended(recommenderUuid: String, page: Int, pageSize: Int): WorksResponse = withIOContext {
+    suspend fun fetchRecommended(
+        recommenderUuid: String,
+        page: Int,
+        pageSize: Int,
+        subtitlesOnly: Boolean = false,
+    ): WorksResponse = withIOContext {
         val url = "$baseUrl/api/recommender/recommend-for-user"
         val body = buildJsonObject {
             put("keyword", "")
             put("recommenderUuid", recommenderUuid)
             put("page", page)
             put("pageSize", pageSize)
+            put("subtitle", if (subtitlesOnly) 1 else 0)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         with(json) {
             executeWithRetry(url) {
@@ -335,12 +432,34 @@ class KikoeruApi(
     /**
      * The works the backend considers similar to [workId], for the row under a work's track list.
      *
-     * Answers without a token — this reads content, not account state — and an id the backend does
-     * not know comes back as an empty list rather than an error, so there is nothing here to branch
-     * on. The keyword and playlist fields the site sends are left empty: a details page carries no
-     * filter of its own, and the app does not collect into playlists.
+     * The recommender only holds vectors for the original edition of a work. A translated edition
+     * — RJ335418 is the Chinese release of RJ234821 — answers with an empty list even though its
+     * sibling answers with a full page, which is why a details page opened from the library used
+     * to show no similar works at all. When the direct answer is empty, this asks the sibling
+     * edition named by `other_language_editions_in_db` once; it never walks further than that.
+     *
+     * An id the backend does not know comes back as an empty list rather than an error, so there
+     * is nothing to branch on beyond the sibling retry. The keyword and playlist fields the site
+     * sends are left empty: a details page carries no filter of its own, and the app does not
+     * collect into playlists.
      */
     suspend fun fetchNeighbors(workId: Long): List<Work> = withIOContext {
+        val startedAt = SystemClock.elapsedRealtime()
+        val direct = requestNeighbors(workId)
+        Log.e("AUDIO_DIAG", "direct workId=$workId size=${direct.size} ms=${SystemClock.elapsedRealtime() - startedAt}")
+        if (direct.isNotEmpty()) return@withIOContext direct
+        val sibling = siblingEditionId(workId)
+        Log.e("AUDIO_DIAG", "sibling workId=$workId -> $sibling ms=${SystemClock.elapsedRealtime() - startedAt}")
+        if (sibling == null || sibling == workId) return@withIOContext emptyList()
+        requestNeighbors(sibling).also {
+            Log.e(
+                "AUDIO_DIAG",
+                "fallback sibling=$sibling size=${it.size} ms=${SystemClock.elapsedRealtime() - startedAt}",
+            )
+        }
+    }
+
+    private suspend fun requestNeighbors(workId: Long): List<Work> {
         val url = "$baseUrl/api/recommender/item-neighbors"
         val body = buildJsonObject {
             put("keyword", "")
@@ -348,7 +467,7 @@ class KikoeruApi(
             putJsonArray("localSubtitledWorks") {}
             putJsonArray("withPlaylistStatus") {}
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
-        with(json) {
+        return with(json) {
             executeWithRetry(url) {
                 client.newCall(authenticated(POST(url, body = body)))
                     .awaitSuccess()
@@ -356,6 +475,79 @@ class KikoeruApi(
             }.works
         }
     }
+
+    /**
+     * The editions of [workId] the backend actually holds, the Japanese original first.
+     *
+     * `language_editions` lists every edition DLSITE published, including ones this backend has no
+     * copy of — RJ335418 advertises an English release whose `/api/work/1009566` answers 404, and a
+     * switcher built on that list offered a chip that could not be opened. `other_language_editions_in_db`
+     * is the list of editions that *are* in the database, so it filters the former down to the ones
+     * worth showing. That field is a single object in an anonymous response and an array once a
+     * token is attached, hence [editionIds] handling both shapes.
+     *
+     * Returns just the current edition for a single-language work, which is what keeps the row off
+     * those pages.
+     */
+    suspend fun fetchEditions(workId: Long): List<WorkEdition> = withIOContext {
+        try {
+            val url = "$baseUrl/api/work/$workId"
+            client.newCall(authenticated(GET(url))).awaitSuccess().use { response ->
+                val body = json.parseToJsonElement(response.body.string()).jsonObject
+                val inDb = editionIds(body["other_language_editions_in_db"])
+                body["language_editions"]
+                    ?.jsonArray
+                    ?.mapNotNull { element ->
+                        (element as? JsonObject)?.let { edition ->
+                            val id = edition["workno"]?.jsonPrimitive?.contentOrNull?.let(::workNoToId)
+                                ?: return@let null
+                            WorkEdition(
+                                id = id,
+                                lang = editionLabel(edition["lang"]?.jsonPrimitive?.contentOrNull.orEmpty()),
+                                displayOrder = edition["display_order"]?.jsonPrimitive?.intOrNull ?: 0,
+                                isCurrent = id == workId,
+                            )
+                        }
+                    }
+                    ?.filter { it.isCurrent || it.id in inDb }
+                    ?.sortedBy { it.displayOrder }
+                    .orEmpty()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("AUDIO_DIAG", "editions fail workId=$workId ${e::class.simpleName}: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /** Ids from `other_language_editions_in_db`, which is an object or an array depending on auth. */
+    private fun editionIds(element: JsonElement?): Set<Long> = when (element) {
+        is JsonObject -> setOfNotNull(element["id"]?.jsonPrimitive?.longOrNull)
+        is JsonArray -> element.mapNotNullTo(mutableSetOf()) {
+            (it as? JsonObject)?.get("id")?.jsonPrimitive?.longOrNull
+        }
+        else -> emptySet()
+    }
+
+    /** `JPN` → 日语, `CHI_HANS,CHI_HANT` → 中文, `ENG` → 英语. */
+    private fun editionLabel(lang: String): String = when {
+        lang.contains("JPN") -> "日语"
+        lang.contains("CHI") -> "中文"
+        lang.contains("ENG") -> "英语"
+        else -> lang.substringBefore(',').ifBlank { lang }
+    }
+
+    /** `RJ234821` → 234821, `RJ01009566` → 1009566. */
+    private fun workNoToId(workNo: String): Long? =
+        workNo.dropWhile { it.isLetter() }.toLongOrNull()
+
+    /** The primary edition's id, the one the recommender holds vectors for. */
+    private suspend fun siblingEditionId(workId: Long): Long? =
+        fetchEditions(workId)
+            .filter { !it.isCurrent }
+            .minByOrNull { it.displayOrder }
+            ?.id
 
     /**
      * Account collection rows, the same list the website's "Favourites" section renders.
@@ -432,7 +624,28 @@ class KikoeruApi(
         return request.withAudioAuthorization(basePreferences.audioAuthToken.get())
     }
 
+    /**
+     * Forgets the stored session.
+     *
+     * Both halves go together: the browse page keys "signed in" on a non-blank token *and* a
+     * non-blank name, so clearing only the token would leave a name with nothing behind it.
+     */
+    private fun clearSession() {
+        basePreferences.audioAuthToken.set("")
+        basePreferences.audioUsername.set("")
+    }
+
     private fun seedParam(seed: Long?): String = seed?.let { "&seed=$it" }.orEmpty()
+
+    /**
+     * `&subtitle=1` narrows the list to works that ship subtitles.
+     *
+     * Measured against the live API: `subtitle=1` answers 8032 of 62897 works, `subtitle=0` and an
+     * absent parameter answer all of them, and anything else (`true`, `2`) is rejected with a 400.
+     * The same parameter narrows `/api/search/{keyword}` (病み: 47 → 2) and the dictionary feeds
+     * (`/api/tags/1/works`: 3534 → 443), so one flag covers every list the browse page builds.
+     */
+    private fun subtitleParam(subtitlesOnly: Boolean): String = if (subtitlesOnly) "&subtitle=1" else ""
 
     /**
      * Retries transient failures (server 5xx, connection reset) a couple of times with a short
@@ -456,8 +669,7 @@ class KikoeruApi(
                     throw e
                 } catch (e: Exception) {
                     if (e is HttpException && e.code == 401) {
-                        basePreferences.audioAuthToken.set("")
-                        basePreferences.audioUsername.set("")
+                        clearSession()
                     }
                     if (e is HttpException && e.code in 400..499) throw e
                     lastError = e

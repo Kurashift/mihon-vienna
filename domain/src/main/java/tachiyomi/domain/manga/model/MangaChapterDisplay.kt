@@ -1,6 +1,6 @@
 package tachiyomi.domain.manga.model
 
-private const val LOCAL_SOURCE_ID = 0L
+internal const val LOCAL_SOURCE_ID = 0L
 
 /**
  * Returns a copy of [this] with the library-wide local chapter display mode applied, leaving the

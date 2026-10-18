@@ -182,6 +182,19 @@ class AudioAccountSync(
         bumpRevision()
     }
 
+    /**
+     * Ends the session: the stored credentials and the rows they fetched go together.
+     *
+     * Both halves are here rather than at each caller because two screens can sign out (the browse
+     * toolbar and the account page), and clearing the token without the rows would leave the
+     * favourites tab looking at a collection that no longer has an owner.
+     */
+    fun signOut() {
+        resetSession()
+        preferences.audioAuthToken.set("")
+        preferences.audioUsername.set("")
+    }
+
     private fun bumpRevision() {
         _revision.value += 1
     }

@@ -26,6 +26,21 @@ data class Pagination(
     val totalCount: Int = 0,
 )
 
+/**
+ * One language edition of a work that the backend actually holds, from a work's detail response.
+ *
+ * [id] is the edition's own [Work.id], so the switcher can open it directly; [lang] is the display
+ * name derived from the backend's `JPN` / `CHI_*` / `ENG` codes; [displayOrder] keeps the Japanese
+ * original first, which is also the edition the recommender holds vectors for.
+ */
+@Serializable
+data class WorkEdition(
+    val id: Long = 0,
+    val lang: String = "",
+    val displayOrder: Int = 0,
+    val isCurrent: Boolean = false,
+)
+
 @Serializable
 data class Work(
     val id: Long = 0,

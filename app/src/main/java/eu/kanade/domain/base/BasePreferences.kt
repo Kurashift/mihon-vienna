@@ -86,6 +86,32 @@ class BasePreferences(
     /** Schema version of [audioPlaylist]; bump to discard old playlist entries once. */
     val audioPlaylistVersion: Preference<Int> = preferenceStore.getInt("audio_playlist_version", 0)
 
+    /**
+     * Queue sections the user explicitly opened or closed. Sections with no entry here follow the
+     * default: the one holding the current track is open, everything else is closed.
+     */
+    val audioQueueExpandedSections: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_expanded_sections"),
+        emptySet(),
+    )
+    val audioQueueCollapsedSections: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_collapsed_sections"),
+        emptySet(),
+    )
+
+    /**
+     * Folders inside a queued work that the user explicitly opened or closed. Folders with no
+     * entry follow the same rule as works: the one holding the current track is open.
+     */
+    val audioQueueExpandedFolders: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_expanded_folders"),
+        emptySet(),
+    )
+    val audioQueueCollapsedFolders: Preference<Set<String>> = preferenceStore.getStringSet(
+        Preference.appStateKey("audio_queue_collapsed_folders"),
+        emptySet(),
+    )
+
     /** Locally collected audio works, stored independently from the track play queue. */
     val audioFavorites: Preference<String> = preferenceStore.getString("audio_favorite_works", "")
 
@@ -103,6 +129,15 @@ class BasePreferences(
 
     /** Preferred audio stream quality for the ASMR backend. */
     val audioQuality: Preference<String> = preferenceStore.getString("audio_quality", "fluent_first")
+
+    /**
+     * Whether the work lists are narrowed to works that ship subtitles.
+     *
+     * A filter rather than a sort: the backend answers it on the work feeds and on search alike,
+     * and changing it re-requests the list. Kept out of the recommended and popular feeds, which
+     * are ordered by the backend rather than browsed.
+     */
+    val audioSubtitlesOnly: Preference<Boolean> = preferenceStore.getBoolean("audio_subtitles_only", false)
 
     /** How much of the audio player screen the subtitle list takes, see AudioSubtitleDisplayMode. */
     val audioSubtitleDisplayMode: Preference<String> = preferenceStore.getString(

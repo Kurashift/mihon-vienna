@@ -128,11 +128,12 @@ class AudioBrowseScreen(
             onRefresh = viewModel::refresh,
             onLoadMore = viewModel::loadMore,
             onSortChange = viewModel::setSort,
+            onSetSubtitles = viewModel::setSubtitlesOnly,
             onSelectTab = viewModel::setTab,
             onLogin = viewModel::login,
             onRegister = viewModel::register,
             onClearAuthError = viewModel::clearAuthError,
-            onLogout = viewModel::logout,
+            onOpenAccount = { navigator.push(AudioAccountScreen()) },
             onSelectBackend = viewModel::selectBackend,
             onMeasureBackends = viewModel::measureBackends,
             onCycleAudioQuality = audioController::cycleAudioQuality,
@@ -193,9 +194,14 @@ enum class AudioSort(
     val favoritesOnly: Boolean = false,
 ) {
     // Listed first because it is what the work-list tab is opened for most often; [AudioSort.entries]
-    // is also the order of the sort sheet, so it sits at the top there too.
+    // is also the order of the sort sheet, so it sits at the top there too. After that the
+    // popularity measures come before the dates: a browse session usually starts from "what is
+    // good" and only sometimes from "what is new".
     RANDOM("random", "desc", MR.strings.audio_sort_random, MR.strings.audio_sort_random, isDraw = true),
-    RELEASE_DESC("release", "desc", MR.strings.audio_sort_release_desc, MR.strings.audio_tab_latest),
+
+    // The backend counts DLsite sales in `dl_count`; the label says sales because that is what the
+    // number is, not how many times the work was downloaded here.
+    DL_DESC("dl_count", "desc", MR.strings.audio_sort_dl_desc, MR.strings.audio_tab_sort_dl),
 
     // Backend rejects "rating" and answers with an empty list; the ranking column is this one.
     RATING_DESC(
@@ -203,14 +209,6 @@ enum class AudioSort(
         "desc",
         MR.strings.audio_sort_rating_desc,
         MR.strings.audio_tab_sort_rating,
-    ),
-
-    DL_DESC("dl_count", "desc", MR.strings.audio_sort_dl_desc, MR.strings.audio_tab_sort_dl),
-    CREATE_DESC(
-        "create_date",
-        "desc",
-        MR.strings.audio_sort_create_desc,
-        MR.strings.audio_tab_sort_create,
     ),
 
     /**
@@ -223,6 +221,16 @@ enum class AudioSort(
         MR.strings.audio_sort_collected,
         MR.strings.audio_tab_favorites,
         favoritesOnly = true,
+    ),
+
+    // Release and creation stay together at the end: they answer the same question — when the work
+    // itself appeared — while collection time answers when it entered the library.
+    RELEASE_DESC("release", "desc", MR.strings.audio_sort_release_desc, MR.strings.audio_tab_latest),
+    CREATE_DESC(
+        "create_date",
+        "desc",
+        MR.strings.audio_sort_create_desc,
+        MR.strings.audio_tab_sort_create,
     ),
 }
 
@@ -265,6 +273,8 @@ data class AudioBrowseState(
     // Opens on recommendations. Signed out that resolves to the popular list, which the backend
     // serves anonymously, rather than a personalized one the visitor cannot get.
     val tab: AudioBrowseTab = AudioBrowseTab.RECOMMENDED,
+    /** Narrows the browsed lists to works that ship subtitles; see [setSubtitlesOnly]. */
+    val subtitlesOnly: Boolean = false,
 )
 
 data class AudioAuthState(
@@ -305,7 +315,9 @@ class AudioBrowseViewModel(
     private val categoryCache: AudioCategoryCache = Injekt.get(),
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(AudioBrowseState())
+    private val _state = MutableStateFlow(
+        AudioBrowseState(subtitlesOnly = basePreferences.audioSubtitlesOnly.get()),
+    )
     val state: StateFlow<AudioBrowseState> = _state.asStateFlow()
 
     /**
@@ -433,12 +445,19 @@ class AudioBrowseViewModel(
             ) { token, username ->
                 username.takeIf { token.isNotBlank() }?.ifBlank { null }
             }.collect { username ->
+                val wasSignedIn = _auth.value.username != null
                 _auth.update { it.copy(username = username, loading = false) }
                 if (username != null) {
                     viewModelScope.launchIO {
                         accountSync.synchronize()
                         if (_state.value.tab == AudioBrowseTab.FAVORITES) loadFavorites()
                     }
+                } else if (wasSignedIn) {
+                    // Signed out — from this toolbar or from the account page, which both end at
+                    // the same preference change. The rows on screen were fetched for the account
+                    // that just left, and the recommended feed is keyed by it.
+                    pageCache.clear()
+                    if (_state.value.tab == AudioBrowseTab.RECOMMENDED) refresh()
                 }
             }
         }
@@ -573,17 +592,6 @@ class AudioBrowseViewModel(
         refresh()
     }
 
-    fun logout() {
-        accountSync.resetSession()
-        basePreferences.audioAuthToken.set("")
-        basePreferences.audioUsername.set("")
-        _auth.update { it.copy(username = null, error = null, errorFromServer = false) }
-        pageCache.clear()
-        // Recommendations are account specific, so what is on screen is stale the instant we
-        // sign out. Other tabs do not depend on the account and would just flash for nothing.
-        if (_state.value.tab == AudioBrowseTab.RECOMMENDED) refresh()
-    }
-
     fun setSort(sort: AudioSort) {
         // Only the work-list tab and favorites honor a sort: recommendations and popular are
         // backend feeds without an order parameter, so sorting anything else means moving to the
@@ -602,6 +610,28 @@ class AudioBrowseViewModel(
         sortOf(tab).value = sort
         if (sort.isDraw) drawSeed = Random.nextLong()
         switchTo(tab, sort, _state.value.query)
+    }
+
+    /**
+     * Turns the subtitle filter on or off.
+     *
+     * The flag changes the request, so what is on screen belongs to the other setting: the list
+     * goes back to its first page under the new one, whether the filter was just switched on or
+     * off. The page cache keeps the two variants apart (see [cacheKeyFor]), so flipping the flag
+     * back is a repaint rather than a round trip.
+     *
+     * Every backend list honours the flag, so the list on screen reloads in place and the tab
+     * never moves. Only the favourites tab is left alone: it is held locally, and reloading it
+     * would repaint the same rows.
+     */
+    fun setSubtitlesOnly(enabled: Boolean) {
+        if (_state.value.subtitlesOnly == enabled) return
+        basePreferences.audioSubtitlesOnly.set(enabled)
+        _state.update { it.copy(subtitlesOnly = enabled) }
+        val tab = _state.value.tab
+        if (tab != AudioBrowseTab.FAVORITES) {
+            switchTo(tab, sortOf(tab).value, _state.value.query)
+        }
     }
 
     fun refresh() {
@@ -793,7 +823,11 @@ class AudioBrowseViewModel(
             }
         }
         val draw = if (sort.isDraw) "seed=$drawSeed" else ""
-        return "$account|${tab.name}|${sort.name}|$category|$keyword|$draw"
+        // The subtitle filter changes what the backend answers, so the two settings are two
+        // different lists and must not share a cache entry — otherwise flipping the flag would
+        // repaint the other setting's rows.
+        val subtitles = if (subtitlesActive(tab)) "sub" else ""
+        return "$account|${tab.name}|${sort.name}|$category|$keyword|$draw|$subtitles"
     }
 
     private fun pageKey(baseKey: String, page: Int) = "$baseKey#$page"
@@ -899,6 +933,7 @@ class AudioBrowseViewModel(
                     sort.sort,
                     cache,
                     seed,
+                    subtitlesActive(tab),
                 )
             }
             // The id endpoints accept no keyword, so an intersection can only be expressed in the
@@ -914,23 +949,51 @@ class AudioBrowseViewModel(
                 sort.order,
                 sort.sort,
                 seed,
+                subtitlesActive(tab),
             )
         }
         if (searchKeyword.isNotBlank()) {
-            return api.search(searchKeyword, page, PAGE_SIZE, sort.order, sort.sort, seed)
+            return api.search(
+                searchKeyword,
+                page,
+                PAGE_SIZE,
+                sort.order,
+                sort.sort,
+                seed,
+                subtitlesActive(tab),
+            )
         }
         return when (tab) {
-            AudioBrowseTab.LATEST -> api.fetchWorks(page, PAGE_SIZE, sort.order, sort.sort, cache, seed)
-            AudioBrowseTab.POPULAR -> api.fetchPopular(page, PAGE_SIZE)
+            AudioBrowseTab.LATEST -> api.fetchWorks(
+                page,
+                PAGE_SIZE,
+                sort.order,
+                sort.sort,
+                cache,
+                seed,
+                subtitlesActive(tab),
+            )
+            AudioBrowseTab.POPULAR -> api.fetchPopular(page, PAGE_SIZE, subtitlesActive(tab))
             AudioBrowseTab.FAVORITES -> WorksResponse()
             AudioBrowseTab.RECOMMENDED -> requestRecommended(page)
         }
     }
 
+    /**
+     * Whether the subtitle filter applies to the list being built.
+     *
+     * Every backend list honours it — the work feed, a category's results, a search, and both
+     * recommender feeds, which take the flag in the request body — so the only list left out is
+     * the favourites tab, which is held locally.
+     */
+    private fun subtitlesActive(tab: AudioBrowseTab): Boolean =
+        _state.value.subtitlesOnly && tab != AudioBrowseTab.FAVORITES
+
     private suspend fun requestRecommended(page: Int): WorksResponse {
+        val subtitlesOnly = subtitlesActive(_state.value.tab)
         if (basePreferences.audioAuthToken.get().isNotBlank()) {
             // Logged-in users keep the backend's personalized recommender.
-            return api.fetchRecommended(recommenderUuid, page, PAGE_SIZE)
+            return api.fetchRecommended(recommenderUuid, page, PAGE_SIZE, subtitlesOnly)
         }
         val personalKeyword = personalCircleKeyword()
         return if (personalKeyword != null) {
@@ -940,11 +1003,12 @@ class AudioBrowseViewModel(
                 PAGE_SIZE,
                 AudioSort.RATING_DESC.order,
                 AudioSort.RATING_DESC.sort,
+                subtitlesOnly = subtitlesOnly,
             )
         } else {
             // No taste signal yet: this tab opens by default when signed out,
             // so it needs a real list. The endpoint is open anonymously.
-            api.fetchPopular(page, PAGE_SIZE)
+            api.fetchPopular(page, PAGE_SIZE, subtitlesOnly)
         }
     }
 

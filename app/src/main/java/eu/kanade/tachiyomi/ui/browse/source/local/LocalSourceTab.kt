@@ -1,9 +1,10 @@
 package eu.kanade.tachiyomi.ui.browse.source.local
 
+import androidx.compose.animation.graphics.res.animatedVectorResource
+import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
+import androidx.compose.animation.graphics.vector.AnimatedImageVector
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -13,15 +14,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.Navigator
+import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.util.Tab
+import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.browse.LocalScrollToTopRequests
 import eu.kanade.tachiyomi.ui.home.HomeScreen
@@ -48,11 +50,15 @@ data object LocalSourceTab : Tab {
 
     override val options: TabOptions
         @Composable
-        get() = TabOptions(
-            index = 3u,
-            title = stringResource(MR.strings.label_local_library),
-            icon = rememberVectorPainter(Icons.Outlined.FolderOpen),
-        )
+        get() {
+            val isSelected = LocalTabNavigator.current.current.key == key
+            val image = AnimatedImageVector.animatedVectorResource(R.drawable.anim_local_enter)
+            return TabOptions(
+                index = 3u,
+                title = stringResource(MR.strings.label_local_library),
+                icon = rememberAnimatedVectorPainter(image, isSelected),
+            )
+        }
 
     override suspend fun onReselect(navigator: Navigator) {
         localSourceScrollToTopRequests.update { it + 1 }

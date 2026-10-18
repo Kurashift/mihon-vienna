@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,6 +27,7 @@ import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
+import eu.kanade.tachiyomi.data.audio.WorkEdition
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
@@ -55,6 +58,7 @@ class AudioDetailScreen(
         val state by viewModel.state.collectAsState()
         val playlistUrls by viewModel.playlistUrls.collectAsState()
         val isFavorite by viewModel.isFavorite.collectAsState()
+        val scope = rememberCoroutineScope()
         val addedToPlaylistText = stringResource(MR.strings.audio_added_to_playlist)
         val removedFromPlaylistText = stringResource(MR.strings.audio_removed_from_playlist)
 
@@ -140,6 +144,15 @@ class AudioDetailScreen(
             onClickVa = { name -> onOpenCategory(AudioCategoryField.VA, name) },
             onClickTag = { name -> onOpenCategory(AudioCategoryField.TAG, name) },
             onClickNeighbor = { neighbor -> navigator.push(AudioDetailScreen(neighbor)) },
+            onClickEdition = { edition ->
+                scope.launch {
+                    val target = viewModel.resolveEdition(edition)
+                    // replace, not push: switching language is the same work seen differently, and
+                    // pushing would leave a stack of details pages behind one back press.
+                    if (target != null) navigator.replace(AudioDetailScreen(target))
+                }
+            },
+            onToggleNeighbors = viewModel::toggleNeighbors,
         )
     }
 }
@@ -161,6 +174,16 @@ data class AudioDetailState(
      * and left empty when it fails — the page is complete without it.
      */
     val neighbors: List<Work> = emptyList(),
+    /**
+     * The other language editions of [work], shown as chips under the circle name. Empty for the
+     * common case of a work that only exists in one language, and empty when the fetch fails.
+     */
+    val editions: List<WorkEdition> = emptyList(),
+    /**
+     * Whether the similar row is showing its cards. Collapsed by default so the track list stays
+     * the page's subject, and kept across works: opening it once means it stays open.
+     */
+    val neighborsExpanded: Boolean = false,
 )
 
 class AudioDetailViewModel(
@@ -171,7 +194,7 @@ class AudioDetailViewModel(
     private val basePreferences: BasePreferences = Injekt.get(),
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(AudioDetailState())
+    private val _state = MutableStateFlow(AudioDetailState(neighborsExpanded = neighborsExpanded.value))
     val state: StateFlow<AudioDetailState> = _state.asStateFlow()
 
     private val _playlistUrls = MutableStateFlow<Set<String>>(emptySet())
@@ -220,6 +243,7 @@ class AudioDetailViewModel(
                     rootNodes = emptyList(),
                     flatTracks = emptyList(),
                     neighbors = emptyList(),
+                    editions = emptyList(),
                 )
             }
             // Started first and awaited next to the tracks: the live backend answers this in about
@@ -238,6 +262,20 @@ class AudioDetailViewModel(
                     }
                 }
             }
+            // The edition list comes from the same detail response the sibling retry already
+            // reads, so this is a cache hit in the common case.
+            val editions = async {
+                withTimeoutOrNull(NEIGHBOR_BUDGET_MS) {
+                    try {
+                        api.fetchEditions(work.id)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logcat(LogPriority.WARN, e) { "Audio edition fetch failed" }
+                        emptyList()
+                    }
+                }
+            }
             try {
                 val nodes = api.fetchTracks(work.id)
                 val quality = AudioQualityMode.fromPreference(basePreferences.audioQuality.get())
@@ -249,6 +287,7 @@ class AudioDetailViewModel(
                     .map { it.mediaStreamUrl }
                     .toSet()
                 val similar = neighbors.await().orEmpty()
+                val languageEditions = editions.await().orEmpty()
                 _state.update { current ->
                     if (generation != loadGeneration) return@update current
                     current.copy(
@@ -256,12 +295,14 @@ class AudioDetailViewModel(
                         rootNodes = catalog.rootNodes,
                         flatTracks = flatTracks,
                         neighbors = similar,
+                        editions = languageEditions,
                     )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 neighbors.cancel()
+                editions.cancel()
                 logcat(LogPriority.ERROR, e) { "Audio detail load failed" }
                 _state.update { current ->
                     if (generation != loadGeneration) return@update current
@@ -269,6 +310,29 @@ class AudioDetailViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Show or hide the similar row. The choice is remembered for the whole session, so opening it
+     * on one work leaves it open on the next — collapsing stays available but is not forced back.
+     */
+    fun toggleNeighbors() {
+        val expanded = !_state.value.neighborsExpanded
+        neighborsExpanded.value = expanded
+        _state.update { it.copy(neighborsExpanded = expanded) }
+    }
+
+    /**
+     * The [Work] behind a language edition. The edition already carries the backend id, so this is
+     * a detail fetch the page would have made anyway, and it arrives with tags and cover filled in.
+     */
+    suspend fun resolveEdition(edition: WorkEdition): Work? = try {
+        api.fetchWork(edition.id)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logcat(LogPriority.WARN, e) { "Audio edition lookup failed" }
+        null
     }
 
     fun toggleInPlaylist(item: AudioPlayItem): Boolean {
@@ -358,12 +422,22 @@ class AudioDetailViewModel(
             .map { it.mediaStreamUrl }
             .toSet()
     }
+
+    companion object {
+        /**
+         * Outside the ViewModel because every details page builds its own instance: expanding the
+         * similar row on one work should not collapse it again on the next.
+         */
+        private val neighborsExpanded = MutableStateFlow(false)
+    }
 }
 
 /**
  * How long the details page waits for the similar row before painting without it.
  *
- * Measured against the live backend: the request answers in about 1.1 s, the same second the track
- * list takes, so this is never reached in normal use — it only bounds a recommender that stalls.
+ * Measured against the live backend: a direct answer takes about 1.1 s, and the translated-edition
+ * path — direct miss, edition lookup, sibling request — lands at about 0.6 s once the detail
+ * response is cached. Both sit in the same second the track list takes, so this is never reached
+ * in normal use; it only bounds a recommender that stalls.
  */
-private const val NEIGHBOR_BUDGET_MS = 2_500L
+private const val NEIGHBOR_BUDGET_MS = 6_000L

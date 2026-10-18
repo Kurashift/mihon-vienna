@@ -5,11 +5,13 @@ import android.util.TypedValue
 import android.view.textclassifier.TextClassifier
 import android.widget.TextView
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -26,12 +28,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAddCheck
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
@@ -52,13 +58,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
@@ -70,8 +83,10 @@ import eu.kanade.presentation.components.TitleSelectionCallback
 import eu.kanade.presentation.components.TitleSelectionController
 import eu.kanade.presentation.components.clearTextSelection
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
+import eu.kanade.tachiyomi.data.audio.TagRef
 import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
+import eu.kanade.tachiyomi.data.audio.WorkEdition
 import eu.kanade.tachiyomi.ui.audio.AudioDetailState
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import tachiyomi.i18n.MR
@@ -103,6 +118,8 @@ fun AudioDetailContent(
     onClickVa: (String) -> Unit,
     onClickTag: (String) -> Unit,
     onClickNeighbor: (Work) -> Unit,
+    onClickEdition: (WorkEdition) -> Unit,
+    onToggleNeighbors: () -> Unit,
 ) {
     var expanded by remember(state.rootNodes) { mutableStateOf(emptySet<String>()) }
     val audioIndexByUrl = remember(state.flatTracks) {
@@ -213,60 +230,77 @@ fun AudioDetailContent(
                 stringRes = MR.strings.audio_no_tracks,
                 modifier = Modifier.padding(contentPadding),
             )
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = contentPadding,
-            ) {
-                item {
-                    WorkHeader(
-                        work = work,
-                        titleSelection = titleSelection,
-                        onTitleSearch = onTitleSearch,
-                        onClickCircle = onClickCircle,
-                        onClickVa = onClickVa,
-                        onClickTag = onClickTag,
-                    )
-                    HorizontalDivider()
-                }
-                items(visibleRows, key = { it.key }) { row ->
-                    if (row.isFolder) {
-                        val folderTracks = state.flatTracks.filter { it.folderPath == row.key }
-                        val allQueued = folderTracks.isNotEmpty() &&
-                            folderTracks.all { it.mediaStreamUrl in playlistUrls }
-                        AudioFolderRow(
-                            title = row.title,
-                            expanded = row.key in expanded,
-                            depth = row.depth,
-                            onClick = {
-                                expanded = if (row.key in expanded) expanded - row.key else expanded + row.key
-                            },
-                            actions = {
-                                PlaylistToggleIcon(
-                                    added = allQueued,
-                                    onClick = { onToggleFolderPlaylist(row.key) },
-                                )
-                            },
+            else -> {
+                val headerAndTracks: LazyListScope.() -> Unit = {
+                    item {
+                        WorkHeader(
+                            work = work,
+                            editions = state.editions,
+                            titleSelection = titleSelection,
+                            onTitleSearch = onTitleSearch,
+                            onClickCircle = onClickCircle,
+                            onClickVa = onClickVa,
+                            onClickTag = onClickTag,
+                            onClickEdition = onClickEdition,
                         )
-                    } else {
-                        val index = audioIndexByUrl[row.audioUrl] ?: -1
-                        AudioTrackRow(
-                            title = row.title,
-                            durationMs = row.durationMs,
-                            depth = row.depth,
-                            onClick = { if (index >= 0) onClickTrack(index) },
-                            actions = {
-                                PlaylistToggleIcon(
-                                    added = row.audioUrl in playlistUrls,
-                                    onClick = {
-                                        state.flatTracks.getOrNull(index)?.let(onTogglePlaylist)
-                                    },
-                                )
-                            },
-                        )
+                        HorizontalDivider()
+                    }
+                    items(visibleRows, key = { it.key }) { row ->
+                        if (row.isFolder) {
+                            val folderTracks = state.flatTracks.filter { it.folderPath == row.key }
+                            val allQueued = folderTracks.isNotEmpty() &&
+                                folderTracks.all { it.mediaStreamUrl in playlistUrls }
+                            AudioFolderRow(
+                                title = row.title,
+                                expanded = row.key in expanded,
+                                depth = row.depth,
+                                onClick = {
+                                    expanded = if (row.key in expanded) expanded - row.key else expanded + row.key
+                                },
+                                actions = {
+                                    PlaylistToggleIcon(
+                                        added = allQueued,
+                                        onClick = { onToggleFolderPlaylist(row.key) },
+                                    )
+                                },
+                            )
+                        } else {
+                            val index = audioIndexByUrl[row.audioUrl] ?: -1
+                            AudioTrackRow(
+                                title = row.title,
+                                durationMs = row.durationMs,
+                                depth = row.depth,
+                                onClick = { if (index >= 0) onClickTrack(index) },
+                                actions = {
+                                    PlaylistToggleIcon(
+                                        added = row.audioUrl in playlistUrls,
+                                        onClick = {
+                                            state.flatTracks.getOrNull(index)?.let(onTogglePlaylist)
+                                        },
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
-                if (state.neighbors.isNotEmpty()) {
-                    item { NeighborRow(state.neighbors, onClickNeighbor) }
+                // One layout for both states: the row is the last item of the list and opens
+                // downward into the cards, so expanding it never moves the folders above it and
+                // there is no layout switch to jump through.
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = contentPadding,
+                ) {
+                    headerAndTracks()
+                    if (state.neighbors.isNotEmpty()) {
+                        item {
+                            NeighborRow(
+                                works = state.neighbors,
+                                expanded = state.neighborsExpanded,
+                                onToggle = onToggleNeighbors,
+                                onClick = onClickNeighbor,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -277,25 +311,59 @@ fun AudioDetailContent(
  * The works the backend considers similar, as one line under the track list.
  *
  * At the bottom on purpose: this page is a work and its tracks, and this row is what a reader who
- * has scrolled to the end is looking for next.
+ * has scrolled to the end is looking for next. It is set off as a block of its own rather than as
+ * more rows of the list: the same divider the header uses opens it, the gap above is wider than any
+ * gap inside the track list, and the label is a quiet caption instead of a second title. Without
+ * those three a short track list left the row reading as its last two entries.
  */
 @Composable
 private fun NeighborRow(
     works: List<Work>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onClick: (Work) -> Unit,
 ) {
-    Column(modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)) {
-        Text(
-            text = stringResource(MR.strings.audio_similar_works),
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+    Column(modifier = Modifier.padding(bottom = 24.dp)) {
+        // A wider gap than any row inside the track list: on a short work this divider is what
+        // separates "the tracks end here" from "what comes next", so it needs room to read as a
+        // break rather than as one more row spacing.
+        HorizontalDivider(modifier = Modifier.padding(top = 48.dp))
+        // The header is the whole control: a row of cards this tall pushed the track list off the
+        // page on first open, so it starts folded and the count says what is behind it.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(works, key = { it.id }) { work ->
-                NeighborCard(work = work, onClick = { onClick(work) })
+            Text(
+                text = stringResource(MR.strings.audio_similar_works),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = works.size.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(bottom = 8.dp),
+            ) {
+                items(works, key = { it.id }) { work ->
+                    NeighborCard(work = work, onClick = { onClick(work) })
+                }
             }
         }
     }
@@ -341,6 +409,77 @@ private fun NeighborCard(work: Work, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 2.dp),
         )
+        if (work.tags.isNotEmpty()) {
+            TwoRowTagFlow(
+                tags = work.tags,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The tags of a neighbour card: two tight rows that scroll sideways as one.
+ *
+ * Laying them out as columns of two left a gap under every short tag, because a column is as wide
+ * as its widest chip. This measures the chips itself and packs each row to its own content, so
+ * the second row starts directly under the first and the pair scrolls together.
+ */
+@Composable
+private fun TwoRowTagFlow(tags: List<TagRef>, modifier: Modifier = Modifier) {
+    val scrollState = rememberScrollState()
+    Layout(
+        content = {
+            tags.forEach { tag ->
+                Text(
+                    text = tag.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                )
+            }
+        },
+        modifier = modifier
+            // Outside the scroll, not inside: onPostScroll runs inner-to-outer, so this connection
+            // only sees the drag after the tag row has reached its edge, and swallowing what is
+            // left there keeps the card row behind from starting to move. Vertical passes through.
+            .nestedScroll(
+                object : NestedScrollConnection {
+                    override fun onPostScroll(
+                        consumed: Offset,
+                        available: Offset,
+                        source: NestedScrollSource,
+                    ): Offset = Offset(available.x, 0f)
+                },
+            )
+            .horizontalScroll(scrollState),
+    ) { measurables, _ ->
+        val placeables = measurables.map { it.measure(Constraints()) }
+        val rows = List(NEIGHBOR_TAG_LINES) { mutableListOf<Placeable>() }
+        placeables.forEachIndexed { index, placeable ->
+            rows[index % NEIGHBOR_TAG_LINES].add(placeable)
+        }
+        val horizontalGap = 4.dp.roundToPx()
+        val verticalGap = 2.dp.roundToPx()
+        val rowWidths = rows.map { row ->
+            row.sumOf { it.width } + horizontalGap * (row.size - 1).coerceAtLeast(0)
+        }
+        val rowHeights = rows.map { row -> row.maxOfOrNull { it.height } ?: 0 }
+        layout(rowWidths.maxOrNull() ?: 0, rowHeights.sum() + verticalGap) {
+            var y = 0
+            rows.forEachIndexed { rowIndex, row ->
+                var x = 0
+                row.forEach { placeable ->
+                    placeable.placeRelative(x, y)
+                    x += placeable.width + horizontalGap
+                }
+                y += rowHeights[rowIndex] + verticalGap
+            }
+        }
     }
 }
 
@@ -350,6 +489,12 @@ private val NEIGHBOR_CARD_WIDTH = 150.dp
 private val NEIGHBOR_CARD_CORNER = 6.dp
 
 private const val NEIGHBOR_TITLE_MAX_LINES = 2
+
+/** Chips stack two deep per scroll column: one row would show a single tag in a 150 dp card. */
+private const val NEIGHBOR_TAG_LINES = 2
+
+/** One line of tag chips: fixed so the scrollable row measures against a known height. */
+private val TAG_ROW_HEIGHT = 28.dp
 
 private data class TreeRow(
     val key: String,
@@ -400,11 +545,13 @@ private fun TrackNode.hasPlayableAudio(): Boolean {
 @Composable
 private fun WorkHeader(
     work: Work,
+    editions: List<WorkEdition>,
     titleSelection: TitleSelectionController,
     onTitleSearch: (String) -> Unit,
     onClickCircle: (String) -> Unit,
     onClickVa: (String) -> Unit,
     onClickTag: (String) -> Unit,
+    onClickEdition: (WorkEdition) -> Unit,
 ) {
     val context = LocalContext.current
     Column(
@@ -441,45 +588,92 @@ private fun WorkHeader(
             }
         }
 
-        if (work.name.isNotBlank()) {
+        // Circle and cast on one line: they are the same kind of fact — who made it — and the two
+        // separate rows cost a line each without telling the reader anything extra.
+        if (work.name.isNotBlank() || work.vas.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            Text(
-                text = work.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.combinedClickable(
-                    onClick = { onClickCircle(work.name) },
-                    onLongClick = { context.copyToClipboard(work.name, work.name) },
-                ),
-            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (work.name.isNotBlank()) {
+                    Text(
+                        text = work.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.combinedClickable(
+                            onClick = { onClickCircle(work.name) },
+                            onLongClick = { context.copyToClipboard(work.name, work.name) },
+                        ),
+                    )
+                }
+                work.vas.forEachIndexed { index, va ->
+                    if (work.name.isNotBlank() || index > 0) {
+                        Text(
+                            text = "·",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = va.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clickable { onClickVa(va.name) },
+                    )
+                }
+            }
         }
 
-        if (work.vas.isNotEmpty()) {
+        // Only works with more than one edition get this row: a single-language work would show
+        // one chip that cannot be tapped, which is noise under every title.
+        if (editions.size > 1) {
             Spacer(Modifier.height(12.dp))
-            Text(
-                text = stringResource(MR.strings.audio_vas),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                work.vas.forEach { va ->
-                    TagChip(va.name, onClick = { onClickVa(va.name) })
+                editions.forEach { edition ->
+                    val isCurrent = edition.isCurrent
+                    Text(
+                        text = edition.lang,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isCurrent) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                if (isCurrent) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                            )
+                            .clickable(enabled = !isCurrent) { onClickEdition(edition) }
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
                 }
             }
         }
 
         if (work.tags.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            FlowRow(
+            // One scrollable line rather than a wrapping block: a work can carry a dozen tags, and
+            // wrapping them pushed the track list down by a second and third row. Same shape as the
+            // tag line along the bottom of a browse card.
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(TAG_ROW_HEIGHT),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                work.tags.take(12).forEach { tag ->
-                    TagChip(tag.name, onClick = { onClickTag(tag.name) })
+                items(work.tags.size) { index ->
+                    TagChip(work.tags[index].name, onClick = { onClickTag(work.tags[index].name) })
                 }
             }
         }

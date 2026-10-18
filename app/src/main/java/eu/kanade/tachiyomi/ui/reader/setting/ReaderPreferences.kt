@@ -44,6 +44,17 @@ class ReaderPreferences(
         65,
     )
 
+    /**
+     * How far along the width the chapter jump pad sits, as a fraction of the distance it can
+     * travel. A fraction rather than a pixel offset is what keeps the spot through a rotation: the
+     * travel changes with the screen, so a pixel offset picked on the wide one would come back
+     * clamped to an edge on the narrow one.
+     */
+    val chapterPadOffsetFraction: Preference<Float> = preferenceStore.getFloat(
+        "reader_chapter_pad_offset_fraction",
+        0f,
+    )
+
     val fullscreen: Preference<Boolean> = preferenceStore.getBoolean("fullscreen", true)
 
     val drawUnderCutout: Preference<Boolean> = preferenceStore.getBoolean("cutout_short", true)

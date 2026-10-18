@@ -12,11 +12,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.audio.AudioHistoryContent
+import eu.kanade.presentation.audio.AudioListeningTab
+import eu.kanade.presentation.audio.AudioListeningTabs
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.audio.AudioHistoryEntry
 import eu.kanade.tachiyomi.data.audio.AudioHistoryGroup
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
-import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,10 +40,27 @@ class AudioHistoryScreen : Screen() {
             viewModel.refresh()
         }
 
+        fun openQueue() {
+            val existing = navigator.items.filterIsInstance<AudioPlaylistScreen>().lastOrNull()
+            if (existing != null) {
+                navigator.popUntil { it === existing }
+            } else {
+                navigator.replace(AudioPlaylistScreen())
+            }
+        }
+
         AudioHistoryContent(
             groups = groups,
             currentWorkId = controller.state.item?.workId,
             bottomBar = { AudioMiniPlayerNavigationBar() },
+            tabRow = {
+                AudioListeningTabs(
+                    selected = AudioListeningTab.HISTORY,
+                    onSelect = { tab ->
+                        if (tab == AudioListeningTab.QUEUE) openQueue()
+                    },
+                )
+            },
             navigateUp = navigator::pop,
             onClear = viewModel::clear,
             onRemoveWork = viewModel::removeWork,
@@ -50,16 +68,25 @@ class AudioHistoryScreen : Screen() {
             onPlayAll = {
                 val entries = viewModel.playAllOrder()
                 if (entries.isNotEmpty()) {
-                    controller.start(entries.map { it.item }, 0, entries.first().positionMs)
+                    controller.start(
+                        entries.map { it.item },
+                        0,
+                        viewModel.resumePosition(entries.first()),
+                    )
                     AudioPlaybackService.start(context)
                 }
             },
-            onAddToPlaylist = viewModel::addToPlaylist,
             onOpenWork = { group ->
                 navigator.push(AudioDetailScreen(group.latest.item.toWorkSnapshot()))
             },
             onClickEntry = { entry ->
-                navigator.push(AudioPlayerScreen(listOf(entry.item), 0, entry.positionMs))
+                navigator.push(
+                    AudioPlayerScreen(
+                        listOf(entry.item),
+                        0,
+                        viewModel.resumePosition(entry),
+                    ),
+                )
             },
         )
     }
@@ -67,7 +94,6 @@ class AudioHistoryScreen : Screen() {
 
 class AudioHistoryViewModel(
     private val historyStore: AudioHistoryStore = Injekt.get(),
-    private val playlistStore: AudioPlaylistStore = Injekt.get(),
 ) : ViewModel() {
 
     private val _groups = MutableStateFlow<List<AudioHistoryGroup>>(emptyList())
@@ -105,7 +131,7 @@ class AudioHistoryViewModel(
     fun playAllOrder(): List<AudioHistoryEntry> =
         _groups.value.sortedByDescending { it.latest.lastPlayedAt }.map { it.latest }
 
-    fun addToPlaylist(entry: AudioHistoryEntry) {
-        playlistStore.addAll(listOf(entry.item))
-    }
+    /** Where the row should pick up, or the start when the track was already finished. */
+    fun resumePosition(entry: AudioHistoryEntry): Long =
+        historyStore.resumePositionMs(entry.item) ?: 0L
 }

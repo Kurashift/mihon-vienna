@@ -128,12 +128,16 @@ fun AudioBrowseContent(
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onSortChange: (AudioSort) -> Unit,
+    /** Turns the subtitle filter on or off; the state is [AudioBrowseState.subtitlesOnly]. */
+    onSetSubtitles: (Boolean) -> Unit,
     onSelectTab: (AudioBrowseTab) -> Unit,
     onLogin: (String, String) -> Unit,
     /** Creates an account and signs into it; the backend answers with a token either way. */
     onRegister: (String, String) -> Unit,
     onClearAuthError: () -> Unit,
-    onLogout: () -> Unit,
+    /** Opens the account page, where the password is changed, the email is managed and the
+     * session is ended. */
+    onOpenAccount: () -> Unit,
     /** Switches the section to another mirror of the audio backend. */
     onSelectBackend: (String) -> Unit,
     onMeasureBackends: () -> Unit,
@@ -282,21 +286,50 @@ fun AudioBrowseContent(
                                     title = stringResource(MR.strings.audio_categories),
                                     onClick = onClickCategories,
                                 ),
+                                // A filter, not a sort. The entry reads as a state — the value
+                                // after the colon is what the list is doing right now — and the
+                                // tap switches it, which is the same shape as the quality entry
+                                // above. No check mark: the menu is as wide as its longest entry,
+                                // and a marker pinned to the right edge of a short one just frames
+                                // the empty space next to it.
+                                //
+                                // Left out of the favourites tab: that list is held locally, so
+                                // there is no request the flag could narrow and the entry would sit
+                                // there doing nothing when tapped.
+                                if (state.tab != AudioBrowseTab.FAVORITES) {
+                                    AppBar.OverflowAction(
+                                        title = stringResource(
+                                            if (state.subtitlesOnly) {
+                                                MR.strings.audio_filter_subtitles
+                                            } else {
+                                                MR.strings.audio_filter_all
+                                            },
+                                        ),
+                                        onClick = { onSetSubtitles(!state.subtitlesOnly) },
+                                    )
+                                } else {
+                                    null
+                                },
                                 audioQualityAction,
                                 AppBar.OverflowAction(
                                     title = stringResource(MR.strings.audio_backend),
                                     onClick = { showBackendSheet = true },
                                 ),
-                                AppBar.OverflowAction(
-                                    title = if (auth.username != null) {
-                                        stringResource(MR.strings.audio_logout)
-                                    } else {
-                                        stringResource(MR.strings.audio_login)
-                                    },
-                                    onClick = {
-                                        if (auth.username != null) onLogout() else showLoginDialog = true
-                                    },
-                                ),
+                                // The account entry is the same slot either way: signing in while
+                                // signed out, the account page while signed in. The toolbar keeps
+                                // one icon (history) and the menu carries everything else, so a
+                                // narrow screen does not lose the title to a row of icons.
+                                if (auth.username == null) {
+                                    AppBar.OverflowAction(
+                                        title = stringResource(MR.strings.audio_login),
+                                        onClick = { showLoginDialog = true },
+                                    )
+                                } else {
+                                    AppBar.OverflowAction(
+                                        title = stringResource(MR.strings.audio_account),
+                                        onClick = onOpenAccount,
+                                    )
+                                },
                             ),
                         )
                     },
@@ -895,6 +928,10 @@ private fun WorkSeparator() {
  * backend exposes both through the same credential pair and answers either with a token — the
  * only difference is which endpoint it posts to. Switching is a text button in the button row, so
  * the panel keeps exactly two fields and never grows a second screen.
+ *
+ * That button is named after the state it leads to — 注册 while signing in, 登录 while registering
+ * — rather than phrasing the choice as a question ("没有账号？注册"). The dialog already says which
+ * half it is in its title, so the question mark only added words to read before the tap.
  */
 @Composable
 internal fun LoginDialog(
@@ -1016,9 +1053,10 @@ internal fun LoginDialog(
                         onClearAuthError()
                     },
                 ) {
+                    // Named after the state it switches to, not the state the user is in.
                     Text(
                         stringResource(
-                            if (register) MR.strings.audio_switch_to_login else MR.strings.audio_switch_to_register,
+                            if (register) MR.strings.audio_login else MR.strings.audio_register,
                         ),
                     )
                 }
@@ -1100,10 +1138,10 @@ internal fun AudioBackendSheet(
 }
 
 /**
- * Shortest name and password the backend accepts (it answers 422 below this). Checked before the
- * round trip so a five-character rule does not cost a request to discover.
+ * Shortest username and password the backend accepts. Shared with the account page's password
+ * dialog so the two cannot drift into disagreeing about what is long enough.
  */
-private const val MIN_AUTH_FIELD_LENGTH = 5
+internal const val MIN_AUTH_FIELD_LENGTH = 5
 
 /** Minimum row height of a sort-sheet entry: the M3 single-line list tile height. */
 private val SORT_OPTION_HEIGHT = 56.dp

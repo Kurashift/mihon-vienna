@@ -8,6 +8,9 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
@@ -37,7 +40,6 @@ import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
-import eu.kanade.tachiyomi.data.manga.RandomDiagnostics
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.SManga
@@ -115,6 +117,7 @@ import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Clock
 import eu.kanade.tachiyomi.source.model.Filter as SourceModelFilter
@@ -155,6 +158,13 @@ class BrowseSourceViewModel(
         private const val CLEAR_HISTORY_BATCH_SIZE = 500
         private const val LOCAL_DIRECTORY_POLL_MILLIS = 30_000L
         private const val LOCAL_REFRESH_CONCURRENCY = 6
+
+        /**
+         * How often a visible local source may quietly rescan the library on its own. The scan runs
+         * in the background while the shelf is already drawn from the cached listing, but it still
+         * reads the whole tree, so returning to the shelf a few times in a row must not repeat it.
+         */
+        private const val LOCAL_QUIET_SYNC_COOLDOWN_MILLIS = 5 * 60_000L
 
         /**
          * The load states of a list that is already complete: nothing is loading, and there is
@@ -250,6 +260,9 @@ class BrowseSourceViewModel(
     private var observedLocalDirectorySignature: String? = null
     private var lastLocalDirectoryCheckAt = Long.MIN_VALUE
     private var visibleSnapshotRefreshJob: Job? = null
+    private var quietChapterSyncJob: Job? = null
+    private var lastQuietChapterSyncAt = Long.MIN_VALUE
+    private val chapterSyncRunning = AtomicBoolean(false)
     private val screenVisible = MutableStateFlow(false)
 
     /**
@@ -506,12 +519,35 @@ class BrowseSourceViewModel(
             // never reloaded behind an open detail page.
             rebuildIfListingChanged()
             refreshVisibleSnapshots()
+            maybeSyncLocalChaptersQuietly()
         }
     }
 
     fun onScreenHidden() {
         screenVisible.value = false
         visibleSnapshotRefreshJob?.cancel()
+    }
+
+    /**
+     * Catches up with chapter files that were copied into the library outside the app.
+     *
+     * The import screen dates a work it adds chapters to, so a work imported there moves to the top
+     * of the import-date order on its own. A file dropped into an existing folder through a file
+     * manager or a sync script only becomes known when the folders are read, and waiting for the
+     * reader to remember the refresh button meant those works kept the date they first appeared at.
+     * Running the same scan on entry closes that gap without a prompt: the shelf is already drawn
+     * from the cached listing, and every folder is read the same way, so an added, removed or
+     * replaced chapter file all become known at the same moment.
+     */
+    private fun maybeSyncLocalChaptersQuietly() {
+        if (source !is LocalSource) return
+        if (quietChapterSyncJob?.isActive == true) return
+        val now = System.currentTimeMillis()
+        if (now - lastQuietChapterSyncAt < LOCAL_QUIET_SYNC_COOLDOWN_MILLIS) return
+        lastQuietChapterSyncAt = now
+        quietChapterSyncJob = viewModelScope.launchIO {
+            refreshAllChaptersInternal(quiet = true)
+        }
     }
 
     private suspend fun refreshVisibleSnapshots(forceDirectoryCheck: Boolean = false) = coroutineScope {
@@ -1386,6 +1422,30 @@ class BrowseSourceViewModel(
                 buildPager(listing, placeholdersEnabled)
             }
         }
+    }
+
+    /**
+     * Watches the process coming back to the foreground.
+     *
+     * The local source only learns about chapter files copied in from outside when it reads the
+     * folders, and doing that on entry to this screen left a gap: a reader who just dropped a file
+     * in comes back to the app wherever they left, often not this screen, and nothing would notice
+     * until they went looking. The moment the app is in front is the moment they expect the change
+     * to be there, so the catch-up hangs off that instead of off a page they have to remember.
+     */
+    private val foregroundSyncObserver: DefaultLifecycleObserver? = if (source is LocalSource) {
+        object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                maybeSyncLocalChaptersQuietly()
+            }
+        }.also { ProcessLifecycleOwner.get().lifecycle.addObserver(it) }
+    } else {
+        null
+    }
+
+    override fun onCleared() {
+        foregroundSyncObserver?.let { ProcessLifecycleOwner.get().lifecycle.removeObserver(it) }
+        super.onCleared()
     }
 
     init {
@@ -2329,33 +2389,47 @@ class BrowseSourceViewModel(
      * Incrementally syncs the chapter list of local manga that changed on disk into the database
      * (new folders, or folders whose mtime changed). Unchanged manga are skipped.
      */
-    fun refreshAllChapters() {
+    fun refreshAllChapters() = refreshAllChaptersInternal(quiet = false)
+
+    /**
+     * [quiet] runs the same scan without the progress state and result notice, for the catch-up on
+     * entry. Both share one guard so a manual refresh and the quiet one can never scan at once.
+     */
+    private fun refreshAllChaptersInternal(quiet: Boolean) {
         val local = source as? LocalSource ?: return
-        if (isRefreshingChapters.value != null) return
-        isRefreshingChapters.value = ChapterRefreshProgress.Checking(0, 0)
+        if (!chapterSyncRunning.compareAndSet(false, true)) return
+        if (!quiet) isRefreshingChapters.value = ChapterRefreshProgress.Checking(0, 0)
         viewModelScope.launchIO {
             try {
-                val scan = local.scanChapterChanges(basePreferences.localSourceSyncMtime.get()) { completed, total ->
-                    isRefreshingChapters.value = ChapterRefreshProgress.Checking(completed, total)
+                val scan = local.scanChapterChanges(
+                    lastSuccessfulBaseDirectoryLastModified = basePreferences.localSourceSyncMtime.get(),
+                    // The catch-up on entry only has to see chapters that appeared, which always
+                    // moves the folder's own mtime. A manual refresh reads every folder so it can
+                    // also settle a chapter file swapped under the same name.
+                    reuseUnchangedFolders = quiet,
+                ) { completed, total ->
+                    if (!quiet) isRefreshingChapters.value = ChapterRefreshProgress.Checking(completed, total)
                 }
                 if (!scan.isReliable) {
                     // Nothing was confirmed about the directory, so this is not evidence that the
                     // shelf changed - only that it could not be read. Raising the banner here made
                     // it claim there were updates to refresh for, in the same breath as the notice
                     // saying the refresh had just failed.
-                    chapterRefreshEvents.send(
-                        ChapterRefreshResult(
-                            changedManga = 0,
-                            newChapters = 0,
-                            storageUnavailable = true,
-                        ),
-                    )
+                    if (!quiet) {
+                        chapterRefreshEvents.send(
+                            ChapterRefreshResult(
+                                changedManga = 0,
+                                newChapters = 0,
+                                storageUnavailable = true,
+                            ),
+                        )
+                    }
                     return@launchIO
                 }
                 relocateMovedLocalChapters(scan)
                 val unsynced = scan.changedMangaUrls
                 val total = unsynced.size
-                if (total > 0) {
+                if (total > 0 && !quiet) {
                     isRefreshingChapters.value = ChapterRefreshProgress.Updating(0, total)
                 }
                 val semaphore = Semaphore(LOCAL_REFRESH_CONCURRENCY)
@@ -2390,10 +2464,12 @@ class BrowseSourceViewModel(
                                     logcat(LogPriority.ERROR, e) { "Failed to refresh local manga: $url" }
                                     0
                                 } finally {
-                                    isRefreshingChapters.value = ChapterRefreshProgress.Updating(
-                                        completed = completed.incrementAndGet(),
-                                        total = total,
-                                    )
+                                    if (!quiet) {
+                                        isRefreshingChapters.value = ChapterRefreshProgress.Updating(
+                                            completed = completed.incrementAndGet(),
+                                            total = total,
+                                        )
+                                    }
                                 }
                             }
                         }.awaitAll().sum()
@@ -2412,15 +2488,18 @@ class BrowseSourceViewModel(
                     localSourceChanged.value = false
                 }
                 val changedDirectoryCount = (scan.changedMangaUrls + scan.removedMangaUrls).size
-                chapterRefreshEvents.send(
-                    ChapterRefreshResult(
-                        changedManga = changedDirectoryCount,
-                        newChapters = totalNew,
-                        storageUnavailable = !listingRefreshed,
-                    ),
-                )
+                if (!quiet) {
+                    chapterRefreshEvents.send(
+                        ChapterRefreshResult(
+                            changedManga = changedDirectoryCount,
+                            newChapters = totalNew,
+                            storageUnavailable = !listingRefreshed,
+                        ),
+                    )
+                }
             } finally {
-                isRefreshingChapters.value = null
+                if (!quiet) isRefreshingChapters.value = null
+                chapterSyncRunning.set(false)
                 refreshVisibleSnapshots(forceDirectoryCheck = true)
             }
         }
@@ -2582,15 +2661,7 @@ class BrowseSourceViewModel(
                 mangaRepository.getMangaByUrlAndSourceId(url, sourceId)?.id
             }
         }
-        val picked = randomSelectionCooldown.pickManga(ids, tag = "browse")
-        RandomDiagnostics.logPoolNames(mangaRepository, ids, "browse")
-        RandomDiagnostics.log(
-            "browse-pick picked=$picked title=${RandomDiagnostics.sanitize(
-                picked?.let {
-                    withIOContext { runCatching { mangaRepository.getMangaById(it) }.getOrNull()?.title }
-                },
-            )}",
-        )
+        val picked = randomSelectionCooldown.pickManga(ids)
         return picked
     }
 
@@ -2605,7 +2676,7 @@ class BrowseSourceViewModel(
             .distinct()
         return RandomGoodDoujinResult(
             hasEntries = markedMangaIds.isNotEmpty(),
-            mangaId = randomSelectionCooldown.pickManga(markedMangaIds, tag = "browse-gooddoujin"),
+            mangaId = randomSelectionCooldown.pickManga(markedMangaIds),
         )
     }
 

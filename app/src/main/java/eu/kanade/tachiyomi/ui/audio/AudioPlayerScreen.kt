@@ -212,6 +212,16 @@ class AudioPlayerScreen(
                     }
                 }
             },
+            onOpenQueue = {
+                // A queue page may already be underneath the player; returning to it keeps the
+                // back stack from growing a second copy every time the button is pressed.
+                val existing = navigator.items.filterIsInstance<AudioPlaylistScreen>().lastOrNull()
+                if (existing != null) {
+                    navigator.popUntil { it === existing }
+                } else {
+                    navigator.push(AudioPlaylistScreen())
+                }
+            },
             onOpenCircle = { name -> onOpenCategory(AudioCategoryField.CIRCLE, name) },
             onTogglePlay = controller::togglePlay,
             onSeek = controller::seekTo,

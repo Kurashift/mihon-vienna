@@ -108,6 +108,29 @@ class UpdateMangaFromRemote(
             fetchWindow = fetchWindow,
             allowEmptyLocalSource = source is tachiyomi.source.local.LocalSource && fetchChapters,
         )
+        // A chapter that did not exist in this work before is the work entering the library again,
+        // and the local source's date sort reads date_added as exactly that moment (see LocalSource's
+        // ordering). The import screen already re-dates a work it adds chapters to; a chapter file
+        // copied into an existing work's folder and picked up by a directory scan - the manual
+        // refresh or the details screen's own change check - came through here instead, so the work
+        // kept the date it first appeared at and a freshly added chapter never moved it to the top
+        // of the import-date list.
+        //
+        // Only an addition counts. A chapter file replaced under its own name adds nothing, and a
+        // deletion is not an import either, so neither re-dates the work.
+        if (source.isLocal() && newChapters.isNotEmpty()) {
+            mangaRepository.update(
+                MangaUpdate(
+                    id = manga.id,
+                    dateAdded = Clock.System.now().toEpochMilliseconds(),
+                ),
+            )
+            // The browse list memoizes each row it has already resolved, so a date written here
+            // would not reach the screen until some unrelated control rebuilt it. The date is what
+            // the import-date ordering reads, so the listing has to be derived again for the work
+            // to actually move.
+            (source as? tachiyomi.source.local.LocalSource)?.invalidateListing()
+        }
         // A local cleanup can drop the row while this update is running; the source work already
         // succeeded, so report it against the entry we started from instead of failing it.
         val updatedManga = mangaRepository.getMangaByIdOrNull(manga.id) ?: manga
