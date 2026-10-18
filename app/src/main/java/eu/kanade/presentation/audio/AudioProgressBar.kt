@@ -97,8 +97,15 @@ internal fun AudioProgressBar(
                 valueAt = { fraction -> (fraction * currentDuration).toLong() },
                 // Drag reports the preview position; the caller only forwards it to the player when
                 // the gesture ends, so scrubbing a long track does not issue a seek per frame.
-                onValue = currentOnSeek,
-                onFinished = currentOnSeekFinished,
+                //
+                // Wrapped in lambdas that read the state, not passed as values: the gesture lives in
+                // a `pointerInput(Unit)` block that runs once, so whatever it captures here is the
+                // first composition's version for the rest of the bar's life. Handing it
+                // `currentOnSeek` froze the caller's lambda — and with it the duration it clamps to,
+                // which is 0 until the player reports one. A page opened before that happened could
+                // then only ever seek to 0: the thumb jumped to the start and the drag looked dead.
+                onValue = { currentOnSeek(it) },
+                onFinished = { currentOnSeekFinished() },
                 onDragFraction = { dragging = it != null },
             ),
     ) {
@@ -183,8 +190,9 @@ internal fun AudioVolumeBar(
                 // Quantised to the system's own steps, so the drag lands on a real volume level
                 // rather than a fraction the platform would have to round anyway.
                 valueAt = { fraction -> (fraction * currentMaximum).roundToInt().coerceIn(0, currentMaximum) },
-                onValue = currentOnValue,
-                onFinished = currentOnValueFinished,
+                // Same wrapping as the progress bar: the gesture captures these once.
+                onValue = { currentOnValue(it) },
+                onFinished = { currentOnValueFinished() },
             ),
     ) {
         Canvas(modifier = Modifier.fillMaxWidth().align(Alignment.CenterStart)) {
