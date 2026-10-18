@@ -1264,7 +1264,6 @@
     <string name="local_delete_stopped">已停止</string>
     <string name="local_delete_stopped_summary">已删除 %1$d 个，%2$d 个未处理</string>
     <string name="local_delete_one">已删除 %1$s</string>
-    <string name="local_delete_exported">已导出</string>
     <string name="local_delete_export_failed">导出失败</string>
     <string name="action_stop">停止</string>
     <string name="action_export_list">导出清单</string>
