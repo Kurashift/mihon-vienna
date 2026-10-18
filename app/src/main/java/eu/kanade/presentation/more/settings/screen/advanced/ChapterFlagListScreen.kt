@@ -205,7 +205,6 @@ class ChapterFlagListScreen(
             selectedMarks.filter { isLocalByMangaId[it.mangaId] == true }
         }
         var pendingDeletion by remember { mutableStateOf<Set<Long>?>(null) }
-        var deletionInProgress by remember { mutableStateOf(false) }
         val deletionService = remember { Injekt.get<LocalEntryDeletionService>() }
         val listTitle = stringResource(type.titleRes)
         // 没选就导出整张清单，选了就只导出选中的那些，省得导出完还得自己删。
@@ -455,37 +454,22 @@ class ChapterFlagListScreen(
                     add(stringResource(MR.strings.local_delete_unmarked_safe))
                     if (groupRemains) add(stringResource(MR.strings.local_delete_group_remains))
                 },
-                inProgress = deletionInProgress,
-                onDismissRequest = { if (!deletionInProgress) pendingDeletion = null },
+                onDismissRequest = { pendingDeletion = null },
                 onConfirm = {
-                    deletionInProgress = true
-                    scope.launch {
-                        val entries = marks.map { mark ->
+                    pendingDeletion = null
+                    // 删掉的篇目其标记已一并清除，marks 流更新后 LaunchedEffect 会自动
+                    // 把失效 id 从选中集合里剔除，这里只需退出多选态。
+                    selectedChapterIds = emptySet()
+                    deletionService.startDeleteChapters(
+                        marks.map { mark ->
                             LocalEntryDeletionService.ChapterTarget(
                                 id = mark.chapterId,
                                 mangaId = mark.mangaId,
                                 mangaTitle = mark.mangaTitle,
                                 name = mark.chapterName,
                             )
-                        }
-                        val result = deletionService.deleteChapters(entries)
-                        deletionInProgress = false
-                        pendingDeletion = null
-                        // 删掉的篇目其标记已一并清除，marks 流更新后 LaunchedEffect 会自动
-                        // 把失效 id 从选中集合里剔除，这里只需退出多选态。
-                        selectedChapterIds = emptySet()
-                        context.toast(
-                            when {
-                                result.deleted == 0 -> context.stringResource(MR.strings.local_delete_failed)
-                                result.failed.isNotEmpty() -> context.stringResource(
-                                    MR.strings.local_delete_partial,
-                                    result.deleted,
-                                    result.failed.size,
-                                )
-                                else -> context.stringResource(MR.strings.local_delete_success, result.deleted)
-                            },
-                        )
-                    }
+                        },
+                    )
                 },
             )
         }

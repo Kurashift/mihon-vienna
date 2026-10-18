@@ -40,26 +40,23 @@ fun DeleteLocalEntriesDialog(
     entryNames: List<String>,
     subtitle: String? = null,
     notices: List<String> = emptyList(),
-    inProgress: Boolean = false,
     onDismissRequest: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = { if (!inProgress) onDismissRequest() },
+        onDismissRequest = onDismissRequest,
         dismissButton = {
-            TextButton(enabled = !inProgress, onClick = onDismissRequest) {
+            TextButton(onClick = onDismissRequest) {
                 Text(text = stringResource(MR.strings.action_cancel))
             }
         },
         confirmButton = {
             TextButton(
-                enabled = !inProgress && entryNames.isNotEmpty(),
+                enabled = entryNames.isNotEmpty(),
                 onClick = onConfirm,
             ) {
                 Text(
-                    text = stringResource(
-                        if (inProgress) MR.strings.local_delete_progress else MR.strings.action_delete,
-                    ),
+                    text = stringResource(MR.strings.action_delete),
                     color = MaterialTheme.colorScheme.error,
                 )
             }

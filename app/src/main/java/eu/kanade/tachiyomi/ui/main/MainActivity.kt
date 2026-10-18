@@ -84,6 +84,7 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.BottomNavFabLift
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
+import eu.kanade.presentation.components.LocalDeletionHost
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -277,6 +278,11 @@ class MainActivity : BaseActivity() {
                                     .background(MaterialTheme.colorScheme.surfaceContainer),
                             )
                         }
+
+                        // Local deletes run on a scope that outlives the page, so their progress
+                        // and receipt are hosted here rather than inside the screen that started
+                        // them.
+                        LocalDeletionHost()
                     }
                 }
 

@@ -184,25 +184,6 @@ class MangaScreen(
             }
         }
 
-        LaunchedEffect(Unit) {
-            viewModel.deleteCompleted.collect { result ->
-                val message = when {
-                    result.deleted == 0 -> context.stringResource(MR.strings.local_delete_failed)
-                    result.failed > 0 -> context.stringResource(
-                        MR.strings.local_delete_partial,
-                        result.deleted,
-                        result.failed,
-                    )
-                    else -> context.stringResource(MR.strings.local_delete_success, result.deleted)
-                }
-                context.toast(message)
-                // The manga is gone from disk, so there is nothing left to show here.
-                if (result.mangaDeleted && result.failed == 0) {
-                    navigator.pop()
-                }
-            }
-        }
-
         // Quick audio (moan track) sheet opened from the toolbar shortcut.
         var showAudioSheet by remember { mutableStateOf(false) }
         var showChapterTitleTranslationDialog by remember { mutableStateOf(false) }

@@ -30,11 +30,14 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.presentation.category.components.writableCategoryIds
 import eu.kanade.tachiyomi.data.cache.CoverCache
+import eu.kanade.tachiyomi.data.local.LocalDeletionReport
+import eu.kanade.tachiyomi.data.local.LocalDeletionUnit
 import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdateStore
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
+import eu.kanade.tachiyomi.data.manga.RandomDiagnostics
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.SManga
@@ -235,6 +238,8 @@ class BrowseSourceViewModel(
         if (!getIncognitoState.await(source.id)) {
             sourcePreferences.lastUsedSource.set(source.id)
         }
+
+        observeLocalDeletions()
     }
 
     /**
@@ -2217,37 +2222,45 @@ class BrowseSourceViewModel(
         }
     }
 
-    /** Deletes the selected works' directories one by one, reporting whatever could not go. */
+    /**
+     * Deletes the selected works' directories in one run.
+     *
+     * The run belongs to the deletion service, so leaving the page does not interrupt it. What
+     * lands in [favoriteIdsInternal] follows the receipt: only the works that really went are
+     * dropped from the "already in library" set, never the ones that failed.
+     */
     fun deleteSelectedLocalManga() {
         val selected = selectionInternal.value
         if (selected.isEmpty()) return
+        clearSelection()
         viewModelScope.launchNonCancellable {
-            val failed = mutableListOf<String>()
-            var deleted = 0
-            selected.forEach { mangaId ->
+            val entries = selected.mapNotNull { mangaId ->
                 val manga = runCatching { mangaRepository.getMangaByIdOrNull(mangaId) }.getOrNull()
-                    ?: return@forEach
-                val result = deletionService.deleteManga(
-                    LocalEntryDeletionService.MangaEntry(
-                        id = manga.id,
-                        url = manga.url,
-                        title = manga.title,
-                        manga = manga,
-                    ),
+                    ?: return@mapNotNull null
+                LocalEntryDeletionService.MangaEntry(
+                    id = manga.id,
+                    url = manga.url,
+                    title = manga.title,
+                    manga = manga,
                 )
-                deleted += result.deleted
-                failed += result.failed
             }
-            favoriteIdsInternal.update { it - selected }
-            clearSelection()
-            _deleteCompleted.emit(LocalDeleteCompleted(deleted = deleted, failed = failed))
+            deletionService.startDeleteMangas(entries)
         }
     }
 
-    data class LocalDeleteCompleted(val deleted: Int, val failed: List<String>)
+    /** Fires once per finished local delete run; the screen refreshes its list from it. */
+    val localDeletionCompleted: Flow<LocalDeletionReport> =
+        deletionService.lastReport.filterNotNull()
 
-    private val _deleteCompleted = MutableSharedFlow<LocalDeleteCompleted>(extraBufferCapacity = 1)
-    val deleteCompleted: Flow<LocalDeleteCompleted> = _deleteCompleted.asSharedFlow()
+    private fun observeLocalDeletions() {
+        viewModelScope.launch {
+            deletionService.lastReport.filterNotNull().collect { report ->
+                if (report.unit == LocalDeletionUnit.COLLECTION) {
+                    favoriteIdsInternal.update { it - report.deletedMangaIds }
+                }
+            }
+        }
+    }
 
     /**
      * Get user categories.
@@ -2569,7 +2582,16 @@ class BrowseSourceViewModel(
                 mangaRepository.getMangaByUrlAndSourceId(url, sourceId)?.id
             }
         }
-        return randomSelectionCooldown.pickManga(ids)
+        val picked = randomSelectionCooldown.pickManga(ids, tag = "browse")
+        RandomDiagnostics.logPoolNames(mangaRepository, ids, "browse")
+        RandomDiagnostics.log(
+            "browse-pick picked=$picked title=${RandomDiagnostics.sanitize(
+                picked?.let {
+                    withIOContext { runCatching { mangaRepository.getMangaById(it) }.getOrNull()?.title }
+                },
+            )}",
+        )
+        return picked
     }
 
     /**
@@ -2583,7 +2605,7 @@ class BrowseSourceViewModel(
             .distinct()
         return RandomGoodDoujinResult(
             hasEntries = markedMangaIds.isNotEmpty(),
-            mangaId = randomSelectionCooldown.pickManga(markedMangaIds),
+            mangaId = randomSelectionCooldown.pickManga(markedMangaIds, tag = "browse-gooddoujin"),
         )
     }
 

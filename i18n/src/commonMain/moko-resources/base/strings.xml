@@ -1404,11 +1404,21 @@
     <string name="local_delete_unmarked_safe">Unmarked chapters will not be affected.</string>
     <string name="local_delete_group_remains">This manga still has non-local entries and will remain in the list after deletion.</string>
     <string name="list_and_more">…and %1$d more</string>
-    <string name="local_delete_progress">Deleting local files…</string>
-    <string name="local_delete_success">Deleted %1$d item(s)</string>
-    <string name="local_delete_partial">Deleted %1$d item(s), %2$d failed</string>
-    <string name="local_delete_failed">Deletion failed; the file may be in use or corrupted</string>
-    <string name="local_delete_unavailable">Local directory unavailable; nothing was deleted</string>
+    <string name="local_delete_progress">Deleting</string>
+    <string name="local_delete_counting">Counting files</string>
+    <string name="local_delete_partial">Deleted %1$d, %2$d failed</string>
+    <string name="local_delete_failed">Delete failed</string>
+    <string name="local_delete_unavailable">Local folder unavailable</string>
+    <string name="local_delete_done_chapters">Deleted %1$d chapter(s)</string>
+    <string name="local_delete_done_collections">Deleted %1$d collection(s)</string>
+    <string name="local_delete_stopped">Stopped</string>
+    <string name="local_delete_stopped_summary">Deleted %1$d, %2$d skipped</string>
+    <string name="local_delete_one">Deleted %1$s</string>
+    <string name="local_delete_exported">Exported</string>
+    <string name="local_delete_export_failed">Export failed</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_export_list">Export list</string>
+    <string name="action_done">Done</string>
 
     <!-- Chapter read actions. "Before"/"after" follow the order the chapters are listed in,
          not the calendar, so the wording stays right under any sort and in the grid.

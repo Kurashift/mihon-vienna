@@ -63,6 +63,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -152,19 +153,9 @@ class MangaViewModel(
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateViewModel<MangaViewModel.State>(State.Loading) {
 
-    private val _deleteCompleted = MutableSharedFlow<DeleteCompleted>(extraBufferCapacity = 1)
-    val deleteCompleted: Flow<DeleteCompleted> = _deleteCompleted.asSharedFlow()
-
     /** Emitted when the row behind [mangaId] is already gone, so the screen can go back. */
     private val _mangaMissing = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val mangaMissing: Flow<Unit> = _mangaMissing.asSharedFlow()
-
-    /** Outcome of a local file deletion, surfaced once so the screen can report and navigate. */
-    data class DeleteCompleted(
-        val deleted: Int,
-        val failed: Int,
-        val mangaDeleted: Boolean,
-    )
 
     companion object {
         val MANGA_ID_KEY = CreationExtras.Key<Long>()
@@ -252,6 +243,18 @@ class MangaViewModel(
     }
 
     init {
+        // A local delete runs on the service's own scope, so the receipt - not this ViewModel's
+        // coroutine - is what says the row is gone. Watching it keeps the back navigation working
+        // even when the run outlives the page that started it.
+        viewModelScope.launchIO {
+            deletionService.lastReport.filterNotNull().collect { report ->
+                val current = state.value as? State.Success ?: return@collect
+                if (current.manga.id in report.deletedMangaIds) {
+                    _mangaMissing.tryEmit(Unit)
+                }
+            }
+        }
+
         // Both marks describe this screen: they badge the chapter rows, and the display scope the
         // reader arrived with narrows the list to one of them. Read together so a scope switch and
         // the marks it reads can never be a frame apart.
@@ -1154,31 +1157,26 @@ class MangaViewModel(
 
     /**
      * Erases the local files behind the given chapters and drops their database rows.
+     *
+     * The run belongs to the deletion service, not to this screen: leaving the page or rotating
+     * must not interrupt it, and only the stop button in the progress dialog ends it early. The
+     * receipt drives the toast or the result dialog, and [mangaMissing] takes the screen away when
+     * the last chapter took the row with it.
      */
     fun deleteLocalChapters(chapters: List<Chapter>) {
         val state = successState ?: return
-        viewModelScope.launchNonCancellable {
-            dismissDialog()
-            val entries = chapters.map { chapter ->
+        dismissDialog()
+        toggleAllSelection(false)
+        deletionService.startDeleteChapters(
+            chapters.map { chapter ->
                 LocalEntryDeletionService.ChapterTarget(
                     id = chapter.id,
                     mangaId = state.manga.id,
                     mangaTitle = state.manga.title,
                     name = chapter.name,
                 )
-            }
-            val result = deletionService.deleteChapters(entries)
-            toggleAllSelection(false)
-            _deleteCompleted.emit(
-                DeleteCompleted(
-                    deleted = result.deleted,
-                    failed = result.failed.size,
-                    // Deleting every chapter empties the directory, which takes the manga row
-                    // with it. The screen has nothing left to show then, so it has to leave.
-                    mangaDeleted = state.manga.id in result.deletedMangaIds,
-                ),
-            )
-        }
+            },
+        )
     }
 
     /**
@@ -1187,24 +1185,17 @@ class MangaViewModel(
      */
     fun deleteLocalManga() {
         val state = successState ?: return
-        viewModelScope.launchNonCancellable {
-            dismissDialog()
-            val result = deletionService.deleteManga(
+        dismissDialog()
+        deletionService.startDeleteMangas(
+            listOf(
                 LocalEntryDeletionService.MangaEntry(
                     id = state.manga.id,
                     url = state.manga.url,
                     title = state.manga.title,
                     manga = state.manga,
                 ),
-            )
-            _deleteCompleted.emit(
-                DeleteCompleted(
-                    deleted = result.deleted,
-                    failed = result.failed.size,
-                    mangaDeleted = state.manga.id in result.deletedMangaIds,
-                ),
-            )
-        }
+            ),
+        )
     }
 
     private fun downloadNewChapters(chapters: List<Chapter>) {

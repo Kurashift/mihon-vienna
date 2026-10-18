@@ -1062,20 +1062,10 @@ data class BrowseSourceScreen(
         }
 
         LaunchedEffect(viewModel) {
-            viewModel.deleteCompleted.collect { result ->
+            viewModel.localDeletionCompleted.collect {
                 // The rows are gone from disk, so the served pages still hold them; refresh so the
                 // deleted cards disappear without leaving and re-entering the tab.
                 currentMangaList.refresh()
-                val message = when {
-                    result.deleted == 0 -> context.stringResource(MR.strings.local_delete_failed)
-                    result.failed.isNotEmpty() -> context.stringResource(
-                        MR.strings.local_delete_partial,
-                        result.deleted,
-                        result.failed.size,
-                    )
-                    else -> context.stringResource(MR.strings.local_delete_success, result.deleted)
-                }
-                snackbarHostState.showSnackbarReplacing(message)
             }
         }
 
