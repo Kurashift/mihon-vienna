@@ -348,6 +348,10 @@
     <string name="update_install_permission">允许「安装未知应用」后才能安装。</string>
     <string name="update_install_grant">去允许</string>
     <string name="update_install_downgrade">版本 %1$d 低于已装的 %2$d，不能降级安装。</string>
+    <string name="update_download_stop">停止下载</string>
+    <string name="update_notification_downloading">正在下载…</string>
+    <string name="update_notification_ready">已下载，点按安装</string>
+    <string name="channel_app_update">应用更新</string>
     <string name="information_no_downloads">还没有下载</string>
     <string name="information_no_recent">最近还没更新</string>
     <string name="information_no_recent_manga">最近还没看过</string>

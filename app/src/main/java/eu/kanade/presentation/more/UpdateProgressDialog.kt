@@ -31,7 +31,9 @@ fun UpdateProgressDialog(
     val primaryLabel = updatePrimaryLabel(progress)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        // Same rule as the start-up prompt: a stray tap outside must not throw away a download in
+        // flight. 停止下载 is the way out, and it closes the dialog.
+        onDismissRequest = { if (!busy) onDismiss() },
         title = {
             Text(text = stringResource(MR.strings.update_install_title, versionName))
         },
@@ -50,7 +52,7 @@ fun UpdateProgressDialog(
                 }
                 when {
                     busy -> TextButton(onClick = onCancel) {
-                        Text(stringResource(MR.strings.action_cancel))
+                        Text(stringResource(MR.strings.update_download_stop))
                     }
                     primaryLabel != null -> TextButton(onClick = onPrimary) {
                         Text(primaryLabel)

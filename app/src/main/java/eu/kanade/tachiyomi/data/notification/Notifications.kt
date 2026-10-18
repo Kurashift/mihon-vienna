@@ -78,6 +78,15 @@ object Notifications {
     const val CHANNEL_AUDIO_PLAYBACK = "audio_playback_channel_v2"
     const val ID_AUDIO_PLAYBACK = -601
 
+    /**
+     * Notification channel and id used by the app-update download service.
+     *
+     * Low importance: the download is one the reader started and is waiting on, so it must not
+     * buzz, but the progress and the 停止 action have to stay reachable from the shade.
+     */
+    const val CHANNEL_APP_UPDATE = "app_update_channel"
+    const val ID_APP_UPDATE = -701
+
     private val deprecatedChannels = listOf(
         "downloader_channel",
         "downloader_complete_channel",
@@ -170,6 +179,10 @@ object Notifications {
                 },
                 buildNotificationChannel(CHANNEL_AUDIO_PLAYBACK, IMPORTANCE_DEFAULT) {
                     setName(context.stringResource(MR.strings.audio_title))
+                    setShowBadge(false)
+                },
+                buildNotificationChannel(CHANNEL_APP_UPDATE, IMPORTANCE_LOW) {
+                    setName(context.stringResource(MR.strings.channel_app_update))
                     setShowBadge(false)
                 },
                 buildNotificationChannel(CHANNEL_LOCAL_TRANSFER_PROGRESS, IMPORTANCE_LOW) {

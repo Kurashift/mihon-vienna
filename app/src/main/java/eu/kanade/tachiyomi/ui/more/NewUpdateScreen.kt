@@ -2,15 +2,16 @@ package eu.kanade.tachiyomi.ui.more
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.more.NewUpdateScreen
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.data.updater.AppUpdateDownloadService
+import eu.kanade.tachiyomi.data.updater.AppUpdateDownloadState
 import eu.kanade.tachiyomi.data.updater.AppUpdateProgress
-import eu.kanade.tachiyomi.data.updater.AppUpdateSession
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import tachiyomi.domain.release.model.Release
 
@@ -28,29 +29,29 @@ class NewUpdateScreen(
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
-        val scope = rememberCoroutineScope()
-        val session = remember { AppUpdateSession(context, scope) }
+        val progress by AppUpdateDownloadState.progress.collectAsState()
 
-        // Once the system installer has the file this dialog has nothing left to say, and staying
-        // on top of the install sheet would hide it.
-        LaunchedEffect(session.progress) {
-            if (session.progress == AppUpdateProgress.Installing) {
-                navigator.pop()
+        // A finished download goes straight to the installer, so the reader does not have to find
+        // the second button after waiting.
+        LaunchedEffect(progress) {
+            if (progress == AppUpdateProgress.Ready) {
+                AppUpdateDownloadState.readyApk?.let { AppUpdateDownloadState.install(context, it) }
             }
         }
 
         NewUpdateScreen(
             versionName = release.version,
             changelogInfo = release.info,
-            progress = session.progress,
-            onDownload = { session.start(release) },
-            onCancelDownload = session::cancel,
-            onDismissDownload = session::discard,
+            progress = progress,
+            onDownload = { AppUpdateDownloadState.startOrInstall(context, release) },
+            onCancelDownload = {
+                AppUpdateDownloadService.stop(context)
+                AppUpdateDownloadState.clear()
+            },
+            onDismissDownload = AppUpdateDownloadState::clear,
             onOpenInBrowser = { context.openInBrowser(release.releaseLink) },
             onRejectUpdate = {
-                // Closing the notes drops whatever the download left in the cache: nobody is going
-                // to install a package they walked away from.
-                session.discard()
+                AppUpdateDownloadState.clear()
                 navigator.pop()
             },
         )

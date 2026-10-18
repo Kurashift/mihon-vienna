@@ -282,6 +282,13 @@
             android:name="android.webkit.WebView.MetricsOptOut"
             android:value="true" />
 
+        <!-- Runs the in-app update download, so leaving the app or locking the screen does not
+             end it. dataSync is the type that matches "fetch a file for the user". -->
+        <service
+            android:name=".data.updater.AppUpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
     </application>
 
 </manifest>

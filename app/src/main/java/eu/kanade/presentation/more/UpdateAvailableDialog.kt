@@ -50,7 +50,10 @@ fun UpdateAvailableDialog(
     val primaryLabel = updatePrimaryLabel(progress)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        // Tapping outside or pressing back must not end a download: losing 27 MB to a stray tap is
+        // exactly what the reader would not forgive. While bytes are moving, 停止下载 is the only
+        // way out — and it closes the dialog outright.
+        onDismissRequest = { if (!busy) onDismiss() },
         title = {
             Text(text = stringResource(MR.strings.update_available_title))
         },
@@ -88,9 +91,9 @@ fun UpdateAvailableDialog(
                     }
                 }
                 when {
-                    // While bytes are moving the only sensible answer is to stop them.
+                    // While bytes are moving the only way out is an explicit stop.
                     busy -> TextButton(onClick = onCancel) {
-                        Text(stringResource(MR.strings.action_cancel))
+                        Text(stringResource(MR.strings.update_download_stop))
                     }
                     // A package older than the installed build cannot be installed at all, so there
                     // is no primary action to offer — only the way out.

@@ -200,6 +200,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ## [v2.3.6] - 2026-10-19
 ### Added
 - App updates: the start-up prompt downloads and installs the release itself. 下载并安装 fetches the APK for this device's ABI with the app's own client (27.0 MB for arm64), compares it against the SHA-256 GitHub publishes for that asset, and hands it to the system installer; a mismatch deletes the file instead of handing over a broken package. The verified APK stays on disk, so the one-time "allow installs" detour costs a tap rather than a second download, and the download can be cancelled from the dialog. 更新日志 moved from the confirm button into the dialog body, since the confirm slot is the download now
+- App updates: the download runs in a foreground service, so leaving the app, switching tasks or locking the screen no longer ends it. The notification carries the progress and a 停止 action, and a finished download opens the installer from its own notification — the reader who walked away does not have to find their way back to a dialog
+- App updates: while bytes are moving the dialog cannot be dismissed by tapping outside it or pressing back; 停止下载 is the only way out, and it closes the dialog outright. A stray tap used to throw away the download and the megabytes already spent
+- App updates: a link that stops delivering for twenty seconds now fails with a retry instead of spinning indefinitely. The read timeout was sixty seconds and never fired while a slow link kept dribbling a byte at a time
 ### Changed
 - Audio player: the queue button moved from the top bar into the transport row, to the right of the subtitle toggle, where repeat and the sleep timer already are. The top bar keeps one icon for the favourite
 - Audio detail: the similar-works header no longer prints a count beside its label. The backend always sends the same 20 works, so the number never told the reader anything the row did not
