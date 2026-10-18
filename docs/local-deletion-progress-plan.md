@@ -15,13 +15,13 @@
 两个维度正交，不按「删的是篇目还是合集」分：
 
 - **要不要等**：任务超过 500 ms → 进度窗。与条数无关，删一个几千文件的合集照样出现。
-- **要不要核对**：有失败、被停止、删了 ≥2 条、目录不可用 → 结果窗。与耗时无关。
+- **要不要核对**：删除一结束就出结果窗，单条也一样——「导出清单」只能挂在窗口上，toast 一消失入口就没了。
 
 | 情形 | 进度窗 | 结果 |
 | --- | --- | --- |
 | 目标 0 条 | 无 | 无 |
-| 1 条，成功，< 500 ms | 无 | toast 带名字 |
-| 1 条，成功，≥ 500 ms | 出现 | toast 带名字 |
+| 1 条，成功，< 500 ms | 无 | 结果窗「已删除 第01话」 |
+| 1 条，成功，≥ 500 ms | 出现 | 结果窗「已删除 第01话」 |
 | 1 条，失败 | 可能无 | 结果窗「删除失败」 |
 | 1 条，停止 | 出现 | 结果窗「已停止」 |
 | ≥ 2 条，全部成功，< 500 ms | 无 | 结果窗「已删除 N 个」 |
@@ -29,7 +29,7 @@
 | ≥ 2 条，部分失败 | ≥ 500 ms 出现 | 结果窗「已删除 N 个，M 个失败」 |
 | ≥ 2 条，全部失败 | 可能无 | 结果窗「删除失败」 |
 
-单条目停止要弹窗：停止是用户主动干预，此时他需要看到已删多少、还剩多少，并拿到清单。单条目失败同理，否则失败与成功只差一句 toast。
+单条目也弹窗的代价是每次删除多一次关闭动作。用「新删除发起时清掉上一个报告」抵消：连续删时旧窗自己消失，只有真想看清单时才停下来。
 
 进度窗延迟 500 ms 出现，20 ms 完成的删除不闪窗。计时起点存在 service 里，旋转后不重新计。
 
@@ -65,7 +65,7 @@
 | 部分失败 | `local_delete_partial`（改） | Deleted %1$d, %2$d failed | 已删除 %1$d 个，%2$d 个失败 | 已刪除 %1$d 個，%2$d 個失敗 |
 | 停止标题 | `local_delete_stopped` | Stopped | 已停止 | 已停止 |
 | 停止正文 | `local_delete_stopped_summary` | Deleted %1$d, %2$d skipped | 已删除 %1$d 个，%2$d 个未处理 | 已刪除 %1$d 個，%2$d 個未處理 |
-| 单条 toast | `local_delete_one` | Deleted %1$s | 已删除 %1$s | 已刪除 %1$s |
+| 单条标题 | `local_delete_one` | Deleted %1$s | 已删除 %1$s | 已刪除 %1$s |
 | 导出 | `action_export_list` | Export list | 导出清单 | 匯出清單 |
 | 关闭 | `action_done` | Done | 完成 | 完成 |
 | 失败 | `local_delete_failed`（改） | Delete failed | 删除失败 | 刪除失敗 |
@@ -73,7 +73,7 @@
 
 删掉现有 `local_delete_failed` 与 `local_delete_unavailable` 后半句解释。文件被占用、目录不可用这些情况，用户点「导出清单」能看到具体哪几个没删掉，弹窗里不必再讲一遍。
 
-结果弹窗只有标题、可选一行数量、两个按钮。点弹窗外空白等同「完成」。
+结果弹窗只有标题、可选一行数量、两个按钮。单条时标题就是条目名，不再另出 toast。点弹窗外空白等同「完成」。
 
 ## 状态与数据
 
@@ -143,7 +143,7 @@ CSV，UTF-8 + BOM，表头固定中文，与 `ChapterTitleTranslationCodec` 的 
 
 - `data/local/LocalEntryDeletionService.kt`：进度、停止、报告、枚举累加、批量合集删除
 - `data/local/LocalDeletionReport.kt`（新）：数据类与 CSV 编码
-- `presentation/components/LocalDeletionHost.kt`（新）：进度窗、结果窗、单条 toast、导出 launcher
+- `presentation/components/LocalDeletionHost.kt`（新）：进度窗、结果窗、导出 launcher
 - `ui/main/MainActivity.kt`：根 `Box` 挂 host
 - `MangaViewModel` / `BrowseSourceViewModel` / `ChapterFlagListScreen`：改为发起任务，删掉各自的 `deleteCompleted` 事件
 - `MangaScreen` / `BrowseSourceScreen`：删掉结果 toast 与 snackbar，改由 host 统一；详情页按 `deletedMangaIds` 退出，来源页按报告刷新列表
@@ -153,4 +153,4 @@ CSV，UTF-8 + BOM，表头固定中文，与 `ChapterTitleTranslationCodec` 的 
 
 ## 验证
 
-`:app:compileViennaKotlin` + `:app:testDebugUnitTest`；设备装 `vienna` 后由用户操作：单条删一篇目看 toast 名字、多选删几部看进度与停止、停止后导出清单核对行数、删除过程中旋转屏幕确认不中断。
+`:app:compileViennaKotlin` + `:app:testDebugUnitTest`；设备装 `vienna` 后由用户操作：单条删一篇目看结果窗标题与导出入口、多选删几部看进度与停止、停止后导出清单核对行数、删除过程中旋转屏幕确认不中断。

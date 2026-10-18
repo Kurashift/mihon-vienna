@@ -1103,7 +1103,6 @@
     <string name="local_delete_stopped">已停止</string>
     <string name="local_delete_stopped_summary">已刪除 %1$d 個，%2$d 個未處理</string>
     <string name="local_delete_one">已刪除 %1$s</string>
-    <string name="local_delete_exported">已匯出</string>
     <string name="local_delete_export_failed">匯出失敗</string>
     <string name="action_stop">停止</string>
     <string name="action_export_list">匯出清單</string>

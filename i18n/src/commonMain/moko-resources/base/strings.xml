@@ -1401,7 +1401,6 @@
     <string name="local_delete_stopped">Stopped</string>
     <string name="local_delete_stopped_summary">Deleted %1$d, %2$d skipped</string>
     <string name="local_delete_one">Deleted %1$s</string>
-    <string name="local_delete_exported">Exported</string>
     <string name="local_delete_export_failed">Export failed</string>
     <string name="action_stop">Stop</string>
     <string name="action_export_list">Export list</string>

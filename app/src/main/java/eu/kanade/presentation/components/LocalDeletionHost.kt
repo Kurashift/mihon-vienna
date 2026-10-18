@@ -75,7 +75,6 @@ fun LocalDeletionHost() {
             }
             if (written) {
                 service.clearReport()
-                context.toast(MR.strings.local_delete_exported)
             } else {
                 context.toast(MR.strings.local_delete_export_failed)
             }
@@ -90,20 +89,10 @@ fun LocalDeletionHost() {
         )
     }
 
+    // Every finished run gets the dialog, one entry or fifty: the export entry lives there, and a
+    // toast would take it away before it could be used.
     val currentReport = report
-    // One entry, all of it gone, nobody pressed stop: the name is the whole receipt.
-    val singleSuccess = currentReport?.takeIf { it.isSingleSuccess }
-    val singleText = singleSuccess?.let {
-        stringResource(MR.strings.local_delete_one, it.entries.first().name)
-    }
-    LaunchedEffect(singleSuccess?.id) {
-        if (singleText != null) {
-            context.toast(singleText)
-            service.clearReport()
-        }
-    }
-
-    if (currentReport != null && singleSuccess == null) {
+    if (currentReport != null) {
         LocalDeletionResultDialog(
             report = currentReport,
             onExport = { exportLauncher.launch(exportFileName()) },
@@ -167,6 +156,8 @@ private fun LocalDeletionResultDialog(
     val title = when {
         report.cancelled -> stringResource(MR.strings.local_delete_stopped)
         report.entries.isEmpty() -> stringResource(MR.strings.local_delete_unavailable)
+        // A single entry names itself; there is nothing to summarise.
+        report.isSingleSuccess -> stringResource(MR.strings.local_delete_one, report.entries.first().name)
         report.deletedCount == 0 -> stringResource(MR.strings.local_delete_failed)
         report.failedCount > 0 -> stringResource(
             MR.strings.local_delete_partial,

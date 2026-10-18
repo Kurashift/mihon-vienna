@@ -120,6 +120,9 @@ class LocalEntryDeletionService(
         synchronized(taskLock) {
             if (taskJob?.isActive == true) return
             stopRequested.set(false)
+            // A new run replaces the previous receipt instead of stacking a second dialog behind
+            // the one still on screen.
+            _lastReport.value = null
             taskJob = scope.launch {
                 try {
                     block()
@@ -370,6 +373,9 @@ class LocalEntryDeletionService(
         skippedCount: Int,
         deletedMangaIds: Set<Long> = emptySet(),
     ) {
+        // Clear the progress first: the result dialog and the progress dialog must never be on
+        // screen in the same frame.
+        _progress.value = null
         _lastReport.value = LocalDeletionReport(
             id = reportCounter.incrementAndGet(),
             unit = unit,
