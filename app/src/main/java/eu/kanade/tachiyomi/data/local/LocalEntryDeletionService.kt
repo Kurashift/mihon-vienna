@@ -4,8 +4,15 @@ import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -21,12 +28,19 @@ import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.LocalSourceFileSystem
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Deletes local manga files from disk and drops every trace of them from the database.
  *
  * A single service backs every delete entry point so the disk/database ordering stays
  * identical no matter where the action was triggered from.
+ *
+ * Runs on its own scope rather than the caller's: rotating the screen or leaving the page must not
+ * interrupt a delete that has already started, and only [requestStop] ends one early. Callers start
+ * a run with [startDeleteChapters] / [startDeleteMangas] and read [progress] and [lastReport];
+ * the suspend entry points stay for tests and for code that really wants to wait.
  */
 class LocalEntryDeletionService(
     private val fileSystem: LocalSourceFileSystem = Injekt.get(),
@@ -39,6 +53,31 @@ class LocalEntryDeletionService(
 ) {
 
     private val mutex = Mutex()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val taskLock = Any()
+    private var taskJob: Job? = null
+    private val stopRequested = AtomicBoolean(false)
+    private val reportCounter = AtomicLong(0)
+
+    private val _progress = MutableStateFlow<Progress?>(null)
+    val progress: StateFlow<Progress?> = _progress.asStateFlow()
+
+    private val _lastReport = MutableStateFlow<LocalDeletionReport?>(null)
+    val lastReport: StateFlow<LocalDeletionReport?> = _lastReport.asStateFlow()
+
+    /**
+     * How far a running delete has got.
+     *
+     * [Phase.COUNTING] has no total yet: the files are being walked to learn how many there are,
+     * and the bar is indeterminate until that finishes.
+     */
+    data class Progress(
+        val phase: Phase,
+        val done: Int,
+        val total: Int,
+    ) {
+        enum class Phase { COUNTING, DELETING }
+    }
 
     data class Result(
         val deleted: Int,
@@ -49,6 +88,49 @@ class LocalEntryDeletionService(
          */
         val deletedMangaIds: Set<Long> = emptySet(),
     )
+
+    /** Starts a chapter deletion and returns immediately. Ignored while another run is active. */
+    fun startDeleteChapters(targets: List<ChapterTarget>) {
+        if (targets.isEmpty()) return
+        launchTask { deleteChapters(targets) }
+    }
+
+    /** Starts a whole-directory deletion and returns immediately. Ignored while a run is active. */
+    fun startDeleteMangas(entries: List<MangaEntry>) {
+        if (entries.isEmpty()) return
+        launchTask { deleteMangas(entries) }
+    }
+
+    /**
+     * Asks the running delete to stop at the next file boundary.
+     *
+     * Files already removed stay removed; the entries that were not reached are reported as
+     * skipped so the receipt says what is still on disk.
+     */
+    fun requestStop() {
+        stopRequested.set(true)
+    }
+
+    /** Drops the receipt. Called when the reader closes the result dialog or exports the list. */
+    fun clearReport() {
+        _lastReport.value = null
+    }
+
+    private fun launchTask(block: suspend () -> Unit) {
+        synchronized(taskLock) {
+            if (taskJob?.isActive == true) return
+            stopRequested.set(false)
+            taskJob = scope.launch {
+                try {
+                    block()
+                } catch (e: Throwable) {
+                    logcat(LogPriority.ERROR, e) { "Local deletion failed" }
+                } finally {
+                    _progress.value = null
+                }
+            }
+        }
+    }
 
     /**
      * Deletes the local files of the given chapters.
@@ -62,11 +144,45 @@ class LocalEntryDeletionService(
      * stale or empty path.
      */
     suspend fun deleteChapters(targets: List<ChapterTarget>): Result = withContext(Dispatchers.IO) {
-        mutex.withLock {
+        mutex.withLock { runChapters(targets) }
+    }
+
+    /**
+     * Deletes a whole manga directory. The database row is only dropped once every file in the
+     * directory is gone, otherwise the leftover files would be re-indexed under a new identity
+     * on the next scan and silently lose their history.
+     *
+     * A directory that is already gone counts as deleted rather than as a failure: the files are
+     * in the state this call asks for, so only the records are left to drop. Without that, a card
+     * whose directory disappeared behind the app's back - deleted through a file manager, or
+     * removed by an earlier pass that did not finish - can never be deleted from the library at
+     * all, because the removal it reports as failed has already happened.
+     *
+     * "Gone" is only accepted when two independent reads agree - see [directoryIsConfirmedGone].
+     * The records dropped here are not rebuildable (history, bookmarks, chapter titles and the
+     * custom cover all go with the row), so a provider that merely failed to answer has to come
+     * back as a failure and be retried by the reader, never as a deletion.
+     */
+    suspend fun deleteManga(manga: MangaEntry): Result = withContext(Dispatchers.IO) {
+        mutex.withLock { runMangas(listOf(manga)) }
+    }
+
+    /** Same as [deleteManga] for a selection, with one counting pass over every directory. */
+    suspend fun deleteMangas(entries: List<MangaEntry>): Result = withContext(Dispatchers.IO) {
+        mutex.withLock { runMangas(entries) }
+    }
+
+    private suspend fun runChapters(targets: List<ChapterTarget>): Result {
+        try {
             val base = fileSystem.getBaseDirectory()
             if (base == null) {
                 logcat(LogPriority.ERROR) { "Local directory unavailable; nothing was deleted" }
-                return@withLock Result(deleted = 0, failed = targets.map { it.name })
+                publishReport(
+                    unit = LocalDeletionUnit.CHAPTER,
+                    entries = emptyList(),
+                    skippedCount = 0,
+                )
+                return Result(deleted = 0, failed = targets.map { it.name })
             }
 
             val resolved = runCatching {
@@ -82,28 +198,69 @@ class LocalEntryDeletionService(
 
             val missing = targets.mapTo(mutableSetOf()) { it.id } -
                 resolved.mapTo(mutableSetOf()) { it.first.id }
-            val failed = mutableListOf<String>()
-            targets.filter { it.id in missing }.forEach { failed += it.name }
 
+            val plans = resolved.map { (target, chapter) ->
+                ChapterPlan(
+                    target = target,
+                    chapterUrl = chapter.url,
+                    file = resolveChapterFile(base, chapter.url),
+                )
+            }
+
+            // Counting first: the bar needs a total that does not shrink as the loop runs.
+            _progress.value = Progress(Progress.Phase.COUNTING, done = 0, total = 0)
+            var total = 0
+            plans.forEach { plan ->
+                val file = plan.file ?: return@forEach
+                val (count, size) = measure(file)
+                plan.fileCount = count
+                plan.sizeBytes = size
+                total += count
+            }
+
+            _progress.value = Progress(Progress.Phase.DELETING, done = 0, total = total)
+            var done = 0
             val deleted = mutableListOf<Pair<ChapterTarget, String>>()
-            resolved.forEach { (target, chapter) ->
-                runCatching {
-                    // Re-resolve on every attempt: a concurrent move may have invalidated an
-                    // earlier handle.
-                    val file = resolveChapterFile(base, chapter.url)
-                    if (file != null && deleteRecursively(file)) {
-                        deleted += target to chapter.url
-                    } else {
-                        failed += target.name
-                    }
-                }.onFailure {
-                    logcat(LogPriority.ERROR, it) { "Failed to delete ${target.name}" }
-                    failed += target.name
+            val failed = mutableListOf<String>()
+            val entries = mutableListOf<LocalDeletionEntry>()
+
+            plans.forEach { plan ->
+                if (stopRequested.get()) {
+                    plan.skipped = true
+                    return@forEach
+                }
+                val file = plan.file
+                if (file == null) {
+                    failed += plan.target.name
+                    entries += plan.toEntry(LocalDeletionOutcome.FAILED)
+                    return@forEach
+                }
+                val outcome = deleteTree(file) {
+                    done++
+                    _progress.value = Progress(Progress.Phase.DELETING, done = done, total = total)
+                }
+                entries += plan.toEntry(outcome)
+                if (outcome == LocalDeletionOutcome.DELETED) {
+                    deleted += plan.target to plan.chapterUrl
+                } else {
+                    failed += plan.target.name
                 }
             }
 
+            targets.filter { it.id in missing }.forEach { target ->
+                failed += target.name
+                entries += LocalDeletionEntry(
+                    mangaTitle = target.mangaTitle,
+                    name = target.name,
+                    relativePath = "",
+                    fileCount = 0,
+                    sizeBytes = 0,
+                    outcome = LocalDeletionOutcome.FAILED,
+                )
+            }
+
             if (deleted.isNotEmpty()) {
-                cleanupChapters(deleted.map { (target, url) -> target to url })
+                cleanupChapters(deleted)
             }
 
             // Works that just lost their last chapter: drop the directory too so it disappears
@@ -124,54 +281,104 @@ class LocalEntryDeletionService(
                 }
             }
 
-            Result(
+            publishReport(
+                unit = LocalDeletionUnit.CHAPTER,
+                entries = entries,
+                skippedCount = plans.count { it.skipped },
+                deletedMangaIds = removedMangaIds,
+            )
+            return Result(
                 deleted = deleted.size,
                 failed = failed,
                 deletedMangaIds = removedMangaIds,
             )
+        } finally {
+            _progress.value = null
         }
     }
 
-    /**
-     * Deletes a whole manga directory. The database row is only dropped once every file in the
-     * directory is gone, otherwise the leftover files would be re-indexed under a new identity
-     * on the next scan and silently lose their history.
-     *
-     * A directory that is already gone counts as deleted rather than as a failure: the files are
-     * in the state this call asks for, so only the records are left to drop. Without that, a card
-     * whose directory disappeared behind the app's back - deleted through a file manager, or
-     * removed by an earlier pass that did not finish - can never be deleted from the library at
-     * all, because the removal it reports as failed has already happened.
-     *
-     * "Gone" is only accepted when two independent reads agree - see [directoryIsConfirmedGone].
-     * The records dropped here are not rebuildable (history, bookmarks, chapter titles and the
-     * custom cover all go with the row), so a provider that merely failed to answer has to come
-     * back as a failure and be retried by the reader, never as a deletion.
-     */
-    suspend fun deleteManga(manga: MangaEntry): Result = withContext(Dispatchers.IO) {
-        mutex.withLock {
+    private suspend fun runMangas(entries: List<MangaEntry>): Result {
+        try {
             val base = fileSystem.getBaseDirectory()
             if (base == null) {
                 logcat(LogPriority.ERROR) { "Local directory unavailable; nothing was deleted" }
-                return@withLock Result(deleted = 0, failed = listOf(manga.title))
+                publishReport(
+                    unit = LocalDeletionUnit.COLLECTION,
+                    entries = emptyList(),
+                    skippedCount = 0,
+                )
+                return Result(deleted = 0, failed = entries.map { it.title })
             }
 
-            val dir = runCatching { base.findFile(manga.url) }.getOrNull()
-            val deleted = if (dir != null) {
-                runCatching { deleteRecursively(dir) }.onFailure {
-                    logcat(LogPriority.ERROR, it) { "Failed to delete ${manga.title}" }
-                }.getOrDefault(false)
-            } else {
-                directoryIsConfirmedGone(manga.url)
+            val plans = entries.map { entry ->
+                CollectionPlan(entry, runCatching { base.findFile(entry.url) }.getOrNull())
             }
 
-            if (!deleted) {
-                return@withLock Result(deleted = 0, failed = listOf(manga.title))
+            _progress.value = Progress(Progress.Phase.COUNTING, done = 0, total = 0)
+            var total = 0
+            plans.forEach { plan ->
+                val dir = plan.dir ?: return@forEach
+                val (count, size) = measure(dir)
+                plan.fileCount = count
+                plan.sizeBytes = size
+                total += count
             }
 
-            cleanupManga(manga)
-            Result(deleted = 1, failed = emptyList(), deletedMangaIds = setOf(manga.id))
+            _progress.value = Progress(Progress.Phase.DELETING, done = 0, total = total)
+            var done = 0
+            val failed = mutableListOf<String>()
+            val reportEntries = mutableListOf<LocalDeletionEntry>()
+            val removed = mutableSetOf<Long>()
+
+            plans.forEach { plan ->
+                if (stopRequested.get()) {
+                    plan.skipped = true
+                    return@forEach
+                }
+                val outcome = when {
+                    plan.dir != null -> deleteTree(plan.dir) {
+                        done++
+                        _progress.value = Progress(Progress.Phase.DELETING, done = done, total = total)
+                    }
+                    directoryIsConfirmedGone(plan.entry.url) -> LocalDeletionOutcome.DELETED
+                    else -> LocalDeletionOutcome.FAILED
+                }
+                reportEntries += plan.toEntry(outcome)
+                if (outcome == LocalDeletionOutcome.DELETED) {
+                    cleanupManga(plan.entry)
+                    removed += plan.entry.id
+                } else {
+                    failed += plan.entry.title
+                }
+            }
+
+            publishReport(
+                unit = LocalDeletionUnit.COLLECTION,
+                entries = reportEntries,
+                skippedCount = plans.count { it.skipped },
+                deletedMangaIds = removed,
+            )
+            return Result(deleted = removed.size, failed = failed, deletedMangaIds = removed)
+        } finally {
+            _progress.value = null
         }
+    }
+
+    private fun publishReport(
+        unit: LocalDeletionUnit,
+        entries: List<LocalDeletionEntry>,
+        skippedCount: Int,
+        deletedMangaIds: Set<Long> = emptySet(),
+    ) {
+        _lastReport.value = LocalDeletionReport(
+            id = reportCounter.incrementAndGet(),
+            unit = unit,
+            entries = entries,
+            cancelled = stopRequested.get(),
+            skippedCount = skippedCount,
+            deletedMangaIds = deletedMangaIds,
+            finishedAt = System.currentTimeMillis(),
+        )
     }
 
     private suspend fun cleanupChapters(chapters: List<Pair<ChapterTarget, String>>) {
@@ -290,12 +497,64 @@ class LocalEntryDeletionService(
     private fun localSource(): LocalSource? =
         sourceManager.get(LocalSource.ID) as? LocalSource
 
-    private fun deleteRecursively(file: UniFile): Boolean {
-        if (file.isDirectory) {
-            val children = file.listFiles().orEmpty()
-            if (children.any { !deleteRecursively(it) }) return false
+    /**
+     * Counts what a top-level entry holds before anything is removed.
+     *
+     * Only listing calls, no per-file stat beyond the leaves: the walk is far cheaper than the
+     * delete loop it feeds, and it is what makes the bar move in files instead of in chapters.
+     */
+    private fun measure(file: UniFile): Pair<Int, Long> {
+        if (!file.isDirectory) {
+            return 1 to runCatching { file.length() }.getOrDefault(0L)
         }
-        return file.delete()
+        var count = 0
+        var size = 0L
+        file.listFiles().orEmpty().forEach { child ->
+            val (childCount, childSize) = measure(child)
+            count += childCount
+            size += childSize
+        }
+        return count to size
+    }
+
+    /**
+     * Removes [file] and everything under it, reporting each removed file through [onFileDeleted].
+     *
+     * Checks [stopRequested] before every file so a stop lands within one IPC rather than after a
+     * 3000-file directory. An aborted walk comes back as [LocalDeletionOutcome.PARTIAL]: part of
+     * the entry is already gone, which is exactly what the receipt has to say.
+     */
+    private fun deleteTree(file: UniFile, onFileDeleted: () -> Unit): LocalDeletionOutcome {
+        var failed = false
+        var aborted = false
+
+        fun rec(current: UniFile) {
+            if (aborted) return
+            if (stopRequested.get()) {
+                aborted = true
+                return
+            }
+            if (current.isDirectory) {
+                current.listFiles().orEmpty().forEach { child -> if (!aborted) rec(child) }
+                if (!aborted && !current.delete()) failed = true
+            } else if (deleteFile(current)) {
+                onFileDeleted()
+            } else {
+                failed = true
+            }
+        }
+
+        rec(file)
+        return if (aborted || failed) LocalDeletionOutcome.PARTIAL else LocalDeletionOutcome.DELETED
+    }
+
+    /**
+     * A file that is already gone counts as deleted: the call asked for that state, and reporting
+     * it as a failure would put "本来就不在" into the same bucket as "删不掉".
+     */
+    private fun deleteFile(file: UniFile): Boolean {
+        if (file.delete()) return true
+        return runCatching { !file.exists() }.getOrDefault(false)
     }
 
     /** A chapter picked for deletion. The file path is resolved by the service, not by the caller. */
@@ -312,6 +571,41 @@ class LocalEntryDeletionService(
         val title: String,
         val manga: tachiyomi.domain.manga.model.Manga,
     )
+
+    private class ChapterPlan(
+        val target: ChapterTarget,
+        val chapterUrl: String,
+        val file: UniFile?,
+        var fileCount: Int = 0,
+        var sizeBytes: Long = 0,
+        var skipped: Boolean = false,
+    ) {
+        fun toEntry(outcome: LocalDeletionOutcome) = LocalDeletionEntry(
+            mangaTitle = target.mangaTitle,
+            name = target.name,
+            relativePath = chapterUrl,
+            fileCount = fileCount,
+            sizeBytes = sizeBytes,
+            outcome = outcome,
+        )
+    }
+
+    private class CollectionPlan(
+        val entry: MangaEntry,
+        val dir: UniFile?,
+        var fileCount: Int = 0,
+        var sizeBytes: Long = 0,
+        var skipped: Boolean = false,
+    ) {
+        fun toEntry(outcome: LocalDeletionOutcome) = LocalDeletionEntry(
+            mangaTitle = entry.title,
+            name = entry.title,
+            relativePath = entry.url,
+            fileCount = fileCount,
+            sizeBytes = sizeBytes,
+            outcome = outcome,
+        )
+    }
 
     companion object {
         /**

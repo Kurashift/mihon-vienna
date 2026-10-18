@@ -1241,11 +1241,21 @@
     <string name="local_delete_unmarked_safe">未标记的篇目不会受影响。</string>
     <string name="local_delete_group_remains">该漫画下仍有非本地条目，删除后仍会留在清单中。</string>
     <string name="list_and_more">等 %1$d 项</string>
-    <string name="local_delete_progress">正在删除本地文件…</string>
-    <string name="local_delete_success">已删除 %1$d 项</string>
-    <string name="local_delete_partial">已删除 %1$d 项，%2$d 项失败</string>
-    <string name="local_delete_failed">删除失败，文件可能已被占用或已损坏</string>
-    <string name="local_delete_unavailable">无法访问本地目录，未执行删除</string>
+    <string name="local_delete_progress">正在删除</string>
+    <string name="local_delete_counting">正在统计</string>
+    <string name="local_delete_partial">已删除 %1$d 个，%2$d 个失败</string>
+    <string name="local_delete_failed">删除失败</string>
+    <string name="local_delete_unavailable">本地目录不可用</string>
+    <string name="local_delete_done_chapters">已删除 %1$d 个篇目</string>
+    <string name="local_delete_done_collections">已删除 %1$d 个合集</string>
+    <string name="local_delete_stopped">已停止</string>
+    <string name="local_delete_stopped_summary">已删除 %1$d 个，%2$d 个未处理</string>
+    <string name="local_delete_one">已删除 %1$s</string>
+    <string name="local_delete_exported">已导出</string>
+    <string name="local_delete_export_failed">导出失败</string>
+    <string name="action_stop">停止</string>
+    <string name="action_export_list">导出清单</string>
+    <string name="action_done">完成</string>
 
     <!-- 篇目标记已读：「之前/之后」指列表（网格）里的排列位置，不是时间先后。
          范围标题统管其下的条目，条目本身只说「标记为已读/未读」；某个方向已无可改章节时整块隐藏，不灰显占位。 -->
