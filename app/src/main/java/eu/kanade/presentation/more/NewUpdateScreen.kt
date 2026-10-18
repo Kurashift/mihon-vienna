@@ -44,6 +44,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.mikepenz.markdown.model.markdownDimens
 import eu.kanade.presentation.manga.components.MarkdownRender
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
+import eu.kanade.tachiyomi.data.updater.AppUpdateProgress
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -83,8 +84,11 @@ private val ContentHorizontalPadding = 16.dp
 fun NewUpdateScreen(
     versionName: String,
     changelogInfo: String,
+    progress: AppUpdateProgress?,
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onDismissDownload: () -> Unit,
     onOpenInBrowser: () -> Unit,
-    onAcceptUpdate: () -> Unit,
     onRejectUpdate: () -> Unit,
 ) {
     BasicAlertDialog(
@@ -94,9 +98,22 @@ fun NewUpdateScreen(
         NewUpdateContent(
             versionName = versionName,
             changelogInfo = changelogInfo,
+            downloading = progress != null,
+            onDownload = onDownload,
             onOpenInBrowser = onOpenInBrowser,
-            onAcceptUpdate = onAcceptUpdate,
             onRejectUpdate = onRejectUpdate,
+        )
+    }
+
+    // Separate dialog rather than a bar under the notes: the notes can run several screens, and a
+    // progress bar at the bottom of them is off screen exactly when it matters.
+    if (progress != null && progress != AppUpdateProgress.Installing) {
+        UpdateProgressDialog(
+            versionName = versionName,
+            progress = progress,
+            onPrimary = onDownload,
+            onCancel = onCancelDownload,
+            onDismiss = onDismissDownload,
         )
     }
 }
@@ -105,8 +122,9 @@ fun NewUpdateScreen(
 private fun NewUpdateContent(
     versionName: String,
     changelogInfo: String,
+    downloading: Boolean,
+    onDownload: () -> Unit,
     onOpenInBrowser: () -> Unit,
-    onAcceptUpdate: () -> Unit,
     onRejectUpdate: () -> Unit,
 ) {
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.85f
@@ -183,8 +201,8 @@ private fun NewUpdateContent(
                 TextButton(onClick = onRejectUpdate) {
                     Text(text = stringResource(MR.strings.action_not_now))
                 }
-                Button(onClick = onAcceptUpdate) {
-                    Text(text = stringResource(MR.strings.update_check_confirm))
+                Button(onClick = onDownload, enabled = !downloading) {
+                    Text(text = stringResource(MR.strings.update_download_and_install))
                 }
             }
         }
@@ -284,7 +302,8 @@ private fun NewUpdateScreenPreview() {
                     | 4 | 从备份恢复 |
                 """.trimIndent(),
                 onOpenInBrowser = {},
-                onAcceptUpdate = {},
+                downloading = false,
+                onDownload = {},
                 onRejectUpdate = {},
             )
         }

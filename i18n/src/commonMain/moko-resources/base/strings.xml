@@ -1110,6 +1110,14 @@
     <string name="update_available_message">Version %1$s can be installed over this one.</string>
     <string name="update_available_ignore">Ignore this version</string>
     <string name="update_available_later">Got it</string>
+    <string name="update_download_and_install">Download and install</string>
+    <string name="update_install_title">Update to %1$s</string>
+    <string name="update_download_progress">%1$s of %2$s</string>
+    <string name="update_download_verifying">Verifying…</string>
+    <string name="update_download_failed">Download failed. Check your connection and try again.</string>
+    <string name="update_install_permission">Allow “install unknown apps” to continue.</string>
+    <string name="update_install_grant">Allow</string>
+    <string name="update_install_downgrade">Version %1$d is lower than the installed %2$d, so it cannot be installed.</string>
 
     <!-- Information Text -->
     <string name="information_no_downloads">No downloads</string>

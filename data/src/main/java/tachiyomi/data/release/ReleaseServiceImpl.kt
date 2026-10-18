@@ -23,7 +23,7 @@ class ReleaseServiceImpl(
                 .parseAs<GithubRelease>()
         }
 
-        val downloadLink = getDownloadLink(release = release, isFoss = arguments.isFoss) ?: return null
+        val asset = getDownloadAsset(release = release, isFoss = arguments.isFoss) ?: return null
 
         return Release(
             version = release.version,
@@ -31,13 +31,20 @@ class ReleaseServiceImpl(
                 "[${mention.value}](https://github.com/${mention.value.substring(1)})"
             },
             releaseLink = release.releaseLink,
-            downloadLink = downloadLink,
+            downloadLink = asset.downloadLink,
+            // GitHub reports `sha256:<hex>`; anything else (or nothing) means the build cannot be
+            // verified, and the installer falls back to asking the reader to download it manually.
+            sha256 = asset.digest
+                ?.takeIf { it.startsWith(SHA256_PREFIX) }
+                ?.removePrefix(SHA256_PREFIX)
+                ?.lowercase(),
+            sizeBytes = asset.size,
         )
     }
 
-    private fun getDownloadLink(release: GithubRelease, isFoss: Boolean): String? {
-        val map = release.assets.associate { asset ->
-            BUILD_TYPES.find { "-$it" in asset.name } to asset.downloadLink
+    private fun getDownloadAsset(release: GithubRelease, isFoss: Boolean): GitHubAsset? {
+        val map = release.assets.associateBy { asset ->
+            BUILD_TYPES.find { "-$it" in asset.name }
         }
 
         return if (!isFoss) {
@@ -49,6 +56,7 @@ class ReleaseServiceImpl(
 
     companion object {
         private const val FOSS = "foss"
+        private const val SHA256_PREFIX = "sha256:"
         private val BUILD_TYPES = listOf(FOSS, "arm64-v8a", "armeabi-v7a", "x86_64", "x86")
 
         /**

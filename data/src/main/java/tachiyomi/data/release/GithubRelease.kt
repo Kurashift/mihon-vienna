@@ -19,11 +19,16 @@ data class GithubRelease(
 )
 
 /**
- * Asset class containing asset name and download url.
+ * Asset class containing asset name, download url, and the digest GitHub computes for the file.
+ *
+ * [digest] looks like `sha256:3691…`. It is optional in the API (older releases have none), so it
+ * is parsed defensively rather than assumed.
  */
 @Serializable
 data class GitHubAsset(
     val name: String,
     @SerialName("browser_download_url")
     val downloadLink: String,
+    val digest: String? = null,
+    val size: Long = 0,
 )

@@ -186,6 +186,14 @@
     <string name="update_available_message">已發佈 %1$s，可以直接覆蓋安裝。</string>
     <string name="update_available_ignore">忽略更新</string>
     <string name="update_available_later">知道了</string>
+    <string name="update_download_and_install">下載並安裝</string>
+    <string name="update_install_title">更新到 %1$s</string>
+    <string name="update_download_progress">%1$s / %2$s</string>
+    <string name="update_download_verifying">校驗中…</string>
+    <string name="update_download_failed">下載失敗，檢查網路後重試。</string>
+    <string name="update_install_permission">允許「安裝未知應用」後才能安裝。</string>
+    <string name="update_install_grant">去允許</string>
+    <string name="update_install_downgrade">版本 %1$d 低於已裝的 %2$d，不能降級安裝。</string>
     <string name="information_no_downloads">還沒有下載</string>
     <string name="download_notifier_title_error">錯誤</string>
     <string name="download_notifier_text_only_wifi">沒有可用的 Wi-Fi 連線</string>

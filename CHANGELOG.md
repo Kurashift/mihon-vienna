@@ -197,6 +197,16 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ### Other
 - Tests: unit tests for the queue's work-and-folder grouping, the store's reordering on add, the local re-dating on a chapter addition, and the history entry's display mode
 
+## [v2.3.6] - 2026-10-19
+### Added
+- App updates: the start-up prompt downloads and installs the release itself. 下载并安装 fetches the APK for this device's ABI with the app's own client (27.0 MB for arm64), compares it against the SHA-256 GitHub publishes for that asset, and hands it to the system installer; a mismatch deletes the file instead of handing over a broken package. The verified APK stays on disk, so the one-time "allow installs" detour costs a tap rather than a second download, and the download can be cancelled from the dialog. 更新日志 moved from the confirm button into the dialog body, since the confirm slot is the download now
+### Changed
+- Audio player: the queue button moved from the top bar into the transport row, to the right of the subtitle toggle, where repeat and the sleep timer already are. The top bar keeps one icon for the favourite
+- Audio detail: the similar-works header no longer prints a count beside its label. The backend always sends the same 20 works, so the number never told the reader anything the row did not
+### Fixed
+- Audio player: dragging the progress bar no longer stops at a stale position and springs back. The gesture captured its callbacks once, at first composition, so the caller clamped every seek to the duration from when the page opened — 0 while the track was still loading, or the previous track's length after a switch — and the release seeked to that clamped value. The callbacks now read the current state, the way the reader's page bar already did; the volume row's seek bar had the same capture and is fixed with it
+- Audio list: tag chips are 4 dp apart however long the tag is. They were clickable Surfaces, which reserve a 48 dp touch slot and paint the chip centred inside it, so two 2-character tags sat 17 dp apart while a 5-character tag sat 5 dp from its neighbour in the same row. Measured on a 1280 px screenshot: the strip's gaps ran 4.0, 4.9, 5.8, 6.7, 10.4, 11.3, 17.1 and 22.6 dp
+
 ## [Unreleased]
 
 ## [v2.2.5] - 2026-09-14
