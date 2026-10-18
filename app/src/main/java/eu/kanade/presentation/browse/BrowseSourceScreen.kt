@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Public
@@ -16,7 +14,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.paging.LoadState
@@ -102,6 +102,37 @@ fun BrowseSourceContent(
         }
     }
 
+    // Which list the rows on screen belong to - read off those rows, not taken from the tap that
+    // asked for them and not from the moment the list was produced. Both of those are earlier than
+    // the rows arriving, so acting on them reset the list to its top while the previous cards were
+    // still on screen: it jumped first and filled in afterwards.
+    //
+    // The generation in the rows is a one-way counter: it says the rows changed, not what they
+    // became, so the listing requested at that moment names them. Keeping that pairing means a
+    // listing the reader comes back to - clearing a search - resolves to the identity it had
+    // before, and with it the slot holding where they were. Falls back to the requested identity
+    // only while nothing is presented yet.
+    val generation = mangaList.presentedListGeneration()
+    val listingOfGeneration = remember { mutableMapOf<Long, Any?>() }
+    val shownListing = if (generation == null) {
+        listKey
+    } else {
+        listingOfGeneration.getOrPut(generation) { listKey }
+    }
+
+    // One scroll position per listing, held above the loading and empty branches below. Searching
+    // composes the loading screen, and then the results or the empty screen, in place of the shelf;
+    // a state created inside the grid went with it, so coming back from a search landed at the top
+    // instead of at the row the reader left. A listing the reader has not seen starts its own slot
+    // at the top, which is what a filter or a sort swap should do. Saveable because opening a work
+    // pushes a page on top of this one, which disposes this composition.
+    val scrollStates = rememberSaveable(saver = listingScrollStatesSaver) {
+        mutableMapOf<String, BrowseScrollStates>()
+    }
+    val scrollState = scrollStates.getOrPut(shownListing.saveKey()) { BrowseScrollStates() }
+    val gridState = scrollState.grid
+    val listState = scrollState.list
+
     if (mangaList.itemCount == 0 && mangaList.loadState.refresh is LoadState.Loading) {
         LoadingScreen(Modifier.padding(contentPadding))
         return
@@ -150,19 +181,6 @@ fun BrowseSourceContent(
 
         return
     }
-
-    // The scroll state is keyed on which list the rows on screen belong to - read off those rows,
-    // not taken from the tap that asked for them and not from the moment the list was produced.
-    // Both of those are earlier than the rows arriving, so acting on them reset the list to its top
-    // while the previous cards were still on screen: it jumped first and filled in afterwards.
-    //
-    // Falls back to the requested identity only while nothing is presented yet.
-    val shownIdentity = mangaList.presentedListGeneration() ?: listKey
-
-    // Held here rather than inside the branch so switching the display mode keeps the offset
-    // instead of dropping the reader back to the top of the listing.
-    val gridState = key(shownIdentity) { rememberLazyGridState() }
-    val listState = key(shownIdentity) { rememberLazyListState() }
 
     when (displayMode) {
         LibraryDisplayMode.ComfortableGrid -> {
@@ -241,6 +259,57 @@ fun BrowseSourceContent(
         }
     }
 }
+
+/**
+ * Scroll positions of the list, per display mode, for one listing.
+ *
+ * Both modes are kept for the same slot so switching the display mode keeps the offset instead of
+ * dropping the reader back to the top of the listing.
+ */
+private class BrowseScrollStates(
+    val list: LazyListState = LazyListState(),
+    val grid: LazyGridState = LazyGridState(),
+)
+
+/**
+ * Stable name for a listing identity, so its slot can be saved and looked up again.
+ *
+ * The identities are data classes (see [BrowseListKey]) whose string form lists their fields, which
+ * makes it the same for the same listing and different for another one.
+ */
+private fun Any?.saveKey(): String = this?.toString().orEmpty()
+
+private const val SCROLL_STATE_SAVED_FIELDS = 5
+
+private val listingScrollStatesSaver = listSaver<MutableMap<String, BrowseScrollStates>, Any>(
+    save = { states ->
+        states.flatMap { (key, state) ->
+            listOf(
+                key,
+                state.list.firstVisibleItemIndex,
+                state.list.firstVisibleItemScrollOffset,
+                state.grid.firstVisibleItemIndex,
+                state.grid.firstVisibleItemScrollOffset,
+            )
+        }
+    },
+    restore = { saved ->
+        val states = mutableMapOf<String, BrowseScrollStates>()
+        for (start in saved.indices step SCROLL_STATE_SAVED_FIELDS) {
+            states[saved[start] as String] = BrowseScrollStates(
+                list = LazyListState(
+                    firstVisibleItemIndex = saved[start + 1] as Int,
+                    firstVisibleItemScrollOffset = saved[start + 2] as Int,
+                ),
+                grid = LazyGridState(
+                    firstVisibleItemIndex = saved[start + 3] as Int,
+                    firstVisibleItemScrollOffset = saved[start + 4] as Int,
+                ),
+            )
+        }
+        states
+    },
+)
 
 @Composable
 internal fun MissingSourceScreen(

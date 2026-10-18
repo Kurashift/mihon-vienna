@@ -248,6 +248,16 @@ data class AudioBrowseState(
     val errorMessage: String? = null,
     val works: List<Work> = emptyList(),
     val query: String? = null,
+    /**
+     * The keyword [works] were built for, which lags [query] by one load.
+     *
+     * The list keeps one scroll position per keyword, and the position has to follow the rows it
+     * belongs to: the moment a search is submitted [query] already names the new keyword while the
+     * old rows are still on screen, and keying on it then would put the previous list's offset onto
+     * a list it does not describe — or, on the way back, clamp the browsing list to the end of the
+     * short result set.
+     */
+    val listQuery: String? = null,
     val page: Int = 1,
     val totalCount: Int = 0,
     val loadingMore: Boolean = false,
@@ -715,6 +725,7 @@ class AudioBrowseViewModel(
                 _state.update {
                     it.copy(
                         works = cached.works,
+                        listQuery = query,
                         totalCount = cached.totalCount,
                         page = 1,
                         loading = false,
@@ -731,6 +742,7 @@ class AudioBrowseViewModel(
                 _state.update {
                     it.copy(
                         works = emptyList(),
+                        listQuery = query,
                         page = 1,
                         loading = true,
                         refreshing = false,
@@ -1053,6 +1065,7 @@ class AudioBrowseViewModel(
                 error = false,
                 errorMessage = null,
                 works = sorted, page = 1,
+                listQuery = _state.value.query,
                 totalCount = sorted.size,
                 loadingMore = false,
                 loadMoreError = false,
