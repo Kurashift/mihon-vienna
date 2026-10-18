@@ -107,7 +107,14 @@ class AppUpdateDownloader(
 
     private companion object {
         const val UPDATE_DIRECTORY = "updates"
-        const val READ_TIMEOUT_SECONDS = 60L
+
+        /**
+         * How long a stalled link is given before the download counts as failed.
+         *
+         * Short on purpose: this is the "网差卡死" case — a link that delivers nothing for twenty
+         * seconds is not going to finish, and the reader would rather be told than kept waiting.
+         */
+        const val READ_TIMEOUT_SECONDS = 20L
         const val PROGRESS_STEP_BYTES = 256L * 1024
     }
 }

@@ -57,7 +57,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,8 +96,9 @@ import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
+import eu.kanade.tachiyomi.data.updater.AppUpdateDownloadService
+import eu.kanade.tachiyomi.data.updater.AppUpdateDownloadState
 import eu.kanade.tachiyomi.data.updater.AppUpdateProgress
-import eu.kanade.tachiyomi.data.updater.AppUpdateSession
 import eu.kanade.tachiyomi.data.updater.AppUpdateState
 import eu.kanade.tachiyomi.extension.api.ExtensionApi
 import eu.kanade.tachiyomi.ui.audio.AudioDetailScreen
@@ -452,10 +452,9 @@ class MainActivity : BaseActivity() {
         if (!updaterEnabled) return
 
         val context = LocalContext.current
-        val scope = rememberCoroutineScope()
-        val session = remember { AppUpdateSession(context, scope) }
         val release by AppUpdateState.availableRelease.collectAsState()
         val answered by AppUpdateState.promptAnswered.collectAsState()
+        val progress by AppUpdateDownloadState.progress.collectAsState()
         val ignoredVersions = remember { preferences.ignoredUpdateVersion.changes() }
         val ignoredVersion by ignoredVersions.collectAsState(
             initial = preferences.ignoredUpdateVersion.get(),
@@ -466,29 +465,32 @@ class MainActivity : BaseActivity() {
             return
         }
 
-        // Once the system installer has the file there is nothing left for this prompt to say.
-        LaunchedEffect(session.progress) {
-            if (session.progress == AppUpdateProgress.Installing) {
-                AppUpdateState.dismissPrompt()
+        // The download runs in a foreground service, so this prompt is only a view over it: it can
+        // be dismissed mid-download without losing anything, and coming back shows the same numbers.
+        LaunchedEffect(progress) {
+            when (progress) {
+                AppUpdateProgress.Ready -> {
+                    AppUpdateDownloadState.readyApk?.let { AppUpdateDownloadState.install(context, it) }
+                }
+                AppUpdateProgress.Installing -> AppUpdateState.dismissPrompt()
+                else -> Unit
             }
         }
 
         UpdateAvailableDialog(
             versionName = current.version,
-            progress = session.progress,
-            onPrimary = { session.start(current) },
-            onCancel = session::cancel,
+            progress = progress,
+            onPrimary = { AppUpdateDownloadState.startOrInstall(context, current) },
+            onCancel = {
+                AppUpdateDownloadService.stop(context)
+                AppUpdateState.dismissPrompt()
+            },
             onIgnore = {
-                session.discard()
                 preferences.ignoredUpdateVersion.set(current.version)
                 AppUpdateState.dismissPrompt()
             },
-            onDismiss = {
-                session.discard()
-                AppUpdateState.dismissPrompt()
-            },
+            onDismiss = AppUpdateState::dismissPrompt,
             onOpenChangelog = {
-                session.discard()
                 AppUpdateState.dismissPrompt()
                 navigator.push(NewUpdateScreen(current))
             },

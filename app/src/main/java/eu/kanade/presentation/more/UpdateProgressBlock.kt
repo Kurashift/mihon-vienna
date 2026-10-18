@@ -93,7 +93,7 @@ internal fun UpdateProgressBlock(progress: AppUpdateProgress, modifier: Modifier
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-            AppUpdateProgress.Installing -> Unit
+            AppUpdateProgress.Installing, AppUpdateProgress.Ready -> Unit
         }
     }
 }
@@ -111,6 +111,7 @@ internal fun AppUpdateProgress?.isBusy(): Boolean =
 internal fun updatePrimaryLabel(progress: AppUpdateProgress?): String? = when (progress) {
     null -> stringResource(MR.strings.update_download_and_install)
     is AppUpdateProgress.Failed -> stringResource(MR.strings.action_retry)
+    AppUpdateProgress.Ready -> stringResource(MR.strings.action_install)
     AppUpdateProgress.NeedsPermission -> stringResource(MR.strings.update_install_grant)
     AppUpdateProgress.Installing -> stringResource(MR.strings.action_install)
     is AppUpdateProgress.Downloading,
