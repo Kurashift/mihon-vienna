@@ -336,6 +336,10 @@
     <string name="update_check_confirm">下载</string>
     <string name="update_check_no_new_updates">没有新版本</string>
     <string name="update_check_notification_update_available">有新版本！</string>
+    <string name="update_available_title">有可用的更新</string>
+    <string name="update_available_message">已发布 %1$s，可以直接覆盖安装。</string>
+    <string name="update_available_ignore">忽略更新</string>
+    <string name="update_available_later">知道了</string>
     <string name="information_no_downloads">还没有下载</string>
     <string name="information_no_recent">最近还没更新</string>
     <string name="information_no_recent_manga">最近还没看过</string>

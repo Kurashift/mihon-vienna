@@ -1106,6 +1106,10 @@
 
     <!--UpdateCheck Notifications-->
     <string name="update_check_notification_update_available">New version available!</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_message">Version %1$s can be installed over this one.</string>
+    <string name="update_available_ignore">Ignore this version</string>
+    <string name="update_available_later">Got it</string>
 
     <!-- Information Text -->
     <string name="information_no_downloads">No downloads</string>

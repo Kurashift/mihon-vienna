@@ -210,4 +210,16 @@ class BasePreferences(
 
     /** Last selected first-level destination in the local-first build. */
     val localFirstLastTab: Preference<String> = preferenceStore.getString("local_first_last_tab", "local")
+
+    /**
+     * Release tag whose update prompt was answered with 忽略更新, e.g. `v2.3.5`.
+     *
+     * Stored as the release's own version string, so the prompt is skipped only while the latest
+     * release is still that one: the next release asks again. Kept in app state rather than in the
+     * backup, since it records what this device has already been told.
+     */
+    val ignoredUpdateVersion: Preference<String> = preferenceStore.getString(
+        Preference.appStateKey("ignored_update_version"),
+        "",
+    )
 }
