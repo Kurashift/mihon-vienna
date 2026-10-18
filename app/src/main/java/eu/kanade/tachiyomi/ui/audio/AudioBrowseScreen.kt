@@ -33,6 +33,7 @@ import eu.kanade.tachiyomi.data.audio.AuthResponse
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.audio.WorksResponse
+import eu.kanade.tachiyomi.data.audio.recommenderUuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -456,11 +457,7 @@ class AudioBrowseViewModel(
     }
 
     private val recommenderUuid: String
-        get() {
-            val existing = basePreferences.audioRecommenderUuid.get()
-            if (existing.isNotBlank()) return existing
-            return java.util.UUID.randomUUID().toString().also { basePreferences.audioRecommenderUuid.set(it) }
-        }
+        get() = basePreferences.recommenderUuid()
 
     fun setTab(tab: AudioBrowseTab) {
         if (_state.value.tab == tab) return

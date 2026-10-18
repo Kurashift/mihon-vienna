@@ -36,8 +36,10 @@ import eu.kanade.tachiyomi.data.audio.AudioRepeatMode
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleState
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.audio.LyricLine
+import eu.kanade.tachiyomi.data.audio.RecommenderFeedbackTracker
 import eu.kanade.tachiyomi.data.audio.SubtitleParser
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
+import eu.kanade.tachiyomi.data.audio.recommenderUuid
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -142,6 +144,8 @@ class AudioPlayerController(
 
     private var items: List<AudioPlayItem> = emptyList()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    private val feedbackTracker = RecommenderFeedbackTracker()
     private var progressJob: Job? = null
     private var subtitleJob: Job? = null
 
@@ -750,8 +754,12 @@ class AudioPlayerController(
                     notifyService = false,
                 )
                 checkBufferingTimeout(SystemClock.elapsedRealtime())
-                if (player.isPlaying) {
-                    val now = SystemClock.elapsedRealtime()
+                // Ticked every loop, playing or not: a pause has to be seen by the tracker, or the
+                // time spent paused would be counted as listening on the next playing tick.
+                val now = SystemClock.elapsedRealtime()
+                val playing = player.isPlaying
+                reportListenMilestones(now, playing)
+                if (playing) {
                     lastActiveAt = now
                     if (now - lastPeriodicHistoryAt >= PERIODIC_HISTORY_INTERVAL_MS) {
                         recordHistory()
@@ -1084,6 +1092,51 @@ class AudioPlayerController(
         volumeProtectionVerificationJob = null
         player.volume = 1f
         volumeProtectionApplied = !headphonesConnected
+    }
+
+    /**
+     * Reports how deep this listen has gone, once per milestone.
+     *
+     * The backend keys its profile by the account's recommender UUID, so a milestone sent while
+     * signed out would build a second profile nobody reads. Those ticks still advance the tracker
+     * and the milestone is dropped, which keeps a later sign-in from replaying the backlog of a
+     * listen that had already happened.
+     */
+    private fun reportListenMilestones(nowMs: Long, playing: Boolean) {
+        val workId = state.item?.workId
+        val due = feedbackTracker.onTick(workId, workId?.let(::workTotalMs) ?: 0L, nowMs, playing)
+        if (workId == null || due.isEmpty()) return
+        if (basePreferences.audioAuthToken.get().isBlank()) {
+            logcat(LogPriority.DEBUG) { "Audio listen feedback skipped: signed out" }
+            return
+        }
+        val uuid = basePreferences.recommenderUuid()
+        due.forEach { milestone ->
+            scope.launch {
+                try {
+                    api.sendFeedback(milestone.wireValue, uuid, workId)
+                    logcat(LogPriority.DEBUG) { "Audio listen feedback sent: ${milestone.wireValue} $workId" }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logcat(LogPriority.DEBUG, e) { "Audio listen feedback failed" }
+                }
+            }
+        }
+    }
+
+    /**
+     * The length of the whole work [workId], summed from the queue.
+     *
+     * The percentage milestones are a share of the work rather than of the track: a five-track work
+     * would otherwise report "heard it out" once per track.
+     */
+    private fun workTotalMs(workId: Long): Long {
+        var total = 0L
+        for (item in items) {
+            if (item.workId == workId) total += item.durationMs
+        }
+        return total
     }
 
     private fun recordHistory() {
