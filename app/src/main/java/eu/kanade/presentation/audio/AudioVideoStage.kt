@@ -3,7 +3,7 @@ package eu.kanade.presentation.audio
 import android.view.TextureView
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
@@ -12,22 +12,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -61,12 +59,24 @@ internal fun AudioVideoStage(
     isScreenVisible: Boolean,
     isFullscreen: Boolean,
     onTap: () -> Unit,
-    onFullscreen: (() -> Unit)? = null,
+    onDoubleTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val videoAspect = videoAspectRatio.takeIf { it.isFinite() && it > 0f } ?: DEFAULT_VIDEO_ASPECT
     val targetAspect = if (hasVideo) videoAspect else 1f
     val animatedAspect by animateFloatAsState(targetAspect, label = "audioVideoStageAspect")
+
+    // No ripple and no press state: this is a picture, and any animation under the finger reads
+    // as the video itself reacting. A tap shows the controls, a double tap plays or pauses —
+    // exactly what a video player does, with nothing drawn for either.
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnDoubleTap by rememberUpdatedState(onDoubleTap)
+    val tapModifier = Modifier.pointerInput(Unit) {
+        detectTapGestures(
+            onTap = { currentOnTap() },
+            onDoubleTap = { currentOnDoubleTap?.invoke() },
+        )
+    }
 
     val stageModifier = if (isFullscreen) {
         // Tappable here too: the control strip hides itself after a few seconds, and a picture
@@ -74,7 +84,7 @@ internal fun AudioVideoStage(
         modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable(onClick = onTap)
+            .then(tapModifier)
     } else {
         modifier
             .fillMaxWidth()
@@ -83,7 +93,7 @@ internal fun AudioVideoStage(
             .aspectRatio(animatedAspect.coerceIn(MIN_STAGE_ASPECT, MAX_STAGE_ASPECT))
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onTap)
+            .then(tapModifier)
     }
 
     BoxWithConstraints(modifier = stageModifier, contentAlignment = Alignment.Center) {
@@ -139,25 +149,6 @@ internal fun AudioVideoStage(
                     .background(Color.Black.copy(alpha = 0.6f))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
-        }
-
-        // A corner button rather than the picture itself: on this page a tap on the art already
-        // means "cycle the subtitle layout", and taking that away from a video would leave no way
-        // back to the compact layout.
-        if (hasVideo && !isFullscreen && onFullscreen != null) {
-            FilledIconButton(
-                onClick = onFullscreen,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(8.dp)
-                    .size(36.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.Fullscreen,
-                    contentDescription = stringResource(MR.strings.audio_video_enter_fullscreen),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
         }
     }
 }

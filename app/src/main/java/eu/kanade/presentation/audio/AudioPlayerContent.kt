@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Forward10
+import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
@@ -354,7 +355,7 @@ fun AudioPlayerContent(
                                         onCycleSubtitleDisplayMode()
                                     }
                                 },
-                                onFullscreen = onToggleFullscreen,
+                                onDoubleTap = onTogglePlay,
                                 modifier = if (isFullscreen) {
                                     Modifier.fillMaxSize()
                                 } else {
@@ -654,6 +655,17 @@ fun AudioPlayerContent(
                                 contentDescription = stringResource(MR.strings.audio_playlist),
                                 tint = LocalContentColor.current,
                             )
+                        }
+                        // Right end of the strip: the way into fullscreen belongs with the
+                        // transport controls, not on top of the picture.
+                        if (state.hasVideo && !state.videoUnsupported) {
+                            IconButton(onClick = onToggleFullscreen, enabled = item != null) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Fullscreen,
+                                    contentDescription = stringResource(MR.strings.audio_video_enter_fullscreen),
+                                    tint = LocalContentColor.current,
+                                )
+                            }
                         }
                     }
                     if (state.error != null) {
