@@ -289,6 +289,9 @@ class AudioPlayerController(
     /** Address the codec fallback has already run for, so a broken file cannot loop it. */
     private var videoFallbackUrl: String? = null
 
+    /** Speed to put back when the picture is released after a hold-to-speed-up. */
+    private var speedBeforeBoost: Float? = null
+
     /**
      * Whether the video track type is currently selected.
      *
@@ -645,6 +648,26 @@ class AudioPlayerController(
         val speed = PLAYBACK_SPEEDS[(currentIndex + 1).mod(PLAYBACK_SPEEDS.size)]
         player.setPlaybackSpeed(speed)
         publish(state.copy(playbackSpeed = speed))
+    }
+
+    /**
+     * Speeds the picture up while the finger stays down, the way every video player does it.
+     *
+     * Kept out of the state on purpose: the speed chip shows what the user chose, not the
+     * temporary boost, and nothing else needs to react to it.
+     */
+    fun boostPlaybackSpeed() {
+        if (speedBeforeBoost != null) return
+        val current = player.playbackParameters.speed
+        speedBeforeBoost = current
+        player.setPlaybackSpeed((current * 2f).coerceAtMost(MAX_BOOST_SPEED))
+    }
+
+    /** Puts the chosen speed back when the finger lifts. */
+    fun restorePlaybackSpeed() {
+        val previous = speedBeforeBoost ?: return
+        speedBeforeBoost = null
+        player.setPlaybackSpeed(previous)
     }
 
     fun setSleepTimer(minutes: Int?) {
@@ -1466,6 +1489,9 @@ class AudioPlayerController(
         const val VOLUME_PROTECTION_IDLE_WINDOW_MS = 10 * 60 * 1000L
         val VOLUME_PROTECTION_VERIFY_DELAYS_MS = listOf(150L, 500L, 1_000L)
         val PLAYBACK_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+
+        /** Ceiling for the hold-to-speed-up gesture, so 2× chosen speed cannot become 4×. */
+        const val MAX_BOOST_SPEED = 3f
         val RETRYABLE_HTTP_CODES = setOf(408, 429) + (500..599)
 
         /**
