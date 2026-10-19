@@ -356,6 +356,9 @@ fun AudioPlayerContent(
                                     }
                                 },
                                 onDoubleTap = onTogglePlay,
+                                onFullscreen = onToggleFullscreen,
+                                onSpeedUp = controller::boostPlaybackSpeed,
+                                onSpeedUpEnd = controller::restorePlaybackSpeed,
                                 modifier = if (isFullscreen) {
                                     Modifier.fillMaxSize()
                                 } else {
@@ -380,6 +383,7 @@ fun AudioPlayerContent(
                                 onSeek = onSeek,
                                 onNext = onNext,
                                 onPrevious = onPrevious,
+                                onCycleSpeed = onCyclePlaybackSpeed,
                             )
                         }
                     }
@@ -656,17 +660,6 @@ fun AudioPlayerContent(
                                 tint = LocalContentColor.current,
                             )
                         }
-                        // Right end of the strip: the way into fullscreen belongs with the
-                        // transport controls, not on top of the picture.
-                        if (state.hasVideo && !state.videoUnsupported) {
-                            IconButton(onClick = onToggleFullscreen, enabled = item != null) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Fullscreen,
-                                    contentDescription = stringResource(MR.strings.audio_video_enter_fullscreen),
-                                    tint = LocalContentColor.current,
-                                )
-                            }
-                        }
                     }
                     if (state.error != null) {
                         TextButton(onClick = onTogglePlay) {
@@ -706,6 +699,7 @@ private fun BoxScope.FullscreenControls(
     onSeek: (Long) -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    onCycleSpeed: () -> Unit,
 ) {
     var dragPosition by remember { mutableStateOf<Long?>(null) }
     val duration = state.durationMs.coerceAtLeast(0)
@@ -750,62 +744,63 @@ private fun BoxScope.FullscreenControls(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
-                    Icon(
-                        Icons.Outlined.SkipPrevious,
-                        contentDescription = stringResource(MR.strings.audio_previous_track),
-                        tint = Color.White,
+                // Speed on the left, transport in the middle, the way out on the right: the same
+                // places they sit in every video player.
+                TextButton(onClick = onCycleSpeed) {
+                    Text(
+                        text = "${formatSpeed(state.playbackSpeed)}x",
+                        color = Color.White,
                     )
                 }
-                FilledIconButton(onClick = onTogglePlay, modifier = Modifier.size(56.dp)) {
-                    if (state.isBuffering) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 3.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
                         Icon(
-                            imageVector = if (state.isPlaying) {
-                                Icons.Outlined.Pause
-                            } else {
-                                Icons.Outlined.PlayArrow
-                            },
-                            contentDescription = if (state.isPlaying) {
-                                stringResource(MR.strings.action_pause)
-                            } else {
-                                stringResource(MR.strings.action_play)
-                            },
-                            modifier = Modifier.size(30.dp),
+                            Icons.Outlined.SkipPrevious,
+                            contentDescription = stringResource(MR.strings.audio_previous_track),
+                            tint = Color.White,
+                        )
+                    }
+                    FilledIconButton(onClick = onTogglePlay, modifier = Modifier.size(56.dp)) {
+                        if (state.isBuffering) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (state.isPlaying) {
+                                    Icons.Outlined.Pause
+                                } else {
+                                    Icons.Outlined.PlayArrow
+                                },
+                                contentDescription = if (state.isPlaying) {
+                                    stringResource(MR.strings.action_pause)
+                                } else {
+                                    stringResource(MR.strings.action_play)
+                                },
+                                modifier = Modifier.size(30.dp),
+                            )
+                        }
+                    }
+                    IconButton(onClick = onNext, enabled = state.hasNext) {
+                        Icon(
+                            Icons.Outlined.SkipNext,
+                            contentDescription = stringResource(MR.strings.audio_next_track),
+                            tint = Color.White,
                         )
                     }
                 }
-                IconButton(onClick = onNext, enabled = state.hasNext) {
+                IconButton(onClick = onExit) {
                     Icon(
-                        Icons.Outlined.SkipNext,
-                        contentDescription = stringResource(MR.strings.audio_next_track),
+                        Icons.Outlined.FullscreenExit,
+                        contentDescription = stringResource(MR.strings.audio_video_exit_fullscreen),
                         tint = Color.White,
                     )
                 }
             }
-        }
-
-        // Part of the strip, not pinned on top of the picture: the way out is one tap away
-        // (the picture itself brings the strip back), and a permanent button over the video
-        // reads as clutter rather than as a control.
-        IconButton(
-            onClick = onExit,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp),
-        ) {
-            Icon(
-                Icons.Outlined.FullscreenExit,
-                contentDescription = stringResource(MR.strings.audio_video_exit_fullscreen),
-                tint = Color.White,
-            )
         }
     }
 }

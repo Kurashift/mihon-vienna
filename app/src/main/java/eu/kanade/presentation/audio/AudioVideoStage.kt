@@ -11,8 +11,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +65,9 @@ internal fun AudioVideoStage(
     isFullscreen: Boolean,
     onTap: () -> Unit,
     onDoubleTap: (() -> Unit)? = null,
+    onFullscreen: (() -> Unit)? = null,
+    onSpeedUp: (() -> Unit)? = null,
+    onSpeedUpEnd: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val videoAspect = videoAspectRatio.takeIf { it.isFinite() && it > 0f } ?: DEFAULT_VIDEO_ASPECT
@@ -67,14 +75,24 @@ internal fun AudioVideoStage(
     val animatedAspect by animateFloatAsState(targetAspect, label = "audioVideoStageAspect")
 
     // No ripple and no press state: this is a picture, and any animation under the finger reads
-    // as the video itself reacting. A tap shows the controls, a double tap plays or pauses —
-    // exactly what a video player does, with nothing drawn for either.
+    // as the video itself reacting. A tap shows the controls, a double tap plays or pauses, and
+    // holding speeds the picture up until the finger lifts — all of it invisible.
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnDoubleTap by rememberUpdatedState(onDoubleTap)
+    val currentOnSpeedUp by rememberUpdatedState(onSpeedUp)
+    val currentOnSpeedUpEnd by rememberUpdatedState(onSpeedUpEnd)
     val tapModifier = Modifier.pointerInput(Unit) {
         detectTapGestures(
             onTap = { currentOnTap() },
             onDoubleTap = { currentOnDoubleTap?.invoke() },
+            // A hold speeds the picture up until the finger lifts. Registering onLongPress is
+            // also what keeps a hold from being reported as a tap, so the controls do not flicker
+            // when the user lets go.
+            onLongPress = { currentOnSpeedUp?.invoke() },
+            onPress = {
+                tryAwaitRelease()
+                currentOnSpeedUpEnd?.invoke()
+            },
         )
     }
 
@@ -149,6 +167,27 @@ internal fun AudioVideoStage(
                     .background(Color.Black.copy(alpha = 0.6f))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
+        }
+
+        // Bottom-right corner of the picture itself, not of the page: it belongs to the video and
+        // goes away with it. Barely there — a translucent disc only so the glyph stays visible
+        // over a bright frame.
+        if (hasVideo && !isFullscreen && onFullscreen != null) {
+            IconButton(
+                onClick = onFullscreen,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(34.dp)
+                    .background(Color.Black.copy(alpha = 0.22f), CircleShape),
+            ) {
+                Icon(
+                    Icons.Outlined.Fullscreen,
+                    contentDescription = stringResource(MR.strings.audio_video_enter_fullscreen),
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }
