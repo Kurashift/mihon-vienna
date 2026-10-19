@@ -159,7 +159,6 @@ fun AudioTrackRow(
     durationMs: Long = 0L,
     isCurrent: Boolean = false,
     isPlaying: Boolean = false,
-    isVideo: Boolean = false,
     depth: Int = 0,
     actions: (@Composable () -> Unit)? = null,
     selectionState: ToggleableState? = null,
@@ -247,9 +246,6 @@ fun AudioTrackRow(
                 .weight(1f)
                 .padding(start = 4.dp),
         )
-        if (isVideo) {
-            VideoBadge(modifier = Modifier.padding(start = 6.dp))
-        }
         if (durationMs > 0) {
             Text(
                 text = formatDuration(durationMs),
@@ -259,29 +255,6 @@ fun AudioTrackRow(
             )
         }
         actions?.invoke()
-    }
-}
-
-/**
- * Marks a row as carrying a picture.
- *
- * The backend reports video works as ordinary audio tracks, so without this a row looks exactly
- * like a sound file until it is played — and in a queue of both, that is the one thing the user
- * needs to know before choosing.
- */
-@Composable
-fun VideoBadge(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(4.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
-        Text(
-            text = stringResource(MR.strings.audio_video_badge),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-        )
     }
 }
 

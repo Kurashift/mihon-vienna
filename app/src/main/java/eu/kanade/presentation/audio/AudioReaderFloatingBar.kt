@@ -54,7 +54,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.presentation.audio.components.VideoBadge
 import eu.kanade.presentation.util.marqueeTitle
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 import tachiyomi.i18n.MR
@@ -191,21 +190,13 @@ fun AudioReaderFloatingBar(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.marqueeTitle(),
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = state.item.workTitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                            // The reader has no surface to draw into, so a video track plays as
-                            // sound here; the badge is what says the picture is one tap away.
-                            if (state.hasVideo) {
-                                VideoBadge(modifier = Modifier.padding(start = 4.dp))
-                            }
-                        }
+                        Text(
+                            text = state.item.workTitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
 
                     IconButton(
