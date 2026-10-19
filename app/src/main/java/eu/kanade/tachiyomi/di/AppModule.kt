@@ -1,11 +1,18 @@
 package eu.kanade.tachiyomi.di
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import app.cash.sqldelight.db.SqlDriver
+import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConcurrencyModel.MultipleReadersSingleWriter
 import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConfiguration
+import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConnectionFactory
 import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDatabaseType
 import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriver
 import com.eygraber.sqldelight.androidx.driver.FileProvider
@@ -86,12 +93,24 @@ class AppModule(val app: Application) : InjektModule {
             synchronized(lock) {
                 sqlDriverRef?.get()?.let { return@synchronized it }
 
+                // WAL on every device, so a write never blocks reads. Low-RAM devices get one reader
+                // instead of four, since each connection keeps its own page cache.
+                val isLowRam = app.getSystemService<ActivityManager>()?.isLowRamDevice == true
                 AndroidxSqliteDriver(
-                    driver = BundledSQLiteDriver(),
+                    connectionFactory = object : AndroidxSqliteConnectionFactory {
+                        override val driver: SQLiteDriver = BundledSQLiteDriver()
+
+                        override fun createConnection(name: String): SQLiteConnection {
+                            return driver.open(name).apply {
+                                execSQL("PRAGMA busy_timeout = 3000")
+                            }
+                        }
+                    },
                     databaseType = AndroidxSqliteDatabaseType.FileProvider(app, "tachiyomi.db"),
                     schema = Database.Schema,
                     configuration = AndroidxSqliteConfiguration(
                         isForeignKeyConstraintsEnabled = true,
+                        concurrencyModel = MultipleReadersSingleWriter(isWal = true, walCount = if (isLowRam) 1 else 4),
                     ),
                 )
                     .also { sqlDriverRef = WeakReference(it) }
