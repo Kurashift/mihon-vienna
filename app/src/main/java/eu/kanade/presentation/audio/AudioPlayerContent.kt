@@ -345,9 +345,16 @@ fun AudioPlayerContent(
                                 isBuffering = state.isBuffering,
                                 isScreenVisible = isScreenVisible,
                                 isFullscreen = isFullscreen,
+                                // Same gesture as the cover on a sound track: cycle the subtitle
+                                // layout. Fullscreen gets its own button so both stay reachable.
                                 onTap = {
-                                    if (isFullscreen) controlsVisible = !controlsVisible else onToggleFullscreen()
+                                    if (isFullscreen) {
+                                        controlsVisible = !controlsVisible
+                                    } else {
+                                        onCycleSubtitleDisplayMode()
+                                    }
                                 },
+                                onFullscreen = onToggleFullscreen,
                                 modifier = if (isFullscreen) {
                                     Modifier.fillMaxSize()
                                 } else {
