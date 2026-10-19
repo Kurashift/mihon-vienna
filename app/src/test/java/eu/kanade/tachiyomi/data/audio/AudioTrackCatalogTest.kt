@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.audio
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class AudioTrackCatalogTest {
@@ -15,7 +16,7 @@ class AudioTrackCatalogTest {
                     "Track 01",
                     folder("01：mp3", audio("Track 01.mp3", "mp3", 10)),
                     folder("02：wav", audio("Track 01.wav", "wav", 100, lowQualityUrl = "wav-low")),
-                    folder("03：Subtitled audio video", audio("Track 01.mp4", "mp4", 200)),
+                    folder("03：Subtitled audio video", audio("Track 01.mp4", "video", 200)),
                     folder("04：LyRiCs(LRC) subtitle data", text("Track 01.lrc", "lyrics")),
                 ),
             ),
@@ -23,9 +24,11 @@ class AudioTrackCatalogTest {
 
         val catalog = nodes.buildAudioTrackCatalog(WORK)
 
-        assertEquals(1, catalog.tracks.size)
-        assertEquals("mp3", catalog.tracks.single().mediaStreamUrl)
-        assertEquals("lyrics", catalog.tracks.single().subtitleUrl)
+        // The sound encoding is still the one that plays, and the picture is a second row rather
+        // than being dropped: every priority table ranks the video container last.
+        assertEquals(listOf("mp3", "video"), catalog.tracks.map { it.mediaStreamUrl })
+        assertEquals("lyrics", catalog.tracks.first().subtitleUrl)
+        assertEquals("lyrics", catalog.tracks.last().subtitleUrl)
         assertEquals(listOf("日语", "Track 01"), catalog.rootNodes.folderTitles())
         assertFalse(catalog.rootNodes.folderTitles().any { "mp3" in it.lowercase() || "lyrics" in it.lowercase() })
     }
@@ -202,6 +205,51 @@ class AudioTrackCatalogTest {
 
         assertEquals(1, catalog.tracks.size)
         assertEquals(1, catalog.rootNodes.single().children.size)
+    }
+
+    @Test
+    fun `a picture sharing its name with a sound file keeps both rows`() {
+        val nodes = listOf(
+            folder(
+                "Disc",
+                audio("01.wav", "https://h/01.wav", 100, lowQualityUrl = "https://h/01.m4a"),
+                audio("01.mp4", "https://h/01.mp4", 200),
+                text("01.lrc", "lyrics"),
+            ),
+        )
+
+        val catalog = nodes.buildAudioTrackCatalog(WORK)
+
+        assertEquals(listOf("https://h/01.m4a", "https://h/01.mp4"), catalog.tracks.map { it.mediaStreamUrl })
+        assertFalse(catalog.tracks.first().isVideoSource)
+        assertTrue(catalog.tracks.last().isVideoSource)
+        // One track, one subtitle: the extra row must not orphan it.
+        assertEquals(listOf("lyrics", "lyrics"), catalog.tracks.map { it.subtitleUrl })
+    }
+
+    @Test
+    fun `a work that only ships a picture stays a single row`() {
+        val nodes = listOf(audio("01.mp4", "https://h/01.mp4", 200))
+
+        val catalog = nodes.buildAudioTrackCatalog(WORK)
+
+        assertEquals(1, catalog.tracks.size)
+        assertTrue(catalog.tracks.single().isVideoSource)
+    }
+
+    @Test
+    fun `video containers are recognised and named like any other encoding`() {
+        assertTrue("https://host/work/01.mp4".isVideoStream())
+        assertTrue("https://host/work/01.MKV".isVideoStream())
+        assertTrue("https://host/work/01.webm".isVideoStream())
+        assertTrue("https://host/work/01.m4v".isVideoStream())
+        assertFalse("https://host/work/01.m4a".isVideoStream())
+        assertFalse("https://host/work/01.flac".isVideoStream())
+
+        // The container belongs to the encoding, not to the name, or the same track shipped as
+        // sound and as picture would key differently and lose each other's history.
+        assertEquals("本編", "本編.mkv".trackBaseName())
+        assertEquals("本編", "本編.mp3".trackBaseName())
     }
 
     private fun List<TrackNode>.folderPaths(parent: String = ""): List<String> = flatMap { node ->

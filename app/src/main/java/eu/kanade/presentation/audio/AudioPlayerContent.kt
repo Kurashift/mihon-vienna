@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Forward10
+import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -64,6 +65,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -84,6 +86,7 @@ import eu.kanade.tachiyomi.data.audio.LyricLine
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerState
 import eu.kanade.tachiyomi.util.system.copyToClipboard
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -97,6 +100,9 @@ fun AudioPlayerContent(
     subtitleState: AudioSubtitleState,
     displayMode: AudioSubtitleDisplayMode,
     isFavorite: Boolean,
+    isFullscreen: Boolean,
+    isScreenVisible: Boolean,
+    onToggleFullscreen: () -> Unit,
     floatingSubtitleEnabled: Boolean,
     navigateUp: () -> Unit,
     onToggleFavorite: () -> Unit,
@@ -122,6 +128,22 @@ fun AudioPlayerContent(
     val context = LocalContext.current
     val duration = state.durationMs.coerceAtLeast(0)
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
+
+    // A picture on a phone wants the whole screen and no chrome. The page keeps owning the state;
+    // only the layout changes, so playback, subtitles and the media session are untouched.
+    if (isFullscreen && state.hasVideo && !state.videoUnsupported) {
+        FullscreenVideo(
+            controller = controller,
+            state = state,
+            isScreenVisible = isScreenVisible,
+            onExit = onToggleFullscreen,
+            onTogglePlay = onTogglePlay,
+            onSeek = onSeek,
+            onNext = onNext,
+            onPrevious = onPrevious,
+        )
+        return
+    }
 
     // Long press copies the shown text and nothing else — no click, so no dead-tap ripple on a
     // line that is a label. detectTapGestures rather than combinedClickable for exactly that.
@@ -275,12 +297,40 @@ fun AudioPlayerContent(
                         }
                     }
                 } else {
-                    PlayerCover(
-                        coverUrl = item?.coverUrl,
-                        contentDescription = item?.workTitle,
-                        size = coverSize,
-                        onClick = onCycleSubtitleDisplayMode,
-                    )
+                    // A track with a picture takes the cover's place, at the page's full width:
+                    // the same rounded block, one aspect ratio taller or shorter, and the cover
+                    // still sits behind it until the first frame arrives.
+                    if (state.hasVideo && !state.videoUnsupported) {
+                        AudioVideoStage(
+                            controller = controller,
+                            item = item,
+                            hasVideo = true,
+                            videoAspectRatio = state.videoAspectRatio,
+                            videoReady = state.videoReady,
+                            videoUnsupported = state.videoUnsupported,
+                            isBuffering = state.isBuffering,
+                            isScreenVisible = isScreenVisible,
+                            isFullscreen = false,
+                            onTap = onToggleFullscreen,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        PlayerCover(
+                            coverUrl = item?.coverUrl,
+                            contentDescription = item?.workTitle,
+                            size = coverSize,
+                            onClick = onCycleSubtitleDisplayMode,
+                        )
+                        if (state.videoUnsupported) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(MR.strings.audio_video_unsupported),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(18.dp))
                     Text(
                         text = item?.trackTitle.orEmpty(),
@@ -559,6 +609,149 @@ fun AudioPlayerContent(
 }
 
 /**
+ * The page with nothing on it but the picture and a control strip that gets out of the way.
+ *
+ * Back and the exit button both leave fullscreen rather than the page: the screen keeps a
+ * BackHandler for that, and this composable only draws the second way out.
+ */
+@Composable
+private fun FullscreenVideo(
+    controller: AudioPlayerController,
+    state: AudioPlayerState,
+    isScreenVisible: Boolean,
+    onExit: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+) {
+    var controlsVisible by remember { mutableStateOf(true) }
+    var dragPosition by remember { mutableStateOf<Long?>(null) }
+    val duration = state.durationMs.coerceAtLeast(0)
+    val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
+
+    // The strip is chrome, not content: it hides itself while the picture is playing so the screen
+    // is only the work. A tap brings it back, which is also the only way to reach the exit button.
+    LaunchedEffect(controlsVisible, state.isPlaying) {
+        if (controlsVisible && state.isPlaying) {
+            delay(CONTROLS_HIDE_DELAY_MS)
+            controlsVisible = false
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        AudioVideoStage(
+            controller = controller,
+            item = state.item,
+            hasVideo = true,
+            videoAspectRatio = state.videoAspectRatio,
+            videoReady = state.videoReady,
+            videoUnsupported = state.videoUnsupported,
+            isBuffering = state.isBuffering,
+            isScreenVisible = isScreenVisible,
+            isFullscreen = true,
+            onTap = { controlsVisible = !controlsVisible },
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        if (controlsVisible) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                AudioProgressBar(
+                    positionMs = position,
+                    durationMs = duration,
+                    bufferedMs = state.bufferedPositionMs,
+                    enabled = duration > 0,
+                    ringColor = Color.Black,
+                    onSeek = { dragPosition = it.coerceIn(0, duration) },
+                    onSeekFinished = {
+                        dragPosition?.let(onSeek)
+                        dragPosition = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = formatDuration(position),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                        color = Color.White,
+                    )
+                    Text(
+                        text = formatDuration(duration),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                        color = Color.White,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
+                        Icon(
+                            Icons.Outlined.SkipPrevious,
+                            contentDescription = stringResource(MR.strings.audio_previous_track),
+                            tint = Color.White,
+                        )
+                    }
+                    FilledIconButton(onClick = onTogglePlay, modifier = Modifier.size(56.dp)) {
+                        if (state.isBuffering) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (state.isPlaying) {
+                                    Icons.Outlined.Pause
+                                } else {
+                                    Icons.Outlined.PlayArrow
+                                },
+                                contentDescription = if (state.isPlaying) {
+                                    stringResource(MR.strings.action_pause)
+                                } else {
+                                    stringResource(MR.strings.action_play)
+                                },
+                                modifier = Modifier.size(30.dp),
+                            )
+                        }
+                    }
+                    IconButton(onClick = onNext, enabled = state.hasNext) {
+                        Icon(
+                            Icons.Outlined.SkipNext,
+                            contentDescription = stringResource(MR.strings.audio_next_track),
+                            tint = Color.White,
+                        )
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = onExit,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.FullscreenExit,
+                    contentDescription = stringResource(MR.strings.audio_video_exit_fullscreen),
+                    tint = Color.White,
+                )
+            }
+        }
+    }
+}
+
+/**
  * Cover art that also cycles the subtitle display mode, so the art is never dead space and the
  * immersive mode still has an obvious way back to a larger layout. In the immersive strip the row
  * owns that click instead, and the art is left without one so the strip is a single target.
@@ -749,5 +942,8 @@ private fun formatSpeed(value: Float): String {
 }
 
 private val IMMERSIVE_COVER_SIZE = 40.dp
+
+/** How long the fullscreen strip stays up after a tap or a pause. */
+private const val CONTROLS_HIDE_DELAY_MS = 3_000L
 
 private val SLEEP_TIMER_MINUTES = listOf(15, 30, 45, 60)

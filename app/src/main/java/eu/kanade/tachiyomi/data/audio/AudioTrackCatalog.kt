@@ -62,17 +62,7 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
     val selectedAudio = audioCandidates
         .groupBy { it.logicalKey }
         .values
-        .map { candidates ->
-            val displayCandidate = candidates.minWith(
-                compareBy<AudioCandidate> { priorityFor(it, quality) }
-                    .thenBy { it.node.size ?: Long.MAX_VALUE }
-                    .thenBy { it.ordinal },
-            )
-            SelectedAudio(
-                displayCandidate = displayCandidate,
-                streamUrl = displayCandidate.preferredStreamUrl(quality),
-            )
-        }
+        .flatMap { candidates -> selectRows(candidates, quality) }
         .sortedBy { it.displayCandidate.ordinal }
     val selectedByOriginalUrl = selectedAudio.associateBy {
         it.displayCandidate.node.mediaStreamUrl.orEmpty()
@@ -99,7 +89,9 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
     val onlySubtitle = subtitleCandidates
         .takeIf { it.map { candidate -> candidate.url }.distinct().size == 1 }
         ?.minByOrNull { it.priority }
-
+    // Counted in tracks, not in rows: a work that ships one track as both sound and picture has
+    // two rows for it, and a single subtitle still belongs to that one track.
+    val trackCount = selectedAudio.map { it.displayCandidate.logicalKey }.distinct().size
     val coverUrl = work.mainCoverUrl ?: work.thumbnailCoverUrl ?: work.samCoverUrl
     val tracks = selectedAudio.map { selected ->
         val candidate = selected.displayCandidate
@@ -107,7 +99,7 @@ internal fun List<TrackNode>.buildAudioTrackCatalog(
         val subtitle = subtitlesByKey[candidate.logicalKey]
             ?: uniqueSubtitlesByBase[candidate.baseName]
             ?: candidate.trackNumber?.let(uniqueSubtitlesByTrackNumber::get)
-            ?: onlySubtitle?.takeIf { selectedAudio.size == 1 }
+            ?: onlySubtitle?.takeIf { trackCount == 1 }
         AudioPlayItem(
             workId = work.id,
             workTitle = work.title,
@@ -200,6 +192,33 @@ private data class SelectedAudio(
     val streamUrl: String,
 )
 
+/**
+ * Turns one track's encodings into the rows the page shows.
+ *
+ * Normally that is a single row: the best encoding for the current quality setting. A track that
+ * ships both as sound and as picture is the exception. Every priority table ranks the video
+ * containers last, so the group would otherwise keep only the sound file and the picture would be
+ * unreachable — there is no separate video entry point to fall back on. The picture therefore
+ * becomes a second row of the same track, carrying the same subtitle and its own audio.
+ */
+private fun selectRows(
+    candidates: List<AudioCandidate>,
+    quality: AudioQualityMode,
+): List<SelectedAudio> {
+    val ranking = compareBy<AudioCandidate> { priorityFor(it, quality) }
+        .thenBy { it.node.size ?: Long.MAX_VALUE }
+        .thenBy { it.ordinal }
+    val primary = candidates.minWith(ranking)
+    val rows = mutableListOf(SelectedAudio(primary, primary.preferredStreamUrl(quality)))
+    if (primary.extension !in VIDEO_EXTENSIONS) {
+        candidates
+            .filter { it.extension in VIDEO_EXTENSIONS }
+            .minWithOrNull(ranking)
+            ?.let { rows += SelectedAudio(it, it.preferredStreamUrl(quality)) }
+    }
+    return rows
+}
+
 private data class AudioCandidate(
     val ordinal: Int,
     val node: TrackNode,
@@ -248,6 +267,10 @@ private val FLUENT_AUDIO_PRIORITY = mapOf(
     "flac" to 6,
     "wav" to 7,
     "mp4" to 8,
+    "m4v" to 8,
+    "mov" to 8,
+    "mkv" to 8,
+    "webm" to 8,
 )
 private val QUALITY_FIRST_AUDIO_PRIORITY = mapOf(
     "flac" to 0,
@@ -259,6 +282,10 @@ private val QUALITY_FIRST_AUDIO_PRIORITY = mapOf(
     "mp3" to 6,
     "m4b" to 7,
     "mp4" to 8,
+    "m4v" to 8,
+    "mov" to 8,
+    "mkv" to 8,
+    "webm" to 8,
 )
 private val LOSSLESS_EXTENSIONS = setOf("flac", "wav")
 private val SUBTITLE_EXTENSIONS = setOf("lrc", "vtt", "srt", "ass")
