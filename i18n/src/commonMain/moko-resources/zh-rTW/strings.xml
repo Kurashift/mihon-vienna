@@ -553,6 +553,8 @@
     <string name="audio_previous_track">上一首</string>
     <string name="audio_next_track">下一首</string>
     <string name="audio_video_enter_fullscreen">全螢幕</string>
+    <string name="audio_video_brightness">亮度</string>
+    <string name="audio_video_volume">音量</string>
     <string name="audio_video_exit_fullscreen">退出全螢幕</string>
     <string name="audio_video_unsupported">此影片無法解碼，僅播放音訊</string>
     <string name="audio_player_position">第 %1$d / %2$d 首</string>

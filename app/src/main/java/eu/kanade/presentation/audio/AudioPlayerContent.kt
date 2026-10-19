@@ -1,5 +1,10 @@
 package eu.kanade.presentation.audio
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.provider.Settings
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -60,6 +65,7 @@ import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,6 +101,7 @@ import kotlinx.coroutines.flow.first
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
+import kotlin.math.roundToInt
 
 @Composable
 fun AudioPlayerContent(
@@ -134,6 +141,62 @@ fun AudioPlayerContent(
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
 
     var controlsVisible by remember { mutableStateOf(true) }
+
+    // Swipes on the picture: left half brightness, right half volume. Both show what they are
+    // changing for as long as the finger is down, and nothing once it lifts.
+    val brightnessLabel = stringResource(MR.strings.audio_video_brightness)
+    val volumeLabel = stringResource(MR.strings.audio_video_volume)
+    var gestureHud by remember { mutableStateOf<String?>(null) }
+    var brightnessDrag by remember { mutableStateOf<Float?>(null) }
+    var volumeDrag by remember { mutableStateOf<Float?>(null) }
+    val window = remember(context) { context.findActivity()?.window }
+
+    fun readBrightness(): Float {
+        val override = window?.attributes?.screenBrightness ?: -1f
+        if (override >= 0f) return override
+        val system = Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+        return (system / 255f).coerceIn(0.01f, 1f)
+    }
+
+    fun applyBrightness(value: Float) {
+        window?.let { it.attributes = it.attributes.apply { screenBrightness = value } }
+    }
+
+    // The override belongs to this page: leaving it set would keep the player's brightness over
+    // the rest of the app.
+    DisposableEffect(window) {
+        onDispose {
+            window?.let {
+                it.attributes = it.attributes.apply {
+                    screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+            }
+        }
+    }
+
+    val onVerticalDrag: (Boolean, Float) -> Unit = { leftSide, delta ->
+        if (leftSide) {
+            val next = ((brightnessDrag ?: readBrightness()) + delta * BRIGHTNESS_DRAG_GAIN)
+                .coerceIn(MIN_BRIGHTNESS, 1f)
+            brightnessDrag = next
+            applyBrightness(next)
+            gestureHud = "$brightnessLabel ${(next * 100).roundToInt()}%"
+        } else {
+            val maximum = state.maxMediaVolume.coerceAtLeast(1)
+            val next = ((volumeDrag ?: state.mediaVolume.toFloat()) + delta * maximum)
+                .coerceIn(0f, maximum.toFloat())
+            volumeDrag = next
+            controller.setMediaVolume(next.roundToInt())
+            gestureHud = "$volumeLabel ${(next / maximum * 100).roundToInt()}%"
+        }
+    }
+    val onVerticalDragEnd: () -> Unit = {
+        brightnessDrag = null
+        volumeDrag = null
+        gestureHud = null
+    }
+
+    val stageHudText = state.boostedSpeed?.let { "${formatSpeed(it)}x" } ?: gestureHud
 
     // The strip is chrome, not content: it hides itself while the picture plays so the screen is
     // only the work. A tap brings it back.
@@ -346,7 +409,7 @@ fun AudioPlayerContent(
                                 isBuffering = state.isBuffering,
                                 isScreenVisible = isScreenVisible,
                                 isFullscreen = isFullscreen,
-                                boostedSpeed = state.boostedSpeed,
+                                hudText = stageHudText,
                                 // Same gesture as the cover on a sound track: cycle the subtitle
                                 // layout. Fullscreen gets its own button so both stay reachable.
                                 onTap = {
@@ -360,6 +423,8 @@ fun AudioPlayerContent(
                                 onFullscreen = onToggleFullscreen,
                                 onSpeedUp = controller::boostPlaybackSpeed,
                                 onSpeedUpEnd = controller::restorePlaybackSpeed,
+                                onVerticalDrag = onVerticalDrag,
+                                onVerticalDragEnd = onVerticalDragEnd,
                                 modifier = if (isFullscreen) {
                                     Modifier.fillMaxSize()
                                 } else {
@@ -1002,5 +1067,20 @@ private val IMMERSIVE_COVER_SIZE = 40.dp
 
 /** How long the fullscreen strip stays up after a tap or a pause. */
 private const val CONTROLS_HIDE_DELAY_MS = 3_000L
+
+/** A full-height swipe covers more than the brightness range, so it does not need the whole screen. */
+private const val BRIGHTNESS_DRAG_GAIN = 1.5f
+
+/** Never go fully black: a screen the user cannot see is a screen they cannot drag back. */
+private const val MIN_BRIGHTNESS = 0.02f
+
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return current as? Activity
+}
 
 private val SLEEP_TIMER_MINUTES = listOf(15, 30, 45, 60)
