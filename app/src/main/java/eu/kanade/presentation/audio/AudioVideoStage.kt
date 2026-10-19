@@ -63,7 +63,12 @@ internal fun AudioVideoStage(
     val animatedAspect by animateFloatAsState(targetAspect, label = "audioVideoStageAspect")
 
     val stageModifier = if (isFullscreen) {
-        modifier.fillMaxSize().background(Color.Black)
+        // Tappable here too: the control strip hides itself after a few seconds, and a picture
+        // that answers no tap at all leaves the user with nothing to press.
+        modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .clickable(onClick = onTap)
     } else {
         modifier
             .fillMaxWidth()

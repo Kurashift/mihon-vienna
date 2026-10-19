@@ -28,6 +28,7 @@ import eu.kanade.tachiyomi.data.audio.AudioCategoryField
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleDisplayMode
+import eu.kanade.tachiyomi.data.audio.isVideoSource
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import kotlinx.coroutines.launch
 import uy.kohesive.injekt.Injekt
@@ -215,8 +216,16 @@ class AudioPlayerScreen(
         // A queue that moves on to a sound track, or a picture this device cannot decode, leaves
         // nothing to fill the screen with. Staying landscape and barless with the normal page
         // underneath would be a layout with no way back.
-        LaunchedEffect(isFullscreen, controller.state.hasVideo, controller.state.videoUnsupported) {
-            if (isFullscreen && (!controller.state.hasVideo || controller.state.videoUnsupported)) {
+        //
+        // Keyed on the track's own name rather than on `hasVideo`: that flag is corrected from the
+        // player's tracks, and a surface hand-off empties them for a moment. Reacting to that
+        // flipped the page back to portrait by itself, and the next tap flipped it out again.
+        // Leaving fullscreen is tied to the track changing, not to any derived flag: the picture
+        // is re-prepared whenever the surface moves, and a flag read from that moment fired the
+        // exit two seconds after entering, over and over.
+        val currentStreamUrl = controller.state.item?.mediaStreamUrl
+        LaunchedEffect(isFullscreen, currentStreamUrl) {
+            if (isFullscreen && controller.state.item?.isVideoSource != true) {
                 isFullscreen = false
             }
         }
