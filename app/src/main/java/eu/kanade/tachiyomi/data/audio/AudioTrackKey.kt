@@ -47,11 +47,34 @@ internal fun String.removeFileExtension(): String = substringBeforeLast('.', thi
 
 internal fun String.removeAudioExtension(): String {
     val extension = fileExtension()
-    return if (extension in AUDIO_PRIORITY) removeFileExtension() else this
+    return if (extension in MEDIA_EXTENSIONS) removeFileExtension() else this
 }
 
+/**
+ * Containers that carry a picture as well as sound.
+ *
+ * The backend reports every file as an `audio` node, so the only thing that tells a video work
+ * apart from a sound work is the container it ships in. The list is kept here next to the audio
+ * extensions because the same normalisation has to strip it from the title: a track named
+ * `本編.mkv` is the same track as `本編.mp3` for everything keyed on [trackBaseName].
+ */
+internal val VIDEO_EXTENSIONS = setOf("mp4", "m4v", "mkv", "webm", "mov")
+
+/**
+ * Whether playing [this] can put a picture on screen.
+ *
+ * Read off the stream address rather than stored on the item: the address is what the player is
+ * handed, and keeping a copy on the persisted model would have to be migrated for every work
+ * already in the history and the queue.
+ */
+internal val AudioPlayItem.isVideoSource: Boolean
+    get() = mediaStreamUrl.isVideoStream()
+
+/** Same question for a bare stream address, for rows that never build an [AudioPlayItem]. */
+internal fun String.isVideoStream(): Boolean = fileExtension() in VIDEO_EXTENSIONS
+
 private val FORMAT_FOLDER_REGEX = Regex(
-    pattern = """^\s*\d*\s*[:：_\-－ ]*\s*(mp3|wav|flac|m4a|aac|ogg|opus|mp4|m4b)(?:\s*.*)?$""",
+    pattern = """^\s*\d*\s*[:：_\-－ ]*\s*(mp3|wav|flac|m4a|aac|ogg|opus|mp4|m4v|mkv|webm|mov|m4b)(?:\s*.*)?$""",
     option = RegexOption.IGNORE_CASE,
 )
 private val SUBTITLE_FOLDER_MARKERS = listOf(
@@ -70,7 +93,15 @@ private val SUBTITLE_SUFFIX_REGEX = Regex(
         """简中|简体|繁中|繁体|zh(?:-cn|-tw)?|ja|jp)(?:\)|）|\]|】)?)$""",
     option = RegexOption.IGNORE_CASE,
 )
-private val AUDIO_PRIORITY = setOf(
+
+/**
+ * Every container a track can arrive in, sound or picture.
+ *
+ * Used only to decide whether a trailing extension is a format marker that belongs to the
+ * encoding rather than to the name, so it has to hold the video containers too — otherwise
+ * `本編.mkv` and `本編.mp3` would normalise to different keys and lose each other's history.
+ */
+private val MEDIA_EXTENSIONS = setOf(
     "mp3",
     "m4a",
     "aac",
@@ -80,4 +111,8 @@ private val AUDIO_PRIORITY = setOf(
     "flac",
     "wav",
     "mp4",
+    "m4v",
+    "mkv",
+    "webm",
+    "mov",
 )
