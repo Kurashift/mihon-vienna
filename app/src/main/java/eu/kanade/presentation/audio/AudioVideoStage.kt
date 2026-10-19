@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -80,15 +81,20 @@ internal fun AudioVideoStage(
             .clickable(onClick = onTap)
     }
 
-    Box(modifier = stageModifier, contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier = stageModifier, contentAlignment = Alignment.Center) {
         if (hasVideo) {
             // Only while the page is actually on screen: attaching the surface is what enables the
             // video track, and there is no point decoding into a page the user is not looking at.
             if (isScreenVisible) {
+                // Sized by hand instead of with `aspectRatio`: the fullscreen box is wider than
+                // the picture, and a size computed here is the only thing that guarantees the
+                // picture is letterboxed rather than stretched across the whole screen.
+                val fittedWidth = if (maxWidth / maxHeight > videoAspect) maxHeight * videoAspect else maxWidth
+                val fittedHeight = fittedWidth / videoAspect
                 VideoOutput(
                     controller = controller,
                     aspectRatio = videoAspect,
-                    modifier = Modifier.aspectRatio(videoAspect),
+                    modifier = Modifier.size(fittedWidth, fittedHeight),
                 )
             }
         }
@@ -103,7 +109,9 @@ internal fun AudioVideoStage(
         AsyncImage(
             model = item?.coverUrl,
             contentDescription = item?.workTitle,
-            contentScale = ContentScale.Crop,
+            // Fitted, not cropped, in fullscreen: the screen is much wider than a cover, and
+            // cropping it there leaves a stretched-looking band of art instead of the work.
+            contentScale = if (isFullscreen) ContentScale.Fit else ContentScale.Crop,
             modifier = Modifier.fillMaxSize().alpha(coverAlpha),
         )
 
