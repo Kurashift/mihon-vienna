@@ -64,6 +64,7 @@ internal fun AudioVideoStage(
     isScreenVisible: Boolean,
     isFullscreen: Boolean,
     onTap: () -> Unit,
+    boostedSpeed: Float? = null,
     onDoubleTap: (() -> Unit)? = null,
     onFullscreen: (() -> Unit)? = null,
     onSpeedUp: (() -> Unit)? = null,
@@ -169,6 +170,21 @@ internal fun AudioVideoStage(
             )
         }
 
+        // The only thing a hold draws: which speed it is running at, on top of the picture, so
+        // the gesture never feels like it did nothing.
+        if (boostedSpeed != null) {
+            Text(
+                text = "${formatSpeedValue(boostedSpeed)}x",
+                color = Color.White,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 14.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(50))
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        }
+
         // Bottom-right corner of the picture itself, not of the page: it belongs to the video and
         // goes away with it. Barely there — a translucent disc only so the glyph stays visible
         // over a bright frame.
@@ -223,6 +239,11 @@ private fun VideoOutput(
 }
 
 private const val DEFAULT_VIDEO_ASPECT = 16f / 9f
+
+/** "2" for whole numbers, "1.25" otherwise — the same shape the speed chip uses. */
+private fun formatSpeedValue(value: Float): String {
+    return if (value % 1f == 0f) value.toInt().toString() else value.toString()
+}
 
 /** A 3:4 portrait recording is as tall as the block is allowed to get on a portrait page. */
 private const val MIN_STAGE_ASPECT = 0.75f

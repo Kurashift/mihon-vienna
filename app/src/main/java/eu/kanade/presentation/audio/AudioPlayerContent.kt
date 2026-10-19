@@ -346,6 +346,7 @@ fun AudioPlayerContent(
                                 isBuffering = state.isBuffering,
                                 isScreenVisible = isScreenVisible,
                                 isFullscreen = isFullscreen,
+                                boostedSpeed = state.boostedSpeed,
                                 // Same gesture as the cover on a sound track: cycle the subtitle
                                 // layout. Fullscreen gets its own button so both stay reachable.
                                 onTap = {
@@ -568,7 +569,9 @@ fun AudioPlayerContent(
                         // Speed and quality stay textual: neither has a glyph that can express its
                         // value, and they read as a pair in the middle of the row.
                         TextButton(onClick = onCyclePlaybackSpeed) {
-                            Text("${formatSpeed(state.playbackSpeed)}x")
+                            // While the picture is held down this reads the boosted speed, so the
+                            // gesture is visible in the one place the speed normally lives.
+                            Text("${formatSpeed(state.boostedSpeed ?: state.playbackSpeed)}x")
                         }
                         TextButton(onClick = onCycleAudioQuality) {
                             Text(
@@ -750,7 +753,7 @@ private fun BoxScope.FullscreenControls(
                 // places they sit in every video player.
                 TextButton(onClick = onCycleSpeed) {
                     Text(
-                        text = "${formatSpeed(state.playbackSpeed)}x",
+                        text = "${formatSpeed(state.boostedSpeed ?: state.playbackSpeed)}x",
                         color = Color.White,
                     )
                 }

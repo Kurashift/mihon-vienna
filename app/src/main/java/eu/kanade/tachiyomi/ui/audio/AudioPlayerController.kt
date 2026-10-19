@@ -82,6 +82,8 @@ data class AudioPlayerState(
     val totalCount: Int = 0,
     val repeatMode: AudioRepeatMode = AudioRepeatMode.OFF,
     val playbackSpeed: Float = 1f,
+    /** Set while the picture is held down: the speed actually playing, not the chosen one. */
+    val boostedSpeed: Float? = null,
     val sleepTimerRemainingMs: Long = 0,
     val mediaVolume: Int = 0,
     val maxMediaVolume: Int = 1,
@@ -660,7 +662,9 @@ class AudioPlayerController(
         if (speedBeforeBoost != null) return
         val current = player.playbackParameters.speed
         speedBeforeBoost = current
-        player.setPlaybackSpeed((current * 2f).coerceAtMost(MAX_BOOST_SPEED))
+        val boosted = (current * 2f).coerceAtMost(MAX_BOOST_SPEED)
+        player.setPlaybackSpeed(boosted)
+        publish(state.copy(boostedSpeed = boosted))
     }
 
     /** Puts the chosen speed back when the finger lifts. */
@@ -668,6 +672,7 @@ class AudioPlayerController(
         val previous = speedBeforeBoost ?: return
         speedBeforeBoost = null
         player.setPlaybackSpeed(previous)
+        publish(state.copy(boostedSpeed = null))
     }
 
     fun setSleepTimer(minutes: Int?) {
