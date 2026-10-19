@@ -290,6 +290,14 @@ class AudioPlayerController(
     private var videoFallbackUrl: String? = null
 
     /**
+     * Whether the video track type is currently selected.
+     *
+     * Needed because a switched-off track type can be left out of [Tracks] altogether, and that
+     * looks exactly like a file without a picture.
+     */
+    private var videoTrackEnabled = false
+
+    /**
      * Shows the picture of the current track in [view].
      *
      * The video track is only decoded while a surface is attached: in the reader, in the queue
@@ -323,6 +331,7 @@ class AudioPlayerController(
                 .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !enabled)
                 .build()
         }
+        videoTrackEnabled = enabled
     }
 
     /**
@@ -1309,9 +1318,19 @@ class AudioPlayerController(
             // picture look frozen, so "there is no video" is only believed once the player is
             // ready to say so.
             val settled = player.playbackState == Player.STATE_READY
+            val declared = state.item?.isVideoSource == true
+            val hasVideo = when {
+                video != null -> true
+                // With the video track switched off the group can be missing from the tracks
+                // entirely — the reader and the background both run that way. That says nothing
+                // about the file, and the name is the only thing that still knows.
+                !videoTrackEnabled -> declared
+                !settled -> state.hasVideo
+                else -> false
+            }
             publish(
                 state.copy(
-                    hasVideo = video != null || (state.hasVideo && !settled),
+                    hasVideo = hasVideo,
                     videoUnsupported = video != null && !video.isSupported,
                 ),
             )

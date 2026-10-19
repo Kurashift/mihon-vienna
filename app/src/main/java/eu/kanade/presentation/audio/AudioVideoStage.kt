@@ -12,7 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,6 +61,7 @@ internal fun AudioVideoStage(
     isScreenVisible: Boolean,
     isFullscreen: Boolean,
     onTap: () -> Unit,
+    onFullscreen: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val videoAspect = videoAspectRatio.takeIf { it.isFinite() && it > 0f } ?: DEFAULT_VIDEO_ASPECT
@@ -134,6 +139,25 @@ internal fun AudioVideoStage(
                     .background(Color.Black.copy(alpha = 0.6f))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
+        }
+
+        // A corner button rather than the picture itself: on this page a tap on the art already
+        // means "cycle the subtitle layout", and taking that away from a video would leave no way
+        // back to the compact layout.
+        if (hasVideo && !isFullscreen && onFullscreen != null) {
+            FilledIconButton(
+                onClick = onFullscreen,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .size(36.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.Fullscreen,
+                    contentDescription = stringResource(MR.strings.audio_video_enter_fullscreen),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }
