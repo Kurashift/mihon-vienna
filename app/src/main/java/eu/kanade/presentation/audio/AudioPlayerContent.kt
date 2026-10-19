@@ -7,11 +7,13 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,13 +55,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -80,7 +81,6 @@ import coil3.compose.AsyncImage
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.presentation.util.marqueeTitle
-import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.AudioRepeatMode
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleDisplayMode
@@ -132,39 +132,7 @@ fun AudioPlayerContent(
     val duration = state.durationMs.coerceAtLeast(0)
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
 
-    // The stage lives in one place and is moved between the page and fullscreen, so the same
-    // TextureView keeps the same surface. Rebuilding it on the switch tore the decoder down and
-    // left the cover over an empty texture for as long as the new surface took to produce a
-    // frame — which on a rotation is long enough to read as a frozen picture.
-    val stageParams = AudioVideoStageParams(
-        item = item,
-        hasVideo = state.hasVideo,
-        videoAspectRatio = state.videoAspectRatio,
-        videoReady = state.videoReady,
-        videoUnsupported = state.videoUnsupported,
-        isBuffering = state.isBuffering,
-        isScreenVisible = isScreenVisible,
-    )
     var controlsVisible by remember { mutableStateOf(true) }
-    val videoStage = remember(controller) {
-        movableContentOf<Modifier, Boolean, AudioVideoStageParams> { modifier, fullscreen, params ->
-            AudioVideoStage(
-                controller = controller,
-                item = params.item,
-                hasVideo = params.hasVideo,
-                videoAspectRatio = params.videoAspectRatio,
-                videoReady = params.videoReady,
-                videoUnsupported = params.videoUnsupported,
-                isBuffering = params.isBuffering,
-                isScreenVisible = params.isScreenVisible,
-                isFullscreen = fullscreen,
-                onTap = {
-                    if (fullscreen) controlsVisible = !controlsVisible else onToggleFullscreen()
-                },
-                modifier = modifier,
-            )
-        }
-    }
 
     // The strip is chrome, not content: it hides itself while the picture plays so the screen is
     // only the work. A tap brings it back.
@@ -173,22 +141,6 @@ fun AudioPlayerContent(
             delay(CONTROLS_HIDE_DELAY_MS)
             controlsVisible = false
         }
-    }
-
-    // A picture on a phone wants the whole screen and no chrome. The page keeps owning the state;
-    // only the layout changes, so playback, subtitles and the media session are untouched.
-    if (isFullscreen && state.hasVideo && !state.videoUnsupported) {
-        FullscreenVideo(
-            state = state,
-            controlsVisible = controlsVisible,
-            stage = { modifier -> videoStage(modifier, true, stageParams) },
-            onExit = onToggleFullscreen,
-            onTogglePlay = onTogglePlay,
-            onSeek = onSeek,
-            onNext = onNext,
-            onPrevious = onPrevious,
-        )
-        return
     }
 
     // Long press copies the shown text and nothing else — no click, so no dead-tap ripple on a
@@ -229,49 +181,64 @@ fun AudioPlayerContent(
     }
 
     Scaffold(
+        // Black behind the picture: the window still paints around the stage, and a light
+        // background there is what showed as a white strip in the camera cutout.
+        containerColor = if (isFullscreen) Color.Black else MaterialTheme.colorScheme.background,
+        // Fullscreen draws under the cutout too, so the picture is not pushed away from it.
+        contentWindowInsets = if (isFullscreen) {
+            WindowInsets(0, 0, 0, 0)
+        } else {
+            ScaffoldDefaults.contentWindowInsets
+        },
         topBar = { scrollBehavior ->
-            AppBar(
-                // The work title doubles as the way back to the work details, so the player can
-                // be opened from anywhere without losing the path back upstream.
-                titleContent = {
-                    val titleText = item?.workTitle ?: stringResource(MR.strings.audio_title)
-                    Text(
-                        text = titleText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = if (item == null) {
-                            Modifier
-                        } else {
-                            Modifier
-                                .clickable(onClick = onOpenWorkDetail)
-                                .marqueeTitle()
-                        },
-                    )
-                },
-                navigateUp = navigateUp,
-                actions = {
-                    if (item != null) {
-                        IconButton(onClick = onToggleFavorite) {
-                            Icon(
-                                imageVector = if (isFavorite) {
-                                    Icons.Outlined.Favorite
-                                } else {
-                                    Icons.Outlined.FavoriteBorder
-                                },
-                                contentDescription = stringResource(
-                                    if (isFavorite) MR.strings.audio_favorite_remove else MR.strings.audio_favorite_add,
-                                ),
-                                tint = if (isFavorite) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
+            if (!isFullscreen) {
+                AppBar(
+                    // The work title doubles as the way back to the work details, so the player can
+                    // be opened from anywhere without losing the path back upstream.
+                    titleContent = {
+                        val titleText = item?.workTitle ?: stringResource(MR.strings.audio_title)
+                        Text(
+                            text = titleText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = if (item == null) {
+                                Modifier
+                            } else {
+                                Modifier
+                                    .clickable(onClick = onOpenWorkDetail)
+                                    .marqueeTitle()
+                            },
+                        )
+                    },
+                    navigateUp = navigateUp,
+                    actions = {
+                        if (item != null) {
+                            IconButton(onClick = onToggleFavorite) {
+                                Icon(
+                                    imageVector = if (isFavorite) {
+                                        Icons.Outlined.Favorite
+                                    } else {
+                                        Icons.Outlined.FavoriteBorder
+                                    },
+                                    contentDescription = stringResource(
+                                        if (isFavorite) {
+                                            MR.strings.audio_favorite_remove
+                                        } else {
+                                            MR.strings.audio_favorite_add
+                                        },
+                                    ),
+                                    tint = if (isFavorite) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
                         }
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-            )
+                    },
+                    scrollBehavior = scrollBehavior,
+                )
+            }
         },
     ) { contentPadding ->
         BoxWithConstraints(
@@ -288,14 +255,27 @@ fun AudioPlayerContent(
                 // keeps the work recognisable while the subtitles take over the screen.
                 AudioSubtitleDisplayMode.IMMERSIVE -> IMMERSIVE_COVER_SIZE
             }
-            val immersive = displayMode == AudioSubtitleDisplayMode.IMMERSIVE
+            val immersive = !isFullscreen && displayMode == AudioSubtitleDisplayMode.IMMERSIVE
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp),
+                    .padding(horizontal = if (isFullscreen) 0.dp else 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(if (immersive) 6.dp else 10.dp))
+                // Present in both layouts, empty in fullscreen: the stage below has to keep the
+                // same slot. Handing it to a different parent destroys its surface, and that is
+                // the black flash that used to sit between the page and fullscreen.
+                Spacer(
+                    Modifier.height(
+                        if (isFullscreen) {
+                            0.dp
+                        } else if (immersive) {
+                            6.dp
+                        } else {
+                            10.dp
+                        },
+                    ),
+                )
                 if (immersive) {
                     // The whole strip cycles the display mode, not just the 40dp thumbnail: the art
                     // used to be the only live pixel in a full-width row, and every tap to its
@@ -343,18 +323,59 @@ fun AudioPlayerContent(
                         }
                     }
                 } else {
-                    // A track with a picture takes the cover's place, at the page's full width:
-                    // the same rounded block, one aspect ratio taller or shorter, and the cover
-                    // still sits behind it until the first frame arrives.
-                    if (state.hasVideo && !state.videoUnsupported) {
-                        videoStage(Modifier.fillMaxWidth(), false, stageParams)
-                    } else {
-                        PlayerCover(
-                            coverUrl = item?.coverUrl,
-                            contentDescription = item?.workTitle,
-                            size = coverSize,
-                            onClick = onCycleSubtitleDisplayMode,
-                        )
+                    // A track with a picture takes the cover's place, at the page's full width in
+                    // the page and edge to edge in fullscreen. Same Box either way, so the stage
+                    // keeps its place in the tree and its surface.
+                    Box(
+                        modifier = if (isFullscreen) {
+                            Modifier.fillMaxSize()
+                        } else {
+                            Modifier.fillMaxWidth()
+                        },
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        if (state.hasVideo && !state.videoUnsupported) {
+                            AudioVideoStage(
+                                controller = controller,
+                                item = item,
+                                hasVideo = true,
+                                videoAspectRatio = state.videoAspectRatio,
+                                videoReady = state.videoReady,
+                                videoUnsupported = state.videoUnsupported,
+                                isBuffering = state.isBuffering,
+                                isScreenVisible = isScreenVisible,
+                                isFullscreen = isFullscreen,
+                                onTap = {
+                                    if (isFullscreen) controlsVisible = !controlsVisible else onToggleFullscreen()
+                                },
+                                modifier = if (isFullscreen) {
+                                    Modifier.fillMaxSize()
+                                } else {
+                                    Modifier.fillMaxWidth()
+                                },
+                            )
+                        } else {
+                            PlayerCover(
+                                coverUrl = item?.coverUrl,
+                                contentDescription = item?.workTitle,
+                                size = coverSize,
+                                onClick = onCycleSubtitleDisplayMode,
+                            )
+                        }
+
+                        if (isFullscreen) {
+                            FullscreenControls(
+                                state = state,
+                                controlsVisible = controlsVisible,
+                                onExit = onToggleFullscreen,
+                                onTogglePlay = onTogglePlay,
+                                onSeek = onSeek,
+                                onNext = onNext,
+                                onPrevious = onPrevious,
+                            )
+                        }
+                    }
+                    if (!isFullscreen) {
                         if (state.videoUnsupported) {
                             Spacer(Modifier.height(8.dp))
                             Text(
@@ -364,268 +385,277 @@ fun AudioPlayerContent(
                                 textAlign = TextAlign.Center,
                             )
                         }
-                    }
-                    Spacer(Modifier.height(18.dp))
-                    Text(
-                        text = item?.trackTitle.orEmpty(),
-                        style = MaterialTheme.typography.titleLarge,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .copyOnLongPress(item?.trackTitle),
-                    )
-                    if (item != null) {
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(18.dp))
                         Text(
-                            text = item.circleName.ifBlank { item.workTitle },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = item?.trackTitle.orEmpty(),
+                            style = MaterialTheme.typography.titleLarge,
                             textAlign = TextAlign.Center,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .circleTextModifier(
-                                    shown = item.circleName.ifBlank { item.workTitle },
-                                    circleName = item.circleName.takeIf { it.isNotBlank() },
-                                ),
+                                .copyOnLongPress(item?.trackTitle),
                         )
-                    }
-                }
-                if (state.totalCount > 1) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(MR.strings.audio_player_position, state.index + 1, state.totalCount),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                LyricsPanel(
-                    lyrics = lyrics,
-                    subtitleState = subtitleState,
-                    displayMode = displayMode,
-                    position = position,
-                    onSeek = onSeek,
-                    onRetry = onRetrySubtitle,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                )
-
-                AudioProgressBar(
-                    positionMs = position,
-                    durationMs = duration,
-                    bufferedMs = state.bufferedPositionMs,
-                    // Buffering no longer disables the slider: doing so swapped the whole track to
-                    // the greyed-out colours for as long as the seek took, which read as a black
-                    // bar flickering on every jump even when it was served from the disk cache.
-                    enabled = duration > 0,
-                    // The ring is painted in the page's own background so the thumb reads as sitting
-                    // on the track rather than being part of it.
-                    ringColor = MaterialTheme.colorScheme.background,
-                    onSeek = { dragPosition = it.coerceIn(0, duration) },
-                    onSeekFinished = {
-                        dragPosition?.let(onSeek)
-                        dragPosition = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    // Tabular figures, like the floating bar: these tick every half second, and
-                    // proportional digits make the label twitch as 1s swaps in for 8s.
-                    Text(
-                        text = formatDuration(position),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = formatDuration(duration),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    IconButton(onClick = { onSeekBy(-10_000) }, enabled = item != null) {
-                        Icon(Icons.Outlined.Replay10, contentDescription = stringResource(MR.strings.audio_rewind))
-                    }
-                    IconButton(
-                        onClick = onPrevious,
-                        enabled = state.hasPrevious,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            Icons.Outlined.SkipPrevious,
-                            contentDescription = stringResource(MR.strings.audio_previous_track),
-                            modifier = Modifier.size(32.dp),
-                        )
-                    }
-                    FilledIconButton(
-                        onClick = onTogglePlay,
-                        enabled = item != null,
-                        modifier = Modifier.size(68.dp),
-                    ) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(28.dp),
-                                strokeWidth = 3.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                                contentDescription = if (state.isPlaying) {
-                                    stringResource(MR.strings.action_pause)
-                                } else {
-                                    stringResource(MR.strings.action_play)
-                                },
-                                modifier = Modifier.size(36.dp),
+                        if (item != null) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = item.circleName.ifBlank { item.workTitle },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .circleTextModifier(
+                                        shown = item.circleName.ifBlank { item.workTitle },
+                                        circleName = item.circleName.takeIf { it.isNotBlank() },
+                                    ),
                             )
                         }
                     }
-                    IconButton(
-                        onClick = onNext,
-                        enabled = state.hasNext,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            Icons.Outlined.SkipNext,
-                            contentDescription = stringResource(MR.strings.audio_next_track),
-                            modifier = Modifier.size(32.dp),
-                        )
-                    }
-                    IconButton(onClick = { onSeekBy(10_000) }, enabled = item != null) {
-                        Icon(Icons.Outlined.Forward10, contentDescription = stringResource(MR.strings.audio_forward))
-                    }
                 }
-
-                AudioVolumeControl(
-                    controller = controller,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                )
-
-                val sleepMinutes = ((state.sleepTimerRemainingMs + 59_999) / 60_000).toInt()
-                val sleeping = state.sleepTimerRemainingMs > 0
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    // Speed and quality stay textual: neither has a glyph that can express its
-                    // value, and they read as a pair in the middle of the row.
-                    TextButton(onClick = onCyclePlaybackSpeed) {
-                        Text("${formatSpeed(state.playbackSpeed)}x")
-                    }
-                    TextButton(onClick = onCycleAudioQuality) {
+                if (!isFullscreen) {
+                    if (state.totalCount > 1) {
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            stringResource(
-                                if (state.audioQuality == AudioQualityMode.FLUENT_FIRST) {
-                                    MR.strings.audio_quality_fluent
-                                } else {
-                                    MR.strings.audio_quality_high
-                                },
-                            ),
+                            text = stringResource(MR.strings.audio_player_position, state.index + 1, state.totalCount),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    IconButton(onClick = onCycleRepeatMode) {
-                        // A shape of its own per mode, so the state is legible at a glance rather
-                        // than by reading the "1" on a ring the other mode also draws. Off is the
-                        // outline of the ring the single-track mode fills, which keeps those two
-                        // one matched pair the way the sleep timer beside it works.
-                        Icon(
-                            imageVector = when (state.repeatMode) {
-                                AudioRepeatMode.OFF -> Icons.Outlined.Repeat
-                                AudioRepeatMode.ONE -> Icons.Filled.RepeatOne
-                                // Three bars for the whole queue, against the rings the other two
-                                // draw: no second ring to tell apart by the "1" on it, and no
-                                // play glyph hanging off it, which read as a transport control
-                                // rather than as a mode. Filled while the queue repeats, so the
-                                // shape alone says which mode is on.
-                                AudioRepeatMode.ALL -> Icons.Filled.Menu
-                            },
-                            contentDescription = stringResource(
-                                when (state.repeatMode) {
-                                    AudioRepeatMode.OFF -> MR.strings.audio_repeat_off
-                                    AudioRepeatMode.ONE -> MR.strings.audio_repeat_one
-                                    AudioRepeatMode.ALL -> MR.strings.audio_repeat_all
-                                },
-                            ),
-                            tint = if (state.repeatMode == AudioRepeatMode.OFF) {
-                                LocalContentColor.current
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
+
+                    LyricsPanel(
+                        lyrics = lyrics,
+                        subtitleState = subtitleState,
+                        displayMode = displayMode,
+                        position = position,
+                        onSeek = onSeek,
+                        onRetry = onRetrySubtitle,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+
+                    AudioProgressBar(
+                        positionMs = position,
+                        durationMs = duration,
+                        bufferedMs = state.bufferedPositionMs,
+                        // Buffering no longer disables the slider: doing so swapped the whole track to
+                        // the greyed-out colours for as long as the seek took, which read as a black
+                        // bar flickering on every jump even when it was served from the disk cache.
+                        enabled = duration > 0,
+                        // The ring is painted in the page's own background so the thumb reads as sitting
+                        // on the track rather than being part of it.
+                        ringColor = MaterialTheme.colorScheme.background,
+                        onSeek = { dragPosition = it.coerceIn(0, duration) },
+                        onSeekFinished = {
+                            dragPosition?.let(onSeek)
+                            dragPosition = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        // Tabular figures, like the floating bar: these tick every half second, and
+                        // proportional digits make the label twitch as 1s swaps in for 8s.
+                        Text(
+                            text = formatDuration(position),
+                            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = formatDuration(duration),
+                            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    IconButton(onClick = { showSleepTimer = true }) {
-                        Box(contentAlignment = Alignment.Center) {
+                    Spacer(Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        IconButton(onClick = { onSeekBy(-10_000) }, enabled = item != null) {
+                            Icon(Icons.Outlined.Replay10, contentDescription = stringResource(MR.strings.audio_rewind))
+                        }
+                        IconButton(
+                            onClick = onPrevious,
+                            enabled = state.hasPrevious,
+                            modifier = Modifier.size(48.dp),
+                        ) {
                             Icon(
-                                imageVector = if (sleeping) Icons.Filled.Bedtime else Icons.Outlined.Bedtime,
-                                contentDescription = if (sleeping) {
-                                    stringResource(MR.strings.audio_sleep_minutes, sleepMinutes)
-                                } else {
-                                    stringResource(MR.strings.audio_sleep_timer)
-                                },
-                                tint = if (sleeping) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    LocalContentColor.current
-                                },
+                                Icons.Outlined.SkipPrevious,
+                                contentDescription = stringResource(MR.strings.audio_previous_track),
+                                modifier = Modifier.size(32.dp),
                             )
-                            // Countdown rides on the icon as a badge so the row stays one line;
-                            // the opaque chip keeps it legible over the filled glyph.
-                            if (sleeping) {
-                                Text(
-                                    text = sleepMinutes.toString(),
-                                    fontSize = 9.sp,
-                                    lineHeight = 9.sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .offset(x = 6.dp, y = 5.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.surface,
-                                            shape = RoundedCornerShape(3.dp),
-                                        )
-                                        .padding(horizontal = 3.dp),
+                        }
+                        FilledIconButton(
+                            onClick = onTogglePlay,
+                            enabled = item != null,
+                            modifier = Modifier.size(68.dp),
+                        ) {
+                            if (state.isBuffering) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp),
+                                    strokeWidth = 3.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (state.isPlaying) {
+                                        Icons.Outlined.Pause
+                                    } else {
+                                        Icons.Outlined.PlayArrow
+                                    },
+                                    contentDescription = if (state.isPlaying) {
+                                        stringResource(MR.strings.action_pause)
+                                    } else {
+                                        stringResource(MR.strings.action_play)
+                                    },
+                                    modifier = Modifier.size(36.dp),
                                 )
                             }
                         }
+                        IconButton(
+                            onClick = onNext,
+                            enabled = state.hasNext,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.SkipNext,
+                                contentDescription = stringResource(MR.strings.audio_next_track),
+                                modifier = Modifier.size(32.dp),
+                            )
+                        }
+                        IconButton(onClick = { onSeekBy(10_000) }, enabled = item != null) {
+                            Icon(
+                                Icons.Outlined.Forward10,
+                                contentDescription = stringResource(MR.strings.audio_forward),
+                            )
+                        }
                     }
-                    FloatingSubtitleToggle(
-                        enabled = floatingSubtitleEnabled,
-                        onToggle = onToggleFloatingSubtitle,
+
+                    AudioVolumeControl(
+                        controller = controller,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                     )
-                    // The queue lives beside the transport controls rather than in the app bar: it
-                    // is something you reach for while listening, the same way as repeat and the
-                    // sleep timer, and the bar keeps one slot free for the favourite.
-                    IconButton(onClick = onOpenQueue, enabled = item != null) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
-                            contentDescription = stringResource(MR.strings.audio_playlist),
-                            tint = LocalContentColor.current,
+
+                    val sleepMinutes = ((state.sleepTimerRemainingMs + 59_999) / 60_000).toInt()
+                    val sleeping = state.sleepTimerRemainingMs > 0
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        // Speed and quality stay textual: neither has a glyph that can express its
+                        // value, and they read as a pair in the middle of the row.
+                        TextButton(onClick = onCyclePlaybackSpeed) {
+                            Text("${formatSpeed(state.playbackSpeed)}x")
+                        }
+                        TextButton(onClick = onCycleAudioQuality) {
+                            Text(
+                                stringResource(
+                                    if (state.audioQuality == AudioQualityMode.FLUENT_FIRST) {
+                                        MR.strings.audio_quality_fluent
+                                    } else {
+                                        MR.strings.audio_quality_high
+                                    },
+                                ),
+                            )
+                        }
+                        IconButton(onClick = onCycleRepeatMode) {
+                            // A shape of its own per mode, so the state is legible at a glance rather
+                            // than by reading the "1" on a ring the other mode also draws. Off is the
+                            // outline of the ring the single-track mode fills, which keeps those two
+                            // one matched pair the way the sleep timer beside it works.
+                            Icon(
+                                imageVector = when (state.repeatMode) {
+                                    AudioRepeatMode.OFF -> Icons.Outlined.Repeat
+                                    AudioRepeatMode.ONE -> Icons.Filled.RepeatOne
+                                    // Three bars for the whole queue, against the rings the other two
+                                    // draw: no second ring to tell apart by the "1" on it, and no
+                                    // play glyph hanging off it, which read as a transport control
+                                    // rather than as a mode. Filled while the queue repeats, so the
+                                    // shape alone says which mode is on.
+                                    AudioRepeatMode.ALL -> Icons.Filled.Menu
+                                },
+                                contentDescription = stringResource(
+                                    when (state.repeatMode) {
+                                        AudioRepeatMode.OFF -> MR.strings.audio_repeat_off
+                                        AudioRepeatMode.ONE -> MR.strings.audio_repeat_one
+                                        AudioRepeatMode.ALL -> MR.strings.audio_repeat_all
+                                    },
+                                ),
+                                tint = if (state.repeatMode == AudioRepeatMode.OFF) {
+                                    LocalContentColor.current
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                            )
+                        }
+                        IconButton(onClick = { showSleepTimer = true }) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (sleeping) Icons.Filled.Bedtime else Icons.Outlined.Bedtime,
+                                    contentDescription = if (sleeping) {
+                                        stringResource(MR.strings.audio_sleep_minutes, sleepMinutes)
+                                    } else {
+                                        stringResource(MR.strings.audio_sleep_timer)
+                                    },
+                                    tint = if (sleeping) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        LocalContentColor.current
+                                    },
+                                )
+                                // Countdown rides on the icon as a badge so the row stays one line;
+                                // the opaque chip keeps it legible over the filled glyph.
+                                if (sleeping) {
+                                    Text(
+                                        text = sleepMinutes.toString(),
+                                        fontSize = 9.sp,
+                                        lineHeight = 9.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .offset(x = 6.dp, y = 5.dp)
+                                            .background(
+                                                color = MaterialTheme.colorScheme.surface,
+                                                shape = RoundedCornerShape(3.dp),
+                                            )
+                                            .padding(horizontal = 3.dp),
+                                    )
+                                }
+                            }
+                        }
+                        FloatingSubtitleToggle(
+                            enabled = floatingSubtitleEnabled,
+                            onToggle = onToggleFloatingSubtitle,
                         )
+                        // The queue lives beside the transport controls rather than in the app bar: it
+                        // is something you reach for while listening, the same way as repeat and the
+                        // sleep timer, and the bar keeps one slot free for the favourite.
+                        IconButton(onClick = onOpenQueue, enabled = item != null) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                                contentDescription = stringResource(MR.strings.audio_playlist),
+                                tint = LocalContentColor.current,
+                            )
+                        }
                     }
-                }
-                if (state.error != null) {
-                    TextButton(onClick = onTogglePlay) {
-                        Text(stringResource(MR.strings.audio_retry))
+                    if (state.error != null) {
+                        TextButton(onClick = onTogglePlay) {
+                            Text(stringResource(MR.strings.audio_retry))
+                        }
                     }
+                    Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
             }
         }
     }
@@ -643,31 +673,15 @@ fun AudioPlayerContent(
 }
 
 /**
- * Everything the stage needs from the page, bundled so it can travel through
- * [androidx.compose.runtime.movableContentOf] as one parameter.
- */
-@Immutable
-private data class AudioVideoStageParams(
-    val item: AudioPlayItem?,
-    val hasVideo: Boolean,
-    val videoAspectRatio: Float,
-    val videoReady: Boolean,
-    val videoUnsupported: Boolean,
-    val isBuffering: Boolean,
-    val isScreenVisible: Boolean,
-)
-
-/**
- * The page with nothing on it but the picture and a control strip that gets out of the way.
+ * The control strip of the fullscreen picture, drawn over it.
  *
  * Back and the exit button both leave fullscreen rather than the page: the screen keeps a
  * BackHandler for that, and this composable only draws the second way out.
  */
 @Composable
-private fun FullscreenVideo(
+private fun BoxScope.FullscreenControls(
     state: AudioPlayerState,
     controlsVisible: Boolean,
-    stage: @Composable (Modifier) -> Unit,
     onExit: () -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -678,104 +692,100 @@ private fun FullscreenVideo(
     val duration = state.durationMs.coerceAtLeast(0)
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        stage(Modifier.fillMaxSize())
-
-        if (controlsVisible) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+    if (controlsVisible) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.55f))
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+        ) {
+            AudioProgressBar(
+                positionMs = position,
+                durationMs = duration,
+                bufferedMs = state.bufferedPositionMs,
+                enabled = duration > 0,
+                ringColor = Color.Black,
+                onSeek = { dragPosition = it.coerceIn(0, duration) },
+                onSeekFinished = {
+                    dragPosition?.let(onSeek)
+                    dragPosition = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                AudioProgressBar(
-                    positionMs = position,
-                    durationMs = duration,
-                    bufferedMs = state.bufferedPositionMs,
-                    enabled = duration > 0,
-                    ringColor = Color.Black,
-                    onSeek = { dragPosition = it.coerceIn(0, duration) },
-                    onSeekFinished = {
-                        dragPosition?.let(onSeek)
-                        dragPosition = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                Text(
+                    text = formatDuration(position),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                    color = Color.White,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = formatDuration(position),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
-                        color = Color.White,
-                    )
-                    Text(
-                        text = formatDuration(duration),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
-                        color = Color.White,
+                Text(
+                    text = formatDuration(duration),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = TABULAR_FIGURES),
+                    color = Color.White,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
+                    Icon(
+                        Icons.Outlined.SkipPrevious,
+                        contentDescription = stringResource(MR.strings.audio_previous_track),
+                        tint = Color.White,
                     )
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
+                FilledIconButton(onClick = onTogglePlay, modifier = Modifier.size(56.dp)) {
+                    if (state.isBuffering) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 3.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
                         Icon(
-                            Icons.Outlined.SkipPrevious,
-                            contentDescription = stringResource(MR.strings.audio_previous_track),
-                            tint = Color.White,
+                            imageVector = if (state.isPlaying) {
+                                Icons.Outlined.Pause
+                            } else {
+                                Icons.Outlined.PlayArrow
+                            },
+                            contentDescription = if (state.isPlaying) {
+                                stringResource(MR.strings.action_pause)
+                            } else {
+                                stringResource(MR.strings.action_play)
+                            },
+                            modifier = Modifier.size(30.dp),
                         )
                     }
-                    FilledIconButton(onClick = onTogglePlay, modifier = Modifier.size(56.dp)) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 3.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (state.isPlaying) {
-                                    Icons.Outlined.Pause
-                                } else {
-                                    Icons.Outlined.PlayArrow
-                                },
-                                contentDescription = if (state.isPlaying) {
-                                    stringResource(MR.strings.action_pause)
-                                } else {
-                                    stringResource(MR.strings.action_play)
-                                },
-                                modifier = Modifier.size(30.dp),
-                            )
-                        }
-                    }
-                    IconButton(onClick = onNext, enabled = state.hasNext) {
-                        Icon(
-                            Icons.Outlined.SkipNext,
-                            contentDescription = stringResource(MR.strings.audio_next_track),
-                            tint = Color.White,
-                        )
-                    }
+                }
+                IconButton(onClick = onNext, enabled = state.hasNext) {
+                    Icon(
+                        Icons.Outlined.SkipNext,
+                        contentDescription = stringResource(MR.strings.audio_next_track),
+                        tint = Color.White,
+                    )
                 }
             }
         }
 
-        // Outside the strip on purpose: the strip hides itself while the picture plays, and the
-        // way out of fullscreen must not hide with it.
-        FilledIconButton(
+        // Part of the strip, not pinned on top of the picture: the way out is one tap away
+        // (the picture itself brings the strip back), and a permanent button over the video
+        // reads as clutter rather than as a control.
+        IconButton(
             onClick = onExit,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(12.dp)
-                .size(40.dp),
+                .padding(8.dp),
         ) {
             Icon(
                 Icons.Outlined.FullscreenExit,
                 contentDescription = stringResource(MR.strings.audio_video_exit_fullscreen),
-                modifier = Modifier.size(22.dp),
+                tint = Color.White,
             )
         }
     }

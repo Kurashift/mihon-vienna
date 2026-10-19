@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.ui.audio
 
 import android.content.pm.ActivityInfo
+import android.os.Build
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -193,19 +195,32 @@ class AudioPlayerScreen(
             }
         }
 
-        // A fullscreen picture takes the system bars with it, the same way the reader does.
+        // A fullscreen picture takes the system bars with it, the same way the reader does, and
+        // draws into the camera cutout: leaving that strip to the window is what showed as a
+        // white bar along the cutout on a landscape phone.
         val window = activity?.window
         DisposableEffect(window, isFullscreen) {
             if (window == null) return@DisposableEffect onDispose {}
             val insets = WindowInsetsControllerCompat(window, window.decorView)
+            val previousCutout = window.attributes.layoutInDisplayCutoutMode
             if (isFullscreen) {
                 insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 insets.hide(WindowInsetsCompat.Type.systemBars())
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    } else {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+                }
             } else {
                 insets.show(WindowInsetsCompat.Type.systemBars())
             }
             onDispose {
                 if (isFullscreen) insets.show(WindowInsetsCompat.Type.systemBars())
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = previousCutout
+                }
             }
         }
 

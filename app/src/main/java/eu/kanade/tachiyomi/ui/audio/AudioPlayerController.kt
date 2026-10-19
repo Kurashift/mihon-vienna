@@ -156,6 +156,9 @@ class AudioPlayerController(
             positionMs = historyStore.resumePositionMs(latest.item) ?: 0L,
             durationMs = latest.item.durationMs,
             totalCount = 1,
+            // Known from the file name alone, so a restored video track shows its stage before
+            // anything is played instead of a square cover.
+            hasVideo = latest.item.isVideoSource,
         )
     }
 
@@ -724,6 +727,10 @@ class AudioPlayerController(
         positionMs: Long = player.currentPosition.coerceAtLeast(0),
     ) {
         val item = items.getOrNull(index) ?: return
+        // READY lands here on every re-prepare, and a re-prepare is what a surface hand-off
+        // causes. Resetting the picture's state on each of those put the cover back over a
+        // playing video, so it is only reset when the track itself changes.
+        val sameItem = state.item?.mediaStreamUrl == item.mediaStreamUrl
         publish(
             state.copy(
                 item = item,
@@ -744,8 +751,8 @@ class AudioPlayerController(
                 // collapse back to the cover and grow again on every advance, and a file whose name
                 // promises a picture is right far more often than not.
                 hasVideo = item.isVideoSource,
-                videoReady = false,
-                videoUnsupported = false,
+                videoReady = if (sameItem) state.videoReady else false,
+                videoUnsupported = if (sameItem) state.videoUnsupported else false,
             ),
         )
         loadSubtitles(item)
