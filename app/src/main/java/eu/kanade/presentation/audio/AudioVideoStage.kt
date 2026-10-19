@@ -4,6 +4,7 @@ import android.view.TextureView
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
@@ -64,11 +65,13 @@ internal fun AudioVideoStage(
     isScreenVisible: Boolean,
     isFullscreen: Boolean,
     onTap: () -> Unit,
-    boostedSpeed: Float? = null,
+    hudText: String? = null,
     onDoubleTap: (() -> Unit)? = null,
     onFullscreen: (() -> Unit)? = null,
     onSpeedUp: (() -> Unit)? = null,
     onSpeedUpEnd: (() -> Unit)? = null,
+    onVerticalDrag: ((leftSide: Boolean, deltaFraction: Float) -> Unit)? = null,
+    onVerticalDragEnd: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val videoAspect = videoAspectRatio.takeIf { it.isFinite() && it > 0f } ?: DEFAULT_VIDEO_ASPECT
@@ -97,6 +100,25 @@ internal fun AudioVideoStage(
         )
     }
 
+    // Left half adjusts brightness, right half the volume, and a full-height swipe covers the
+    // whole range. Vertical drags are consumed here, which is also what cancels the tap above
+    // once the finger actually moves.
+    val currentOnVerticalDrag by rememberUpdatedState(onVerticalDrag)
+    val currentOnVerticalDragEnd by rememberUpdatedState(onVerticalDragEnd)
+    val dragModifier = Modifier.pointerInput(Unit) {
+        var leftSide = true
+        detectVerticalDragGestures(
+            onDragStart = { offset -> leftSide = offset.x < size.width / 2f },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                val height = size.height.coerceAtLeast(1)
+                currentOnVerticalDrag?.invoke(leftSide, -dragAmount / height)
+            },
+            onDragEnd = { currentOnVerticalDragEnd?.invoke() },
+            onDragCancel = { currentOnVerticalDragEnd?.invoke() },
+        )
+    }
+
     val stageModifier = if (isFullscreen) {
         // Tappable here too: the control strip hides itself after a few seconds, and a picture
         // that answers no tap at all leaves the user with nothing to press.
@@ -104,6 +126,7 @@ internal fun AudioVideoStage(
             .fillMaxSize()
             .background(Color.Black)
             .then(tapModifier)
+            .then(dragModifier)
     } else {
         modifier
             .fillMaxWidth()
@@ -113,6 +136,7 @@ internal fun AudioVideoStage(
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .then(tapModifier)
+            .then(dragModifier)
     }
 
     BoxWithConstraints(modifier = stageModifier, contentAlignment = Alignment.Center) {
@@ -170,11 +194,11 @@ internal fun AudioVideoStage(
             )
         }
 
-        // The only thing a hold draws: which speed it is running at, on top of the picture, so
-        // the gesture never feels like it did nothing.
-        if (boostedSpeed != null) {
+        // The only thing a gesture draws: what it is changing and to what, on top of the picture,
+        // so a hold or a swipe never feels like it did nothing.
+        if (hudText != null) {
             Text(
-                text = "${formatSpeedValue(boostedSpeed)}x",
+                text = hudText,
                 color = Color.White,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier
@@ -239,11 +263,6 @@ private fun VideoOutput(
 }
 
 private const val DEFAULT_VIDEO_ASPECT = 16f / 9f
-
-/** "2" for whole numbers, "1.25" otherwise — the same shape the speed chip uses. */
-private fun formatSpeedValue(value: Float): String {
-    return if (value % 1f == 0f) value.toInt().toString() else value.toString()
-}
 
 /** A 3:4 portrait recording is as tall as the block is allowed to get on a portrait page. */
 private const val MIN_STAGE_ASPECT = 0.75f
