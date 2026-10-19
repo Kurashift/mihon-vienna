@@ -1321,7 +1321,6 @@
     <string name="audio_quick_track_count">%1$d tracks</string>
     <string name="audio_previous_track">Previous track</string>
     <string name="audio_next_track">Next track</string>
-    <string name="audio_video_badge">Video</string>
     <string name="audio_video_enter_fullscreen">Fullscreen</string>
     <string name="audio_video_exit_fullscreen">Exit fullscreen</string>
     <string name="audio_video_unsupported">This video cannot be decoded — playing audio only</string>

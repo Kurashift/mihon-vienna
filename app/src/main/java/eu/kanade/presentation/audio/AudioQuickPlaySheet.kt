@@ -55,7 +55,6 @@ import eu.kanade.presentation.util.marqueeTitle
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistGroup
 import eu.kanade.tachiyomi.data.audio.AudioPlaylistStore
-import eu.kanade.tachiyomi.data.audio.isVideoSource
 import eu.kanade.tachiyomi.ui.audio.AudioPlaybackService
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 import tachiyomi.i18n.MR
@@ -169,7 +168,6 @@ fun AudioQuickPlaySheet(
                                 durationMs = row.item.durationMs,
                                 isCurrent = isCurrent,
                                 isPlaying = isCurrent && state.isPlaying,
-                                isVideo = row.item.isVideoSource,
                                 depth = 1,
                                 onClick = {
                                     playTrack(

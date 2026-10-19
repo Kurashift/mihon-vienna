@@ -87,7 +87,6 @@ import eu.kanade.tachiyomi.data.audio.TagRef
 import eu.kanade.tachiyomi.data.audio.TrackNode
 import eu.kanade.tachiyomi.data.audio.Work
 import eu.kanade.tachiyomi.data.audio.WorkEdition
-import eu.kanade.tachiyomi.data.audio.isVideoStream
 import eu.kanade.tachiyomi.ui.audio.AudioDetailState
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import tachiyomi.i18n.MR
@@ -271,7 +270,6 @@ fun AudioDetailContent(
                                 title = row.title,
                                 durationMs = row.durationMs,
                                 depth = row.depth,
-                                isVideo = row.audioUrl?.isVideoStream() == true,
                                 onClick = { if (index >= 0) onClickTrack(index) },
                                 actions = {
                                     PlaylistToggleIcon(

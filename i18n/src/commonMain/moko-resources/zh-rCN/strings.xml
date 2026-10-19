@@ -1172,7 +1172,6 @@
     <string name="audio_quick_track_count">%1$d 首</string>
     <string name="audio_previous_track">上一首</string>
     <string name="audio_next_track">下一首</string>
-    <string name="audio_video_badge">视频</string>
     <string name="audio_video_enter_fullscreen">全屏</string>
     <string name="audio_video_exit_fullscreen">退出全屏</string>
     <string name="audio_video_unsupported">该视频无法解码，仅播放音频</string>
