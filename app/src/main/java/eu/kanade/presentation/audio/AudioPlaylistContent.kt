@@ -67,6 +67,7 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
+import eu.kanade.tachiyomi.data.audio.isVideoSource
 import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -548,6 +549,7 @@ private fun QueueTrackRow(
             durationMs = item.durationMs,
             isCurrent = isCurrent,
             isPlaying = isCurrent && isPlaying,
+            isVideo = item.isVideoSource,
             depth = depth,
             onClick = onClick,
             selectionState = selectionState,

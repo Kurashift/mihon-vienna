@@ -33,6 +33,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import eu.kanade.presentation.audio.components.VideoBadge
+import eu.kanade.tachiyomi.data.audio.isVideoSource
 import eu.kanade.tachiyomi.ui.audio.AudioPlayerController
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -94,12 +96,20 @@ fun AudioMiniPlayerBar(
                             .weight(1f)
                             .padding(horizontal = 10.dp),
                     ) {
-                        Text(
-                            text = item.trackTitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = item.trackTitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            // Tells the user there is a picture waiting one tap away; the bar
+                            // itself never draws it.
+                            if (state.hasVideo || item.isVideoSource) {
+                                VideoBadge(modifier = Modifier.padding(start = 6.dp))
+                            }
+                        }
                         Text(
                             text = item.workTitle,
                             style = MaterialTheme.typography.bodySmall,

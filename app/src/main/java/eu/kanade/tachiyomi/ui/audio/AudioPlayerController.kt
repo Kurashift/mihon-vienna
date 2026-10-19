@@ -8,6 +8,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.SystemClock
+import android.view.TextureView
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,8 +16,11 @@ import androidx.compose.runtime.setValue
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.HttpDataSource
@@ -25,8 +29,11 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.data.audio.AudioHistoryEntry
 import eu.kanade.tachiyomi.data.audio.AudioHistoryStore
@@ -39,6 +46,8 @@ import eu.kanade.tachiyomi.data.audio.LyricLine
 import eu.kanade.tachiyomi.data.audio.RecommenderFeedbackTracker
 import eu.kanade.tachiyomi.data.audio.SubtitleParser
 import eu.kanade.tachiyomi.data.audio.buildAudioTrackCatalog
+import eu.kanade.tachiyomi.data.audio.fileExtension
+import eu.kanade.tachiyomi.data.audio.isVideoSource
 import eu.kanade.tachiyomi.data.audio.recommenderUuid
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import kotlinx.coroutines.CancellationException
@@ -80,6 +89,14 @@ data class AudioPlayerState(
     val audioQuality: AudioQualityMode = AudioQualityMode.FLUENT_FIRST,
     val lyrics: List<LyricLine> = emptyList(),
     val subtitleState: AudioSubtitleState = AudioSubtitleState.NOT_AVAILABLE,
+    /** The current track carries a picture. True from the file name until the tracks arrive. */
+    val hasVideo: Boolean = false,
+    /** Width / height of the picture, 0 while unknown. */
+    val videoAspectRatio: Float = 0f,
+    /** The first frame has been drawn, so the cover behind the picture can step aside. */
+    val videoReady: Boolean = false,
+    /** The track has a picture this device cannot decode; only the sound is played. */
+    val videoUnsupported: Boolean = false,
 ) {
     val isBuffering: Boolean
         get() = isLoading && !isPlaying
@@ -217,8 +234,18 @@ class AudioPlayerController(
         .setCache(cache)
         .setUpstreamDataSourceFactory(upstreamFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    private val audioSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
+
+    /**
+     * Video is read straight from the network, without the disk cache.
+     *
+     * The cache is 512 MiB and the section it belongs to is audio: one 1 GiB work would evict
+     * every track the user has been listening to and still not fit. The picture is watched once
+     * and streamed anyway, so there is nothing worth keeping.
+     */
+    private val videoSourceFactory = ProgressiveMediaSource.Factory(upstreamFactory)
     private val player = ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+        .setMediaSourceFactory(audioSourceFactory)
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -238,8 +265,80 @@ class AudioPlayerController(
                     .build(),
                 true,
             )
+            // Nothing draws the picture until a player page attaches a surface, and a video track
+            // decoded into nothing is pure battery. Attaching turns it back on.
+            trackSelectionParameters = trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
+                .build()
             addListener(PlayerListener())
         }
+
+    /**
+     * Owner of the picture currently on screen.
+     *
+     * A player page can be pushed twice — the queue and the mini bar both open it — and the one
+     * leaving must not tear the output away from the one that is still showing. Every attach
+     * carries the caller as a token and only that token can detach.
+     */
+    private var videoOwner: Any? = null
+    private var videoView: TextureView? = null
+
+    /** Address the codec fallback has already run for, so a broken file cannot loop it. */
+    private var videoFallbackUrl: String? = null
+
+    /**
+     * Shows the picture of the current track in [view].
+     *
+     * The video track is only decoded while a surface is attached: in the reader, in the queue
+     * and with the screen off there is nowhere to draw it, and decoding into nothing costs
+     * battery for frames nobody sees. Audio is unaffected either way.
+     */
+    fun attachVideoOutput(owner: Any, view: TextureView) {
+        if (videoOwner === owner && videoView === view) return
+        videoOwner = owner
+        videoView = view
+        player.setVideoTextureView(view)
+        setVideoTrackEnabled(true)
+    }
+
+    /** Stops drawing into [owner]'s view, leaving playback (sound included) running. */
+    fun detachVideoOutput(owner: Any) {
+        if (videoOwner !== owner) return
+        videoOwner = null
+        videoView = null
+        player.clearVideoSurface()
+        setVideoTrackEnabled(false)
+        // The surface went away with its last frame, so the next attach starts from nothing: the
+        // cover has to come back rather than sit behind an empty texture.
+        if (state.videoReady) publish(state.copy(videoReady = false))
+    }
+
+    private fun setVideoTrackEnabled(enabled: Boolean) {
+        val parameters = player.trackSelectionParameters
+        if (parameters.disabledTrackTypes.contains(C.TRACK_TYPE_VIDEO) == enabled) {
+            player.trackSelectionParameters = parameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !enabled)
+                .build()
+        }
+    }
+
+    /**
+     * Builds the source for one queue entry.
+     *
+     * The backend labels every file `audio/mpeg`, so the container is taken from the address and
+     * spelled out to the player instead of being sniffed from the response: a mirror that drops
+     * the `.mp4` suffix would otherwise leave the extractor guessing.
+     */
+    private fun mediaSourceFor(item: AudioPlayItem): MediaSource {
+        if (!item.isVideoSource) {
+            return audioSourceFactory.createMediaSource(MediaItem.fromUri(item.mediaStreamUrl))
+        }
+        val mediaItem = MediaItem.Builder()
+            .setUri(item.mediaStreamUrl)
+            .apply { item.videoMimeType()?.let(::setMimeType) }
+            .build()
+        return videoSourceFactory.createMediaSource(mediaItem)
+    }
 
     fun start(
         newItems: List<AudioPlayItem>,
@@ -361,8 +460,8 @@ class AudioPlayerController(
         items = newItems
         applyVolumeProtection()
         applyRepeatMode()
-        player.setMediaItems(
-            items.map { MediaItem.fromUri(it.mediaStreamUrl) },
+        player.setMediaSources(
+            items.map(::mediaSourceFor),
             startIndex,
             startPositionMs.coerceAtLeast(0),
         )
@@ -641,6 +740,12 @@ class AudioPlayerController(
                 hasNext = items.size > 1,
                 index = index,
                 totalCount = items.size,
+                // Optimistic, and corrected by onTracksChanged a moment later: the page should not
+                // collapse back to the cover and grow again on every advance, and a file whose name
+                // promises a picture is right far more often than not.
+                hasVideo = item.isVideoSource,
+                videoReady = false,
+                videoUnsupported = false,
             ),
         )
         loadSubtitles(item)
@@ -784,15 +889,32 @@ class AudioPlayerController(
     }
 
     private fun checkBufferingTimeout(now: Long) {
-        if (
-            bufferingStartedAt == 0L ||
-            player.playbackState != Player.STATE_BUFFERING ||
-            now - bufferingStartedAt < BUFFERING_TIMEOUT_MS
-        ) {
+        if (bufferingStartedAt == 0L || player.playbackState != Player.STATE_BUFFERING) {
+            return
+        }
+        // A video work is a single file that can be a gigabyte, with its index at the end: the
+        // first frame takes a tail request the player has to make before it can even start.
+        val timeoutMs = if (state.hasVideo && !state.videoReady) {
+            VIDEO_STARTUP_TIMEOUT_MS
+        } else {
+            BUFFERING_TIMEOUT_MS
+        }
+        if (now - bufferingStartedAt < timeoutMs) {
             return
         }
 
         clearBufferingState()
+        if (state.hasVideo) {
+            // Unlike a song, a slow video is worth waiting for: skipping it would quietly drop the
+            // track the user opened. Report the wait and let the load keep running.
+            publish(
+                state.copy(
+                    isLoading = false,
+                    error = context.stringResource(MR.strings.audio_buffer_timeout),
+                ),
+            )
+            return
+        }
         if (canAdvanceToAnotherTrack()) {
             seekToIndex(player.currentMediaItemIndex + 1)
             player.play()
@@ -1166,6 +1288,38 @@ class AudioPlayerController(
             markBufferingStarted()
         }
 
+        /**
+         * Settles what the optimistic guess in [updateCurrentItem] got wrong.
+         *
+         * An `.mp4` can be a sound file, and a container can carry a codec this device has no
+         * decoder for. Both are only known once the media has been read, and both have to fold
+         * back to the cover rather than leave a black rectangle behind.
+         */
+        override fun onTracksChanged(tracks: Tracks) {
+            val video = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }
+            publish(
+                state.copy(
+                    hasVideo = video != null,
+                    videoUnsupported = video != null && !video.isSupported,
+                ),
+            )
+        }
+
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            if (videoSize.width <= 0 || videoSize.height <= 0) return
+            val ratio = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+            // The size is reported before rotation metadata is applied, so a phone video shot in
+            // portrait arrives as a landscape one.
+            val rotated = if (videoSize.unappliedRotationDegrees % 180 == 90) 1f / ratio else ratio
+            if (rotated.isFinite() && rotated > 0f) {
+                publish(state.copy(videoAspectRatio = rotated))
+            }
+        }
+
+        override fun onRenderedFirstFrame() {
+            if (!state.videoReady) publish(state.copy(videoReady = true))
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_BUFFERING -> {
@@ -1209,11 +1363,46 @@ class AudioPlayerController(
         override fun onPlayerError(error: PlaybackException) {
             clearBufferingState()
             logcat(LogPriority.ERROR, error) { "Audio playback failed for ${state.item?.trackTitle}" }
+            // A picture this device cannot decode must not cost the user the sound of the track.
+            // This runs before anything that could skip the entry, which is what the generic path
+            // would do to a codec failure.
+            if (recoverFromVideoCodecFailure(error)) return
             // Stale-tree recovery is tried first and only once: it is a fix, whereas the path below
             // either retries the same address or moves the user on to another track.
             if (recoverFromStaleTrackTree(error)) return
             retryOrSkipPlayback(error)
         }
+    }
+
+    /**
+     * Drops the picture and keeps the sound when the video renderer is what failed.
+     *
+     * Returns false for every other failure, so the ordinary retry and skip paths still see it.
+     * Runs at most once per address: re-preparing a file whose codec is missing would fail the
+     * same way forever, and the point of the fallback is to end up playing something.
+     */
+    private fun recoverFromVideoCodecFailure(error: PlaybackException): Boolean {
+        val cause = error as? ExoPlaybackException ?: return false
+        if (cause.type != ExoPlaybackException.TYPE_RENDERER) return false
+        // The renderer reports the format it choked on; a sound failure must keep its own path.
+        if (cause.rendererFormat?.sampleMimeType?.startsWith("video/") != true) return false
+        val item = state.item ?: return false
+        if (videoFallbackUrl == item.mediaStreamUrl) return false
+        videoFallbackUrl = item.mediaStreamUrl
+
+        setVideoTrackEnabled(false)
+        publish(
+            state.copy(
+                hasVideo = false,
+                videoUnsupported = true,
+                videoReady = false,
+                isLoading = true,
+                error = null,
+            ),
+        )
+        player.prepare()
+        player.play()
+        return true
     }
 
     private data class SystemVolume(
@@ -1230,6 +1419,9 @@ class AudioPlayerController(
         const val BUFFER_FOR_PLAYBACK_MS = 750
         const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 1_500
         const val BUFFERING_TIMEOUT_MS = 20_000L
+
+        /** Longer than [BUFFERING_TIMEOUT_MS]: a video work is one big file with a tail index. */
+        const val VIDEO_STARTUP_TIMEOUT_MS = 60_000L
         const val MAX_PLAYBACK_RETRIES = 3
         const val PLAYBACK_RETRY_BASE_DELAY_MS = 500L
         const val MAX_INLINE_HTTP_RETRIES = 2
@@ -1254,4 +1446,18 @@ class AudioPlayerController(
         private var volumeProtectionApplied = false
         private var lastActiveAt = 0L
     }
+}
+
+/**
+ * Container hint handed to the player for [mediaSourceFor].
+ *
+ * The address already carries the suffix, but the backend serves every file as `audio/mpeg` and
+ * a mirror is free to rewrite the path; naming the container here keeps the extractor choice
+ * independent of both.
+ */
+private fun AudioPlayItem.videoMimeType(): String? = when (mediaStreamUrl.fileExtension()) {
+    "mp4", "m4v", "mov" -> MimeTypes.VIDEO_MP4
+    "mkv" -> MimeTypes.VIDEO_MATROSKA
+    "webm" -> MimeTypes.VIDEO_WEBM
+    else -> null
 }
