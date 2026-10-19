@@ -1297,9 +1297,14 @@ class AudioPlayerController(
          */
         override fun onTracksChanged(tracks: Tracks) {
             val video = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }
+            // A surface hand-off re-prepares the renderer, and the tracks go empty while that
+            // happens. Folding the page back to the cover for those frames is what made the
+            // picture look frozen, so "there is no video" is only believed once the player is
+            // ready to say so.
+            val settled = player.playbackState == Player.STATE_READY
             publish(
                 state.copy(
-                    hasVideo = video != null,
+                    hasVideo = video != null || (state.hasVideo && !settled),
                     videoUnsupported = video != null && !video.isSupported,
                 ),
             )

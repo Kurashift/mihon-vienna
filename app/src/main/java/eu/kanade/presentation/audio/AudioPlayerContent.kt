@@ -56,8 +56,10 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -78,6 +80,7 @@ import coil3.compose.AsyncImage
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.presentation.util.marqueeTitle
+import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioQualityMode
 import eu.kanade.tachiyomi.data.audio.AudioRepeatMode
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleDisplayMode
@@ -129,13 +132,56 @@ fun AudioPlayerContent(
     val duration = state.durationMs.coerceAtLeast(0)
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
 
+    // The stage lives in one place and is moved between the page and fullscreen, so the same
+    // TextureView keeps the same surface. Rebuilding it on the switch tore the decoder down and
+    // left the cover over an empty texture for as long as the new surface took to produce a
+    // frame — which on a rotation is long enough to read as a frozen picture.
+    val stageParams = AudioVideoStageParams(
+        item = item,
+        hasVideo = state.hasVideo,
+        videoAspectRatio = state.videoAspectRatio,
+        videoReady = state.videoReady,
+        videoUnsupported = state.videoUnsupported,
+        isBuffering = state.isBuffering,
+        isScreenVisible = isScreenVisible,
+    )
+    var controlsVisible by remember { mutableStateOf(true) }
+    val videoStage = remember(controller) {
+        movableContentOf<Modifier, Boolean, AudioVideoStageParams> { modifier, fullscreen, params ->
+            AudioVideoStage(
+                controller = controller,
+                item = params.item,
+                hasVideo = params.hasVideo,
+                videoAspectRatio = params.videoAspectRatio,
+                videoReady = params.videoReady,
+                videoUnsupported = params.videoUnsupported,
+                isBuffering = params.isBuffering,
+                isScreenVisible = params.isScreenVisible,
+                isFullscreen = fullscreen,
+                onTap = {
+                    if (fullscreen) controlsVisible = !controlsVisible else onToggleFullscreen()
+                },
+                modifier = modifier,
+            )
+        }
+    }
+
+    // The strip is chrome, not content: it hides itself while the picture plays so the screen is
+    // only the work. A tap brings it back.
+    LaunchedEffect(isFullscreen, controlsVisible, state.isPlaying) {
+        if (isFullscreen && controlsVisible && state.isPlaying) {
+            delay(CONTROLS_HIDE_DELAY_MS)
+            controlsVisible = false
+        }
+    }
+
     // A picture on a phone wants the whole screen and no chrome. The page keeps owning the state;
     // only the layout changes, so playback, subtitles and the media session are untouched.
     if (isFullscreen && state.hasVideo && !state.videoUnsupported) {
         FullscreenVideo(
-            controller = controller,
             state = state,
-            isScreenVisible = isScreenVisible,
+            controlsVisible = controlsVisible,
+            stage = { modifier -> videoStage(modifier, true, stageParams) },
             onExit = onToggleFullscreen,
             onTogglePlay = onTogglePlay,
             onSeek = onSeek,
@@ -301,19 +347,7 @@ fun AudioPlayerContent(
                     // the same rounded block, one aspect ratio taller or shorter, and the cover
                     // still sits behind it until the first frame arrives.
                     if (state.hasVideo && !state.videoUnsupported) {
-                        AudioVideoStage(
-                            controller = controller,
-                            item = item,
-                            hasVideo = true,
-                            videoAspectRatio = state.videoAspectRatio,
-                            videoReady = state.videoReady,
-                            videoUnsupported = state.videoUnsupported,
-                            isBuffering = state.isBuffering,
-                            isScreenVisible = isScreenVisible,
-                            isFullscreen = false,
-                            onTap = onToggleFullscreen,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        videoStage(Modifier.fillMaxWidth(), false, stageParams)
                     } else {
                         PlayerCover(
                             coverUrl = item?.coverUrl,
@@ -609,6 +643,21 @@ fun AudioPlayerContent(
 }
 
 /**
+ * Everything the stage needs from the page, bundled so it can travel through
+ * [androidx.compose.runtime.movableContentOf] as one parameter.
+ */
+@Immutable
+private data class AudioVideoStageParams(
+    val item: AudioPlayItem?,
+    val hasVideo: Boolean,
+    val videoAspectRatio: Float,
+    val videoReady: Boolean,
+    val videoUnsupported: Boolean,
+    val isBuffering: Boolean,
+    val isScreenVisible: Boolean,
+)
+
+/**
  * The page with nothing on it but the picture and a control strip that gets out of the way.
  *
  * Back and the exit button both leave fullscreen rather than the page: the screen keeps a
@@ -616,43 +665,21 @@ fun AudioPlayerContent(
  */
 @Composable
 private fun FullscreenVideo(
-    controller: AudioPlayerController,
     state: AudioPlayerState,
-    isScreenVisible: Boolean,
+    controlsVisible: Boolean,
+    stage: @Composable (Modifier) -> Unit,
     onExit: () -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
 ) {
-    var controlsVisible by remember { mutableStateOf(true) }
     var dragPosition by remember { mutableStateOf<Long?>(null) }
     val duration = state.durationMs.coerceAtLeast(0)
     val position = (dragPosition ?: state.positionMs).coerceIn(0, duration)
 
-    // The strip is chrome, not content: it hides itself while the picture is playing so the screen
-    // is only the work. A tap brings it back, which is also the only way to reach the exit button.
-    LaunchedEffect(controlsVisible, state.isPlaying) {
-        if (controlsVisible && state.isPlaying) {
-            delay(CONTROLS_HIDE_DELAY_MS)
-            controlsVisible = false
-        }
-    }
-
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        AudioVideoStage(
-            controller = controller,
-            item = state.item,
-            hasVideo = true,
-            videoAspectRatio = state.videoAspectRatio,
-            videoReady = state.videoReady,
-            videoUnsupported = state.videoUnsupported,
-            isBuffering = state.isBuffering,
-            isScreenVisible = isScreenVisible,
-            isFullscreen = true,
-            onTap = { controlsVisible = !controlsVisible },
-            modifier = Modifier.fillMaxSize(),
-        )
+        stage(Modifier.fillMaxSize())
 
         if (controlsVisible) {
             Column(
@@ -734,19 +761,22 @@ private fun FullscreenVideo(
                     }
                 }
             }
+        }
 
-            IconButton(
-                onClick = onExit,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.FullscreenExit,
-                    contentDescription = stringResource(MR.strings.audio_video_exit_fullscreen),
-                    tint = Color.White,
-                )
-            }
+        // Outside the strip on purpose: the strip hides itself while the picture plays, and the
+        // way out of fullscreen must not hide with it.
+        FilledIconButton(
+            onClick = onExit,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp)
+                .size(40.dp),
+        ) {
+            Icon(
+                Icons.Outlined.FullscreenExit,
+                contentDescription = stringResource(MR.strings.audio_video_exit_fullscreen),
+                modifier = Modifier.size(22.dp),
+            )
         }
     }
 }
