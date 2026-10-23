@@ -116,6 +116,7 @@ import eu.kanade.tachiyomi.util.system.dpToPx
 import eu.kanade.tachiyomi.util.system.getSerializableExtraCompat
 import eu.kanade.tachiyomi.util.system.isBenchmarkBuildType
 import eu.kanade.tachiyomi.util.system.isNavigationBarNeedsScrim
+import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.system.updaterEnabled
 import eu.kanade.tachiyomi.util.view.setComposeContent
 import kotlinx.coroutines.Job
@@ -459,9 +460,16 @@ class MainActivity : BaseActivity() {
         val ignoredVersion by ignoredVersions.collectAsState(
             initial = preferences.ignoredUpdateVersion.get(),
         )
+        val promptEnabled by remember { preferences.updatePromptEnabled.changes() }
+            .collectAsState(initial = preferences.updatePromptEnabled.get())
 
         val current = release ?: return
-        if (answered || ignoredVersion == current.version || navigator.lastItem is OnboardingScreen) {
+        if (
+            !promptEnabled ||
+            answered ||
+            ignoredVersion == current.version ||
+            navigator.lastItem is OnboardingScreen
+        ) {
             return
         }
 
@@ -485,9 +493,16 @@ class MainActivity : BaseActivity() {
                 AppUpdateDownloadService.stop(context)
                 AppUpdateState.dismissPrompt()
             },
-            onIgnore = {
+            onSkipVersion = {
                 preferences.ignoredUpdateVersion.set(current.version)
                 AppUpdateState.dismissPrompt()
+            },
+            onDisablePrompt = {
+                preferences.updatePromptEnabled.set(false)
+                AppUpdateState.dismissPrompt()
+                // The switch lives in the about screen, and a prompt that never comes back with no
+                // word about where it went is worse than the prompt itself.
+                context.toast(MR.strings.update_prompt_disabled)
             },
             onDismiss = AppUpdateState::dismissPrompt,
             onOpenChangelog = {

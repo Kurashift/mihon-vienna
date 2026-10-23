@@ -42,7 +42,8 @@ fun UpdateAvailableDialog(
     progress: AppUpdateProgress?,
     onPrimary: () -> Unit,
     onCancel: () -> Unit,
-    onIgnore: () -> Unit,
+    onSkipVersion: () -> Unit,
+    onDisablePrompt: () -> Unit,
     onDismiss: () -> Unit,
     onOpenChangelog: () -> Unit,
 ) {
@@ -83,11 +84,13 @@ fun UpdateAvailableDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!busy) {
-                    TextButton(onClick = onIgnore) {
-                        Text(stringResource(MR.strings.update_available_ignore))
+                    // Two ways to say no, and the labels have to carry the difference: this one
+                    // silences the prompt for good, the next one only for this release.
+                    TextButton(onClick = onDisablePrompt) {
+                        Text(stringResource(MR.strings.update_available_disable))
                     }
-                    TextButton(onClick = onDismiss) {
-                        Text(stringResource(MR.strings.update_available_later))
+                    TextButton(onClick = onSkipVersion) {
+                        Text(stringResource(MR.strings.update_available_skip_version))
                     }
                 }
                 when {
