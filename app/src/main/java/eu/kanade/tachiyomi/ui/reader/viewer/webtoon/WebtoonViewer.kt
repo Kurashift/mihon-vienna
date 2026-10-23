@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.reader.viewer.webtoon
 
 import android.animation.ObjectAnimator
 import android.graphics.PointF
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -105,6 +106,19 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     private var previousInitialPageHeight = -1
 
     private var stableInitialLayoutFrames = 0
+
+    /**
+     * Token of the alignment pass allowed to act. A pass is driven either by the next RecyclerView
+     * layout or by the fallback frame callback; bumping this on every pass turns the losing
+     * callback into a no-op instead of a second pass measured outside a layout.
+     */
+    private var initialPassToken = 0
+
+    /** Uptime after which alignment stops insisting and reveals what has been measured so far. */
+    private var initialAlignDeadline = 0L
+
+    /** Frames the post-reveal anchor may still cancel before it lets the frame through. */
+    private var initialAnchorFrames = 0
 
     private var initialAnchorPageIdentity: PageIdentity? = null
     private var initialAnchorPreDrawListener: ViewTreeObserver.OnPreDrawListener? = null
@@ -367,9 +381,11 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             restoringViewportAnchor = true
         }
         // Continuous reading drops a separator as soon as its adjacent chapter is ready. Keep it
-        // only while the user is actually resting on that separator so an adapter refresh cannot
-        // remove content from under their finger. Pager modes still honor the global preference.
-        val forceTransition = currentPage is ChapterTransition
+        // while a transition is in the viewport, not merely while it is the selected item: a swipe
+        // reaches the separator before the selection follows, and swapping it for a thin divider
+        // under the user's finger is exactly the jump this refresh is supposed to prevent. Pager
+        // modes still honor the global preference.
+        val forceTransition = currentPage is ChapterTransition || viewportTouchesTransition()
         val activeItem = currentPage
         adapter.setChapters(chapters, forceTransition)
         currentPage = findMatchingAdapterItem(activeItem) ?: activeItem
@@ -379,7 +395,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         if (positioning == InitialPositioning.NotStarted) {
             val pages = chapters.currChapter.pages ?: return
             val targetPage = pages[min(chapters.currChapter.requestedPage, pages.lastIndex)]
-            val position = adapter.items.indexOf(targetPage)
+            val position = adapterPositionOf(targetPage)
             if (position == -1) {
                 positioning = InitialPositioning.Ready
                 recycler.alpha = 1f
@@ -388,7 +404,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 activity.onViewerContentReady()
                 return
             }
-            positioning = InitialPositioning.Waiting(targetPage)
+            positioning = InitialPositioning.Waiting(targetPage.pageIdentity())
             layoutManager.scrollToPositionWithOffset(position, 0)
 
             scope.launch {
@@ -410,28 +426,55 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     }
 
     /**
-     * Captures a real laid-out item and its measured top before pages are inserted or removed.
-     * The active item is preferred so chapter preloading cannot move what the user is looking at.
+     * Captures the item that owns the viewport top edge, before pages are inserted or removed.
+     *
+     * The selected item is preferred, but only while it is actually on screen. A swipe towards an
+     * adjacent chapter leaves the selection on the page it started from — still attached by the
+     * extra layout space, yet scrolled out of view — and pinning that page cannot preserve the
+     * pixels above it when the separator in between is rebuilt, which is what made the viewport
+     * appear to teleport right after crossing a chapter boundary.
      */
     private fun captureViewportAnchor(): ViewportAnchor? {
+        val viewportTop = recycler.paddingTop
+        val viewportBottom = recycler.height - recycler.paddingBottom
+        val topAnchor = viewportTopAnchor(viewportTop)
         val activePosition = adapterPositionOf(currentPage)
         val activeView = activePosition
             .takeIf { it != -1 }
             ?.let(layoutManager::findViewByPosition)
-        if (activeView != null) {
-            return ViewportAnchor(currentPage!!, activeView.top)
+        val activeOnScreen = activeView != null &&
+            activeView.bottom > viewportTop &&
+            activeView.top < viewportBottom
+        return when {
+            !activeOnScreen && topAnchor != null -> topAnchor
+            activeView != null -> ViewportAnchor(currentPage!!, activeView.top)
+            else -> topAnchor
         }
+    }
 
-        var fallback: ViewportAnchor? = null
+    /** The top-most attached item still covering the viewport top edge. */
+    private fun viewportTopAnchor(viewportTop: Int): ViewportAnchor? {
         for (index in 0 until recycler.childCount) {
             val child = recycler.getChildAt(index)
+            if (child.bottom <= viewportTop) continue
             val position = recycler.getChildAdapterPosition(child)
             val item = adapter.items.getOrNull(position) ?: continue
-            val anchor = ViewportAnchor(item, child.top)
-            if (item is ReaderPage) return anchor
-            if (fallback == null) fallback = anchor
+            return ViewportAnchor(item, child.top)
         }
-        return fallback
+        return null
+    }
+
+    /** Whether a chapter transition is currently intersecting the viewport. */
+    private fun viewportTouchesTransition(): Boolean {
+        val viewportTop = recycler.paddingTop
+        val viewportBottom = recycler.height - recycler.paddingBottom
+        for (index in 0 until recycler.childCount) {
+            val child = recycler.getChildAt(index)
+            if (child.bottom <= viewportTop || child.top >= viewportBottom) continue
+            val position = recycler.getChildAdapterPosition(child)
+            if (adapter.items.getOrNull(position) is ChapterTransition) return true
+        }
+        return false
     }
 
     /**
@@ -471,7 +514,8 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
     /** Restarts the measured alignment flow if a decode or layout callback was lost. */
     private fun forceInitialAlignment(page: ReaderPage) {
-        val position = adapter.items.indexOf(page)
+        val target = page.pageIdentity()
+        val position = adapterPositionOf(page)
         val holder = position
             .takeIf { it != -1 }
             ?.let { recycler.findViewHolderForAdapterPosition(it) as? WebtoonPageHolder }
@@ -479,9 +523,9 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             activity.onViewerLoadingDelayed()
             return
         }
-        when (positioning) {
-            InitialPositioning.Waiting(page) -> alignInitialPage(page)
-            InitialPositioning.Aligning(page) -> alignInitialPagePass(
+        when {
+            isWaitingFor(target) -> alignInitialPage(page)
+            isAligning(target) -> alignInitialPagePass(
                 page,
                 initialPageRemainingPasses = MAX_INITIAL_ALIGN_PASSES,
             )
@@ -490,15 +534,22 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     }
 
     /**
-     * Invoked once a page's image has actually decoded. If it is the page the reader is waiting on,
-     * aligns the reader to that page's final height and reveals it.
+     * Invoked once a page's image has actually decoded, or failed and laid out its error view.
+     *
+     * Both endings leave a laid-out holder with a real height, so both start the measured
+     * alignment: a page that cannot load still reveals its retry UI instead of leaving the reader
+     * transparent, and neither path reveals before the position has been verified.
      */
     fun onPageImageLoaded(page: ReaderPage) {
-        val waiting = positioning as? InitialPositioning.Waiting ?: return
-        if (waiting.page == page) {
-            alignInitialPage(page)
-        }
+        if (!isWaitingFor(page.pageIdentity())) return
+        alignInitialPage(page)
     }
+
+    private fun isWaitingFor(target: PageIdentity): Boolean =
+        (positioning as? InitialPositioning.Waiting)?.target == target
+
+    private fun isAligning(target: PageIdentity): Boolean =
+        (positioning as? InitialPositioning.Aligning)?.target == target
 
     /**
      * Aligns the resumed page to its resting offset (top for the first page, bottom for the last,
@@ -512,8 +563,12 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * final decoded height even when the first pass still observes a stale placeholder height.
      */
     private fun alignInitialPage(page: ReaderPage) {
-        if (positioning != InitialPositioning.Waiting(page)) return
-        positioning = InitialPositioning.Aligning(page)
+        val target = page.pageIdentity()
+        if (!isWaitingFor(target)) return
+        positioning = InitialPositioning.Aligning(target)
+        // The budget covers convergence only. It starts here, after the image decoded, so a slow
+        // load never eats into it and forces an early reveal of an unmeasured page.
+        initialAlignDeadline = SystemClock.uptimeMillis() + INITIAL_ALIGN_BUDGET_MILLIS
         previousInitialPageHeight = -1
         stableInitialLayoutFrames = 0
         alignInitialPagePass(page, initialPageRemainingPasses = MAX_INITIAL_ALIGN_PASSES)
@@ -526,17 +581,26 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * requested anchor while filling the chapter transition at the end of its layout pass.
      */
     private fun alignInitialPagePass(page: ReaderPage, initialPageRemainingPasses: Int) {
-        if (positioning != InitialPositioning.Aligning(page)) return
-        val exhausted = initialPageRemainingPasses <= 0
-        if (exhausted) {
+        val target = page.pageIdentity()
+        if (!isAligning(target)) return
+        if (initialPageRemainingPasses <= 0) {
             finishInitialAlignment(page)
             return
         }
 
-        recycler.doOnNextLayout {
-            if (positioning != InitialPositioning.Aligning(page)) return@doOnNextLayout
+        // One pass may act only once. The layout callback is the normal driver; the posted
+        // fallback below exists because a requestLayout() issued from inside a layout pass is
+        // dropped, which used to end the chain and leave the reader transparent.
+        val token = ++initialPassToken
+        var acted = false
 
-            val alignedPosition = adapter.items.indexOf(page)
+        fun onLayoutReady() {
+            if (acted || token != initialPassToken) return
+            acted = true
+            if (!isAligning(target)) return
+
+            val alignedPosition = adapterPositionOf(page)
+            val alignedPage = adapter.items.getOrNull(alignedPosition) as? ReaderPage ?: page
             val holder = alignedPosition
                 .takeIf { it != -1 }
                 ?.let { recycler.findViewHolderForAdapterPosition(it) }
@@ -549,39 +613,53 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 recycler.postOnAnimation {
                     alignInitialPagePass(page, initialPageRemainingPasses - 1)
                 }
-                return@doOnNextLayout
+                return
             }
 
-            val desiredTop = targetTop(page, pageHeight)
-
-            val heightStable = pageHeight > 0 &&
-                previousInitialPageHeight == pageHeight
-            val positionStable = holderTop != null && abs(holderTop - desiredTop) <= 1
-
-            if (heightStable && positionStable) {
-                stableInitialLayoutFrames++
-                if (stableInitialLayoutFrames >= REQUIRED_INITIAL_STABLE_FRAMES) {
-                    revealNow(page)
-                    return@doOnNextLayout
-                }
+            val desiredTop = targetTop(alignedPage, pageHeight)
+            val previousExtent = previousInitialPageHeight
+            val positionReady = WebtoonPageSelection.isInitialPositionReady(
+                pageExtent = pageHeight,
+                currentStart = holderTop,
+                targetStart = desiredTop,
+            )
+            val nextStableFrames = if (pageHeight > 0 && previousExtent == pageHeight && positionReady) {
+                stableInitialLayoutFrames + 1
             } else {
-                stableInitialLayoutFrames = 0
+                0
             }
-
+            stableInitialLayoutFrames = nextStableFrames
             previousInitialPageHeight = pageHeight
 
-            recycler.postOnAnimation {
-                if (positioning != InitialPositioning.Aligning(page)) return@postOnAnimation
+            if (
+                WebtoonPageSelection.isInitialAlignSettled(
+                    previousExtent = previousExtent,
+                    currentExtent = pageHeight,
+                    currentStart = holderTop,
+                    targetStart = desiredTop,
+                    stableFrames = nextStableFrames,
+                    requiredStableFrames = REQUIRED_INITIAL_STABLE_FRAMES,
+                )
+            ) {
+                revealNow(page)
+                return
+            }
 
-                val currentPosition = adapter.items.indexOf(page)
+            recycler.postOnAnimation {
+                if (!isAligning(target)) return@postOnAnimation
+
+                val currentPosition = adapterPositionOf(page)
+                val currentPage = adapter.items.getOrNull(currentPosition) as? ReaderPage ?: page
                 val currentHolder = currentPosition
                     .takeIf { it != -1 }
                     ?.let { recycler.findViewHolderForAdapterPosition(it) }
                 if (currentHolder == null) {
-                    layoutManager.scrollToPositionWithOffset(currentPosition.coerceAtLeast(0), 0)
+                    if (currentPosition != -1) {
+                        layoutManager.scrollToPositionWithOffset(currentPosition, 0)
+                    }
                 } else {
-                    val currentHeight = currentHolder.itemView.height
-                    val correction = currentHolder.itemView.top - targetTop(page, currentHeight)
+                    val correction = currentHolder.itemView.top -
+                        targetTop(currentPage, currentHolder.itemView.height)
                     if (correction != 0) {
                         recycler.scrollBy(0, correction)
                     }
@@ -589,28 +667,46 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 alignInitialPagePass(page, initialPageRemainingPasses - 1)
             }
         }
-        recycler.requestLayout()
+
+        recycler.doOnNextLayout { onLayoutReady() }
+        // Runs after this frame's traversal and never measures: it only forces the layout the chain
+        // is waiting for, so the next pass still reads geometry from a real layout pass.
+        recycler.post {
+            if (acted || token != initialPassToken) return@post
+            recycler.requestLayout()
+            if (initialPageRemainingPasses > 1) {
+                recycler.postOnAnimation {
+                    if (token == initialPassToken) {
+                        alignInitialPagePass(page, initialPageRemainingPasses - 1)
+                    }
+                }
+            } else {
+                finishInitialAlignment(page)
+            }
+        }
     }
 
     /**
-     * Applies one last correction from the currently measured holder, then reveals on the next
-     * display frame. This is only reached when the bounded cross-frame stability loop is exhausted.
+     * Applies one last correction from the currently measured holder, then lets [revealNow] decide
+     * whether the result may be shown. Only reached when the bounded pass loop ran out.
      */
     private fun finishInitialAlignment(page: ReaderPage) {
-        if (positioning != InitialPositioning.Aligning(page)) return
-        val position = adapter.items.indexOf(page)
+        val target = page.pageIdentity()
+        if (!isAligning(target)) return
+        val position = adapterPositionOf(page)
+        val currentPage = adapter.items.getOrNull(position) as? ReaderPage ?: page
         val holder = position
             .takeIf { it != -1 }
             ?.let { recycler.findViewHolderForAdapterPosition(it) }
         if (holder != null) {
-            val correction = holder.itemView.top - targetTop(page, holder.itemView.height)
+            val correction = holder.itemView.top - targetTop(currentPage, holder.itemView.height)
             if (correction != 0) {
                 recycler.scrollBy(0, correction)
             }
+        } else if (position != -1) {
+            layoutManager.scrollToPositionWithOffset(position, 0)
         }
-        recycler.postOnAnimation {
-            revealNow(page, acceptClampedPosition = true)
-        }
+        recycler.postOnAnimation { revealNow(page) }
     }
 
     /**
@@ -634,14 +730,24 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     /**
      * Keeps the explicit resume page at its resting offset while late image measurements settle.
      * A displaced frame is cancelled and corrected before it can reach the display.
+     *
+     * Cancelling a frame is a real cost: the window does not draw at all while this returns false,
+     * and holding a window back for long is what made an earlier version of the reader show a black
+     * screen. The correction is therefore bounded — after [MAX_INITIAL_ANCHOR_FRAMES] the anchor
+     * lets the frame through and hands the viewport to normal scrolling.
      */
     private fun keepInitialPageAnchored(page: ReaderPage) {
         initialAnchorPageIdentity = page.pageIdentity()
         if (initialAnchorPreDrawListener != null) return
+        initialAnchorFrames = 0
 
         val listener = ViewTreeObserver.OnPreDrawListener {
             val anchorIdentity = initialAnchorPageIdentity
             if (!suppressInitialScrollCallbacks || anchorIdentity == null) {
+                return@OnPreDrawListener true
+            }
+            if (++initialAnchorFrames > MAX_INITIAL_ANCHOR_FRAMES) {
+                releaseInitialPageAnchor()
                 return@OnPreDrawListener true
             }
 
@@ -685,32 +791,46 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     }
 
     /**
-     * Marks the reader ready, makes it visible and interactive, and reports the resumed page and
-     * first-frame readiness. No animation is applied: the view was laid out transparent and is
-     * simply shown once aligned, so the reveal itself never flashes.
+     * Reveals the aligned frame, or corrects the measured offset and runs another pass while the
+     * reader is still transparent.
+     *
+     * The reader only becomes visible on a position that will not move afterwards: either the page
+     * rests within a pixel of its target, or the viewport is already clamped against the content
+     * edge and cannot get any closer. A measured-but-displaced page keeps the reader transparent
+     * and corrects itself, because showing it first is exactly what made the viewport appear to
+     * jump right after a chapter opened.
      */
-    private fun revealNow(page: ReaderPage, acceptClampedPosition: Boolean = false) {
-        if (positioning != InitialPositioning.Aligning(page)) return
+    private fun revealNow(page: ReaderPage) {
+        val target = page.pageIdentity()
+        if (!isAligning(target)) return
         if (activity.isFinishing || activity.isDestroyed) return
 
-        val position = adapter.items.indexOf(page)
+        val position = adapterPositionOf(page)
+        val currentPage = adapter.items.getOrNull(position) as? ReaderPage ?: page
         val holder = position
             .takeIf { it != -1 }
             ?.let { recycler.findViewHolderForAdapterPosition(it) }
         val pageHeight = holder?.itemView?.height ?: 0
-        val desiredTop = targetTop(page, pageHeight)
-        val correction = holder?.itemView?.top?.minus(desiredTop)
-        val positionIsReady = WebtoonPageSelection.isInitialPositionReady(
+        val currentStart = holder?.itemView?.top
+        val desiredTop = targetTop(currentPage, pageHeight)
+        val ready = WebtoonPageSelection.isInitialPositionReady(
             pageExtent = pageHeight,
-            currentStart = holder?.itemView?.top,
+            currentStart = currentStart,
             targetStart = desiredTop,
-            acceptClampedPosition = acceptClampedPosition,
+        ) || WebtoonPageSelection.isInitialPositionClamped(
+            currentStart = currentStart,
+            targetStart = desiredTop,
+            canScrollForward = recycler.canScrollVertically(1),
+            canScrollBackward = recycler.canScrollVertically(-1),
         )
-        if (!positionIsReady) {
-            if (correction != null && correction != 0) {
-                recycler.scrollBy(0, correction)
+        if (!ready && SystemClock.uptimeMillis() < initialAlignDeadline) {
+            if (currentStart != null && pageHeight > 0) {
+                val correction = currentStart - desiredTop
+                if (correction != 0) {
+                    recycler.scrollBy(0, correction)
+                }
             } else if (position != -1) {
-                layoutManager.scrollToPositionWithOffset(position, desiredTop)
+                layoutManager.scrollToPositionWithOffset(position, 0)
             }
             stableInitialLayoutFrames = 0
             previousInitialPageHeight = pageHeight
@@ -720,16 +840,24 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             return
         }
 
+        reveal(page, currentPage)
+    }
+
+    /**
+     * Makes the measured frame visible and interactive, reports the resumed page, and installs the
+     * post-reveal anchor. No animation: the view was laid out transparent and is simply shown.
+     */
+    private fun reveal(page: ReaderPage, adapterPage: ReaderPage) {
         positioning = InitialPositioning.Ready
-        currentPage = page
-        initialGesturePageIdentity = page.pageIdentity()
+        currentPage = adapterPage
+        initialGesturePageIdentity = adapterPage.pageIdentity()
         suppressInitialScrollCallbacks = true
-        keepInitialPageAnchored(page)
+        keepInitialPageAnchored(adapterPage)
         activity.hideLoadingIndicator()
         recycler.alpha = 1f
         frame.isEnabled = true
         recycler.isEnabled = true
-        activity.onInitialPageSelected(page)
+        activity.onInitialPageSelected(adapterPage)
         activity.onViewerContentReady()
         recycler.postOnAnimation {
             val activePage = findMatchingAdapterItem(page) as? ReaderPage
@@ -745,7 +873,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * Tells this viewer to move to the given [page].
      */
     override fun moveToPage(page: ReaderPage) {
-        val position = adapter.items.indexOf(page)
+        val position = adapterPositionOf(page)
         if (position != -1) {
             viewportAnchorGeneration++
             restoringViewportAnchor = false
@@ -1085,24 +1213,21 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
     /**
      * Lifecycle of the reader's first-frame alignment.
+     *
+     * Both states hold a [PageIdentity] rather than a page object: the adapter hands out new page
+     * instances whenever the chapter list is rebuilt, and matching on the instance used to abort
+     * the flow silently, which is what left the reader transparent behind a loading indicator.
      */
     private sealed interface InitialPositioning {
         data object NotStarted : InitialPositioning
-        data class Waiting(val page: ReaderPage) : InitialPositioning
-        data class Aligning(val page: ReaderPage) : InitialPositioning
+        data class Waiting(val target: PageIdentity) : InitialPositioning
+        data class Aligning(val target: PageIdentity) : InitialPositioning
         data object Ready : InitialPositioning
     }
 
     private data class ViewportAnchor(
         val item: Any,
         val top: Int,
-    )
-
-    private data class PageIdentity(
-        val mangaId: Long?,
-        val chapterId: Long?,
-        val chapterUrl: String,
-        val pageIndex: Int,
     )
 }
 
@@ -1114,6 +1239,12 @@ private const val INITIAL_LOADING_REVEAL_DELAY_MILLIS = 300L
 
 // Restarts initial alignment if an image or layout callback is lost
 private const val INITIAL_REVEAL_WATCHDOG_MILLIS = 5_000L
+
+// How long alignment may insist on a settled position before revealing what has been measured
+private const val INITIAL_ALIGN_BUDGET_MILLIS = 500L
+
+// Frames the post-reveal anchor may cancel; a window held back longer stops drawing entirely
+private const val MAX_INITIAL_ANCHOR_FRAMES = 30
 
 // Maximum passes before a final correction; reveal still requires a geometry check
 private const val MAX_INITIAL_ALIGN_PASSES = 8
