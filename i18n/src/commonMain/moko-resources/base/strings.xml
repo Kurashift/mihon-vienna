@@ -1114,7 +1114,6 @@
     <string name="update_available_update">Update</string>
     <string name="update_download_and_install">Download and install</string>
     <string name="pref_update_prompt">Show the new-version dialog at start-up</string>
-    <string name="pref_update_prompt_summary">Turning this off only stops that dialog; the check below keeps working</string>
     <string name="update_prompt_disabled">Start-up prompt turned off. Re-enable it here.</string>
     <string name="update_install_title">Update to %1$s</string>
     <string name="update_download_progress">%1$s of %2$s</string>

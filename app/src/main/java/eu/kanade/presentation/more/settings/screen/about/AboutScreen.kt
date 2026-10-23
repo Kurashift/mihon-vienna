@@ -75,6 +75,9 @@ object AboutScreen : Screen() {
         val basePreferences = remember { Injekt.get<BasePreferences>() }
         val updatePromptEnabled by remember { basePreferences.updatePromptEnabled.changes() }
             .collectAsState(initial = basePreferences.updatePromptEnabled.get())
+        val ignoredUpdateVersion by remember { basePreferences.ignoredUpdateVersion.changes() }
+            .collectAsState(initial = basePreferences.ignoredUpdateVersion.get())
+        val isCurrentReleaseSkipped = hasAppUpdate?.version == ignoredUpdateVersion
 
         Scaffold(
             topBar = { scrollBehavior ->
@@ -107,11 +110,16 @@ object AboutScreen : Screen() {
 
                 if (updaterEnabled) {
                     item {
+                        // One switch, and its state is the answer to "will a dialog appear?":
+                        // 不再提示 turns it off for good, 跳过这版 turns it off for that release only,
+                        // and turning it back on clears the skip so the next check speaks again.
                         SwitchPreferenceWidget(
                             title = stringResource(MR.strings.pref_update_prompt),
-                            subtitle = stringResource(MR.strings.pref_update_prompt_summary),
-                            checked = updatePromptEnabled,
-                            onCheckedChanged = { basePreferences.updatePromptEnabled.set(it) },
+                            checked = updatePromptEnabled && !isCurrentReleaseSkipped,
+                            onCheckedChanged = { enabled ->
+                                basePreferences.updatePromptEnabled.set(enabled)
+                                if (enabled) basePreferences.ignoredUpdateVersion.set("")
+                            },
                         )
                     }
                     item {
