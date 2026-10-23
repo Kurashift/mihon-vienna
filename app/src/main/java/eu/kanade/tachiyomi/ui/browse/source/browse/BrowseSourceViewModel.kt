@@ -3,11 +3,9 @@ package eu.kanade.tachiyomi.ui.browse.source.browse
 import android.content.Context
 import android.content.res.Configuration
 import android.os.SystemClock
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -24,6 +22,7 @@ import androidx.paging.cachedIn
 import androidx.paging.filter
 import androidx.paging.insertSeparators
 import androidx.paging.map
+import eu.kanade.core.preference.PreferenceMutableState
 import eu.kanade.core.preference.asState
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.interactor.SetReadStatus
@@ -1612,14 +1611,16 @@ class BrowseSourceViewModel(
             emptyFlow(),
         )
 
-    fun getColumnsPreference(orientation: Int): GridCells {
+    /**
+     * The column count the listing shares with the library, as the live state a pinch writes to.
+     *
+     * Held as the preference's state rather than a resolved grid cell count so a pinch on the
+     * listing and the display settings' slider are the same setting seen twice.
+     */
+    fun columnsPreference(orientation: Int): PreferenceMutableState<Int> {
         val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
-        val columns = if (isLandscape) {
-            libraryPreferences.landscapeColumns
-        } else {
-            libraryPreferences.portraitColumns
-        }.get()
-        return if (columns == 0) GridCells.Adaptive(128.dp) else GridCells.Fixed(columns)
+        return (if (isLandscape) libraryPreferences.landscapeColumns else libraryPreferences.portraitColumns)
+            .asState(viewModelScope)
     }
 
     fun resetFilters() {

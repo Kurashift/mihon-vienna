@@ -47,7 +47,7 @@ fun LibraryContent(
     onRefresh: () -> Boolean,
     onGlobalSearchClicked: () -> Unit,
     getItemCountForCategory: (Category) -> Int?,
-    getDisplayMode: (Int) -> PreferenceMutableState<LibraryDisplayMode>,
+    getDisplayMode: () -> PreferenceMutableState<LibraryDisplayMode>,
     getColumnsForOrientation: (Boolean) -> PreferenceMutableState<Int>,
     getItemsForCategory: (Category) -> List<LibraryItem>,
 ) {

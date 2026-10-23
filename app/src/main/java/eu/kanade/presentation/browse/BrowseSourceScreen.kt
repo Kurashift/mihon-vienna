@@ -1,6 +1,8 @@
 package eu.kanade.presentation.browse
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -19,13 +21,18 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import eu.kanade.presentation.browse.components.BrowseSourceComfortableGrid
 import eu.kanade.presentation.browse.components.BrowseSourceCompactGrid
 import eu.kanade.presentation.browse.components.BrowseSourceList
 import eu.kanade.presentation.browse.components.presentedListGeneration
+import eu.kanade.presentation.components.ADAPTIVE_MIN_CELL_WIDTH
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.GRID_CONTENT_PADDING
+import eu.kanade.presentation.components.PinchColumns
+import eu.kanade.presentation.library.components.CommonMangaItemDefaults
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.data.manga.MangaCoverUpdate
 import eu.kanade.tachiyomi.source.Source
@@ -48,7 +55,8 @@ import tachiyomi.source.local.LocalSource
 fun BrowseSourceContent(
     source: Source?,
     mangaList: LazyPagingItems<BrowseSourceUiModel>,
-    columns: GridCells,
+    columns: Int,
+    onColumnsCommit: (Int) -> Unit,
     displayMode: LibraryDisplayMode,
     snackbarHostState: SnackbarHostState,
     contentPadding: PaddingValues,
@@ -182,80 +190,99 @@ fun BrowseSourceContent(
         return
     }
 
-    when (displayMode) {
-        LibraryDisplayMode.ComfortableGrid -> {
-            BrowseSourceComfortableGrid(
-                mangaList = mangaList,
-                columns = columns,
-                gridState = gridState,
-                contentPadding = contentPadding,
-                showIndex = source is LocalSource,
-                lastReadMangaId = lastReadMangaId,
-                locateMangaId = locateMangaId,
-                favoriteIds = favoriteIds,
-                progressContext = progressContext,
-                coverUpdates = coverUpdates,
-                trailingSlotCount = trailingSlotCount,
-                wholeList = wholeList,
-                listKey = listKey,
-                onMangaClick = onMangaClick,
-                onMangaLongClick = onMangaLongClick,
-                selectedIds = selectedIds,
-                dimInLibraryCovers = dimInLibraryCovers,
-                onLocateMangaHandled = onLocateMangaHandled,
-                scrollToTopRequest = scrollToTopRequest,
-                onRandomManga = onRandomManga,
-                onRandomGoodDoujin = onRandomGoodDoujin,
-            )
+    val layoutDirection = LocalLayoutDirection.current
+    // Pinching the listing resizes its rows through the same column preference the library's
+    // display settings write, so the two screens are one setting seen twice.
+    PinchColumns(
+        rawColumns = columns,
+        onColumnsCommit = onColumnsCommit,
+        enabled = displayMode != LibraryDisplayMode.List,
+        horizontalContentInset = contentPadding.calculateStartPadding(layoutDirection) +
+            contentPadding.calculateEndPadding(layoutDirection) +
+            GRID_CONTENT_PADDING * 2,
+        horizontalSpacing = CommonMangaItemDefaults.GridHorizontalSpacer,
+    ) { effectiveColumns ->
+        val cells = if (effectiveColumns == 0) {
+            GridCells.Adaptive(ADAPTIVE_MIN_CELL_WIDTH)
+        } else {
+            GridCells.Fixed(effectiveColumns)
         }
-        LibraryDisplayMode.List -> {
-            BrowseSourceList(
-                mangaList = mangaList,
-                listState = listState,
-                contentPadding = contentPadding,
-                showIndex = source is LocalSource,
-                lastReadMangaId = lastReadMangaId,
-                locateMangaId = locateMangaId,
-                favoriteIds = favoriteIds,
-                progressContext = progressContext,
-                coverUpdates = coverUpdates,
-                trailingSlotCount = trailingSlotCount,
-                wholeList = wholeList,
-                listKey = listKey,
-                onMangaClick = onMangaClick,
-                onMangaLongClick = onMangaLongClick,
-                selectedIds = selectedIds,
-                dimInLibraryCovers = dimInLibraryCovers,
-                onLocateMangaHandled = onLocateMangaHandled,
-                scrollToTopRequest = scrollToTopRequest,
-                onRandomManga = onRandomManga,
-                onRandomGoodDoujin = onRandomGoodDoujin,
-            )
-        }
-        LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
-            BrowseSourceCompactGrid(
-                mangaList = mangaList,
-                columns = columns,
-                gridState = gridState,
-                contentPadding = contentPadding,
-                showIndex = source is LocalSource,
-                lastReadMangaId = lastReadMangaId,
-                locateMangaId = locateMangaId,
-                favoriteIds = favoriteIds,
-                progressContext = progressContext,
-                coverUpdates = coverUpdates,
-                trailingSlotCount = trailingSlotCount,
-                wholeList = wholeList,
-                listKey = listKey,
-                onMangaClick = onMangaClick,
-                onMangaLongClick = onMangaLongClick,
-                selectedIds = selectedIds,
-                dimInLibraryCovers = dimInLibraryCovers,
-                onLocateMangaHandled = onLocateMangaHandled,
-                scrollToTopRequest = scrollToTopRequest,
-                onRandomManga = onRandomManga,
-                onRandomGoodDoujin = onRandomGoodDoujin,
-            )
+
+        when (displayMode) {
+            LibraryDisplayMode.ComfortableGrid -> {
+                BrowseSourceComfortableGrid(
+                    mangaList = mangaList,
+                    columns = cells,
+                    gridState = gridState,
+                    contentPadding = contentPadding,
+                    showIndex = source is LocalSource,
+                    lastReadMangaId = lastReadMangaId,
+                    locateMangaId = locateMangaId,
+                    favoriteIds = favoriteIds,
+                    progressContext = progressContext,
+                    coverUpdates = coverUpdates,
+                    trailingSlotCount = trailingSlotCount,
+                    wholeList = wholeList,
+                    listKey = listKey,
+                    onMangaClick = onMangaClick,
+                    onMangaLongClick = onMangaLongClick,
+                    selectedIds = selectedIds,
+                    dimInLibraryCovers = dimInLibraryCovers,
+                    onLocateMangaHandled = onLocateMangaHandled,
+                    scrollToTopRequest = scrollToTopRequest,
+                    onRandomManga = onRandomManga,
+                    onRandomGoodDoujin = onRandomGoodDoujin,
+                )
+            }
+            LibraryDisplayMode.List -> {
+                BrowseSourceList(
+                    mangaList = mangaList,
+                    listState = listState,
+                    contentPadding = contentPadding,
+                    showIndex = source is LocalSource,
+                    lastReadMangaId = lastReadMangaId,
+                    locateMangaId = locateMangaId,
+                    favoriteIds = favoriteIds,
+                    progressContext = progressContext,
+                    coverUpdates = coverUpdates,
+                    trailingSlotCount = trailingSlotCount,
+                    wholeList = wholeList,
+                    listKey = listKey,
+                    onMangaClick = onMangaClick,
+                    onMangaLongClick = onMangaLongClick,
+                    selectedIds = selectedIds,
+                    dimInLibraryCovers = dimInLibraryCovers,
+                    onLocateMangaHandled = onLocateMangaHandled,
+                    scrollToTopRequest = scrollToTopRequest,
+                    onRandomManga = onRandomManga,
+                    onRandomGoodDoujin = onRandomGoodDoujin,
+                )
+            }
+            LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
+                BrowseSourceCompactGrid(
+                    mangaList = mangaList,
+                    columns = cells,
+                    gridState = gridState,
+                    contentPadding = contentPadding,
+                    showIndex = source is LocalSource,
+                    lastReadMangaId = lastReadMangaId,
+                    locateMangaId = locateMangaId,
+                    favoriteIds = favoriteIds,
+                    progressContext = progressContext,
+                    coverUpdates = coverUpdates,
+                    trailingSlotCount = trailingSlotCount,
+                    wholeList = wholeList,
+                    listKey = listKey,
+                    onMangaClick = onMangaClick,
+                    onMangaLongClick = onMangaLongClick,
+                    selectedIds = selectedIds,
+                    dimInLibraryCovers = dimInLibraryCovers,
+                    onLocateMangaHandled = onLocateMangaHandled,
+                    scrollToTopRequest = scrollToTopRequest,
+                    onRandomManga = onRandomManga,
+                    onRandomGoodDoujin = onRandomGoodDoujin,
+                )
+            }
         }
     }
 }

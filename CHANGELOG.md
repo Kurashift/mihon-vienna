@@ -225,6 +225,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Tests: unit tests for the alignment settle and clamped-position rules, the page identity that survives adapter rebuilds, and the dual page extent transforms
 
 ## [Unreleased]
+### Added
+- Shelf and local library: pinching the grid changes 每行数目 — spread two fingers for fewer, larger covers per row, pinch them together for more. It writes the same 1–10 preference the display settings' slider writes, once, when the last finger lifts, so the two never disagree and a pinch does not write dozens of times on the way. A pinch that starts on 自动 first measures how many columns the adaptive grid is showing at that width, so the first frame does not jump a column, and one that ends where it started leaves 自动 alone. List mode does not respond to it, and one-finger scrolling, paging between categories, pull-to-refresh and the long press that starts a selection are untouched
 
 ## [v2.2.5] - 2026-09-14
 ### Added

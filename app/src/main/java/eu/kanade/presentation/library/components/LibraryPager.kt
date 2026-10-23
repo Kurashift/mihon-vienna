@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import eu.kanade.core.preference.PreferenceMutableState
+import eu.kanade.presentation.components.GRID_CONTENT_PADDING
+import eu.kanade.presentation.components.PinchColumns
 import eu.kanade.tachiyomi.ui.library.LibraryItem
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.library.model.LibraryDisplayMode
@@ -42,105 +44,113 @@ fun LibraryPager(
     appliedSearchQuery: String?,
     onGlobalSearchClicked: () -> Unit,
     getCategoryForPage: (Int) -> Category,
-    getDisplayMode: (Int) -> PreferenceMutableState<LibraryDisplayMode>,
+    getDisplayMode: () -> PreferenceMutableState<LibraryDisplayMode>,
     getColumnsForOrientation: (Boolean) -> PreferenceMutableState<Int>,
     getItemsForCategory: (Category) -> List<LibraryItem>,
     onClickManga: (Category, LibraryManga) -> Unit,
     onLongClickManga: (Category, LibraryManga) -> Unit,
     onClickContinueReading: ((LibraryManga) -> Unit)?,
 ) {
-    HorizontalPager(
-        modifier = Modifier.fillMaxSize(),
-        state = state,
-        verticalAlignment = Alignment.Top,
-    ) { page ->
-        if (page !in ((state.currentPage - 1)..(state.currentPage + 1))) {
-            // To make sure only one offscreen page is being composed
-            return@HorizontalPager
-        }
-        val category = getCategoryForPage(page)
-        val items = getItemsForCategory(category)
+    val displayMode by remember { getDisplayMode() }
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val columnsState = if (displayMode != LibraryDisplayMode.List) {
+        remember(isLandscape) { getColumnsForOrientation(isLandscape) }
+    } else {
+        remember { mutableIntStateOf(0) }
+    }
 
-        // One scroll position per keyword, held above the branch below: a keyword that matches
-        // nothing composes the empty screen in place of the list, and a state created inside the
-        // list started over at the top — which is why clearing a search landed at the top of the
-        // shelf instead of where the user was. The keyword the library was browsed with (empty)
-        // keeps its own slot, so the results scroll without moving the shelf underneath.
-        //
-        // The slot follows [appliedSearchQuery] rather than [searchQuery]: the filter is debounced,
-        // so the field names a new keyword while the old rows are still on screen. Switching on
-        // the field would attach the shelf's offset to the short result set for that moment and
-        // clamp it there for good.
-        val scrollStates = rememberSaveable(saver = categoryScrollStatesSaver) {
-            mutableMapOf<String, CategoryScrollStates>()
-        }
-        val scrollState = scrollStates.getOrPut(appliedSearchQuery.orEmpty()) { CategoryScrollStates() }
-
-        if (items.isEmpty()) {
-            LibraryPagerEmptyScreen(
-                searchQuery = searchQuery,
-                hasActiveFilters = hasActiveFilters,
-                contentPadding = contentPadding,
-                onGlobalSearchClicked = onGlobalSearchClicked,
-            )
-            return@HorizontalPager
-        }
-
-        val displayMode by getDisplayMode(page)
-        val columns by if (displayMode != LibraryDisplayMode.List) {
-            val configuration = LocalConfiguration.current
-            val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
-            remember(isLandscape) { getColumnsForOrientation(isLandscape) }
-        } else {
-            remember { mutableIntStateOf(0) }
-        }
-
-        val onClickManga: (LibraryManga) -> Unit = { onClickManga(category, it) }
-        val onLongClickManga: (LibraryManga) -> Unit = { onLongClickManga(category, it) }
-
-        when (displayMode) {
-            LibraryDisplayMode.List -> {
-                LibraryList(
-                    items = items,
-                    contentPadding = contentPadding,
-                    state = scrollState.list,
-                    selection = selection,
-                    onClick = onClickManga,
-                    onLongClick = onLongClickManga,
-                    onClickContinueReading = onClickContinueReading,
-                    searchQuery = searchQuery,
-                    onGlobalSearchClicked = onGlobalSearchClicked,
-                )
+    // The shelf's rows are resized by pinching them, through the same preference the display
+    // settings' column slider writes: one setting, two ways to reach it.
+    PinchColumns(
+        rawColumns = columnsState.value,
+        onColumnsCommit = { columnsState.value = it },
+        enabled = displayMode != LibraryDisplayMode.List,
+        horizontalContentInset = GRID_CONTENT_PADDING * 2,
+        horizontalSpacing = CommonMangaItemDefaults.GridHorizontalSpacer,
+    ) { columns ->
+        HorizontalPager(
+            modifier = Modifier.fillMaxSize(),
+            state = state,
+            verticalAlignment = Alignment.Top,
+        ) { page ->
+            if (page !in ((state.currentPage - 1)..(state.currentPage + 1))) {
+                // To make sure only one offscreen page is being composed
+                return@HorizontalPager
             }
-            LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
-                LibraryCompactGrid(
-                    items = items,
-                    showTitle = displayMode is LibraryDisplayMode.CompactGrid,
-                    columns = columns,
-                    contentPadding = contentPadding,
-                    gridState = scrollState.grid,
-                    selection = selection,
-                    onClick = onClickManga,
-                    onLongClick = onLongClickManga,
-                    onClickContinueReading = onClickContinueReading,
-                    searchQuery = searchQuery,
-                    onGlobalSearchClicked = onGlobalSearchClicked,
-                )
+            val category = getCategoryForPage(page)
+            val items = getItemsForCategory(category)
+
+            // One scroll position per keyword, held above the branch below: a keyword that matches
+            // nothing composes the empty screen in place of the list, and a state created inside the
+            // list started over at the top — which is why clearing a search landed at the top of the
+            // shelf instead of where the user was. The keyword the library was browsed with (empty)
+            // keeps its own slot, so the results scroll without moving the shelf underneath.
+            //
+            // The slot follows [appliedSearchQuery] rather than [searchQuery]: the filter is debounced,
+            // so the field names a new keyword while the old rows are still on screen. Switching on
+            // the field would attach the shelf's offset to the short result set for that moment and
+            // clamp it there for good.
+            val scrollStates = rememberSaveable(saver = categoryScrollStatesSaver) {
+                mutableMapOf<String, CategoryScrollStates>()
             }
-            LibraryDisplayMode.ComfortableGrid -> {
-                LibraryComfortableGrid(
-                    items = items,
-                    columns = columns,
-                    contentPadding = contentPadding,
-                    gridState = scrollState.grid,
-                    selection = selection,
-                    onClick = onClickManga,
-                    onLongClick = onLongClickManga,
-                    onClickContinueReading = onClickContinueReading,
+            val scrollState = scrollStates.getOrPut(appliedSearchQuery.orEmpty()) { CategoryScrollStates() }
+
+            if (items.isEmpty()) {
+                LibraryPagerEmptyScreen(
                     searchQuery = searchQuery,
+                    hasActiveFilters = hasActiveFilters,
+                    contentPadding = contentPadding,
                     onGlobalSearchClicked = onGlobalSearchClicked,
                 )
+                return@HorizontalPager
+            }
+
+            val onClickManga: (LibraryManga) -> Unit = { onClickManga(category, it) }
+            val onLongClickManga: (LibraryManga) -> Unit = { onLongClickManga(category, it) }
+
+            when (displayMode) {
+                LibraryDisplayMode.List -> {
+                    LibraryList(
+                        items = items,
+                        contentPadding = contentPadding,
+                        state = scrollState.list,
+                        selection = selection,
+                        onClick = onClickManga,
+                        onLongClick = onLongClickManga,
+                        onClickContinueReading = onClickContinueReading,
+                        searchQuery = searchQuery,
+                        onGlobalSearchClicked = onGlobalSearchClicked,
+                    )
+                }
+                LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
+                    LibraryCompactGrid(
+                        items = items,
+                        showTitle = displayMode is LibraryDisplayMode.CompactGrid,
+                        columns = columns,
+                        contentPadding = contentPadding,
+                        gridState = scrollState.grid,
+                        selection = selection,
+                        onClick = onClickManga,
+                        onLongClick = onLongClickManga,
+                        onClickContinueReading = onClickContinueReading,
+                        searchQuery = searchQuery,
+                        onGlobalSearchClicked = onGlobalSearchClicked,
+                    )
+                }
+                LibraryDisplayMode.ComfortableGrid -> {
+                    LibraryComfortableGrid(
+                        items = items,
+                        columns = columns,
+                        contentPadding = contentPadding,
+                        gridState = scrollState.grid,
+                        selection = selection,
+                        onClick = onClickManga,
+                        onLongClick = onLongClickManga,
+                        onClickContinueReading = onClickContinueReading,
+                        searchQuery = searchQuery,
+                        onGlobalSearchClicked = onGlobalSearchClicked,
+                    )
+                }
             }
         }
     }
