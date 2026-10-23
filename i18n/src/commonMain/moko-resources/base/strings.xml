@@ -1109,7 +1109,7 @@
     <string name="update_available_title">Update available</string>
     <string name="update_available_message">Version %1$s can be installed over this one.</string>
     <string name="update_available_disable">Don't ask again</string>
-    <string name="update_available_skip_version">Skip this version</string>
+    <string name="update_available_skip_version">Ignore this version</string>
     <string name="update_available_later">Got it</string>
     <string name="update_available_update">Update</string>
     <string name="update_download_and_install">Download and install</string>
