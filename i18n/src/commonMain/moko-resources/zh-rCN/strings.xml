@@ -339,7 +339,7 @@
     <string name="update_available_title">有可用的更新</string>
     <string name="update_available_message">已发布 %1$s，可以直接覆盖安装。</string>
     <string name="update_available_disable">不再提示</string>
-    <string name="update_available_skip_version">跳过这版</string>
+    <string name="update_available_skip_version">忽略这版</string>
     <string name="update_available_later">知道了</string>
     <string name="update_available_update">更新</string>
     <string name="update_download_and_install">下载并安装</string>
