@@ -109,10 +109,13 @@ data class MigrateSourceSearchScreen(
                     navigator.popUntil { screen -> screen is MigrationListScreen }
                 }
             }
+            val orientation = LocalConfiguration.current.orientation
+            val columnsState = remember(orientation) { viewModel.columnsPreference(orientation) }
             BrowseSourceContent(
                 source = viewModel.source,
                 mangaList = viewModel.mangaPagerFlowFlow.collectAsLazyPagingItems(),
-                columns = viewModel.getColumnsPreference(LocalConfiguration.current.orientation),
+                columns = columnsState.value,
+                onColumnsCommit = { columnsState.value = it },
                 displayMode = viewModel.displayMode,
                 snackbarHostState = snackbarHostState,
                 contentPadding = paddingValues,

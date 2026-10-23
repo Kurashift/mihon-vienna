@@ -777,13 +777,16 @@ data class BrowseSourceScreen(
                 }
             },
         ) { paddingValues ->
+            val orientation = LocalConfiguration.current.orientation
+            val columnsState = remember(orientation) { viewModel.columnsPreference(orientation) }
             // The registry reaches the bottom-start FAB through the composition tree, so
             // the three layout roots and their call sites stay untouched by the coach marks.
             CompositionLocalProvider(LocalCoachAnchorRegistry provides fabCoachState) {
                 BrowseSourceContent(
                     source = viewModel.source,
                     mangaList = mangaList,
-                    columns = viewModel.getColumnsPreference(LocalConfiguration.current.orientation),
+                    columns = columnsState.value,
+                    onColumnsCommit = { columnsState.value = it },
                     displayMode = viewModel.displayMode,
                     lastReadMangaId = lastReadMangaId,
                     locateMangaId = null,

@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
+import eu.kanade.presentation.components.GRID_CONTENT_PADDING
 import eu.kanade.presentation.components.LocalBottomNavFabPadding
 import eu.kanade.presentation.components.dateHeaderText
 import eu.kanade.presentation.library.components.CommonMangaItemDefaults
@@ -159,7 +160,7 @@ fun BrowseSourceCompactGrid(
             listKey = listKey,
             modifier = Modifier.browseSourceLocateTransition(locateTransition),
             onThumbDraggedChanged = { isThumbDragging = it },
-            contentPadding = contentPadding + PaddingValues(8.dp),
+            contentPadding = contentPadding + PaddingValues(GRID_CONTENT_PADDING),
             scrollerEndPadding = contentPadding.calculateEndPadding(LocalLayoutDirection.current),
             verticalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridVerticalSpacer),
             horizontalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridHorizontalSpacer),
