@@ -182,6 +182,18 @@ class MainActivity : BaseActivity() {
         registerSecureActivity(this)
     }
 
+    /**
+     * Re-arms a dismissed update prompt once the reader has been away long enough.
+     *
+     * The prompt goes away on a button, on a tap outside it, or on back — all three mean "not now".
+     * Android keeps the process alive between visits, so without this the dismissal would outlive
+     * the visit it was given in and the prompt would never come back until the process died.
+     */
+    override fun onResume() {
+        super.onResume()
+        AppUpdateState.resetPromptIfStale()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val isLaunch = savedInstanceState == null
         val isLauncherStart = isLaunch &&
