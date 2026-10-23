@@ -464,14 +464,13 @@ class MainActivity : BaseActivity() {
             .collectAsState(initial = preferences.updatePromptEnabled.get())
 
         val current = release ?: return
-        if (
-            !promptEnabled ||
-            answered ||
-            ignoredVersion == current.version ||
-            navigator.lastItem is OnboardingScreen
-        ) {
-            return
-        }
+        if (!promptEnabled || answered || ignoredVersion == current.version) return
+        // Only on the main surface. The check finishes whenever the network answers, so the prompt
+        // used to appear on top of whatever was open — the about screen, where the reader is
+        // toggling update settings, was the worst case: the dialog landed under their finger and the
+        // next touch dismissed it before it could be read. Onboarding and every pushed screen are
+        // excluded by the same test.
+        if (navigator.lastItem !is HomeScreen) return
 
         // The download runs in a foreground service, so this prompt is only a view over it: it can
         // be dismissed mid-download without losing anything, and coming back shows the same numbers.
@@ -488,7 +487,9 @@ class MainActivity : BaseActivity() {
         UpdateAvailableDialog(
             versionName = current.version,
             progress = progress,
-            onPrimary = { AppUpdateDownloadState.startOrInstall(context, current) },
+            onPrimary = {
+                AppUpdateDownloadState.startOrInstall(context, current)
+            },
             onCancel = {
                 AppUpdateDownloadService.stop(context)
                 AppUpdateState.dismissPrompt()
@@ -504,7 +505,9 @@ class MainActivity : BaseActivity() {
                 // word about where it went is worse than the prompt itself.
                 context.toast(MR.strings.update_prompt_disabled)
             },
-            onDismiss = AppUpdateState::dismissPrompt,
+            onDismiss = {
+                AppUpdateState.dismissPrompt()
+            },
             onOpenChangelog = {
                 AppUpdateState.dismissPrompt()
                 navigator.push(NewUpdateScreen(current))
