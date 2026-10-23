@@ -22,9 +22,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.View.LAYER_TYPE_HARDWARE
-import android.view.ViewTreeObserver
 import android.view.WindowManager
-import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
@@ -144,9 +142,6 @@ class ReaderActivity : BaseActivity() {
         private const val SWIPE_DIRECTION_EXTRA = "swipe_direction"
         private const val RETURN_TO_MANGA_EXTRA = "return_to_manga"
 
-        /** How long the reader's own colour and pages take to fade in over the theme background. */
-        private const val READER_CONTENT_REVEAL_DURATION_MILLIS = 200L
-
         /**
          * @param returnToManga whether leaving the reader belongs on the manga details screen.
          * Only the details screen itself sets this: back then continues to the screen the reader
@@ -232,9 +227,6 @@ class ReaderActivity : BaseActivity() {
 
     private var loadingIndicator: ReaderProgressIndicator? = null
 
-    private var firstReaderFrameReady = false
-    private var firstReaderFrameGate: ViewTreeObserver.OnPreDrawListener? = null
-
     private var randomJumping = false
 
     /** The intent that must relaunch the reader once this finishing instance is destroyed. */
@@ -298,11 +290,18 @@ class ReaderActivity : BaseActivity() {
         binding = ReaderActivityBinding.inflate(layoutInflater)
         // The window keeps the theme's background, i.e. the colour of the screen the reader was
         // opened from, so the transition lands on that colour rather than cutting to the reader's
-        // own before any page exists. The reader's colour and pages then fade in together over
-        // it, which turns the colour difference into a gradient instead of a cut.
-        binding.readerContainer.alpha = 0f
+        // own before any page exists.
+        //
+        // The reader content used to start transparent and be held back until the viewer reported
+        // its first frame, so colour and pages would fade in together. That hold turned out to be
+        // a trap: the gate is an OnPreDrawListener returning false, which cancels the traversal
+        // and leaves the window at DRAW_PENDING. When the release did not land on a fresh
+        // traversal, the window never drew at all — a black screen, and worse, an uncommitted
+        // first transaction that keeps WindowManager's sync group open, which in turn blocks the
+        // notification shade and other windows from being composed. The window is therefore never
+        // held; the viewer keeps its own pages transparent until the first one is aligned, and the
+        // loading indicator starts hidden so a fast open shows nothing but the theme colour.
         setContentView(binding.root)
-        holdFirstReaderFrame()
         binding.setComposeOverlay()
 
         if (!viewModel.hasValidArgs) {
@@ -1019,7 +1018,11 @@ class ReaderActivity : BaseActivity() {
         updateViewerInset(readerPreferences.fullscreen.get(), readerPreferences.drawUnderCutout.get())
         binding.viewerContainer.addView(newViewer.getView())
 
-        loadingIndicator = ReaderProgressIndicator(this)
+        loadingIndicator = ReaderProgressIndicator(this).apply {
+            // A fast chapter open should not flash a spinner over the theme's colour; viewers ask
+            // for it only once the first frame is taking long enough to notice.
+            visibility = View.INVISIBLE
+        }
         binding.readerContainer.addView(loadingIndicator)
     }
 
@@ -1155,14 +1158,20 @@ class ReaderActivity : BaseActivity() {
     fun onViewerContentReady() {
         val container = binding.readerContainer
         if (container.isInLayout) {
-            container.post { releaseFirstReaderFrame(removeIndicator = true) }
+            container.post { removeLoadingIndicator() }
         } else {
-            releaseFirstReaderFrame(removeIndicator = true)
+            removeLoadingIndicator()
         }
     }
 
+    /**
+     * Shows the loading indicator when the first page is still decoding or aligning.
+     *
+     * The indicator is created hidden so a fast chapter open stays silent; it only appears once a
+     * viewer reports that the first frame is taking long enough to notice.
+     */
     fun onViewerLoadingDelayed() {
-        releaseFirstReaderFrame(removeIndicator = false)
+        loadingIndicator?.visibility = View.VISIBLE
     }
 
     /**
@@ -1173,45 +1182,6 @@ class ReaderActivity : BaseActivity() {
      */
     fun hideLoadingIndicator() {
         loadingIndicator?.visibility = View.INVISIBLE
-    }
-
-    private fun holdFirstReaderFrame() {
-        val listener = ViewTreeObserver.OnPreDrawListener {
-            firstReaderFrameReady
-        }
-        firstReaderFrameGate = listener
-        binding.root.viewTreeObserver.addOnPreDrawListener(listener)
-    }
-
-    /**
-     * Fades the reader's own colour and its pages in together over the theme's window background.
-     *
-     * The window keeps the theme's colour, which is the colour of the screen the reader was
-     * opened from, so the transition into this activity lands somewhere continuous. Bringing the
-     * reader's colour up in one step instead reads as a cut, because it usually differs from the
-     * manga screen's — that is what the earlier "paint the window with the reader's colour"
-     * approach kept showing as a flash, in whichever colour the reader happened to use.
-     */
-    private fun revealReaderContent() {
-        binding.readerContainer.animate()
-            .alpha(1f)
-            .setDuration(READER_CONTENT_REVEAL_DURATION_MILLIS)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
-    }
-
-    private fun releaseFirstReaderFrame(removeIndicator: Boolean) {
-        if (removeIndicator) removeLoadingIndicator()
-        if (firstReaderFrameReady) return
-        firstReaderFrameReady = true
-        firstReaderFrameGate?.let { listener ->
-            binding.root.viewTreeObserver
-                .takeIf { it.isAlive }
-                ?.removeOnPreDrawListener(listener)
-        }
-        firstReaderFrameGate = null
-        revealReaderContent()
-        binding.root.postInvalidateOnAnimation()
     }
 
     private fun removeLoadingIndicator() {

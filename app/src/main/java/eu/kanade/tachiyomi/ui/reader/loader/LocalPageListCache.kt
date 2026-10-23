@@ -3,11 +3,20 @@ package eu.kanade.tachiyomi.ui.reader.loader
 import java.util.LinkedHashMap
 
 /**
- * Small in-memory cache of local archive page lists (sorted image entry names), keyed by file
- * identity. Re-opening a chapter or preloading an adjacent one reuses the cached names instead
- * of re-scanning the whole archive, which is noticeable for large CBZ/ZIP files. An entry is
- * invalidated as soon as the file size or modification time changes, and the cache evicts
- * least-recently-used entries to bound memory.
+ * One image entry of a local archive, with the size measured from its header.
+ */
+internal data class LocalArchivePage(
+    val name: String,
+    val width: Int,
+    val height: Int,
+)
+
+/**
+ * Small in-memory cache of local archive page lists (sorted image entries with their measured
+ * size), keyed by file identity. Re-opening a chapter or preloading an adjacent one reuses the
+ * cached entries instead of re-scanning the whole archive, which is noticeable for large CBZ/ZIP
+ * files. An entry is invalidated as soon as the file size or modification time changes, and the
+ * cache evicts least-recently-used entries to bound memory.
  */
 internal object LocalPageListCache {
 
@@ -19,23 +28,23 @@ internal object LocalPageListCache {
         val lastModified: Long,
     )
 
-    private val archivePages = object : LinkedHashMap<ArchiveKey, List<String>>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ArchiveKey, List<String>>): Boolean {
+    private val archivePages = object : LinkedHashMap<ArchiveKey, List<LocalArchivePage>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ArchiveKey, List<LocalArchivePage>>): Boolean {
             return size > MAX_CACHED_ARCHIVES
         }
     }
 
     /**
-     * Returns the cached sorted image entry names for the archive identified by [uri], [size]
-     * and [lastModified], computing them with [scan] on a cache miss.
+     * Returns the cached sorted image entries for the archive identified by [uri], [size] and
+     * [lastModified], computing them with [scan] on a cache miss.
      */
     @Synchronized
-    fun archivePageNames(
+    fun archivePages(
         uri: String,
         size: Long,
         lastModified: Long,
-        scan: () -> List<String>,
-    ): List<String> {
+        scan: () -> List<LocalArchivePage>,
+    ): List<LocalArchivePage> {
         val key = ArchiveKey(uri, size, lastModified)
         archivePages[key]?.let { return it }
         return scan().also { archivePages[key] = it }

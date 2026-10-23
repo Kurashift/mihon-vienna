@@ -25,14 +25,56 @@ internal object WebtoonPageSelection {
         return viewportStart + (viewportEnd - viewportStart - pageExtent) / 2
     }
 
+    /**
+     * Whether the target page has been measured and is resting within one pixel of its target
+     * top. There is deliberately no "close enough" mode: the reader becomes visible on this
+     * answer, so accepting a displaced page shows a frame that then has to move under the user's
+     * eyes.
+     */
     fun isInitialPositionReady(
         pageExtent: Int,
         currentStart: Int?,
         targetStart: Int,
-        acceptClampedPosition: Boolean,
     ): Boolean {
         if (pageExtent <= 0 || currentStart == null) return false
-        return acceptClampedPosition || abs(currentStart - targetStart) <= INITIAL_POSITION_TOLERANCE
+        return abs(currentStart - targetStart) <= INITIAL_POSITION_TOLERANCE
+    }
+
+    /**
+     * A displaced position is only acceptable when the viewport cannot move any further towards
+     * the target: a page taller than the viewport on a chapter whose content ends there, or a
+     * short last page pinned at the bottom edge. In that case nothing will shift after the reveal,
+     * so showing the measured frame is the settled frame. Anything the viewport *could* still
+     * scroll towards is not settled, no matter how close it looks.
+     */
+    fun isInitialPositionClamped(
+        currentStart: Int?,
+        targetStart: Int,
+        canScrollForward: Boolean,
+        canScrollBackward: Boolean,
+    ): Boolean {
+        if (currentStart == null) return false
+        val correction = currentStart - targetStart
+        if (abs(correction) <= INITIAL_POSITION_TOLERANCE) return false
+        return if (correction > 0) !canScrollForward else !canScrollBackward
+    }
+
+    /**
+     * One alignment pass: the page counts as settled only once its measured extent stopped
+     * changing and it has rested at its target top for [requiredStableFrames] consecutive passes.
+     */
+    fun isInitialAlignSettled(
+        previousExtent: Int,
+        currentExtent: Int,
+        currentStart: Int?,
+        targetStart: Int,
+        stableFrames: Int,
+        requiredStableFrames: Int,
+    ): Boolean {
+        val extentStable = currentExtent > 0 && previousExtent == currentExtent
+        return extentStable &&
+            stableFrames >= requiredStableFrames &&
+            isInitialPositionReady(currentExtent, currentStart, targetStart)
     }
 
     fun isStartBoundaryActive(
@@ -126,6 +168,21 @@ internal object WebtoonPageSelection {
         return visibleExtent * 2 >= referenceExtent
     }
 }
+
+/**
+ * Identity of a reader page that outlives the page object itself.
+ *
+ * [eu.kanade.tachiyomi.ui.reader.model.ReaderPage] has no `equals`, so it compares by instance.
+ * Every adapter rebuild hands out new instances for the same pages, which used to abort the
+ * initial-alignment flow silently — the reader stayed transparent and looked like a black screen.
+ * The flow matches on this value instead.
+ */
+internal data class PageIdentity(
+    val mangaId: Long?,
+    val chapterId: Long?,
+    val chapterUrl: String,
+    val pageIndex: Int,
+)
 
 private const val EDGE_SLOP_DIVISOR = 100
 private const val INITIAL_POSITION_TOLERANCE = 1

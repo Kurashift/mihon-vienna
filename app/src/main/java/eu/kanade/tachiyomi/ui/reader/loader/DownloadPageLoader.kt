@@ -60,10 +60,14 @@ internal class DownloadPageLoader(
     private fun getPagesFromDirectory(): List<ReaderPage> {
         val pages = downloadManager.buildPageList(source, manga, chapter.chapter.toDomainChapter()!!)
         return pages.map { page ->
-            ReaderPage(page.index, page.url, page.imageUrl) {
+            val streamFn = {
                 context.contentResolver.openInputStream(page.uri ?: Uri.EMPTY)!!
-            }.apply {
+            }
+            ReaderPage(page.index, page.url, page.imageUrl, streamFn).apply {
                 status = Page.State.Ready
+                // Measured before any holder exists, so the webtoon viewer can lay the page out at
+                // its final height instead of collapsing it when the image arrives.
+                imageExtent = PageExtentProbe.readHeader(streamFn)?.let(PageExtentProbe::measureHeader)
             }
         }
     }

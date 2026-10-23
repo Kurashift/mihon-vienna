@@ -77,6 +77,36 @@ class WebtoonPageHolder(
     private val parentHeight
         get() = viewer.recycler.height
 
+    private val sideMarginPx: Int
+        get() = (
+            Resources.getSystem().displayMetrics.widthPixels *
+                (viewer.config.sidePadding / 100f)
+            ).toInt()
+
+    /**
+     * Height this page occupies once its image is drawn, computed from the image header measured
+     * before the decode.
+     *
+     * Reserving the final height up front is what keeps the viewport still: a holder that starts at
+     * the viewport height and collapses when the bitmap lands moves every page below it by the
+     * difference. Zero means the size is unknown (or the current image options change the geometry),
+     * in which case the holder keeps sizing itself from the decoded image.
+     */
+    private fun measuredPageHeight(): Int {
+        if (!viewer.config.canUseMeasuredPageHeight) return 0
+        val (imageWidth, imageHeight) = page?.imageExtent ?: return 0
+        if (imageWidth <= 0) return 0
+        // Holders bind during the recycler's first layout, when its width is still zero. Falling
+        // back to the screen width keeps those pages at their final height instead of the viewport
+        // height, which they would otherwise collapse from as soon as they were decoded.
+        val availableWidth = (
+            viewer.recycler.width.takeIf { it > 0 }
+                ?: Resources.getSystem().displayMetrics.widthPixels
+            ) - 2 * sideMarginPx
+        if (availableWidth <= 0) return 0
+        return (availableWidth.toLong() * imageHeight / imageWidth).toInt()
+    }
+
     /**
      * Page of a chapter.
      */
@@ -116,23 +146,30 @@ class WebtoonPageHolder(
 
     private fun refreshLayoutParams() {
         val bottomMargin = if (!viewer.isContinuous) 15.dpToPx else 0
-        val sideMargin = (
-            Resources.getSystem().displayMetrics.widthPixels *
-                (viewer.config.sidePadding / 100f)
-            ).toInt()
+        val sideMargin = sideMarginPx
+        val measuredHeight = measuredPageHeight()
         val layoutParams = frame.layoutParams
 
         if (layoutParams is RecyclerView.LayoutParams) {
             layoutParams.width = MATCH_PARENT
-            layoutParams.height = WRAP_CONTENT
+            layoutParams.height = if (measuredHeight > 0) measuredHeight else WRAP_CONTENT
             layoutParams.bottomMargin = bottomMargin
             layoutParams.marginStart = sideMargin
             layoutParams.marginEnd = sideMargin
         } else {
-            frame.layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            frame.layoutParams = RecyclerView.LayoutParams(
+                MATCH_PARENT,
+                if (measuredHeight > 0) measuredHeight else WRAP_CONTENT,
+            ).apply {
                 this.bottomMargin = bottomMargin
                 marginStart = sideMargin
                 marginEnd = sideMargin
+            }
+        }
+
+        if (::progressContainer.isInitialized) {
+            progressContainer.updateLayoutParams<FrameLayout.LayoutParams> {
+                height = if (measuredHeight > 0) MATCH_PARENT else parentHeight
             }
         }
     }

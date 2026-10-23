@@ -27,9 +27,14 @@ internal class DirectoryPageLoader(
             }
             .mapIndexed { i, file ->
                 val streamFn = { file.openInputStream() }
+                // Measured here, before any holder exists: a holder laid out at the viewport height
+                // and collapsed when the image arrives moves every page below it, which is what
+                // makes the reader jump while scrolling fast into pages that were never measured.
+                val extent = PageExtentProbe.readHeader(streamFn)?.let(PageExtentProbe::measureHeader)
                 ReaderPage(i).apply {
                     stream = streamFn
                     status = Page.State.Ready
+                    imageExtent = extent
                 }
             }
     }

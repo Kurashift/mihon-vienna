@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.reader.viewer.webtoon
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -106,29 +107,114 @@ class WebtoonPageSelectionTest {
     }
 
     @Test
-    fun `normal initial reveal requires target position`() {
+    fun `initial reveal requires the target position`() {
         assertFalse(
-            WebtoonPageSelection.isInitialPositionReady(804, 1500, 1596, false),
+            WebtoonPageSelection.isInitialPositionReady(804, 1500, 1596),
         )
         assertTrue(
-            WebtoonPageSelection.isInitialPositionReady(804, 1595, 1596, false),
+            WebtoonPageSelection.isInitialPositionReady(804, 1595, 1596),
         )
     }
 
     @Test
-    fun `exhausted alignment accepts clamped target position`() {
-        assertTrue(
-            WebtoonPageSelection.isInitialPositionReady(804, 1500, 1596, true),
+    fun `initial reveal requires a measured attached page`() {
+        assertFalse(
+            WebtoonPageSelection.isInitialPositionReady(0, 1596, 1596),
+        )
+        assertFalse(
+            WebtoonPageSelection.isInitialPositionReady(804, null, 1596),
         )
     }
 
     @Test
-    fun `clamped reveal still requires a measured attached page`() {
+    fun `displaced position is only settled when the viewport cannot move`() {
+        // 96px below the target with content still scrollable in both directions: not settled.
         assertFalse(
-            WebtoonPageSelection.isInitialPositionReady(0, 1596, 1596, true),
+            WebtoonPageSelection.isInitialPositionClamped(
+                currentStart = 1692,
+                targetStart = 1596,
+                canScrollForward = true,
+                canScrollBackward = true,
+            ),
         )
+        // Same offset, but the content ends here, so nothing will move after the reveal.
+        assertTrue(
+            WebtoonPageSelection.isInitialPositionClamped(
+                currentStart = 1692,
+                targetStart = 1596,
+                canScrollForward = false,
+                canScrollBackward = true,
+            ),
+        )
+        // On target is not "clamped", it is simply ready.
         assertFalse(
-            WebtoonPageSelection.isInitialPositionReady(804, null, 1596, true),
+            WebtoonPageSelection.isInitialPositionClamped(
+                currentStart = 1596,
+                targetStart = 1596,
+                canScrollForward = false,
+                canScrollBackward = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `alignment settles only after the extent and the position hold`() {
+        // First pass: no previous extent to compare against yet.
+        assertFalse(
+            WebtoonPageSelection.isInitialAlignSettled(
+                previousExtent = -1,
+                currentExtent = 2400,
+                currentStart = 0,
+                targetStart = 0,
+                stableFrames = 2,
+                requiredStableFrames = 2,
+            ),
+        )
+        // Extent stopped changing, but the page has not reached its target top.
+        assertFalse(
+            WebtoonPageSelection.isInitialAlignSettled(
+                previousExtent = 2400,
+                currentExtent = 2400,
+                currentStart = 1500,
+                targetStart = 0,
+                stableFrames = 2,
+                requiredStableFrames = 2,
+            ),
+        )
+        // Extent and position are stable, just not for long enough yet.
+        assertFalse(
+            WebtoonPageSelection.isInitialAlignSettled(
+                previousExtent = 2400,
+                currentExtent = 2400,
+                currentStart = 0,
+                targetStart = 0,
+                stableFrames = 1,
+                requiredStableFrames = 2,
+            ),
+        )
+        assertTrue(
+            WebtoonPageSelection.isInitialAlignSettled(
+                previousExtent = 2400,
+                currentExtent = 2400,
+                currentStart = 0,
+                targetStart = 0,
+                stableFrames = 2,
+                requiredStableFrames = 2,
+            ),
+        )
+    }
+
+    @Test
+    fun `page identity survives adapter rebuilds`() {
+        // The adapter hands out new page objects on every rebuild, so the initial-alignment flow
+        // matches on this value instead of on the instance.
+        assertEquals(
+            PageIdentity(1L, 2L, "chapter-url", 3),
+            PageIdentity(1L, 2L, "chapter-url", 3),
+        )
+        assertNotEquals(
+            PageIdentity(1L, 2L, "chapter-url", 3),
+            PageIdentity(1L, 2L, "chapter-url", 4),
         )
     }
 
