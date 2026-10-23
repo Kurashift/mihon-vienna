@@ -89,13 +89,21 @@ class WebtoonPageHolder(
      *
      * Reserving the final height up front is what keeps the viewport still: a holder that starts at
      * the viewport height and collapses when the bitmap lands moves every page below it by the
-     * difference. Zero means the size is unknown (or the current image options change the geometry),
-     * in which case the holder keeps sizing itself from the decoded image.
+     * difference. The measured size goes through the same dual page transforms the image will get
+     * (split into a stacked pair, or rotated a quarter turn), because both change the height.
+     *
+     * Zero means the size is unknown, in which case the holder keeps sizing itself from the decoded
+     * image.
      */
     private fun measuredPageHeight(): Int {
-        if (!viewer.config.canUseMeasuredPageHeight) return 0
         val (imageWidth, imageHeight) = page?.imageExtent ?: return 0
-        if (imageWidth <= 0) return 0
+        val (renderedWidth, renderedHeight) = WebtoonPageSelection.resolveRenderedExtent(
+            width = imageWidth,
+            height = imageHeight,
+            splitDoublePages = viewer.config.dualPageSplit,
+            rotateDoublePages = viewer.config.dualPageRotateToFit,
+        )
+        if (renderedWidth <= 0) return 0
         // Holders bind during the recycler's first layout, when its width is still zero. Falling
         // back to the screen width keeps those pages at their final height instead of the viewport
         // height, which they would otherwise collapse from as soon as they were decoded.
@@ -104,7 +112,7 @@ class WebtoonPageHolder(
                 ?: Resources.getSystem().displayMetrics.widthPixels
             ) - 2 * sideMarginPx
         if (availableWidth <= 0) return 0
-        return (availableWidth.toLong() * imageHeight / imageWidth).toInt()
+        return (availableWidth.toLong() * renderedHeight / renderedWidth).toInt()
     }
 
     /**

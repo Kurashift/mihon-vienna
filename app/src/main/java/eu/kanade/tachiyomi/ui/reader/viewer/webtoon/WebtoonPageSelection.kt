@@ -26,6 +26,30 @@ internal object WebtoonPageSelection {
     }
 
     /**
+     * Pixel size the image is drawn at after the dual page options are applied.
+     *
+     * A double-page spread is either split into two halves stacked vertically (`w/2 × 2h`) or
+     * rotated a quarter turn (`h × w`); both change the height the page occupies, so a holder laid
+     * out at the untransformed size would collapse the moment the image arrives. The transforms
+     * only ever apply to wide images, and rotation is processed first, matching
+     * [eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonPageHolder].
+     */
+    fun resolveRenderedExtent(
+        width: Int,
+        height: Int,
+        splitDoublePages: Boolean,
+        rotateDoublePages: Boolean,
+    ): Pair<Int, Int> {
+        if (width <= 0 || height <= 0) return width to height
+        if (width <= height) return width to height
+        return when {
+            rotateDoublePages -> height to width
+            splitDoublePages -> (width / 2) to (height * 2)
+            else -> width to height
+        }
+    }
+
+    /**
      * Whether the target page has been measured and is resting within one pixel of its target
      * top. There is deliberately no "close enough" mode: the reader becomes visible on this
      * answer, so accepting a displaced page shows a frame that then has to move under the user's
