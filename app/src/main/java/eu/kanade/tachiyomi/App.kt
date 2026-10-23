@@ -31,6 +31,7 @@ import eu.kanade.tachiyomi.data.coil.MangaCoverKeyer
 import eu.kanade.tachiyomi.data.coil.MangaKeyer
 import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
 import eu.kanade.tachiyomi.data.notification.Notifications
+import eu.kanade.tachiyomi.data.updater.AppUpdateState
 import eu.kanade.tachiyomi.di.AppModule
 import eu.kanade.tachiyomi.di.PreferenceModule
 import eu.kanade.tachiyomi.network.NetworkHelper
@@ -183,6 +184,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun onStart(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStart()
+        // A new visit to the app: a prompt that was dismissed with a tap outside (or back) asks
+        // again. Moving between the app's own activities does not reach here, so the reader never
+        // gets the dialog on top of a page.
+        AppUpdateState.resetPromptForNewVisit()
     }
 
     override fun onStop(owner: LifecycleOwner) {
