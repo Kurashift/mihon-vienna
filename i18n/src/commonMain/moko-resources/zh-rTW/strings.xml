@@ -190,7 +190,6 @@
     <string name="update_available_update">更新</string>
     <string name="update_download_and_install">下載並安裝</string>
     <string name="pref_update_prompt">啟動時彈出新版本彈窗</string>
-    <string name="pref_update_prompt_summary">關掉只停掉這個彈窗，下面的手動檢查照舊可用</string>
     <string name="update_prompt_disabled">已關閉啟動提示，可在這裡重新打開</string>
     <string name="update_install_title">更新到 %1$s</string>
     <string name="update_download_progress">%1$s / %2$s</string>

@@ -344,7 +344,6 @@
     <string name="update_available_update">更新</string>
     <string name="update_download_and_install">下载并安装</string>
     <string name="pref_update_prompt">启动时弹出新版本弹窗</string>
-    <string name="pref_update_prompt_summary">关掉只停掉这个弹窗，下面的手动检查照旧可用</string>
     <string name="update_prompt_disabled">已关闭启动提示，可在这里重新打开</string>
     <string name="update_install_title">更新到 %1$s</string>
     <string name="update_download_progress">%1$s / %2$s</string>
