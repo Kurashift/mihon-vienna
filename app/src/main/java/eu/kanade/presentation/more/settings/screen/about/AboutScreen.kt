@@ -23,9 +23,11 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.more.LogoHeader
+import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
@@ -70,6 +72,9 @@ object AboutScreen : Screen() {
         val navigator = LocalNavigator.currentOrThrow
         var isCheckingUpdates by remember { mutableStateOf(false) }
         val hasAppUpdate by AppUpdateState.availableRelease.collectAsState()
+        val basePreferences = remember { Injekt.get<BasePreferences>() }
+        val updatePromptEnabled by remember { basePreferences.updatePromptEnabled.changes() }
+            .collectAsState(initial = basePreferences.updatePromptEnabled.get())
 
         Scaffold(
             topBar = { scrollBehavior ->
@@ -101,6 +106,14 @@ object AboutScreen : Screen() {
                 }
 
                 if (updaterEnabled) {
+                    item {
+                        SwitchPreferenceWidget(
+                            title = stringResource(MR.strings.pref_update_prompt),
+                            subtitle = stringResource(MR.strings.pref_update_prompt_summary),
+                            checked = updatePromptEnabled,
+                            onCheckedChanged = { basePreferences.updatePromptEnabled.set(it) },
+                        )
+                    }
                     item {
                         TextPreferenceWidget(
                             title = stringResource(MR.strings.check_for_updates),

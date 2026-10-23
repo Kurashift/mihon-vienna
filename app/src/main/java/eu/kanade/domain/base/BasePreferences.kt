@@ -222,4 +222,16 @@ class BasePreferences(
         Preference.appStateKey("ignored_update_version"),
         "",
     )
+
+    /**
+     * Whether the start-up prompt announces a new release.
+     *
+     * Turning it off silences the prompt only: the manual check in the about screen keeps working,
+     * so a reader who dismissed the prompt for good is never cut off from updates. Kept in app
+     * state rather than in the backup, like [ignoredUpdateVersion].
+     */
+    val updatePromptEnabled: Preference<Boolean> = preferenceStore.getBoolean(
+        Preference.appStateKey("update_prompt_enabled"),
+        true,
+    )
 }

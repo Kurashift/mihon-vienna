@@ -109,7 +109,7 @@ internal fun AppUpdateProgress?.isBusy(): Boolean =
  */
 @Composable
 internal fun updatePrimaryLabel(progress: AppUpdateProgress?): String? = when (progress) {
-    null -> stringResource(MR.strings.update_download_and_install)
+    null -> stringResource(MR.strings.update_available_update)
     is AppUpdateProgress.Failed -> stringResource(MR.strings.action_retry)
     AppUpdateProgress.Ready -> stringResource(MR.strings.action_install)
     AppUpdateProgress.NeedsPermission -> stringResource(MR.strings.update_install_grant)

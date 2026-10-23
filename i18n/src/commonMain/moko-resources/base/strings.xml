@@ -1108,9 +1108,14 @@
     <string name="update_check_notification_update_available">New version available!</string>
     <string name="update_available_title">Update available</string>
     <string name="update_available_message">Version %1$s can be installed over this one.</string>
-    <string name="update_available_ignore">Ignore this version</string>
+    <string name="update_available_disable">Don't ask again</string>
+    <string name="update_available_skip_version">Skip this version</string>
     <string name="update_available_later">Got it</string>
+    <string name="update_available_update">Update</string>
     <string name="update_download_and_install">Download and install</string>
+    <string name="pref_update_prompt">Announce new releases at start-up</string>
+    <string name="pref_update_prompt_summary">Turning this off only silences the start-up prompt; the check below keeps working</string>
+    <string name="update_prompt_disabled">Start-up prompt turned off. Re-enable it here.</string>
     <string name="update_install_title">Update to %1$s</string>
     <string name="update_download_progress">%1$s of %2$s</string>
     <string name="update_download_verifying">Verifying…</string>
