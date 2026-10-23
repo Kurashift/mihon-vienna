@@ -7,17 +7,17 @@ import org.junit.jupiter.api.Test
 class AppUpdateStateTest {
 
     @Test
-    fun `a dismissal stays quiet only while the reader is still in the app`() {
-        AppUpdateState.dismissPrompt(now = 1_000)
+    fun `a dismissal lasts for one visit and the next visit asks again`() {
+        // A tap outside the dialog, or back, means "not now".
+        AppUpdateState.dismissPrompt()
         assertTrue(AppUpdateState.promptAnswered.value)
 
-        // Coming back within the lifetime — from the reader, the installer, another app — keeps the
-        // prompt out of the way.
-        AppUpdateState.resetPromptIfStale(now = 1_000 + 29_000)
+        // Moving around inside the app — into the reader and back — is the same visit, so the
+        // prompt stays out of the way there.
         assertTrue(AppUpdateState.promptAnswered.value)
 
-        // A later visit asks again, which is what tapping outside the dialog is supposed to mean.
-        AppUpdateState.resetPromptIfStale(now = 1_000 + 31_000)
+        // Opening the app again is a new visit and asks again.
+        AppUpdateState.resetPromptForNewVisit()
         assertFalse(AppUpdateState.promptAnswered.value)
     }
 }

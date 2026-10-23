@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.updater
 
-import android.os.SystemClock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,15 +13,12 @@ object AppUpdateState {
     /**
      * Whether the start-up prompt was already answered, and when.
      *
-     * Dismissing the prompt — the button, tapping outside, or back — means "not now", so it only
-     * silences the prompt while the reader stays in the app. Coming back after being away for a
-     * while asks again, which is what the three buttons promise: 不再提示 is the only answer that
-     * lasts, 跳过这版 lasts until the next release.
+     * Dismissing the prompt — the button, a tap outside it, or back — means "not now", so it only
+     * silences the prompt for the visit it was given in. [resetPromptForNewVisit] re-arms it when
+     * the app is opened again; 不再提示 is the only answer that lasts.
      */
     private val _promptAnswered = MutableStateFlow(false)
     val promptAnswered: StateFlow<Boolean> = _promptAnswered.asStateFlow()
-
-    private var promptDismissedAt = 0L
 
     fun setAvailable(release: Release) {
         // Only a different release re-arms the prompt. The same one arriving again — a manual
@@ -38,24 +34,19 @@ object AppUpdateState {
         _availableRelease.value = null
     }
 
-    /** Hides the prompt until the reader leaves the app for a while. */
-    fun dismissPrompt(now: Long = SystemClock.uptimeMillis()) {
+    /** Hides the prompt until the app is opened again. */
+    fun dismissPrompt() {
         _promptAnswered.value = true
-        promptDismissedAt = now
     }
 
     /**
-     * Re-arms a dismissal that has gone stale, so reopening the app asks again.
+     * Re-arms the prompt for a new visit.
      *
-     * The activity is resumed on every return — from the reader, from the installer, from another
-     * app — so a dismissal is only allowed to expire once the reader has actually been away.
+     * Called when the whole app returns to the foreground, not when an activity resumes: walking
+     * from the library into the reader and back is the same visit, and re-asking there would put
+     * the dialog in the reader's way on every chapter.
      */
-    fun resetPromptIfStale(now: Long = SystemClock.uptimeMillis()) {
-        if (!_promptAnswered.value) return
-        if (now - promptDismissedAt < PROMPT_DISMISSAL_LIFETIME_MILLIS) return
+    fun resetPromptForNewVisit() {
         _promptAnswered.value = false
     }
 }
-
-/** How long a dismissed prompt stays quiet before the next app visit asks again. */
-private const val PROMPT_DISMISSAL_LIFETIME_MILLIS = 30_000L
