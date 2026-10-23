@@ -38,20 +38,6 @@ class WebtoonConfig(
     var sidePadding = 0
         private set
 
-    /**
-     * Whether a holder may be laid out at its image's measured height.
-     *
-     * Crop borders is allowed on purpose: cropping only removes blank edges, so the page keeps its
-     * full height and the cropped image is centred inside it — the trimmed margin comes back as
-     * symmetric blank space. What must not happen is the holder changing height when the image
-     * arrives, because that moves every page below it.
-     *
-     * The dual page transforms change the geometry the image is drawn at (split, rotated), so the
-     * measured size no longer describes the result there; those modes keep the previous behaviour.
-     */
-    val canUseMeasuredPageHeight: Boolean
-        get() = !dualPageSplit && !dualPageRotateToFit
-
     var doubleTapZoom = true
         private set
 

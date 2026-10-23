@@ -107,6 +107,35 @@ class WebtoonPageSelectionTest {
     }
 
     @Test
+    fun `rendered extent follows the dual page transforms`() {
+        // A tall page is drawn as measured.
+        assertEquals(
+            1150 to 1624,
+            WebtoonPageSelection.resolveRenderedExtent(1150, 1624, splitDoublePages = false, rotateDoublePages = false),
+        )
+        // A spread split into two stacked halves: half the width, double the height.
+        assertEquals(
+            700 to 1000,
+            WebtoonPageSelection.resolveRenderedExtent(1400, 500, splitDoublePages = true, rotateDoublePages = false),
+        )
+        // A spread rotated a quarter turn: the dimensions swap.
+        assertEquals(
+            500 to 1400,
+            WebtoonPageSelection.resolveRenderedExtent(1400, 500, splitDoublePages = false, rotateDoublePages = true),
+        )
+        // Rotation wins when both are enabled, matching the order the holder processes them in.
+        assertEquals(
+            500 to 1400,
+            WebtoonPageSelection.resolveRenderedExtent(1400, 500, splitDoublePages = true, rotateDoublePages = true),
+        )
+        // Only wide images are transformed.
+        assertEquals(
+            1150 to 1624,
+            WebtoonPageSelection.resolveRenderedExtent(1150, 1624, splitDoublePages = true, rotateDoublePages = true),
+        )
+    }
+
+    @Test
     fun `initial reveal requires the target position`() {
         assertFalse(
             WebtoonPageSelection.isInitialPositionReady(804, 1500, 1596),
