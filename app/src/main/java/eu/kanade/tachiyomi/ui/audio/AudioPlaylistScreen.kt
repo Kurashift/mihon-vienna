@@ -78,8 +78,15 @@ class AudioPlaylistScreen : Screen() {
         }
 
         fun setSectionExpanded(key: String, expanded: Boolean) {
-            val nextExpanded = if (expanded) expandedSections + key else expandedSections - key
-            val nextCollapsed = if (expanded) collapsedSections - key else collapsedSections + key
+            // One work at a time: opening a second one closes whatever was open before, the way
+            // an accordion does. The other keys are collapsed explicitly, because a row nobody
+            // has touched would otherwise fall back to following the current track.
+            val nextExpanded = if (expanded) setOf(key) else expandedSections - key
+            val nextCollapsed = if (expanded) {
+                sections.mapNotNullTo(hashSetOf()) { section -> section.key.takeIf { it != key } }
+            } else {
+                collapsedSections + key
+            }
             expandedSections = nextExpanded
             collapsedSections = nextCollapsed
             basePreferences.audioQueueExpandedSections.set(nextExpanded)
