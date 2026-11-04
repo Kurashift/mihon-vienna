@@ -26,6 +26,7 @@ import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
 import mihon.core.archive.pdfReader
 import tachiyomi.core.common.util.system.ImageUtil
+import tachiyomi.core.common.util.system.PageImageName
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
@@ -375,7 +376,7 @@ class LocalChapterCoverManager(
             .filter { !it.isDirectory }
             .filter { ImageUtil.isImagePage(it.name) { it.openInputStream() } }
             .sortedWith(
-                compareBy<UniFile> { !it.name.orEmpty().equals(COVER_FILE_NAME, ignoreCase = true) }
+                compareBy<UniFile> { !isCoverName(it.name.orEmpty()) }
                     .thenComparator { first, second ->
                         first.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(second.name.orEmpty())
                     },
@@ -393,7 +394,7 @@ class LocalChapterCoverManager(
                     .filter { ImageUtil.isImagePage(it.name) { reader.getInputStream(it.name)!! } }
                     .sortedWith(
                         compareBy<ArchiveEntry> {
-                            !it.name.substringAfterLast('/').equals(COVER_FILE_NAME, ignoreCase = true)
+                            !isCoverName(it.name.substringAfterLast('/'))
                         }.thenComparator { first, second ->
                             first.name.compareToCaseInsensitiveNaturalPageOrder(second.name)
                         },
@@ -479,6 +480,8 @@ class LocalChapterCoverManager(
         return scaled
     }
 
+    private fun isCoverName(name: String) = isChapterCoverName(name)
+
     private fun findChapterFile(chapterUrl: String): UniFile? {
         val parts = chapterUrl.split('/', limit = 2)
         if (parts.size != 2) return null
@@ -553,7 +556,6 @@ class LocalChapterCoverManager(
         private const val COVER_DIRECTORY_NAME = "local_chapter_covers"
         private const val CUSTOM_COVER_DIRECTORY_NAME = "local_custom_chapter_covers"
         private const val COVER_EXTENSION = "webp"
-        private const val COVER_FILE_NAME = "cover.jpg"
         private const val MISSING_EXTENSION = "missing"
         private const val TARGET_WIDTH = 480
         private const val TARGET_HEIGHT = 672
@@ -565,6 +567,18 @@ class LocalChapterCoverManager(
 
 // 3: cover picking no longer considers leftover thumbnail files such as `.thumb`.
 const val LOCAL_CHAPTER_COVER_CACHE_VERSION = 3
+
+private const val COVER_FILE_BASE_NAME = "cover"
+
+/**
+ * Whether [name] is a chapter's designated cover file. The format can be any of the ones the
+ * reader supports (cover.webp is as valid as cover.jpg), so match the base name and reuse the
+ * shared image-extension table instead of hard-coding a single extension.
+ */
+internal fun isChapterCoverName(name: String): Boolean {
+    return name.substringBeforeLast('.').equals(COVER_FILE_BASE_NAME, ignoreCase = true) &&
+        PageImageName.hasImageExtension(name)
+}
 
 internal fun localCustomChapterCoverFileName(chapterId: Long): String = "chapter-$chapterId.webp"
 

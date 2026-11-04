@@ -110,10 +110,13 @@ object HomeScreen : Screen() {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val basePreferences = remember { Injekt.get<BasePreferences>() }
         val initialTab = remember {
-            // Always launch into the library tab so the app is usable immediately without
-            // triggering a cold load of the local source listing.
-            LibraryTab
+            // Voyager restores the tab from saved instance state when Android kept it. A cold
+            // start has none, so fall back to the last tab we persisted. Without this the reader's
+            // return could rebuild this activity with an empty state and drop the user on the
+            // shelf instead of the tab they opened the reader from.
+            HomeTabKey.toTab(basePreferences.lastHomeTab.get())
         }
         val bottomNavVisible by produceState(initialValue = true) {
             showBottomNavEvent.receiveAsFlow().collectLatest { value = it }
@@ -219,36 +222,47 @@ object HomeScreen : Screen() {
                 }
             }
 
-            val goToPrimaryTab = { tabNavigator.current = primaryTab }
+            fun setTab(tab: cafe.adriel.voyager.navigator.tab.Tab) {
+                tabNavigator.current = tab
+            }
+            val goToPrimaryTab = { setTab(primaryTab) }
 
             BackHandler(
                 enabled = tabNavigator.current::class != primaryTab::class,
                 onBack = goToPrimaryTab,
             )
 
+            // Keep the persisted tab id in step with whatever the navigator ends up showing,
+            // including a state restored from saved instance state after a cold start.
+            LaunchedEffect(tabNavigator.current::class) {
+                basePreferences.lastHomeTab.set(HomeTabKey.of(tabNavigator.current))
+            }
+
             LaunchedEffect(Unit) {
                 launch {
                     librarySearchEvent.receiveAsFlow().collectLatest {
-                        tabNavigator.current = LibraryTab
+                        setTab(LibraryTab)
                         LibraryTab.search(it)
                     }
                 }
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
-                        tabNavigator.current = when (it) {
-                            Tab.Local -> LocalSourceTab
-                            is Tab.Library -> LibraryTab
-                            Tab.Updates -> UpdatesTab
-                            Tab.History -> HistoryTab
-                            is Tab.Browse -> {
-                                if (it.toExtensions) {
-                                    BrowseTab.showExtension()
+                        setTab(
+                            when (it) {
+                                Tab.Local -> LocalSourceTab
+                                is Tab.Library -> LibraryTab
+                                Tab.Updates -> UpdatesTab
+                                Tab.History -> HistoryTab
+                                is Tab.Browse -> {
+                                    if (it.toExtensions) {
+                                        BrowseTab.showExtension()
+                                    }
+                                    navigator.push(OnlineSourceCenterScreen)
+                                    tabNavigator.current
                                 }
-                                navigator.push(OnlineSourceCenterScreen)
-                                tabNavigator.current
-                            }
-                            is Tab.More -> MoreTab
-                        }
+                                is Tab.More -> MoreTab
+                            },
+                        )
 
                         if (it is Tab.Library && it.mangaIdToOpen != null) {
                             navigator.push(MangaScreen(it.mangaIdToOpen))
@@ -258,10 +272,6 @@ object HomeScreen : Screen() {
                         }
                     }
                 }
-            }
-
-            LaunchedEffect(tabNavigator.current::class) {
-                // Launch tab is fixed to the library; no last-tab persistence.
             }
         }
     }

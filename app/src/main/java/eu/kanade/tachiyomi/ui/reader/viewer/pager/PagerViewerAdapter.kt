@@ -59,7 +59,7 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
             chapters.nextChapter,
             chapters.currChapter,
             isLocalSource,
-        ) > 0
+        ) - chapters.nextSkippedReadCount > 0
 
         // Add previous chapter pages and transition
         chapters.prevChapter?.pages?.let(newItems::addAll)
@@ -93,7 +93,11 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
         currentChapter = chapters.currChapter
 
         // Add next chapter transition and pages.
-        nextTransition = ChapterTransition.Next(chapters.currChapter, chapters.nextChapter)
+        nextTransition = ChapterTransition.Next(
+            chapters.currChapter,
+            chapters.nextChapter,
+            chapters.nextSkippedReadCount,
+        )
             .also {
                 if (
                     nextHasMissingChapters ||

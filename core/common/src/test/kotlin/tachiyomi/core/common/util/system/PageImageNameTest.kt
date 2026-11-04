@@ -33,6 +33,23 @@ class PageImageNameTest {
     }
 
     @Test
+    fun `the shared extension table covers webp and common spellings`() {
+        // Local import reuses this table, so a readable format must not be silently skipped.
+        assertTrue(PageImageName.hasImageExtension("001.webp"))
+        assertTrue(PageImageName.hasImageExtension("001.WEBP"))
+        assertTrue(PageImageName.hasImageExtension("cover.webp"))
+        assertTrue(PageImageName.hasImageExtension("001.jpeg"))
+        assertTrue(PageImageName.hasImageExtension("001.JPG"))
+        assertTrue(PageImageName.hasImageExtension("001.png"))
+        assertTrue(PageImageName.hasImageExtension("001.gif"))
+        assertTrue(PageImageName.hasImageExtension("001.avif"))
+        assertTrue(PageImageName.hasImageExtension("001.heif"))
+        assertTrue(PageImageName.hasImageExtension("001.jxl"))
+        assertFalse(PageImageName.hasImageExtension("ComicInfo.xml"))
+        assertFalse(PageImageName.hasImageExtension("chapter.cbz"))
+    }
+
+    @Test
     fun `non-image extensions are not pages`() {
         assertFalse(PageImageName.isPage("info.txt"))
         assertFalse(PageImageName.isPage(".ehviewer"))

@@ -335,12 +335,25 @@ fun AudioPlaylistContent(
                     val workExpanded = when {
                         section.key in expandedSections -> true
                         section.key in collapsedSections -> false
-                        else -> section.key == currentSectionKey
+                        // Accordion: once a row is explicitly open, a row with no state at all
+                        // must not fall back to following the current track. Otherwise a work
+                        // added to the queue later (absent from both sets) could open a second
+                        // row by becoming current.
+                        else -> AudioQueueExpansion.followsCurrentTrack(
+                            expandedSections,
+                            section.key,
+                            currentSectionKey,
+                        )
                     }
                     // A work with a single folder needs no folder row: the work header already
                     // carries that path, and deleting the work and deleting its only folder are
                     // the same action. Folder rows appear once a work really has several.
                     val hasFolderRows = section.folders.size > 1
+                    // Whether one of this work's folders is explicitly open; an untouched folder
+                    // must not fall back to "is current" while a sibling is open (accordion).
+                    val openFoldersInWork = section.folders.mapTo(hashSetOf()) {
+                        folderStateKey(section.key, it.path)
+                    }.intersect(expandedFolders)
 
                     item(key = "section:${section.key}") {
                         SwipeToDeleteRow(
@@ -395,7 +408,12 @@ fun AudioPlaylistContent(
                                 val folderExpanded = when {
                                     folderKey in expandedFolders -> true
                                     folderKey in collapsedFolders -> false
-                                    else -> folderKey == currentFolderKey
+                                    // Same accordion guard as the work rows, scoped to this work.
+                                    else -> AudioQueueExpansion.followsCurrentTrack(
+                                        openFoldersInWork,
+                                        folderKey,
+                                        currentFolderKey,
+                                    )
                                 }
                                 val folderUrls = folder.tracks.map { it.mediaStreamUrl }
                                 item(key = "folder:${section.key}:${folder.path}") {
