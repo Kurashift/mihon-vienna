@@ -68,6 +68,22 @@ class LocalChapterTransferServiceTest {
     }
 
     @Test
+    fun `a folder of webp pages is imported as one chapter`() {
+        // WebP is a fully supported page format. If the import whitelist drifts from the reader's
+        // image table, a book of WebP pages would silently produce no chapters at all.
+        val book = directory("Book", image("001.webp"), image("002.webp"), image("003.WEBP"))
+
+        assertEquals(listOf("Book"), service.expand(book).map { it.name })
+    }
+
+    @Test
+    fun `a webp-only child folder is still a chapter`() {
+        val book = directory("Book", directory("Chapter 1", image("001.webp")))
+
+        assertEquals(listOf("Chapter 1"), service.expand(book).map { it.name })
+    }
+
+    @Test
     fun `an ordinary child folder is still a chapter`() {
         val book = directory("Book", directory("Chapter 1", image("001.jpg")))
 

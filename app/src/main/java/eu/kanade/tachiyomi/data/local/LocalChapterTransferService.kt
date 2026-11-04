@@ -13,6 +13,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import mihon.core.archive.ZipWriter
 import tachiyomi.core.common.storage.extension
+import tachiyomi.core.common.util.system.PageImageName
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
@@ -842,10 +843,11 @@ class LocalChapterTransferService(
 
     private fun isImportableFile(file: UniFile): Boolean {
         val name = file.name.orEmpty().lowercase()
-        return name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
-            name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".avif") ||
-            name.endsWith(".heif") || name.endsWith(".jxl") || name == "cover.jpg" ||
-            name == "comicinfo.xml"
+        // The single source of truth is ImageType (via PageImageName), the same table the reader
+        // and page counting use. Keeping a second handwritten list here is how a format can be
+        // readable yet silently skipped during import. ComicInfo.xml is the one non-image file
+        // a chapter folder keeps.
+        return PageImageName.hasImageExtension(name) || name == "comicinfo.xml"
     }
 }
 

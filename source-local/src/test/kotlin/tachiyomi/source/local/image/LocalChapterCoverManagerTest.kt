@@ -1,11 +1,26 @@
 package tachiyomi.source.local.image
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class LocalChapterCoverManagerTest {
+
+    @Test
+    fun `webp covers are picked as the designated cover file`() {
+        // The generated cover cache is WebP too, so a chapter's own cover.webp must be preferred
+        // over the numbered pages just like cover.jpg is.
+        assertTrue(isChapterCoverName("cover.webp"))
+        assertTrue(isChapterCoverName("cover.WEBP"))
+        assertTrue(isChapterCoverName("cover.jpg"))
+        assertTrue(isChapterCoverName("Cover.JPEG"))
+        assertTrue(isChapterCoverName("cover.png"))
+        assertFalse(isChapterCoverName("cover.xml"))
+        assertFalse(isChapterCoverName("001.webp"))
+        assertFalse(isChapterCoverName(".thumb.webp"))
+    }
 
     @Test
     fun `custom cover name depends only on stable chapter id`() {

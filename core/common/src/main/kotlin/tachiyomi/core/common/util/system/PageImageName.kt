@@ -22,10 +22,12 @@ object PageImageName {
         return sniffHeader?.invoke() == true
     }
 
-    /** Whether [name] carries an extension that can only be an image. */
+    /**
+     * Whether [name] carries an extension of one of the formats the app reads, case-insensitively.
+     * The long ".jpeg" form is treated as ".jpg" so page counting, cover picking and local import
+     * all agree on the same set - the single source of truth is [ImageType].
+     */
     fun hasImageExtension(name: String): Boolean {
-        // Match extensions case-insensitively, and treat the long ".jpeg" form as ".jpg" so
-        // page counting and cover picking don't miss common uppercase / long-form file names.
         val extension = name.substringAfterLast('.').lowercase()
         val normalizedExtension = if (extension == "jpeg") "jpg" else extension
         return ImageType.entries.any { it.extension == normalizedExtension }
