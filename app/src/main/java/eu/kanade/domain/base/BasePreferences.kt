@@ -210,8 +210,18 @@ class BasePreferences(
         "",
     )
 
-    /** Last selected first-level destination in the local-first build. */
-    val localFirstLastTab: Preference<String> = preferenceStore.getString("local_first_last_tab", "local")
+    /**
+     * The home tab the user was last on, as a stable id (see `HomeTabKey` in the ui.home package).
+     *
+     * Voyager restores the tab from saved instance state when Android kept it, but a cold start
+     * after process death has no saved state. This is the fallback for exactly that case, so
+     * returning from the reader lands on the tab the reader was opened from rather than always
+     * the shelf. Explicit intents (shortcuts, notifications) still take priority.
+     *
+     * The key is the historical `local_first_last_tab`; it is kept so existing installs keep their
+     * value. Valid values are `library` / `updates` / `local` / `history` / `more`.
+     */
+    val lastHomeTab: Preference<String> = preferenceStore.getString("local_first_last_tab", "library")
 
     /**
      * Release tag whose update prompt was answered with 忽略更新, e.g. `v2.3.5`.
