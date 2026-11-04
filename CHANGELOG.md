@@ -224,9 +224,19 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ### Other
 - Tests: unit tests for the alignment settle and clamped-position rules, the page identity that survives adapter rebuilds, and the dual page extent transforms
 
-## [Unreleased]
+## [v2.3.8] - 2026-11-04
 ### Added
 - Shelf and local library: pinching the grid changes 每行数目 — spread two fingers for fewer, larger covers per row, pinch them together for more. It writes the same 1–10 preference the display settings' slider writes, once, when the last finger lifts, so the two never disagree and a pinch does not write dozens of times on the way. A pinch that starts on 自动 first measures how many columns the adaptive grid is showing at that width, so the first frame does not jump a column, and one that ends where it started leaves 自动 alone. List mode does not respond to it, and one-finger scrolling, paging between categories, pull-to-refresh and the long press that starts a selection are untouched
+### Changed
+- Audio queue: expanding one work now collapses the others, so only one work is open at a time. The accordion was implemented on a feature branch that never reached main; main still used the multi-expand set from 2.3.5. Opening a work writes every other live work into the collapsed set, because an untouched row would otherwise fall back to following the current track and spring open again. Folder rows are an accordion within their own work. A work added to the queue after the accordion is in use cannot open itself by becoming current. Closing the open work leaves everything closed, and a persisted multi-expanded state from an older build converges to one on the next open
+- Reader: 跳过已读篇目 now applies only when continuing forward, instead of trimming read chapters out of the whole chain when the reader opens. The old static filter made the "next" chapter a distant one in the original order and could drop half-read chapters from the chain entirely; after a random jump, which uses a preloaded chapter snapshot, the landing chapter could be several unread chapters away. The chapter chain is now left intact and only the "next" slot skips forward to the first unread chapter. Re-reading from an already-read chapter keeps the original order, going back is never skipped, half-read chapters (read = false, progress > 0) are never skipped, and when everything ahead is read the immediate neighbour is kept. The previous chapter stays adjacent, which is what avoids the viewport rebuilds that made the earlier fully dynamic version unusable. The skipped-read count is passed to both viewer adapters and the transition UI so remote sources do not report skipped read chapters as missing ones. The setting's subtitle now describes the gated behaviour
+- Home: the last selected tab is persisted, so coming back from the reader lands on the tab the reader was opened from instead of always the shelf. Voyager restores the tab from saved instance state, but a cold start after process death has no saved state and HomeScreen used to fall back to a hard-coded library tab. Explicit shortcuts and notifications still take priority. The preference reuses the previously unused `local_first_last_tab` key
+### Fixed
+- Local library: webp import and cover handling now follow the same format table as the reader. The import whitelist was a second handwritten list of seven extensions next to `ImageType`, which is how a readable format can be silently skipped during import; it now calls `PageImageName.hasImageExtension`. A chapter's `cover.webp` used to lose the封面 priority to a hard-coded `cover.jpg` and fell back to page order; the cover name is now matched by its base name plus any image extension in `ImageType`
+### Other
+- Tests: 9 new unit-test cases for the webp import/cover rules, 12 for the audio queue accordion (mutual exclusion, full collapse, migration from a persisted multi-expanded state, a newly queued work, folders across works), 5 for the home tab key mapping, and 12 for the skip-read forwarding rule and chapter-transition identity
+
+## [Unreleased]
 
 ## [v2.2.5] - 2026-09-14
 ### Added
