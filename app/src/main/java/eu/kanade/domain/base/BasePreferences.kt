@@ -88,7 +88,9 @@ class BasePreferences(
 
     /**
      * Queue sections the user explicitly opened or closed. Sections with no entry here follow the
-     * default: the one holding the current track is open, everything else is closed.
+     * default: the one holding the current track is open, everything else is closed. Work rows are
+     * an accordion - opening one writes every other live section into the collapsed set, so an
+     * untouched row cannot spring open again by becoming current.
      */
     val audioQueueExpandedSections: Preference<Set<String>> = preferenceStore.getStringSet(
         Preference.appStateKey("audio_queue_expanded_sections"),

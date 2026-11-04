@@ -13,6 +13,7 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioListeningTab
 import eu.kanade.presentation.audio.AudioListeningTabs
 import eu.kanade.presentation.audio.AudioPlaylistContent
+import eu.kanade.presentation.audio.AudioQueueExpansion
 import eu.kanade.presentation.audio.buildQueueSections
 import eu.kanade.presentation.audio.folderStateKey
 import eu.kanade.presentation.util.Screen
@@ -78,21 +79,39 @@ class AudioPlaylistScreen : Screen() {
         }
 
         fun setSectionExpanded(key: String, expanded: Boolean) {
-            val nextExpanded = if (expanded) expandedSections + key else expandedSections - key
-            val nextCollapsed = if (expanded) collapsedSections - key else collapsedSections + key
-            expandedSections = nextExpanded
-            collapsedSections = nextCollapsed
-            basePreferences.audioQueueExpandedSections.set(nextExpanded)
-            basePreferences.audioQueueCollapsedSections.set(nextCollapsed)
+            val state = AudioQueueExpansion.toggleSection(
+                key = key,
+                expanded = expanded,
+                liveKeys = sections.map { it.key },
+                expandedSections = expandedSections,
+                collapsedSections = collapsedSections,
+            )
+            expandedSections = state.expanded
+            collapsedSections = state.collapsed
+            basePreferences.audioQueueExpandedSections.set(state.expanded)
+            basePreferences.audioQueueCollapsedSections.set(state.collapsed)
         }
 
         fun setFolderExpanded(key: String, expanded: Boolean) {
-            val nextExpanded = if (expanded) expandedFolders + key else expandedFolders - key
-            val nextCollapsed = if (expanded) collapsedFolders - key else collapsedFolders + key
-            expandedFolders = nextExpanded
-            collapsedFolders = nextCollapsed
-            basePreferences.audioQueueExpandedFolders.set(nextExpanded)
-            basePreferences.audioQueueCollapsedFolders.set(nextCollapsed)
+            // Folders are an accordion within their own work: a work's other folders close, while
+            // another work's folder state is left alone (it is not visible at the same time).
+            // A folder key is "$workKey|$path" and workKey itself contains '|', so find the
+            // owning section by prefix rather than splitting on the separator.
+            val owner = sections.firstOrNull { section -> key.startsWith(section.key + "|") }
+            val liveKeysInWork = owner?.folders
+                ?.map { folderStateKey(owner.key, it.path) }
+                .orEmpty()
+            val state = AudioQueueExpansion.toggleFolder(
+                key = key,
+                expanded = expanded,
+                liveKeysInWork = liveKeysInWork,
+                expandedFolders = expandedFolders,
+                collapsedFolders = collapsedFolders,
+            )
+            expandedFolders = state.expanded
+            collapsedFolders = state.collapsed
+            basePreferences.audioQueueExpandedFolders.set(state.expanded)
+            basePreferences.audioQueueCollapsedFolders.set(state.collapsed)
         }
 
         fun clearSectionState() {
