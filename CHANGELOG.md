@@ -236,6 +236,12 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ### Other
 - Tests: 9 new unit-test cases for the webp import/cover rules, 12 for the audio queue accordion (mutual exclusion, full collapse, migration from a persisted multi-expanded state, a newly queued work, folders across works), 5 for the home tab key mapping, and 12 for the skip-read forwarding rule and chapter-transition identity
 
+## [v2.3.9] - 2026-11-05
+### Changed
+- Reader: 跳过已读篇目 is back to the 2.3.7 behaviour. The 2.3.8 change made the "next" slot skip forward to the first unread chapter while leaving the previous direction at the immediately adjacent chapter; going back after a forward skip landed on a neighbouring chapter that had never been opened instead of the one just read, and the two chapter-navigation buttons advanced by different amounts. The 2.3.7 chain — trimmed once when the reader opens, static for the whole session, the same step in both directions — keeps the round trip closed and the transition shape identical to an ordinary chapter change. That is the better feel, so the 2.3.8 gated version is reverted in full: static filtering, `chapterList[pos±1]` for prev/next, the three-field `ViewerChapters`, and the setting subtitle 上下方向都会跳过；想逐篇重读请先关闭 are all restored byte-for-byte to their 2.3.7 state. The 2.3.8 `Changed` entry for 跳过已读篇目 above no longer describes the shipped behaviour. All other 2.3.8 changes (webp import and cover, audio queue accordion, home tab memory) and the pinch-to-change-columns feature are untouched
+### Other
+- Version: `versionCode` 227 → 228, `versionName` 2.3.8 → 2.3.9, so existing installs can update in place. This is a small release and can be skipped
+
 ## [Unreleased]
 
 ## [v2.2.5] - 2026-09-14
