@@ -217,50 +217,52 @@ class ReaderViewModel @JvmOverloads constructor(
             ?: chapters.firstOrNull()
             ?: error("Chapter list is empty")
 
-        // The chapter chain is never trimmed here. Trimming once at open time (the old static
-        // skip-read) makes the reader's "next" a distant chapter in the original order, and a
-        // half-read chapter can vanish from the chain entirely. skipRead is applied only when the
-        // "next" slot is chosen in loadChapter, so the chain shape stays identical to a normal
-        // chapter change and the previous direction is never affected.
-        val chaptersForReader = if (readerPreferences.skipFiltered.get()) {
-            val filteredChapters = chapters.filterNot {
-                (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_READ && !it.read) ||
-                    (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_UNREAD && it.read) ||
-                    (
-                        manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_DOWNLOADED &&
-                            !downloadManager.isChapterDownloaded(
-                                it.name,
-                                it.scanlator,
-                                it.url,
-                                manga.title,
-                                manga.source,
-                            )
-                        ) ||
-                    (
-                        manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_NOT_DOWNLOADED &&
-                            downloadManager.isChapterDownloaded(
-                                it.name,
-                                it.scanlator,
-                                it.url,
-                                manga.title,
-                                manga.source,
-                            )
-                        ) ||
-                    (
-                        manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_BOOKMARKED && !it.bookmark
-                        ) ||
-                    (
-                        manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_NOT_BOOKMARKED && it.bookmark
-                        )
-            }
+        val chaptersForReader = when {
+            (readerPreferences.skipRead.get() || readerPreferences.skipFiltered.get()) -> {
+                val filteredChapters = chapters.filterNot {
+                    when {
+                        readerPreferences.skipRead.get() && it.read -> true
+                        readerPreferences.skipFiltered.get() -> {
+                            (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_READ && !it.read) ||
+                                (manga.unreadFilterRaw == Manga.CHAPTER_SHOW_UNREAD && it.read) ||
+                                (
+                                    manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_DOWNLOADED &&
+                                        !downloadManager.isChapterDownloaded(
+                                            it.name,
+                                            it.scanlator,
+                                            it.url,
+                                            manga.title,
+                                            manga.source,
+                                        )
+                                    ) ||
+                                (
+                                    manga.downloadedFilterRaw == Manga.CHAPTER_SHOW_NOT_DOWNLOADED &&
+                                        downloadManager.isChapterDownloaded(
+                                            it.name,
+                                            it.scanlator,
+                                            it.url,
+                                            manga.title,
+                                            manga.source,
+                                        )
+                                    ) ||
+                                (
+                                    manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_BOOKMARKED && !it.bookmark
+                                    ) ||
+                                (
+                                    manga.bookmarkedFilterRaw == Manga.CHAPTER_SHOW_NOT_BOOKMARKED && it.bookmark
+                                    )
+                        }
+                        else -> false
+                    }
+                }
 
-            if (filteredChapters.any { it.id == chapterId }) {
-                filteredChapters
-            } else {
-                filteredChapters + listOf(selectedChapter)
+                if (filteredChapters.any { it.id == chapterId }) {
+                    filteredChapters
+                } else {
+                    filteredChapters + listOf(selectedChapter)
+                }
             }
-        } else {
-            chapters
+            else -> chapters
         }
 
         chaptersForReader
@@ -429,23 +431,10 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         val chapterPos = chapterList.indexOf(chapter)
-        // Only the forward slot is gated. Keeping the chain untrimmed and prev adjacent avoids the
-        // viewport rebuilds that made the earlier fully-dynamic version unusable (see
-        // ReaderNextChapterRule), while still landing on the next unread chapter.
-        val nextIndex = ReaderNextChapterRule.nextIndex(
-            chaptersSize = chapterList.size,
-            currentPos = chapterPos,
-            currentWasUnread = !chapter.chapter.read,
-            skipRead = readerPreferences.skipRead.get(),
-            readAt = { index -> chapterList[index].chapter.read },
-        )
         val newChapters = ViewerChapters(
             chapter,
             chapterList.getOrNull(chapterPos - 1),
-            nextIndex?.let(chapterList::getOrNull),
-            // The read chapters jumped over are still in the chain; only the numbering-based
-            // "missing chapters" warning has to ignore them.
-            nextSkippedReadCount = nextIndex?.minus(chapterPos + 1)?.coerceAtLeast(0) ?: 0,
+            chapterList.getOrNull(chapterPos + 1),
         )
 
         withUIContext {
