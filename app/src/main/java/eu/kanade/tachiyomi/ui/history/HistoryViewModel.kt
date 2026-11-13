@@ -323,12 +323,6 @@ class HistoryViewModel(
         }
     }
 
-    fun restoreHistory(updates: List<HistoryUpdate>) {
-        viewModelScope.launchIO {
-            updates.forEach { historyRepository.upsertHistory(it) }
-        }
-    }
-
     fun removeAllHistory() {
         viewModelScope.launchIO {
             // Taken before the delete: the table is emptied outright, and the list on screen is
@@ -340,10 +334,14 @@ class HistoryViewModel(
         }
     }
 
-    fun restoreAllHistory(entries: List<History>) {
-        viewModelScope.launchIO {
-            historyRepository.restoreHistory(entries)
-        }
+    /** Runs from the app-level undo pill, which outlives this screen. */
+    suspend fun restoreAllHistory(entries: List<History>) = withIOContext {
+        historyRepository.restoreHistory(entries)
+    }
+
+    /** Runs from the app-level undo pill, which outlives this screen. */
+    suspend fun restoreHistory(updates: List<HistoryUpdate>) = withIOContext {
+        updates.forEach { historyRepository.upsertHistory(it) }
     }
 
     fun updateSearchQuery(query: String?) {

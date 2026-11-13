@@ -19,9 +19,9 @@ import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
+import eu.kanade.tachiyomi.data.undo.UndoPillService
 import eu.kanade.tachiyomi.util.lang.toLocalDate
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
-import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -73,6 +73,7 @@ class UpdatesViewModel(
     private val getChapter: GetChapter = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val updatesPreferences: UpdatesPreferences = Injekt.get(),
+    private val undoPill: UndoPillService = Injekt.get(),
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateViewModel<UpdatesViewModel.State>(State()) {
 
@@ -288,10 +289,7 @@ class UpdatesViewModel(
             if (removedDownloads) {
                 snackbarHostState.showSnackbarReplacing(message)
             } else {
-                snackbarHostState.showUndoSnackbar(
-                    message = message,
-                    undoLabel = context.stringResource(MR.strings.action_undo),
-                ) {
+                undoPill.show(message) {
                     setReadStatus.restoreReadStates(snapshot)
                 }
             }
@@ -306,12 +304,11 @@ class UpdatesViewModel(
             updateChapter.awaitAll(
                 changed.map { ChapterUpdate(id = it.update.chapterId, bookmark = bookmark) },
             )
-            snackbarHostState.showUndoSnackbar(
-                message = context.stringResource(
+            undoPill.show(
+                context.stringResource(
                     if (bookmark) MR.strings.undo_chapters_bookmarked else MR.strings.undo_chapters_unbookmarked,
                     changed.size,
                 ),
-                undoLabel = context.stringResource(MR.strings.action_undo),
             ) {
                 updateChapter.awaitAll(
                     changed.map { ChapterUpdate(id = it.update.chapterId, bookmark = it.update.bookmark) },

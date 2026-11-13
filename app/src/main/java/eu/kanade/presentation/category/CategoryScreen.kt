@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -23,7 +22,6 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.category.model.Category
 import tachiyomi.i18n.MR
-import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.components.material.topSmallPaddingValues
@@ -34,7 +32,6 @@ import tachiyomi.presentation.core.util.plus
 @Composable
 fun CategoryScreen(
     state: CategoryScreenState.Success,
-    snackbarHostState: SnackbarHostState,
     onClickCreate: () -> Unit,
     onClickRename: (Category) -> Unit,
     onClickDelete: (Category) -> Unit,
@@ -56,7 +53,6 @@ fun CategoryScreen(
                 onCreate = onClickCreate,
             )
         },
-        snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
     ) { paddingValues ->
         if (state.isEmpty) {
             EmptyScreen(

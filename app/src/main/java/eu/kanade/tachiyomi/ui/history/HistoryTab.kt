@@ -5,11 +5,11 @@ import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -22,12 +22,12 @@ import eu.kanade.presentation.history.HistoryScreen
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.data.undo.UndoPillService
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
-import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -36,6 +36,8 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 data object HistoryTab : Tab {
 
@@ -65,6 +67,7 @@ data object HistoryTab : Tab {
         val context = LocalContext.current
         val viewModel = viewModel<HistoryViewModel>()
         val state by viewModel.state.collectAsState()
+        val undoPill = remember { Injekt.get<UndoPillService>() }
 
         HistoryScreen(
             state = state,
@@ -144,20 +147,14 @@ data object HistoryTab : Tab {
                                 context.stringResource(MR.strings.clear_history_completed),
                             )
                         } else {
-                            snackbarHostState.showUndoSnackbar(
-                                message = context.stringResource(MR.strings.undo_history_cleared, cleared.size),
-                                undoLabel = context.stringResource(MR.strings.action_undo),
-                            ) {
+                            // The app-level pill, so switching tabs does not take the offer away.
+                            undoPill.show(context.stringResource(MR.strings.undo_history_cleared, cleared.size)) {
                                 viewModel.restoreAllHistory(cleared)
                             }
                         }
                     }
                     is HistoryViewModel.Event.HistoryDeleted -> {
-                        val result = snackbarHostState.showSnackbarReplacing(
-                            message = context.stringResource(MR.strings.history_deleted_count, e.updates.size),
-                            actionLabel = context.stringResource(MR.strings.action_undo),
-                        )
-                        if (result == SnackbarResult.ActionPerformed) {
+                        undoPill.show(context.stringResource(MR.strings.history_deleted_count, e.updates.size)) {
                             viewModel.restoreHistory(e.updates)
                         }
                     }

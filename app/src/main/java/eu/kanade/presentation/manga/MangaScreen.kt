@@ -99,11 +99,11 @@ import eu.kanade.presentation.util.formatChapterNumber
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
+import eu.kanade.tachiyomi.data.undo.UndoPillService
 import eu.kanade.tachiyomi.source.getNameForMangaInfo
 import eu.kanade.tachiyomi.ui.manga.ChapterList
 import eu.kanade.tachiyomi.ui.manga.MangaViewModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
-import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableLazyListState
@@ -210,6 +210,7 @@ fun MangaScreen(
     val goodDoujinChapterIds = state.goodDoujinChapterIds
     // Writing a mark still goes through the store, which is what the state above watches.
     val markStore = remember { Injekt.get<MangaMarkStore>() }
+    val undoPill = remember { Injekt.get<UndoPillService>() }
     val basePreferences = remember { Injekt.get<BasePreferences>() }
     val chapterCoversEnabled by basePreferences.localChapterCoversEnabled.collectPreferenceAsState()
     val chapterCoverGridEnabled by basePreferences.localChapterCoverGridEnabled.collectPreferenceAsState()
@@ -237,12 +238,11 @@ fun MangaScreen(
             }
             scope.launch {
                 markStore.setAll(chapterMarks, marked = !allMarked)
-                snackbarHostState.showUndoSnackbar(
-                    message = context.stringResource(
+                undoPill.show(
+                    context.stringResource(
                         if (allMarked) MR.strings.undo_marks_removed else MR.strings.undo_marks_added,
                         chapters.size,
                     ),
-                    undoLabel = context.stringResource(MR.strings.action_undo),
                 ) {
                     if (allMarked) {
                         markStore.setAll(existing, true)

@@ -32,7 +32,6 @@ import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -77,9 +76,9 @@ import eu.kanade.presentation.mylists.myListSearchQuery
 import eu.kanade.presentation.mylists.rememberLocalChapterDisplayMode
 import eu.kanade.presentation.mylists.rememberMyListExportLauncher
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.data.undo.UndoPillService
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
-import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +99,6 @@ import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
-import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.LocalSource
@@ -284,7 +282,7 @@ class LocalReadReviewDetailScreen(
         }
 
         var selectedChapterIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-        val snackbarHostState = remember { SnackbarHostState() }
+        val undoPill = remember { Injekt.get<UndoPillService>() }
         val setReadStatus = remember { Injekt.get<SetReadStatus>() }
         val exportText = exportTextOf(
             listTitle = mangaTitle,
@@ -301,10 +299,7 @@ class LocalReadReviewDetailScreen(
             selectedChapterIds = emptySet()
             scope.launch {
                 markUnread(updateChapter, items.map { it.chapterId })
-                snackbarHostState.showUndoSnackbar(
-                    message = context.stringResource(MR.strings.undo_local_read_marked_unread, items.size),
-                    undoLabel = context.stringResource(MR.strings.action_undo),
-                ) {
+                undoPill.show(context.stringResource(MR.strings.undo_local_read_marked_unread, items.size)) {
                     setReadStatus.restoreReadStates(
                         items.map { item ->
                             ChapterReadState(
@@ -379,7 +374,6 @@ class LocalReadReviewDetailScreen(
                     },
                 )
             },
-            snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
         ) { contentPadding ->
             if (chapters.isEmpty()) {
                 MyListEmptyState(
