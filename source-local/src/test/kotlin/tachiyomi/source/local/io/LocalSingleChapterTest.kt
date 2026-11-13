@@ -75,6 +75,16 @@ class LocalSingleChapterTest {
         assertFalse("Work A".isSingleChapterChapterUrl())
     }
 
+    @Test
+    fun `the cover of a flat work is its first page in reading order`() {
+        // Directory order is whatever the provider returns; the card has to show page 1.
+        assertEquals(
+            "001.webp",
+            firstPageInReadingOrder(listOf(file("003.webp"), file("001.webp"), file("002.webp")))?.name,
+        )
+        assertEquals(null, firstPageInReadingOrder(emptyList()))
+    }
+
     private fun file(name: String, isDirectory: Boolean = false): UniFile = mockk(relaxed = true) {
         every { this@mockk.name } returns name
         every { this@mockk.isDirectory } returns isDirectory
