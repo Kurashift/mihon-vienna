@@ -53,6 +53,7 @@ fun HistoryScreen(
     onInvertSelection: () -> Unit,
     onDeleteSelection: () -> Unit,
     onAddToLibrary: () -> Unit,
+    onClearHistory: () -> Unit,
     onDialogChange: (HistoryViewModel.Dialog?) -> Unit,
 ) {
     BackHandler(enabled = state.selection.isNotEmpty(), onBack = onClearSelection)
@@ -69,9 +70,7 @@ fun HistoryScreen(
                             AppBar.Action(
                                 title = stringResource(MR.strings.pref_clear_history),
                                 icon = Icons.Outlined.DeleteSweep,
-                                onClick = {
-                                    onDialogChange(HistoryViewModel.Dialog.DeleteAll)
-                                },
+                                onClick = onClearHistory,
                             ),
                         ),
                     )
@@ -229,6 +228,7 @@ internal fun HistoryScreenPreviews(
             onInvertSelection = {},
             onDeleteSelection = {},
             onAddToLibrary = {},
+            onClearHistory = {},
             onDialogChange = {},
         )
     }

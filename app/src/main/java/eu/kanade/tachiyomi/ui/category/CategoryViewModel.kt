@@ -60,10 +60,18 @@ class CategoryViewModel(
 
     fun deleteCategory(categoryId: Long) {
         viewModelScope.launch {
-            when (deleteCategory.await(categoryId = categoryId)) {
+            when (val result = deleteCategory.await(categoryId = categoryId)) {
                 is DeleteCategory.Result.InternalError -> _events.send(CategoryEvent.InternalError)
-                else -> {}
+                is DeleteCategory.Result.Success -> _events.send(CategoryEvent.Deleted(result.snapshot))
+                DeleteCategory.Result.NotFound -> {}
             }
+        }
+    }
+
+    /** Puts a deleted category back after the undo pill is tapped. */
+    fun restoreCategory(snapshot: DeleteCategory.Snapshot) {
+        viewModelScope.launch {
+            deleteCategory.restore(snapshot)
         }
     }
 
@@ -97,12 +105,12 @@ class CategoryViewModel(
 sealed interface CategoryDialog {
     data object Create : CategoryDialog
     data class Rename(val category: Category) : CategoryDialog
-    data class Delete(val category: Category) : CategoryDialog
 }
 
 sealed interface CategoryEvent {
     sealed class LocalizedMessage(val stringRes: StringResource) : CategoryEvent
     data object InternalError : LocalizedMessage(MR.strings.internal_error)
+    data class Deleted(val snapshot: DeleteCategory.Snapshot) : CategoryEvent
 }
 
 sealed interface CategoryScreenState {

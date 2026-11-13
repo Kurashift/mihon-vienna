@@ -1,6 +1,7 @@
 package tachiyomi.data.category
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
+import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.data.Database
@@ -47,6 +48,27 @@ class CategoryRepositoryImpl(
             name = category.name,
             order = category.order,
             flags = category.flags,
+        )
+    }
+
+    override suspend fun insertReturningId(category: Category): Long {
+        return database.categoriesQueries.insertReturningId(
+            name = category.name,
+            order = category.order,
+            flags = category.flags,
+        ).awaitAsOne()
+    }
+
+    override suspend fun getMangaIdsByCategoryId(categoryId: Long): List<Long> {
+        return database.mangas_categoriesQueries
+            .getMangaIdsByCategoryId(categoryId)
+            .awaitAsList()
+    }
+
+    override suspend fun addMangaCategoryIfMissing(mangaId: Long, categoryId: Long) {
+        database.mangas_categoriesQueries.insertIfMissing(
+            mangaId = mangaId,
+            categoryId = categoryId,
         )
     }
 

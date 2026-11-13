@@ -156,36 +156,6 @@ fun CategoryRenameDialog(
 }
 
 @Composable
-fun CategoryDeleteDialog(
-    onDismissRequest: () -> Unit,
-    onDelete: () -> Unit,
-    category: String,
-) {
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        confirmButton = {
-            TextButton(onClick = {
-                onDelete()
-                onDismissRequest()
-            }) {
-                Text(text = stringResource(MR.strings.action_ok))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text(text = stringResource(MR.strings.action_cancel))
-            }
-        },
-        title = {
-            Text(text = stringResource(MR.strings.delete_category))
-        },
-        text = {
-            Text(text = stringResource(MR.strings.delete_category_confirmation, category))
-        },
-    )
-}
-
-@Composable
 fun ChangeCategoryDialog(
     initialSelection: List<CheckboxState<Category>>,
     onDismissRequest: () -> Unit,

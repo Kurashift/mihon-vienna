@@ -19,7 +19,6 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.history.HistoryScreen
-import eu.kanade.presentation.history.components.HistoryDeleteAllDialog
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
@@ -28,6 +27,7 @@ import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
+import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -79,17 +79,12 @@ data object HistoryTab : Tab {
             onInvertSelection = viewModel::invertSelection,
             onDeleteSelection = viewModel::deleteSelection,
             onAddToLibrary = viewModel::addSelectionToLibrary,
+            onClearHistory = viewModel::removeAllHistory,
             onDialogChange = viewModel::setDialog,
         )
 
         val onDismissRequest = { viewModel.setDialog(null) }
         when (val dialog = state.dialog) {
-            is HistoryViewModel.Dialog.DeleteAll -> {
-                HistoryDeleteAllDialog(
-                    onDismissRequest = onDismissRequest,
-                    onDelete = viewModel::removeAllHistory,
-                )
-            }
             is HistoryViewModel.Dialog.DuplicateManga -> {
                 DuplicateMangaDialog(
                     duplicates = dialog.duplicates,
@@ -142,10 +137,21 @@ data object HistoryTab : Tab {
                 when (e) {
                     HistoryViewModel.Event.InternalError ->
                         snackbarHostState.showSnackbarReplacing(context.stringResource(MR.strings.internal_error))
-                    HistoryViewModel.Event.HistoryCleared ->
-                        snackbarHostState.showSnackbarReplacing(
-                            context.stringResource(MR.strings.clear_history_completed),
-                        )
+                    is HistoryViewModel.Event.HistoryCleared -> {
+                        val cleared = e.entries
+                        if (cleared.isEmpty()) {
+                            snackbarHostState.showSnackbarReplacing(
+                                context.stringResource(MR.strings.clear_history_completed),
+                            )
+                        } else {
+                            snackbarHostState.showUndoSnackbar(
+                                message = context.stringResource(MR.strings.undo_history_cleared, cleared.size),
+                                undoLabel = context.stringResource(MR.strings.action_undo),
+                            ) {
+                                viewModel.restoreAllHistory(cleared)
+                            }
+                        }
+                    }
                     is HistoryViewModel.Event.HistoryDeleted -> {
                         val result = snackbarHostState.showSnackbarReplacing(
                             message = context.stringResource(MR.strings.history_deleted_count, e.updates.size),

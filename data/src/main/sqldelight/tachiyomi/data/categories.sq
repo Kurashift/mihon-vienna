@@ -46,6 +46,12 @@ insert:
 INSERT INTO categories(name, sort, flags)
 VALUES (:name, :order, :flags);
 
+-- 撤销删除分类时要拿到新 id：分类没有唯一名，靠名字回查会认错行。
+insertReturningId:
+INSERT INTO categories(name, sort, flags)
+VALUES (:name, :order, :flags)
+RETURNING _id;
+
 delete:
 DELETE FROM categories
 WHERE _id = :categoryId;
