@@ -8,6 +8,7 @@ import me.zhanghai.android.libarchive.Archive
 import me.zhanghai.android.libarchive.ArchiveEntry
 import me.zhanghai.android.libarchive.ArchiveException
 import java.io.Closeable
+import java.io.InputStream
 import java.nio.ByteBuffer
 
 class ZipWriter(val context: Context, file: UniFile) : Closeable {
@@ -46,6 +47,33 @@ class ZipWriter(val context: Context, file: UniFile) : Closeable {
             }
             Archive.writeFinishEntry(archive)
         }
+    }
+
+    fun write(
+        name: String,
+        size: Long,
+        input: InputStream,
+        isDirectory: Boolean = false,
+        onBytes: (Long) -> Unit = {},
+    ) {
+        ArchiveEntry.clear(entry)
+        ArchiveEntry.setPathnameUtf8(entry, name)
+        ArchiveEntry.setSize(entry, if (isDirectory) 0L else size)
+        ArchiveEntry.setFiletype(entry, if (isDirectory) ArchiveEntry.AE_IFDIR else ArchiveEntry.AE_IFREG)
+        ArchiveEntry.setPerm(entry, if (isDirectory) 0x1ED else 0x1A4)
+        Archive.writeHeader(archive, entry)
+        val bytes = ByteArray(8192)
+        while (true) {
+            val count = input.read(bytes)
+            if (count < 0) break
+            if (count == 0) continue
+            onBytes(count.toLong())
+            buffer.clear()
+            buffer.put(bytes, 0, count)
+            buffer.flip()
+            Archive.writeData(archive, buffer)
+        }
+        Archive.writeFinishEntry(archive)
     }
 
     override fun close() {

@@ -25,6 +25,23 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
         }
     }
 
+    /** Visits every entry with one archive scan. The input stream is valid only during the callback. */
+    fun forEachEntry(block: (ArchiveEntry, InputStream) -> Unit) {
+        val stream = openStream()
+        val buffer = ByteArray(8192)
+        try {
+            while (true) {
+                val entry = stream.getNextEntry() ?: break
+                block(entry, stream)
+                while (stream.read(buffer) != -1) {
+                    // Drain the entry before moving to the next archive header.
+                }
+            }
+        } finally {
+            stream.close()
+        }
+    }
+
     fun getInputStream(entryName: String): InputStream? {
         val stream = openStream()
         try {

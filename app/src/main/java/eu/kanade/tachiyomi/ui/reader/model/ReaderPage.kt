@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.model
 
+import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.source.model.Page
 import java.io.InputStream
 
@@ -9,6 +10,8 @@ open class ReaderPage(
     imageUrl: String? = null,
     var stream: (() -> InputStream)? = null,
 ) : Page(index, url, imageUrl, null) {
+
+    val originalIndex: Int = index
 
     open lateinit var chapter: ReaderChapter
 
@@ -22,4 +25,20 @@ open class ReaderPage(
      * into pages that were never measured.
      */
     var imageExtent: Pair<Int, Int>? = null
+
+    /** Stable local source used by the reader's delayed page deletion action. */
+    var deletionTarget: DeletionTarget? = null
+
+    sealed interface DeletionTarget {
+        data class File(val file: UniFile, val invalidateLocalSource: Boolean = false) : DeletionTarget
+        data class ZipEntry(
+            val archive: UniFile,
+            val entryName: String,
+            val invalidateLocalSource: Boolean = false,
+        ) : DeletionTarget {
+            val archiveUri: String = archive.uri.toString()
+            val archiveName: String? = archive.name
+            val archiveParent: UniFile? = archive.parentFile
+        }
+    }
 }

@@ -71,6 +71,7 @@ import eu.kanade.core.util.ifSourcesLoaded
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioQuickPlaySheet
 import eu.kanade.presentation.audio.AudioReaderFloatingBar
+import eu.kanade.presentation.components.ReaderPageDeletionSnackbar
 import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
@@ -404,6 +405,9 @@ class ReaderActivity : BaseActivity() {
                     is ReaderViewModel.Event.SetChapterCoverResult -> {
                         onSetChapterCoverResult(event.result)
                     }
+                    is ReaderViewModel.Event.PageDeletionFailed -> {
+                        toast(MR.strings.reader_page_delete_failed)
+                    }
                 }
             }
             .launchIn(lifecycleScope)
@@ -457,6 +461,14 @@ class ReaderActivity : BaseActivity() {
             }
 
             ContentOverlay(state = state)
+
+            ReaderPageDeletionSnackbar(
+                count = state.pendingPageDeletionCount,
+                onUndo = viewModel::undoPageDeletion,
+                onSwipeDismiss = viewModel::commitPageDeletion,
+                onPressedChange = viewModel::setPageDeletionPressed,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
 
             AppBars(
                 state = state,
@@ -624,6 +636,14 @@ class ReaderActivity : BaseActivity() {
                     },
                     onShare = viewModel::shareImage,
                     onSave = viewModel::saveImage,
+                    onDelete = if ((state.dialog as? ReaderViewModel.Dialog.PageActions)?.page?.let {
+                            it.deletionTarget != null && (it.chapter.pages?.size ?: 0) > 1
+                        } == true
+                    ) {
+                        viewModel::deletePage
+                    } else {
+                        null
+                    },
                 )
             }
             null -> {}

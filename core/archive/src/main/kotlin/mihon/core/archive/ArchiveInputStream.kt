@@ -70,7 +70,7 @@ internal class ArchiveInputStream(
         return Archive.readNextHeader(archive).takeUnless { it == 0L }?.let { entry ->
             val name = ArchiveEntry.pathnameUtf8(entry) ?: ArchiveEntry.pathname(entry)?.decodeToString() ?: return null
             val isFile = ArchiveEntry.filetype(entry) == ArchiveEntry.AE_IFREG
-            MihonArchiveEntry(name, isFile)
+            MihonArchiveEntry(name, isFile, ArchiveEntry.size(entry).coerceAtLeast(0L))
         }
     }
 }

@@ -125,6 +125,8 @@
     <string name="action_bookmark">Bookmark work</string>
     <string name="action_remove_bookmark">Unbookmark work</string>
     <string name="action_delete">Delete</string>
+    <string name="reader_pages_deleted">Removed %1$d pages</string>
+    <string name="reader_page_delete_failed">Could not delete the page</string>
     <string name="action_delete_downloaded_chapters">Delete downloaded chapters</string>
     <string name="action_update_library">Update library</string>
     <string name="action_refresh_all_chapters">Refresh all works</string>

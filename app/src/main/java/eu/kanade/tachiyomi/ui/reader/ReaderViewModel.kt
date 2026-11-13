@@ -33,6 +33,7 @@ import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
+import eu.kanade.tachiyomi.ui.reader.model.ReaderPage.DeletionTarget
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
@@ -86,6 +87,8 @@ import tachiyomi.domain.manga.model.MangaProgress
 import tachiyomi.domain.manga.model.withLocalChapterDisplayMode
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.presentation.core.components.material.SNACKBAR_ACTION_TIMEOUT_MILLIS
+import tachiyomi.presentation.core.components.material.SnackbarTimeout
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import tachiyomi.source.local.io.Format
@@ -123,6 +126,7 @@ class ReaderViewModel @JvmOverloads constructor(
     private val goodDoujinStore: GoodDoujinStore = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
     private val localRandomScope: LocalRandomScope = Injekt.get(),
+    private val pageDeletionService: ReaderPageDeletionService = Injekt.get(),
 ) : ViewModel() {
 
     private val mutableState = MutableStateFlow(State())
@@ -187,6 +191,13 @@ class ReaderViewModel @JvmOverloads constructor(
     private var chapterReadStartTime: Long? = null
 
     private var chapterToDownload: Download? = null
+    private var pendingPageDeletion: PendingPageDeletion? = null
+    private val committingPageDeletions = mutableListOf<PendingPageDeletion>()
+    private val pageDeletionTimer = SnackbarTimeout(viewModelScope, SNACKBAR_ACTION_TIMEOUT_MILLIS) {
+        commitPageDeletion()
+    }
+    private var pageDeletionRevision = 0
+    private var suppressPageChangedUntilNanos = 0L
 
     private val preloadMutex = Mutex()
     private val preloadingChapters = mutableSetOf<ReaderChapter>()
@@ -324,6 +335,18 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     override fun onCleared() {
+        pendingPageDeletion?.let { pending ->
+            pendingPageDeletion = null
+            committingPageDeletions += pending
+            pageDeletionService.deferAfterReaderExit(
+                targets = pending.targets.map { it.target },
+                count = pending.targets.size,
+                revision = pageDeletionRevision,
+                deadlineMillis = pageDeletionTimer.deadlineMillis,
+                onComplete = { completePageDeletion(pending, it) },
+            )
+        }
+        pageDeletionTimer.cancel()
         val currentChapters = state.value.viewerChapters
         if (currentChapters != null) {
             currentChapters.unref()
@@ -643,7 +666,9 @@ class ReaderViewModel @JvmOverloads constructor(
             downloadNextChapters()
         }
 
-        eventChannel.trySend(Event.PageChanged)
+        if (System.nanoTime() >= suppressPageChangedUntilNanos) {
+            eventChannel.trySend(Event.PageChanged)
+        }
     }
 
     /**
@@ -653,6 +678,11 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     fun onScrollSettled(page: ReaderPage, userInitiated: Boolean = false) {
         if (page is InsertPage) {
+            return
+        }
+        if (pendingPageDeletion?.snapshots?.containsKey(page.chapter) == true ||
+            committingPageDeletions.any { page.chapter in it.snapshots }
+        ) {
             return
         }
         val chapterId = page.chapter.chapter.id ?: return
@@ -1280,6 +1310,140 @@ class ReaderViewModel @JvmOverloads constructor(
         mutableState.update { it.copy(dialog = null) }
     }
 
+    fun deletePage() {
+        val page = (state.value.dialog as? Dialog.PageActions)?.page ?: return
+        val target = page.deletionTarget ?: return
+        val chapter = page.chapter
+        val pages = chapter.pages ?: return
+        if (pages.size <= 1) return
+        val pending = pendingPageDeletion ?: PendingPageDeletion().also { pendingPageDeletion = it }
+        if (pending.targets.any { it.target.key() == target.key() }) return
+
+        pending.snapshots.putIfAbsent(chapter, pages)
+        pending.targets += PendingPageTarget(target, chapter, page)
+        val pendingKeys = pending.targets.mapTo(hashSetOf()) { it.target.key() }
+        chapter.state = ReaderChapter.State.Loaded(
+            reindexReaderPages(pages.filterNot { it.deletionTarget?.key() in pendingKeys }),
+        )
+        pageDeletionRevision++
+        pageDeletionTimer.start()
+        mutableState.update {
+            it.copy(
+                dialog = null,
+                pendingPageDeletionCount = pending.targets.size,
+            )
+        }
+        suppressPageChangedUntilNanos = System.nanoTime() + 500_000_000L
+        eventChannel.trySend(Event.ReloadViewerChapters)
+    }
+
+    fun setPageDeletionPressed(pressed: Boolean) {
+        pageDeletionTimer.setPressed(pressed)
+    }
+
+    fun undoPageDeletion() {
+        val pending = pendingPageDeletion ?: return
+        pageDeletionTimer.cancel()
+        pending.snapshots.forEach { (chapter, pages) ->
+            chapter.state = ReaderChapter.State.Loaded(reindexReaderPages(pages))
+        }
+        pendingPageDeletion = null
+        pageDeletionRevision++
+        mutableState.update { it.copy(pendingPageDeletionCount = 0) }
+        suppressPageChangedUntilNanos = System.nanoTime() + 500_000_000L
+        eventChannel.trySend(Event.ReloadViewerChapters)
+    }
+
+    fun commitPageDeletion() {
+        val pending = pendingPageDeletion ?: return
+        pageDeletionTimer.cancel()
+        pendingPageDeletion = null
+        pageDeletionRevision++
+        mutableState.update { it.copy(pendingPageDeletionCount = 0) }
+        committingPageDeletions += pending
+        pageDeletionService.submit(pending.targets.map { it.target }) { completePageDeletion(pending, it) }
+    }
+
+    private fun completePageDeletion(pending: PendingPageDeletion, result: ReaderPageDeletionService.Result) {
+        committingPageDeletions.remove(pending)
+        val failedKeys = result.failedTargets.mapTo(hashSetOf()) { it.key() }
+        val succeededKeys = pending.targets.mapNotNullTo(hashSetOf()) {
+            it.target.key().takeUnless(failedKeys::contains)
+        }
+        pending.snapshots.forEach { (chapter, pages) ->
+            val succeededForChapter = pending.targets.filter {
+                it.chapter === chapter &&
+                    it.target.key() in succeededKeys
+            }
+            val failedPages = pending.targets.filter {
+                it.chapter === chapter && it.target.key() in failedKeys
+            }.map { it.page }
+            if (failedPages.isNotEmpty()) {
+                chapter.pages?.let {
+                    chapter.state = ReaderChapter.State.Loaded(
+                        reindexReaderPages(restoreFailedPageDeletions(it, failedPages)),
+                    )
+                }
+                // Later batches were created while these pages were hidden. Rebase their undo
+                // snapshots too, so undoing one cannot hide pages whose deletion failed.
+                (committingPageDeletions + listOfNotNull(pendingPageDeletion)).forEach { later ->
+                    later.snapshots[chapter]?.let {
+                        later.snapshots[chapter] = restoreFailedPageDeletions(it, failedPages)
+                    }
+                }
+            }
+            if (succeededForChapter.isNotEmpty()) {
+                val removedPageIndexes = succeededForChapter.map { pages.indexOf(it.page) }
+                val (totalPages, adjustedLastPageRead) = adjustedPageProgressAfterDeletion(
+                    totalPages = pages.size,
+                    lastPageRead = chapter.chapter.last_page_read,
+                    wasRead = chapter.chapter.read,
+                    removedPageIndexes = removedPageIndexes,
+                )
+                chapter.chapter.total_pages = totalPages
+                chapter.chapter.last_page_read = adjustedLastPageRead
+                chapter.chapter.id?.let { chapterId ->
+                    progressSession.adjustForRemovedPages(chapterId, removedPageIndexes, totalPages)
+                    chapterReadingSessions[chapterId] = ChapterReadingSession(
+                        totalPages = totalPages,
+                        entryDirection = ChapterEntryDirection.Direct,
+                        alreadyRead = chapter.chapter.read,
+                        lastPageRead = adjustedLastPageRead,
+                    )
+                }
+                chapter.chapter.id?.let { chapterId ->
+                    viewModelScope.launchNonCancellable {
+                        updateChapter.await(
+                            ChapterUpdate(
+                                id = chapterId,
+                                totalPages = totalPages.toLong(),
+                                lastPageRead = adjustedLastPageRead.toLong(),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        if (failedKeys.isNotEmpty()) {
+            eventChannel.trySend(Event.PageDeletionFailed(result.failedTargets.size))
+        }
+        if (failedKeys.isNotEmpty()) {
+            suppressPageChangedUntilNanos = System.nanoTime() + 500_000_000L
+            eventChannel.trySend(Event.ReloadViewerChapters)
+        }
+    }
+
+    private class PendingPageDeletion {
+        val targets = mutableListOf<PendingPageTarget>()
+        val snapshots = linkedMapOf<ReaderChapter, List<ReaderPage>>()
+    }
+
+    private data class PendingPageTarget(
+        val target: DeletionTarget,
+        val chapter: ReaderChapter,
+        val page: ReaderPage,
+    )
+
     fun setBrightnessOverlayValue(value: Int) {
         mutableState.update { it.copy(brightnessOverlayValue = value) }
     }
@@ -1487,6 +1651,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val dialog: Dialog? = null,
         val menuVisible: Boolean = false,
         @IntRange(from = -100, to = 100) val brightnessOverlayValue: Int = 0,
+        val pendingPageDeletionCount: Int = 0,
     ) {
         val currentChapter: ReaderChapter?
             get() = viewerChapters?.currChapter
@@ -1514,7 +1679,13 @@ class ReaderViewModel @JvmOverloads constructor(
         data class SavedImage(val result: SaveImageResult) : Event
         data class ShareImage(val uri: Uri, val page: ReaderPage) : Event
         data class CopyImage(val uri: Uri) : Event
+        data class PageDeletionFailed(val count: Int) : Event
     }
+}
+
+private fun DeletionTarget.key(): String = when (this) {
+    is DeletionTarget.File -> "file:${file.uri}"
+    is DeletionTarget.ZipEntry -> "zip:$archiveUri:$entryName"
 }
 
 private data class RandomJumpPreload(

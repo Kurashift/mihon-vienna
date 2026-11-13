@@ -50,6 +50,8 @@
     <string name="action_bookmark">为篇目添加书签</string>
     <string name="action_remove_bookmark">为篇目删除书签</string>
     <string name="action_delete">删除</string>
+    <string name="reader_pages_deleted">已删除 %1$d 页</string>
+    <string name="reader_page_delete_failed">删除失败</string>
     <string name="action_delete_downloaded_chapters">删除已下载篇目</string>
     <string name="action_update_library">更新书架</string>
     <string name="action_refresh_all_chapters">刷新本地篇目</string>

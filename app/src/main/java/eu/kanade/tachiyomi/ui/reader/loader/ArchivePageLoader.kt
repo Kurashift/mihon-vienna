@@ -13,6 +13,7 @@ import tachiyomi.source.local.io.Archive
 internal class ArchivePageLoader(
     private val file: UniFile,
     private val reader: ArchiveReader,
+    private val invalidateLocalSource: Boolean = true,
 ) : PageLoader() {
     override var isLocal: Boolean = true
 
@@ -48,12 +49,19 @@ internal class ArchivePageLoader(
         return entries.mapIndexed { i, entry ->
             ReaderPage(i).apply {
                 stream = { reader.getInputStream(entry.name)!! }
+                if (isZipArchive(file)) {
+                    deletionTarget = ReaderPage.DeletionTarget.ZipEntry(file, entry.name, invalidateLocalSource)
+                }
                 status = Page.State.Ready
                 if (entry.width > 0 && entry.height > 0) {
                     imageExtent = entry.width to entry.height
                 }
             }
         }
+    }
+
+    private fun isZipArchive(file: UniFile): Boolean {
+        return file.name.orEmpty().substringAfterLast('.', "").lowercase() in setOf("zip", "cbz")
     }
 
     override suspend fun loadPage(page: ReaderPage) {

@@ -150,7 +150,6 @@ data object HistoryTab : Tab {
                         val result = snackbarHostState.showSnackbarReplacing(
                             message = context.stringResource(MR.strings.history_deleted_count, e.updates.size),
                             actionLabel = context.stringResource(MR.strings.action_undo),
-                            withDismissAction = true,
                         )
                         if (result == SnackbarResult.ActionPerformed) {
                             viewModel.restoreHistory(e.updates)

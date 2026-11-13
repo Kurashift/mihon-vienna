@@ -49,4 +49,9 @@ internal object LocalPageListCache {
         archivePages[key]?.let { return it }
         return scan().also { archivePages[key] = it }
     }
+
+    @Synchronized
+    fun invalidateArchive(uri: String) {
+        archivePages.keys.removeAll { it.uri == uri }
+    }
 }
