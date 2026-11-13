@@ -1292,9 +1292,9 @@ private fun SharedMangaBottomActionMenu(
         onDeleteLocalFilesClicked = {
             onDeleteLocalChaptersClicked(actedOn.fastMap { it.chapter })
         }.takeIf {
-            // A folder-level single chapter is the work directory itself: it has no chapter file
-            // to erase, and deleting the work has its own entry in the manga menu.
-            isLocalManga && actedOn.fastAny { !it.chapter.url.isSingleChapterChapterUrl() }
+            // A folder-level single chapter is the work directory itself; erasing it erases the
+            // work, which is the same outcome as deleting the last chapter of a two-level work.
+            isLocalManga
         },
         onMoveClicked = {
             onMoveChaptersClicked(actedOn.fastMap { it.chapter })

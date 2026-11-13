@@ -1,6 +1,7 @@
 package tachiyomi.source.local.io
 
 import com.hippo.unifile.UniFile
+import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
 import tachiyomi.core.common.util.system.PageImageName
 import tachiyomi.source.local.image.isChapterCoverName
 
@@ -54,4 +55,16 @@ fun isLoosePageName(name: String): Boolean {
  */
 fun loosePages(files: List<UniFile>): List<UniFile> {
     return files.filter { file -> !file.isDirectory && isLoosePageName(file.name.orEmpty()) }
+}
+
+/**
+ * The page a folder-level single work shows as its cover.
+ *
+ * Reading order rather than directory order, so the card shows the work's page 1 and matches what
+ * the reader opens on.
+ */
+fun firstPageInReadingOrder(pages: List<UniFile>): UniFile? {
+    return pages.minWithOrNull { first, second ->
+        first.name.orEmpty().compareToCaseInsensitiveNaturalPageOrder(second.name.orEmpty())
+    }
 }

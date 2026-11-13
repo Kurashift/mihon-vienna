@@ -26,6 +26,7 @@ import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.LocalSourceFileSystem
+import tachiyomi.source.local.io.isSingleChapterChapterUrl
 import tachiyomi.source.local.io.isSingleChapterEntryName
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -208,6 +209,7 @@ class LocalEntryDeletionService(
                     target = target,
                     chapterUrl = chapter.url,
                     file = resolveChapterFile(base, chapter.url),
+                    singleChapter = chapter.url.isSingleChapterChapterUrl(),
                 )
             }
 
@@ -246,6 +248,7 @@ class LocalEntryDeletionService(
                 entries += plan.toEntry(outcome)
                 if (outcome == LocalDeletionOutcome.DELETED) {
                     deleted += plan.target to plan.chapterUrl
+                    plan.deleted = true
                 } else {
                     failed += plan.target.name
                 }
@@ -270,20 +273,33 @@ class LocalEntryDeletionService(
             // Works that just lost their last chapter: drop the directory too so it disappears
             // from the library immediately instead of lingering until the next full refresh.
             val removedMangaIds = mutableSetOf<Long>()
-            deleted.map { (target, _) -> target.mangaId }.distinct().forEach { mangaId ->
-                val dirName = resolved.firstOrNull { (target, _) -> target.mangaId == mangaId }
-                    ?.second?.url?.substringBefore('/')
-                when (dirName?.let { removeDirectoryIfEmptied(base, it) }) {
-                    true -> {
-                        cleanupEmptiedManga(mangaId)
-                        removedMangaIds += mangaId
-                    }
-                    false -> logcat(LogPriority.INFO) {
-                        "Kept non-empty directory $dirName; it still holds unrelated files"
-                    }
-                    null -> Unit
+            // A folder-level single chapter *is* the work: its directory is gone with the chapter,
+            // so there is nothing left for the check below to look at, and the row has to go the
+            // same way it does when the last chapter of a two-level work is deleted.
+            plans.filter { it.deleted && it.singleChapter }
+                .map { it.target.mangaId }
+                .distinct()
+                .forEach { mangaId ->
+                    cleanupEmptiedManga(mangaId)
+                    removedMangaIds += mangaId
                 }
-            }
+            deleted.map { (target, _) -> target.mangaId }
+                .distinct()
+                .filterNot { it in removedMangaIds }
+                .forEach { mangaId ->
+                    val dirName = resolved.firstOrNull { (target, _) -> target.mangaId == mangaId }
+                        ?.second?.url?.substringBefore('/')
+                    when (dirName?.let { removeDirectoryIfEmptied(base, it) }) {
+                        true -> {
+                            cleanupEmptiedManga(mangaId)
+                            removedMangaIds += mangaId
+                        }
+                        false -> logcat(LogPriority.INFO) {
+                            "Kept non-empty directory $dirName; it still holds unrelated files"
+                        }
+                        null -> Unit
+                    }
+                }
 
             publishReport(
                 unit = LocalDeletionUnit.CHAPTER,
@@ -467,9 +483,9 @@ class LocalEntryDeletionService(
     private fun resolveChapterFile(base: UniFile, chapterUrl: String): UniFile? {
         val parts = chapterUrl.split('/', limit = 2)
         if (parts.size < 2) return null
-        // A folder-level single chapter is the work directory itself. It deliberately has no
-        // chapter file to resolve, so it can never be erased as if it were one.
-        if (isSingleChapterEntryName(parts[1])) return null
+        // A folder-level single chapter is the work directory itself, so erasing it erases every
+        // page of the work - the same outcome as deleting the last chapter of a two-level work.
+        if (isSingleChapterEntryName(parts[1])) return base.findFile(parts[0])
         return base.findFile(parts[0])?.findFile(parts[1])
     }
 
@@ -586,9 +602,12 @@ class LocalEntryDeletionService(
         val target: ChapterTarget,
         val chapterUrl: String,
         val file: UniFile?,
+        /** A folder-level single chapter: its file is the work directory itself. */
+        val singleChapter: Boolean = false,
         var fileCount: Int = 0,
         var sizeBytes: Long = 0,
         var skipped: Boolean = false,
+        var deleted: Boolean = false,
     ) {
         fun toEntry(outcome: LocalDeletionOutcome) = LocalDeletionEntry(
             mangaTitle = target.mangaTitle,

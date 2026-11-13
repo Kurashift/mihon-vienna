@@ -69,6 +69,7 @@ import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
 import tachiyomi.source.local.io.LOCAL_SINGLE_CHAPTER_NAME
 import tachiyomi.source.local.io.LocalSourceFileSystem
+import tachiyomi.source.local.io.firstPageInReadingOrder
 import tachiyomi.source.local.io.isSingleChapterEntryName
 import tachiyomi.source.local.io.loosePages
 import tachiyomi.source.local.metadata.fillMetadata
@@ -680,18 +681,24 @@ class LocalSource(
                         val dirLastModified = dir.lastModified()
                         val indexed = index?.entries?.get(name)
                         val directoryMetadataUnchanged = indexed != null && indexed.dirLastModified == dirLastModified
-                        val coverUri = if (directoryMetadataUnchanged) {
+                        // A folder-level single work takes its cover from its own pages, so an
+                        // entry saved before that rule existed carries no cover decision at all.
+                        // Those are measured once and the answer is stored: reusing the blank one
+                        // would leave the card empty until something else touched the folder.
+                        val coverLookedUp = directoryMetadataUnchanged && indexed.coverLookedUp
+                        val coverUri = if (coverLookedUp) {
                             indexed.coverUri
                         } else {
                             coverManager.find(name)?.uri?.toString()
                         }
-                        val measuredChapterStats = if (
-                            directoryMetadataUnchanged &&
+                        val reusesIndexedStats = directoryMetadataUnchanged &&
+                            coverLookedUp &&
                             name !in forceChapterRefreshUrls &&
                             indexed.chapterCount >= 0 &&
                             indexed.latestChapterModified > 0
-                        ) {
-                            ChapterListingStats(indexed.chapterCount, indexed.latestChapterModified)
+                        val indexedEntry = indexed
+                        val measuredChapterStats = if (reusesIndexedStats && indexedEntry != null) {
+                            ChapterListingStats(indexedEntry.chapterCount, indexedEntry.latestChapterModified)
                         } else {
                             getChapterListingStats(
                                 dir = dir,
@@ -716,7 +723,10 @@ class LocalSource(
                         )
                         name to ListingIndexEntry(
                             dirLastModified = dirLastModified,
-                            coverUri = coverUri,
+                            coverUri = coverUri ?: measuredChapterStats.coverPage?.uri?.toString(),
+                            // Every entry this build writes has had its cover decided, one way or
+                            // the other; only entries from before the page-cover rule say false.
+                            coverLookedUp = true,
                             chapterCount = chapterStats.count,
                             latestChapterModified = chapterStats.latestModified,
                         )
@@ -860,6 +870,12 @@ class LocalSource(
         val coverUri: String?,
         val chapterCount: Int,
         val latestChapterModified: Long,
+        /**
+         * Whether this entry's cover has been decided by a build that knows a folder-level single
+         * work takes its cover from its own pages. Entries saved before that rule say false, and
+         * are measured once more so their card does not stay blank until the folder changes.
+         */
+        val coverLookedUp: Boolean = false,
     )
 
     private fun loadListingIndex(expectedBaseUri: String? = null): ListingIndex? {
@@ -880,6 +896,7 @@ class LocalSource(
                     coverUri = item.optString("coverUri").takeIf { it.isNotEmpty() },
                     chapterCount = item.optInt("chapterCount", -1),
                     latestChapterModified = item.optLong("latestChapterModified", 0L),
+                    coverLookedUp = item.optBoolean("coverLookedUp", false),
                 )
             }
             ListingIndex(
@@ -944,6 +961,7 @@ class LocalSource(
                         .put("name", name)
                         .put("dirLastModified", entry.dirLastModified)
                         .put("coverUri", entry.coverUri.orEmpty())
+                        .put("coverLookedUp", entry.coverLookedUp)
                         .put("chapterCount", entry.chapterCount)
                         .put("latestChapterModified", entry.latestChapterModified),
                 )
@@ -2035,12 +2053,15 @@ class LocalSource(
         return ChapterListingStats(
             count = entries.count,
             latestModified = entries.latestModified,
+            coverPage = entries.coverPage,
         )
     }
 
     private data class ChapterListingStats(
         val count: Int,
         val latestModified: Long,
+        /** Page a folder-level single work can show as its cover, when it has no cover file. */
+        val coverPage: UniFile? = null,
     )
 
     /**
@@ -2080,6 +2101,16 @@ class LocalSource(
                 val size = if (file.isDirectory) 0L else file.length()
                 "${file.name.orEmpty()}|${file.lastModified()}|$size"
             }
+
+        /**
+         * The page a folder-level single work shows as its cover.
+         *
+         * Taken in reading order, so the card shows the work's page 1 rather than whichever page
+         * the directory happens to list first. A two-level folder has no page of its own, and the
+         * cover it may have is a file the app looks up separately.
+         */
+        val coverPage: UniFile?
+            get() = firstPageInReadingOrder(singleChapterPages)
     }
 
     /**

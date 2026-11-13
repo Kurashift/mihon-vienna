@@ -108,7 +108,6 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.LocalSource
-import tachiyomi.source.local.io.isSingleChapterChapterUrl
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -1558,11 +1557,7 @@ class MangaViewModel(
     }
 
     fun showDeleteLocalChaptersDialog(chapters: List<Chapter>) {
-        // A folder-level single chapter has no file of its own, so there is nothing to erase for
-        // it: its directory is the work, which the manga menu deletes as a whole.
-        val deletable = chapters.filterNot { it.url.isSingleChapterChapterUrl() }
-        if (deletable.isEmpty()) return
-        updateSuccessState { it.copy(dialog = Dialog.DeleteLocalChapters(deletable)) }
+        updateSuccessState { it.copy(dialog = Dialog.DeleteLocalChapters(chapters)) }
     }
 
     fun showDeleteLocalMangaDialog() {
