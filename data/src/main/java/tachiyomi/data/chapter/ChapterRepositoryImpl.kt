@@ -13,6 +13,7 @@ import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.data.subscribeToList
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.model.ChapterReadState
 import tachiyomi.domain.chapter.model.ChapterTranslatedName
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
@@ -63,6 +64,24 @@ class ChapterRepositoryImpl(
 
     override suspend fun updateAll(chapterUpdates: List<ChapterUpdate>) {
         partialUpdate(*chapterUpdates.toTypedArray())
+    }
+
+    override suspend fun updateReadStates(states: List<ChapterReadState>) {
+        if (states.isEmpty()) return
+        try {
+            database.transaction {
+                states.forEach { state ->
+                    database.chaptersQueries.restoreReadState(
+                        read = state.read,
+                        lastPageRead = state.lastPageRead,
+                        markedReadAt = state.markedReadAt,
+                        chapterId = state.chapterId,
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e)
+        }
     }
 
     override suspend fun relocateAll(chapterUpdates: List<ChapterUpdate>) {

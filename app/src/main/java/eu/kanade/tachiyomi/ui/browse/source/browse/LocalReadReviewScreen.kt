@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -52,9 +53,9 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.domain.chapter.interactor.SetReadStatus
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
-import eu.kanade.presentation.components.ConfirmDialog
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.components.SelectionToolbar
 import eu.kanade.presentation.mylists.MY_LIST_COVER_ASPECT_RATIO
@@ -78,6 +79,7 @@ import eu.kanade.presentation.mylists.rememberMyListExportLauncher
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -86,16 +88,19 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
 import tachiyomi.domain.chapter.interactor.UpdateChapter
+import tachiyomi.domain.chapter.model.ChapterReadState
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
+import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.LocalSource
@@ -279,8 +284,8 @@ class LocalReadReviewDetailScreen(
         }
 
         var selectedChapterIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-        var showClearConfirm by remember { mutableStateOf(false) }
-        var pendingUnreadIds by remember { mutableStateOf<Set<Long>?>(null) }
+        val snackbarHostState = remember { SnackbarHostState() }
+        val setReadStatus = remember { Injekt.get<SetReadStatus>() }
         val exportText = exportTextOf(
             listTitle = mangaTitle,
             groups = listOf(MangaGroup(mangaId, mangaTitle, chapters)),
@@ -290,6 +295,29 @@ class LocalReadReviewDetailScreen(
             filename = "mihon_read_review.txt",
             text = exportText,
         )
+        // 标成未读只是改已读状态，原样可以放回去（连读完时间一起），所以不再弹确认，
+        // 改成一次可撤销的提示。
+        val markUnreadUndoable: (List<LocalReadReviewItem>) -> Unit = { items ->
+            selectedChapterIds = emptySet()
+            scope.launch {
+                markUnread(updateChapter, items.map { it.chapterId })
+                snackbarHostState.showUndoSnackbar(
+                    message = context.stringResource(MR.strings.undo_local_read_marked_unread, items.size),
+                    undoLabel = context.stringResource(MR.strings.action_undo),
+                ) {
+                    setReadStatus.restoreReadStates(
+                        items.map { item ->
+                            ChapterReadState(
+                                chapterId = item.chapterId,
+                                read = true,
+                                lastPageRead = item.lastPageRead,
+                                markedReadAt = item.finishedAt,
+                            )
+                        },
+                    )
+                }
+            }
+        }
 
         LaunchedEffect(chapters) {
             val availableIds = chapters.mapTo(mutableSetOf()) { it.chapterId }
@@ -334,7 +362,7 @@ class LocalReadReviewDetailScreen(
                                     AppBar.Action(
                                         title = stringResource(MR.strings.local_read_review_clear),
                                         icon = Icons.Outlined.RemoveDone,
-                                        onClick = { showClearConfirm = true },
+                                        onClick = { markUnreadUndoable(chapters) },
                                     ),
                                 ),
                             )
@@ -346,9 +374,12 @@ class LocalReadReviewDetailScreen(
             bottomBar = {
                 MyListReadActionMenu(
                     visible = selectedChapterIds.isNotEmpty(),
-                    onMarkUnreadClicked = { pendingUnreadIds = selectedChapterIds },
+                    onMarkUnreadClicked = {
+                        markUnreadUndoable(chapters.filter { it.chapterId in selectedChapterIds })
+                    },
                 )
             },
+            snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
         ) { contentPadding ->
             if (chapters.isEmpty()) {
                 MyListEmptyState(
@@ -385,38 +416,6 @@ class LocalReadReviewDetailScreen(
                     }
                 }
             }
-        }
-
-        if (showClearConfirm) {
-            ConfirmDialog(
-                title = stringResource(MR.strings.confirm_mark_all_unread_title),
-                text = stringResource(MR.strings.local_read_review_clear_confirm, chapters.size),
-                confirmText = stringResource(MR.strings.local_read_review_clear),
-                onConfirm = {
-                    scope.launch {
-                        markUnread(updateChapter, chapters.map { it.chapterId })
-                        selectedChapterIds = emptySet()
-                        showClearConfirm = false
-                    }
-                },
-                onDismiss = { showClearConfirm = false },
-            )
-        }
-
-        pendingUnreadIds?.let { ids ->
-            ConfirmDialog(
-                title = stringResource(MR.strings.confirm_mark_unread_title),
-                text = stringResource(MR.strings.local_read_review_mark_unread_selected_confirm, ids.size),
-                confirmText = stringResource(MR.strings.action_mark_as_unread),
-                onConfirm = {
-                    scope.launch {
-                        markUnread(updateChapter, ids.toList())
-                        selectedChapterIds = selectedChapterIds - ids
-                        pendingUnreadIds = null
-                    }
-                },
-                onDismiss = { pendingUnreadIds = null },
-            )
         }
     }
 }
@@ -743,6 +742,7 @@ private data class LocalReadReviewItem(
     val chapterName: String,
     val chapterTranslatedName: String?,
     val totalPages: Long,
+    val lastPageRead: Long,
     val dateUpload: Long,
     val lastModifiedAt: Long,
     val version: Long,
@@ -757,6 +757,7 @@ private fun mapReadLocalChapter(
     chapter_name: String,
     chapter_translated_name: String?,
     total_pages: Long,
+    last_page_read: Long,
     date_upload: Long,
     last_modified_at: Long,
     version: Long,
@@ -769,6 +770,7 @@ private fun mapReadLocalChapter(
     chapterName = chapter_name,
     chapterTranslatedName = chapter_translated_name,
     totalPages = total_pages,
+    lastPageRead = last_page_read,
     dateUpload = date_upload,
     lastModifiedAt = last_modified_at,
     version = version,

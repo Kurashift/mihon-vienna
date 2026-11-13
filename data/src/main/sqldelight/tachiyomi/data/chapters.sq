@@ -235,6 +235,16 @@ SET manga_id = coalesce(:mangaId, manga_id),
     marked_read_at = coalesce(:markedReadAt, marked_read_at)
 WHERE _id = :chapterId;
 
+-- 撤销一次已读/未读改动：把三个字段原样写回。
+-- 不走 `update`，因为那里的 last_page_read CASE 只要 read = 1 就会把续读位置冲成 total_pages，
+-- 撤销「标记未读」会把读到一半的篇目顶到末页。这里只写这一行，别的列一概不碰。
+restoreReadState:
+UPDATE chapters
+SET read = :read,
+    last_page_read = :lastPageRead,
+    marked_read_at = :markedReadAt
+WHERE _id = :chapterId;
+
 updateReaderProgress:
 UPDATE chapters
 SET read = CASE
@@ -307,6 +317,8 @@ SELECT
     chapters.name AS chapter_name,
     chapters.translated_name AS chapter_translated_name,
     chapters.total_pages AS total_pages,
+    -- 续读位置：撤销「标记未读」时要原样放回去，不能拿 total_pages 顶替。
+    chapters.last_page_read AS last_page_read,
     chapters.date_upload AS date_upload,
     chapters.last_modified_at AS last_modified_at,
     chapters.version AS version,

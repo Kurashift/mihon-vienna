@@ -78,8 +78,6 @@
     <string name="action_filter_marks">Marks</string>
     <string name="action_filter_not_in_library">Not on a shelf</string>
     <string name="action_remove_from_library">Remove from shelf</string>
-    <string name="remove_from_library_title">Take these works off the shelf?</string>
-    <string name="remove_from_library_confirmation">They leave the library, and your downloaded chapters, reading progress and history are kept. You can put them back on the shelf at any time.</string>
     <string name="sort_toast_applied">Sorted by: %1$s</string>
     <string name="filter_toast_applied">Showing: %1$s</string>
     <string name="filter_toast_cleared">Showing everything</string>
@@ -1252,11 +1250,9 @@
     <string name="marks_list_open_manga">Open manga</string>
     <string name="marks_list_manga_missing">This manga is no longer in the library</string>
     <string name="marks_list_clear">Clear list</string>
-    <string name="marks_list_clear_confirm">Removes the entries from the list only. Your local files are not touched.</string>
     <string name="marks_list_remove">Remove</string>
     <string name="marks_list_remove_entry_confirm">Remove “%1$s” from this list? The local manga will not be deleted.</string>
     <string name="marks_list_remove_selected_confirm">Remove the selected %1$d manga and all of their list entries? Your local files will not be touched.</string>
-    <string name="marks_list_remove_selected_entries_confirm">Remove the selected %1$d works from this list? Your local manga will not be deleted.</string>
     <string name="marks_list_chapter_count">%1$d marked works</string>
     <string name="marks_list_no_others">No other marked works available</string>
     <string name="marks_list_search_hint">Search by work or chapter name</string>
@@ -1266,7 +1262,6 @@
     <string name="good_doujin_list_title">Good doujin list</string>
     <string name="good_doujin_list_empty">No good doujins yet. Swipe left on a work.</string>
     <string name="good_doujin_list_no_others">No other good doujins available</string>
-    <string name="good_doujin_list_clear_confirm">Removes all good-doujin entries for this manga from the list. Your local files are not touched.</string>
     <string name="good_doujin_list_chapter_count">%1$d works kept</string>
     <string name="good_doujin_added">Added to good doujins</string>
     <string name="good_doujin_removed">Removed from good doujins</string>
@@ -1421,8 +1416,6 @@
     <string name="local_read_review_count">%1$d local chapters are marked as read</string>
     <string name="local_read_review_empty">No local chapters are marked as read</string>
     <string name="local_read_review_clear">Mark all as unread</string>
-    <string name="local_read_review_clear_confirm">Mark all %1$d local works as unread? Your files are not touched.</string>
-    <string name="local_read_review_mark_unread_selected_confirm">Mark the selected %1$d works as unread?</string>
     <string name="local_read_review_search_hint">Search by work or chapter name (original or translated)</string>
     <string name="local_read_review_group_subtitle">%1$d works · latest %2$s</string>
     <string name="action_import_local_chapters">Import local chapters</string>
@@ -1525,9 +1518,18 @@
     <string name="track_original_title">Original title: %1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_untranslated</string>
     <string name="confirm_clear_reading_history_title">Clear reading records?</string>
-    <string name="confirm_clear_list_title">Clear list?</string>
-    <string name="confirm_remove_from_list_title">Remove from list?</string>
-    <string name="confirm_mark_all_unread_title">Mark all as unread?</string>
     <string name="confirm_mark_unread_title">Mark as unread?</string>
     <string name="confirm_mark_read_title">Mark as read?</string>
+    <string name="undo_removed_from_library">Removed %1$d works from the library; downloads and progress are kept</string>
+    <string name="undo_chapters_marked_read">Marked %1$d chapters as read</string>
+    <string name="undo_chapters_marked_unread">Marked %1$d chapters as unread</string>
+    <string name="undo_chapters_bookmarked">Bookmarked %1$d chapters</string>
+    <string name="undo_chapters_unbookmarked">Removed the bookmark from %1$d chapters</string>
+    <string name="undo_marks_added">Marked %1$d chapters</string>
+    <string name="undo_marks_removed">Unmarked %1$d chapters</string>
+    <string name="undo_marks_cleared">Cleared the marks list</string>
+    <string name="undo_good_doujins_added">Added %1$d chapters to the good-doujin list</string>
+    <string name="undo_good_doujins_removed">Removed %1$d chapters from the good-doujin list</string>
+    <string name="undo_good_doujins_cleared">Cleared the good-doujin list</string>
+    <string name="undo_local_read_marked_unread">Marked %1$d chapters as unread</string>
 </resources>
