@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Share
@@ -34,6 +35,7 @@ fun ReaderPageActionsDialog(
     onSetAsChapterCover: (() -> Unit)? = null,
     onShare: (Boolean) -> Unit,
     onSave: () -> Unit,
+    onDelete: (() -> Unit)? = null,
 ) {
     var showSetCoverDialog by remember { mutableStateOf(false) }
     var showSetChapterCoverDialog by remember { mutableStateOf(false) }
@@ -100,6 +102,17 @@ fun ReaderPageActionsDialog(
                     labelStyle = rowLabelStyle,
                     contentPadding = rowContentPadding,
                 )
+                if (onDelete != null) {
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_delete),
+                        icon = Icons.Outlined.Delete,
+                        onClick = onDelete,
+                        iconTint = MaterialTheme.colorScheme.error,
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
+                }
             }
         }
     }

@@ -53,7 +53,8 @@ internal class DownloadPageLoader(
     }
 
     private suspend fun getPagesFromArchive(file: UniFile): List<ReaderPage> {
-        val loader = ArchivePageLoader(file, file.archiveReader(context)).also { archivePageLoader = it }
+        val loader = ArchivePageLoader(file, file.archiveReader(context), invalidateLocalSource = false)
+            .also { archivePageLoader = it }
         return loader.getPages()
     }
 
@@ -64,6 +65,11 @@ internal class DownloadPageLoader(
                 context.contentResolver.openInputStream(page.uri ?: Uri.EMPTY)!!
             }
             ReaderPage(page.index, page.url, page.imageUrl, streamFn).apply {
+                page.uri?.let { uri ->
+                    UniFile.fromUri(context, uri)?.let {
+                        deletionTarget = ReaderPage.DeletionTarget.File(it, invalidateLocalSource = false)
+                    }
+                }
                 status = Page.State.Ready
                 // Measured before any holder exists, so the webtoon viewer can lay the page out at
                 // its final height instead of collapsing it when the image arrives.

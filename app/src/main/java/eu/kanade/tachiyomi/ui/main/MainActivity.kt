@@ -85,6 +85,7 @@ import eu.kanade.presentation.components.BottomNavFabLift
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
 import eu.kanade.presentation.components.LocalDeletionHost
+import eu.kanade.presentation.components.ReaderPageDeletionHost
 import eu.kanade.presentation.more.UpdateAvailableDialog
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
@@ -291,6 +292,7 @@ class MainActivity : BaseActivity() {
                         // and receipt are hosted here rather than inside the screen that started
                         // them.
                         LocalDeletionHost()
+                        ReaderPageDeletionHost(modifier = Modifier.align(Alignment.BottomCenter))
                     }
                 }
 

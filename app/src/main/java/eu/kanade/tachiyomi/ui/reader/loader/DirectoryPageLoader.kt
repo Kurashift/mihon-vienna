@@ -43,6 +43,7 @@ internal class DirectoryPageLoader(
                 val extent = PageExtentProbe.readHeader(streamFn)?.let(PageExtentProbe::measureHeader)
                 ReaderPage(i).apply {
                     stream = streamFn
+                    deletionTarget = ReaderPage.DeletionTarget.File(file, invalidateLocalSource = true)
                     status = Page.State.Ready
                     imageExtent = extent
                 }

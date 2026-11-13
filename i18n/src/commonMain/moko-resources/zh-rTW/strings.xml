@@ -54,6 +54,8 @@
     <string name="action_bookmark">將篇目加上書籤</string>
     <string name="action_remove_bookmark">將篇目移除書籤</string>
     <string name="action_delete">刪除</string>
+    <string name="reader_pages_deleted">已刪除 %1$d 頁</string>
+    <string name="reader_page_delete_failed">刪除失敗</string>
     <string name="action_delete_downloaded_chapters">刪除已下載篇目</string>
     <string name="action_update_library">更新書櫃</string>
     <string name="action_refresh_all_chapters">更新所有篇目</string>
