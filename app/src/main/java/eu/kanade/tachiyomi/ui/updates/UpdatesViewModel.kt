@@ -20,6 +20,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.util.lang.toLocalDate
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -273,19 +274,26 @@ class UpdatesViewModel(
             // Captured before the write, so the undo puts the resume point and the finish
             // timestamp back as they were.
             val snapshot = chapters.readStateCandidates(read).toReadStates()
-            setReadStatus.await(
+            val result = setReadStatus.await(
                 read = read,
                 chapters = chapters.toTypedArray(),
             )
             if (snapshot.isEmpty()) return@launchIO
-            snackbarHostState.showUndoSnackbar(
-                message = context.stringResource(
-                    if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
-                    snapshot.size,
-                ),
-                undoLabel = context.stringResource(MR.strings.action_undo),
-            ) {
-                setReadStatus.restoreReadStates(snapshot)
+            val message = context.stringResource(
+                if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
+                snapshot.size,
+            )
+            // 开了「标记为已读后删除下载」时文件随这次编辑一起没了，撤销补不回来，只报一句结果。
+            val removedDownloads = (result as? SetReadStatus.Result.Success)?.removedDownloads == true
+            if (removedDownloads) {
+                snackbarHostState.showSnackbarReplacing(message)
+            } else {
+                snackbarHostState.showUndoSnackbar(
+                    message = message,
+                    undoLabel = context.stringResource(MR.strings.action_undo),
+                ) {
+                    setReadStatus.restoreReadStates(snapshot)
+                }
             }
         }
         toggleAllSelection(false)

@@ -28,6 +28,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.removeCovers
+import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
 import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
@@ -597,24 +598,34 @@ class LibraryViewModel(
             // will touch are kept.
             val chapters = getChaptersByMangaId.await(selection.map { it.id })
             val snapshot = chapters.readStateCandidates(read).toReadStates()
+            var removedDownloads = false
             selection.forEach { manga ->
-                setReadStatus.await(
+                val result = setReadStatus.await(
                     manga = manga,
                     read = read,
                 )
+                if (result is SetReadStatus.Result.Success && result.removedDownloads) {
+                    removedDownloads = true
+                }
             }
             if (snapshot.isEmpty()) return@launchNonCancellable
             // The edit must finish even if the screen goes away; the pill is only feedback, so it
             // runs in a job that is cancelled with the screen instead.
             viewModelScope.launch {
-                snackbarHostState.showUndoSnackbar(
-                    message = context.stringResource(
-                        if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
-                        snapshot.size,
-                    ),
-                    undoLabel = context.stringResource(MR.strings.action_undo),
-                ) {
-                    setReadStatus.restoreReadStates(snapshot)
+                val message = context.stringResource(
+                    if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
+                    snapshot.size,
+                )
+                // 开了「标记为已读后删除下载」时文件随这次编辑一起没了，撤销补不回来，只报一句结果。
+                if (removedDownloads) {
+                    snackbarHostState.showSnackbarReplacing(message)
+                } else {
+                    snackbarHostState.showUndoSnackbar(
+                        message = message,
+                        undoLabel = context.stringResource(MR.strings.action_undo),
+                    ) {
+                        setReadStatus.restoreReadStates(snapshot)
+                    }
                 }
             }
         }

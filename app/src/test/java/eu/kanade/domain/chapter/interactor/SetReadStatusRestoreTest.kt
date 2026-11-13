@@ -1,6 +1,8 @@
 package eu.kanade.domain.chapter.interactor
 
 import eu.kanade.domain.download.interactor.DeleteDownload
+import eu.kanade.tachiyomi.data.download.DownloadManager
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -13,6 +15,7 @@ import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterReadState
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.download.service.DownloadPreferences
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
 
 class SetReadStatusRestoreTest {
@@ -20,6 +23,7 @@ class SetReadStatusRestoreTest {
     private val chapterRepository = mockk<ChapterRepository>(relaxed = true)
     private val mangaRepository = mockk<MangaRepository>(relaxed = true)
     private val deleteDownload = mockk<DeleteDownload>(relaxed = true)
+    private val downloadManager = mockk<DownloadManager>(relaxed = true)
     private val removeAfterMarkedAsReadPreference = mockk<Preference<Boolean>> {
         every { get() } returns false
     }
@@ -32,6 +36,7 @@ class SetReadStatusRestoreTest {
         deleteDownload = deleteDownload,
         mangaRepository = mangaRepository,
         chapterRepository = chapterRepository,
+        downloadManager = downloadManager,
     )
 
     @Test
@@ -64,7 +69,7 @@ class SetReadStatusRestoreTest {
 
         val result = subject.await(read = false, halfRead, read, untouched)
 
-        assertEquals(SetReadStatus.Result.Success, result)
+        assertEquals(SetReadStatus.Result.Success(removedDownloads = false), result)
         coVerify(exactly = 1) {
             chapterRepository.updateAll(
                 match { updates ->
@@ -101,6 +106,33 @@ class SetReadStatusRestoreTest {
     }
 
     @Test
+    fun `an edit that deletes downloads says it cannot be undone`() = runBlocking {
+        every { removeAfterMarkedAsReadPreference.get() } returns true
+        every {
+            downloadManager.isChapterDownloaded(any(), any(), any(), any(), any(), any())
+        } returns true
+        coEvery { mangaRepository.getMangaByIdOrNull(1) } returns manga(id = 1)
+
+        val result = subject.await(read = true, chapter(id = 1, read = false, mangaId = 1))
+
+        // The file is gone with the edit, so the caller must not offer to take the edit back.
+        assertEquals(SetReadStatus.Result.Success(removedDownloads = true), result)
+    }
+
+    @Test
+    fun `an edit with no downloaded files stays undoable`() = runBlocking {
+        every { removeAfterMarkedAsReadPreference.get() } returns true
+        every {
+            downloadManager.isChapterDownloaded(any(), any(), any(), any(), any(), any())
+        } returns false
+        coEvery { mangaRepository.getMangaByIdOrNull(1) } returns manga(id = 1)
+
+        val result = subject.await(read = true, chapter(id = 1, read = false, mangaId = 1))
+
+        assertEquals(SetReadStatus.Result.Success(removedDownloads = false), result)
+    }
+
+    @Test
     fun `the candidate set matches what the write touches`() {
         val chapters = listOf(
             chapter(id = 1, read = false),
@@ -119,11 +151,19 @@ class SetReadStatusRestoreTest {
         lastPageRead: Long = 0,
         totalPages: Long = 0,
         markedReadAt: Long = 0,
+        mangaId: Long = -1,
     ): Chapter = Chapter.create().copy(
         id = id,
+        mangaId = mangaId,
         read = read,
         lastPageRead = lastPageRead,
         totalPages = totalPages,
         markedReadAt = markedReadAt,
+    )
+
+    private fun manga(id: Long) = Manga.create().copy(
+        id = id,
+        title = "work",
+        source = 1,
     )
 }

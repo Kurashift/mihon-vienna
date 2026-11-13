@@ -1,6 +1,7 @@
 package eu.kanade.domain.chapter.interactor
 
 import eu.kanade.domain.download.interactor.DeleteDownload
+import eu.kanade.tachiyomi.data.download.DownloadManager
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.withNonCancellableContext
 import tachiyomi.core.common.util.system.logcat
@@ -18,6 +19,7 @@ class SetReadStatus(
     private val deleteDownload: DeleteDownload,
     private val mangaRepository: MangaRepository,
     private val chapterRepository: ChapterRepository,
+    private val downloadManager: DownloadManager,
 ) {
 
     private val mapper = { chapter: Chapter, read: Boolean ->
@@ -45,12 +47,26 @@ class SetReadStatus(
             return@withNonCancellableContext Result.InternalError(e)
         }
 
+        var removedDownloads = false
         if (read && downloadPreferences.removeAfterMarkedAsRead.get()) {
             chaptersToUpdate
                 .groupBy { it.mangaId }
                 .forEach { (mangaId, chapters) ->
                     // The row can be gone by now; nothing to delete in that case.
                     val manga = mangaRepository.getMangaByIdOrNull(mangaId) ?: return@forEach
+                    // A file that goes away with this edit cannot come back with the read state, so
+                    // the caller has to know the edit is not something it can offer to undo.
+                    if (!removedDownloads) {
+                        removedDownloads = chapters.any { chapter ->
+                            downloadManager.isChapterDownloaded(
+                                chapterName = chapter.name,
+                                chapterScanlator = chapter.scanlator,
+                                chapterUrl = chapter.url,
+                                mangaTitle = manga.title,
+                                sourceId = manga.source,
+                            )
+                        }
+                    }
                     deleteDownload.awaitAll(
                         manga = manga,
                         chapters = chapters.toTypedArray(),
@@ -58,7 +74,7 @@ class SetReadStatus(
                 }
         }
 
-        Result.Success
+        Result.Success(removedDownloads)
     }
 
     /**
@@ -85,7 +101,8 @@ class SetReadStatus(
         await(manga.id, read)
 
     sealed interface Result {
-        data object Success : Result
+        /** [removedDownloads]: this edit deleted downloaded files, so it cannot be fully undone. */
+        data class Success(val removedDownloads: Boolean) : Result
         data object NoChapters : Result
         data class InternalError(val error: Throwable) : Result
     }

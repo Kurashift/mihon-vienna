@@ -1088,21 +1088,30 @@ class MangaViewModel(
         // timestamp as they were, and only the chapters this edit will touch are kept.
         val snapshot = chapters.readStateCandidates(read).toReadStates()
         viewModelScope.launchIO {
-            setReadStatus.await(
+            val editResult = setReadStatus.await(
                 read = read,
                 chapters = chapters.toTypedArray(),
             )
 
             if (snapshot.isEmpty()) return@launchIO
 
-            val undone = snackbarHostState.showUndoSnackbar(
-                message = context.stringResource(
-                    if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
-                    snapshot.size,
-                ),
-                undoLabel = context.stringResource(MR.strings.action_undo),
-            ) {
-                setReadStatus.restoreReadStates(snapshot)
+            val message = context.stringResource(
+                if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
+                snapshot.size,
+            )
+            // 开了「标记为已读后删除下载」时，这次编辑把篇目文件一起删了；撤销只能恢复已读状态，
+            // 文件回不来，所以这种情况不给撤销，只报一句结果。
+            val removedDownloads = (editResult as? SetReadStatus.Result.Success)?.removedDownloads == true
+            val undone = if (removedDownloads) {
+                snackbarHostState.showSnackbarReplacing(message)
+                false
+            } else {
+                snackbarHostState.showUndoSnackbar(
+                    message = message,
+                    undoLabel = context.stringResource(MR.strings.action_undo),
+                ) {
+                    setReadStatus.restoreReadStates(snapshot)
+                }
             }
             // Chapters that were put back to unread have no progress to offer a tracker.
             if (undone) return@launchIO
