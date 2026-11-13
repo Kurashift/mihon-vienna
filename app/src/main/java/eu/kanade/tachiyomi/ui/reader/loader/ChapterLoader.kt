@@ -90,7 +90,10 @@ class ChapterLoader(
             )
             source is LocalSource -> source.getFormat(chapter.chapter).let { format ->
                 when (format) {
-                    is Format.Directory -> DirectoryPageLoader(format.file)
+                    is Format.Directory -> DirectoryPageLoader(
+                        format.file,
+                        excludeCoverFiles = source.isSingleChapterChapter(chapter.chapter.url),
+                    )
                     is Format.Archive -> ArchivePageLoader(format.file, format.file.archiveReader(context))
                     is Format.Epub -> EpubPageLoader(format.file.epubReader(context))
                     is Format.Pdf -> PdfPageLoader(format.file.pdfReader(context))

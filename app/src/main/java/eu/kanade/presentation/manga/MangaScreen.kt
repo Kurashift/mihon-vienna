@@ -121,6 +121,7 @@ import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.secondaryItemAlpha
 import tachiyomi.source.local.image.LocalChapterCover
+import tachiyomi.source.local.io.isSingleChapterChapterUrl
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -1290,10 +1291,16 @@ private fun SharedMangaBottomActionMenu(
         },
         onDeleteLocalFilesClicked = {
             onDeleteLocalChaptersClicked(actedOn.fastMap { it.chapter })
-        }.takeIf { isLocalManga },
+        }.takeIf {
+            // A folder-level single chapter is the work directory itself: it has no chapter file
+            // to erase, and deleting the work has its own entry in the manga menu.
+            isLocalManga && actedOn.fastAny { !it.chapter.url.isSingleChapterChapterUrl() }
+        },
         onMoveClicked = {
             onMoveChaptersClicked(actedOn.fastMap { it.chapter })
-        }.takeIf { goodDoujinEnabled },
+        }.takeIf {
+            goodDoujinEnabled && actedOn.fastAny { !it.chapter.url.isSingleChapterChapterUrl() }
+        },
         onEditTranslatedTitleClicked = {
             onEditChapterTranslatedTitle(actedOn.single())
         }.takeIf { goodDoujinEnabled && actedOn.size == 1 },

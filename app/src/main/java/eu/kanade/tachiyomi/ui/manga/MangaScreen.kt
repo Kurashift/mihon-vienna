@@ -75,6 +75,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.io.isSingleChapterChapterUrl
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -357,7 +358,12 @@ class MangaScreen(
             onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
             onDeleteLocalChaptersClicked = viewModel::showDeleteLocalChaptersDialog,
             onMoveChaptersClicked = { chapters ->
-                navigator.push(LocalChapterMoveScreen(successState.manga.id, chapters.map { it.id }))
+                navigator.push(
+                    LocalChapterMoveScreen(
+                        successState.manga.id,
+                        chapters.filterNot { it.url.isSingleChapterChapterUrl() }.map { it.id },
+                    ),
+                )
             },
             onChapterSwipe = viewModel::chapterSwipe,
             onReorderChapters = viewModel::reorderChapters,

@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.browse.source.browse
 import kotlinx.serialization.json.JsonObject
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
+import tachiyomi.source.local.io.isSingleChapterEntryName
 
 internal data class StoredLocalChapter(
     val chapterId: Long,
@@ -25,18 +26,30 @@ internal fun detectLocalChapterMoves(
     previousFileNamesByMangaUrl: Map<String, Set<String>>,
     currentFileNamesByMangaUrl: Map<String, Set<String>>,
 ): List<LocalChapterMoveCandidate> {
-    val missingByName = storedChapters
+    // The virtual chapter of a folder-level single work carries a name every flat folder shares,
+    // so it would pair two unrelated works: one that just grew a chapter folder (its virtual
+    // chapter disappeared) with one that just appeared (its virtual chapter is new). That would
+    // move the first work's reading progress onto the second one, so it is never a move.
+    val movableChapters = storedChapters.filterNot { isSingleChapterEntryName(it.fileName) }
+    val previousNames = previousFileNamesByMangaUrl.mapValues { (_, names) ->
+        names.filterNotTo(hashSetOf(), ::isSingleChapterEntryName)
+    }
+    val currentNames = currentFileNamesByMangaUrl.mapValues { (_, names) ->
+        names.filterNotTo(hashSetOf(), ::isSingleChapterEntryName)
+    }
+
+    val missingByName = movableChapters
         .filter { chapter ->
-            previousFileNamesByMangaUrl[chapter.mangaUrl].orEmpty().containsChapterFile(chapter.fileName) &&
-                chapter.fileName !in currentFileNamesByMangaUrl[chapter.mangaUrl].orEmpty()
+            previousNames[chapter.mangaUrl].orEmpty().containsChapterFile(chapter.fileName) &&
+                chapter.fileName !in currentNames[chapter.mangaUrl].orEmpty()
         }
         .groupBy(StoredLocalChapter::fileName)
 
-    val addedByName = currentFileNamesByMangaUrl
+    val addedByName = currentNames
         .flatMap { (mangaUrl, fileNames) ->
-            val previousNames = previousFileNamesByMangaUrl[mangaUrl].orEmpty()
+            val previousForManga = previousNames[mangaUrl].orEmpty()
             fileNames
-                .filter { !previousNames.containsChapterFile(it) }
+                .filter { !previousForManga.containsChapterFile(it) }
                 .map { fileName -> mangaUrl to fileName }
         }
         .groupBy({ it.second }, { it.first })
@@ -49,7 +62,7 @@ internal fun detectLocalChapterMoves(
 
         LocalChapterMoveCandidate(
             chapterId = old.chapterId,
-            duplicateChapterId = storedChapters
+            duplicateChapterId = movableChapters
                 .singleOrNull { chapter ->
                     chapter.mangaUrl == newMangaUrl && chapter.fileName == fileName
                 }
@@ -66,6 +79,11 @@ internal fun detectLocalChapterMoves(
  * Recovers a move after a previous refresh already committed the new disk layout. Only an exact
  * file name that exists in one current manga folder can revive a chapter from a now-missing manga
  * folder; ambiguous names are deliberately ignored.
+ *
+ * The virtual chapter of a folder-level single work is never revived: every flat folder is called
+ * the same, so a work whose folder was deleted would hand its reading progress to whichever flat
+ * work happened to be the only other one. Losing the relocation when such a work is renamed is the
+ * price of never moving progress onto the wrong work.
  */
 internal fun detectStaleLocalChapterMoves(
     storedChapters: List<StoredLocalChapter>,
@@ -76,24 +94,26 @@ internal fun detectStaleLocalChapterMoves(
         .groupBy({ it.first }, { it.second })
     val currentMangaUrls = currentFileNamesByMangaUrl.keys
 
-    return storedChapters.mapNotNull { old ->
-        if (old.mangaUrl in currentMangaUrls) return@mapNotNull null
-        val newMangaUrl = currentLocationsByName[old.fileName]
-            ?.distinct()
-            ?.singleOrNull()
-            ?: return@mapNotNull null
-        val duplicate = storedChapters.singleOrNull { chapter ->
-            chapter.mangaUrl == newMangaUrl && chapter.fileName == old.fileName
+    return storedChapters
+        .filterNot { isSingleChapterEntryName(it.fileName) }
+        .mapNotNull { old ->
+            if (old.mangaUrl in currentMangaUrls) return@mapNotNull null
+            val newMangaUrl = currentLocationsByName[old.fileName]
+                ?.distinct()
+                ?.singleOrNull()
+                ?: return@mapNotNull null
+            val duplicate = storedChapters.singleOrNull { chapter ->
+                chapter.mangaUrl == newMangaUrl && chapter.fileName == old.fileName
+            }
+            LocalChapterMoveCandidate(
+                chapterId = old.chapterId,
+                duplicateChapterId = duplicate?.chapterId,
+                oldMangaId = old.mangaId,
+                oldMangaUrl = old.mangaUrl,
+                newMangaUrl = newMangaUrl,
+                fileName = old.fileName,
+            )
         }
-        LocalChapterMoveCandidate(
-            chapterId = old.chapterId,
-            duplicateChapterId = duplicate?.chapterId,
-            oldMangaId = old.mangaId,
-            oldMangaUrl = old.mangaUrl,
-            newMangaUrl = newMangaUrl,
-            fileName = old.fileName,
-        )
-    }
 }
 
 internal fun mergeMovedLocalChapter(

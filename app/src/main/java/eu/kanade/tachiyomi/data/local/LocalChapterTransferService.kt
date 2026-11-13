@@ -25,6 +25,7 @@ import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.LocalSourceFileSystem
+import tachiyomi.source.local.io.isSingleChapterEntryName
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
@@ -262,6 +263,13 @@ class LocalChapterTransferService(
                 return@forEachIndexed
             }
             val fileName = chapter.url.substringAfterLast('/')
+            if (isSingleChapterEntryName(fileName)) {
+                // The work directory is its own chapter: moving it would move the whole work, and
+                // there is no chapter file to carry over.
+                skipped++
+                onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
+                return@forEachIndexed
+            }
             val sourceDir = fileSystem.getBaseDirectory()?.findFile(source.url)
             val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
                 ?: fileSystem.getBaseDirectory()?.createDirectory(target.url)
