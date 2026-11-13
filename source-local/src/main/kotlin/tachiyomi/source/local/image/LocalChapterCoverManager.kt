@@ -30,7 +30,10 @@ import tachiyomi.core.common.util.system.PageImageName
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
+import tachiyomi.source.local.io.LOCAL_SINGLE_CHAPTER_NAME
 import tachiyomi.source.local.io.LocalSourceFileSystem
+import tachiyomi.source.local.io.isSingleChapterEntryName
+import tachiyomi.source.local.io.loosePages
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
@@ -244,12 +247,20 @@ class LocalChapterCoverManager(
             .asSequence()
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .flatMap { mangaDirectory ->
-                fileSystem.getFilesInDirectory(mangaDirectory)
-                    .asSequence()
-                    .filter(Archive::isChapterEntry)
-                    .map { chapterFile ->
+                val files = fileSystem.getFilesInDirectory(mangaDirectory)
+                val chapterFiles = files.filter(Archive::isChapterEntry)
+                if (chapterFiles.isEmpty()) {
+                    // A folder whose pages sit directly in it is its own single chapter.
+                    if (loosePages(files).isEmpty()) {
+                        emptySequence()
+                    } else {
+                        sequenceOf("${mangaDirectory.name.orEmpty()}/$LOCAL_SINGLE_CHAPTER_NAME" to mangaDirectory)
+                    }
+                } else {
+                    chapterFiles.asSequence().map { chapterFile ->
                         "${mangaDirectory.name.orEmpty()}/${chapterFile.name.orEmpty()}" to chapterFile
                     }
+                }
             }
             .toList()
 
@@ -485,9 +496,10 @@ class LocalChapterCoverManager(
     private fun findChapterFile(chapterUrl: String): UniFile? {
         val parts = chapterUrl.split('/', limit = 2)
         if (parts.size != 2) return null
-        return fileSystem.getMangaDirectory(parts[0])
-            ?.findFile(parts[1])
-            ?.takeIf(Archive::isChapterEntry)
+        val mangaDirectory = fileSystem.getMangaDirectory(parts[0]) ?: return null
+        // The folder-level single chapter is the manga directory itself; it has no child to open.
+        if (isSingleChapterEntryName(parts[1])) return mangaDirectory
+        return mangaDirectory.findFile(parts[1])?.takeIf(Archive::isChapterEntry)
     }
 
     private fun targetFile(chapterUrl: String, chapterFile: UniFile): File {
@@ -495,7 +507,9 @@ class LocalChapterCoverManager(
             coverDirectory,
             localChapterCoverCacheFileName(
                 chapterUrl = chapterUrl,
-                size = chapterFile.length(),
+                // A directory has no meaningful size of its own; its mtime is what moves when a
+                // page is added or removed, so that is what the cache key varies on.
+                size = if (chapterFile.isDirectory) 0L else chapterFile.length(),
                 lastModified = chapterFile.lastModified(),
                 targetWidth = TARGET_WIDTH,
                 targetHeight = TARGET_HEIGHT,
@@ -575,7 +589,7 @@ private const val COVER_FILE_BASE_NAME = "cover"
  * reader supports (cover.webp is as valid as cover.jpg), so match the base name and reuse the
  * shared image-extension table instead of hard-coding a single extension.
  */
-internal fun isChapterCoverName(name: String): Boolean {
+fun isChapterCoverName(name: String): Boolean {
     return name.substringBeforeLast('.').equals(COVER_FILE_BASE_NAME, ignoreCase = true) &&
         PageImageName.hasImageExtension(name)
 }

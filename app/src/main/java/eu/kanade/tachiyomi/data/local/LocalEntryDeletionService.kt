@@ -26,6 +26,7 @@ import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.LocalSourceFileSystem
+import tachiyomi.source.local.io.isSingleChapterEntryName
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.concurrent.atomic.AtomicBoolean
@@ -466,6 +467,9 @@ class LocalEntryDeletionService(
     private fun resolveChapterFile(base: UniFile, chapterUrl: String): UniFile? {
         val parts = chapterUrl.split('/', limit = 2)
         if (parts.size < 2) return null
+        // A folder-level single chapter is the work directory itself. It deliberately has no
+        // chapter file to resolve, so it can never be erased as if it were one.
+        if (isSingleChapterEntryName(parts[1])) return null
         return base.findFile(parts[0])?.findFile(parts[1])
     }
 

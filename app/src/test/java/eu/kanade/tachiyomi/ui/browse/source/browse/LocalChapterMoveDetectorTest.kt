@@ -401,6 +401,38 @@ class LocalChapterMoveDetectorTest {
             .markedReadAt shouldBe null
     }
 
+    @Test
+    fun `a folder-level single chapter never pairs two unrelated works`() {
+        // Work A grew a chapter folder, so its virtual chapter disappeared; Work B is new, so its
+        // virtual chapter appeared. Both carry the same virtual name, and pairing them would move
+        // Work A's reading progress onto Work B.
+        val moves = detectLocalChapterMoves(
+            storedChapters = listOf(chapter(10, 1, "Work A", ".__single__")),
+            previousFileNamesByMangaUrl = mapOf(
+                "Work A" to setOf(".__single__"),
+                "Work B" to emptySet(),
+            ),
+            currentFileNamesByMangaUrl = mapOf(
+                "Work A" to setOf("01"),
+                "Work B" to setOf(".__single__"),
+            ),
+        )
+
+        moves.shouldBeEmpty()
+    }
+
+    @Test
+    fun `a deleted flat work never hands its progress to another flat work`() {
+        // Every flat folder's chapter is called the same, so reviving a vanished one would attach
+        // its reading progress to whichever single-chapter work happens to be left.
+        val moves = detectStaleLocalChapterMoves(
+            storedChapters = listOf(chapter(10, 1, "Deleted Work", ".__single__")),
+            currentFileNamesByMangaUrl = mapOf("Surviving Work" to setOf(".__single__")),
+        )
+
+        moves.shouldBeEmpty()
+    }
+
     private fun chapter(id: Long, mangaId: Long, mangaUrl: String, fileName: String) = StoredLocalChapter(
         chapterId = id,
         mangaId = mangaId,

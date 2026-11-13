@@ -614,6 +614,7 @@
     <string name="date_axis_full_flagged">标记时间</string>
     <string name="date_axis_full_good_doujin">好本时间</string>
     <string name="local_invalid_format">篇目格式无效</string>
+    <string name="local_single_chapter">单篇</string>
     <string name="chapter_not_found">未找到篇目</string>
     <string name="restrictions">限制：%s</string>
     <string name="action_display_local_badge">本地图源</string>

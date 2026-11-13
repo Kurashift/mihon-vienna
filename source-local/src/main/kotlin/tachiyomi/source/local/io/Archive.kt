@@ -21,10 +21,22 @@ object Archive {
      * caches, editor temp folders) stay hidden.
      */
     fun isChapterEntry(file: UniFile): Boolean {
-        val name = file.name.orEmpty()
+        return isChapterEntryName(file.name.orEmpty(), isDirectory = file.isDirectory)
+    }
+
+    /**
+     * The same rule as [isChapterEntry], decided from the name alone.
+     *
+     * Callers that already hold a directory listing can then classify entries without another
+     * filesystem round-trip, and the rule itself becomes testable without faking a [UniFile].
+     */
+    fun isChapterEntryName(name: String, isDirectory: Boolean): Boolean {
         if (name.isEmpty()) return false
-        if (file.isDirectory) return !name.startsWith('.')
-        return isSupported(file) || file.extension.equals("epub", true) || file.extension.equals("pdf", true)
+        if (isDirectory) return !name.startsWith('.')
+        val extension = name.substringAfterLast('.')
+        return extension.lowercase() in SUPPORTED_ARCHIVE_TYPES ||
+            extension.equals("epub", true) ||
+            extension.equals("pdf", true)
     }
 
     /**

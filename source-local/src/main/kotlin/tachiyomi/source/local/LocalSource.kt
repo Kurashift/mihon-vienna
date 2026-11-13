@@ -64,9 +64,13 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.image.LocalCoverManager
+import tachiyomi.source.local.image.isChapterCoverName
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
+import tachiyomi.source.local.io.LOCAL_SINGLE_CHAPTER_NAME
 import tachiyomi.source.local.io.LocalSourceFileSystem
+import tachiyomi.source.local.io.isSingleChapterEntryName
+import tachiyomi.source.local.io.loosePages
 import tachiyomi.source.local.metadata.fillMetadata
 import uy.kohesive.injekt.injectLazy
 import java.io.File
@@ -1893,15 +1897,11 @@ class LocalSource(
         directoryLastModified: Long,
         knownChapterFileNames: Set<String>,
     ): LocalChapterFolderState {
-        val chapterFiles = readChapterFilesWithRecovery(dir, knownChapterFileNames)
-        val parts = chapterFiles.map { file ->
-            val size = if (file.isDirectory) 0L else file.length()
-            "${file.name.orEmpty()}|${file.lastModified()}|$size"
-        }
+        val entries = resolveChapterEntries(dir, knownChapterFileNames)
         return LocalChapterFolderState(
             directoryLastModified = directoryLastModified,
-            fingerprint = fingerprint(parts),
-            chapterFileNames = chapterFiles.mapTo(linkedSetOf()) { it.name.orEmpty() },
+            fingerprint = fingerprint(entries.fingerprintParts),
+            chapterFileNames = entries.chapterFileNames,
         )
     }
 
@@ -1913,8 +1913,10 @@ class LocalSource(
     private suspend fun readChapterFilesWithRecovery(
         dir: UniFile,
         knownChapterFileNames: Set<String>,
+        initialFiles: List<UniFile>? = null,
     ): List<UniFile> {
-        var chapterFiles = readChapterFiles(dir)
+        var chapterFiles = (initialFiles ?: fileSystem.getFilesInDirectory(dir))
+            .filter(Archive::isChapterEntry)
         if (chapterFiles.isEmpty()) {
             chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
         }
@@ -2029,10 +2031,10 @@ class LocalSource(
         dir: UniFile,
         knownChapterFileNames: Set<String>,
     ): ChapterListingStats {
-        val chapterFiles = readChapterFilesWithRecovery(dir, knownChapterFileNames)
+        val entries = resolveChapterEntries(dir, knownChapterFileNames)
         return ChapterListingStats(
-            count = chapterFiles.size,
-            latestModified = chapterFiles.maxOfOrNull(UniFile::lastModified) ?: 0L,
+            count = entries.count,
+            latestModified = entries.latestModified,
         )
     }
 
@@ -2040,6 +2042,78 @@ class LocalSource(
         val count: Int,
         val latestModified: Long,
     )
+
+    /**
+     * The chapters a manga folder holds, including the folder-level single chapter that a folder
+     * of loose pages stands for.
+     *
+     * [singleChapterPages] is only filled when the folder has no chapter entry of its own; in the
+     * established two-level layout it stays empty and [chapterFiles] is what it always was.
+     */
+    private data class ChapterEntries(
+        val chapterFiles: List<UniFile>,
+        val singleChapterPages: List<UniFile>,
+    ) {
+        val isSingleChapter: Boolean
+            get() = singleChapterPages.isNotEmpty()
+
+        val count: Int
+            get() = if (isSingleChapter) 1 else chapterFiles.size
+
+        val latestModified: Long
+            get() = (if (isSingleChapter) singleChapterPages else chapterFiles)
+                .maxOfOrNull(UniFile::lastModified) ?: 0L
+
+        val chapterFileNames: Set<String>
+            get() = if (isSingleChapter) {
+                setOf(LOCAL_SINGLE_CHAPTER_NAME)
+            } else {
+                chapterFiles.mapTo(linkedSetOf()) { it.name.orEmpty() }
+            }
+
+        /**
+         * Whatever backs the chapters, described well enough to notice a page being added to a
+         * flat folder: its pages stand in for the chapter files a two-level folder would list.
+         */
+        val fingerprintParts: List<String>
+            get() = (if (isSingleChapter) singleChapterPages else chapterFiles).map { file ->
+                val size = if (file.isDirectory) 0L else file.length()
+                "${file.name.orEmpty()}|${file.lastModified()}|$size"
+            }
+    }
+
+    /**
+     * Resolves one manga folder's chapters, listing the directory first so a folder of loose pages
+     * is recognized without waiting out [EMPTY_DIRECTORY_RETRY_DELAYS].
+     *
+     * The retries exist to survive a document provider that briefly answers with an empty child
+     * list. A flat folder legitimately has no chapter entry, so testing it before the retry loop
+     * is what keeps a single-chapter work from costing 1.25s on every scan; a read that really
+     * came back empty has no pages to prove it is flat and still falls through to the retries.
+     */
+    private suspend fun resolveChapterEntries(
+        dir: UniFile,
+        knownChapterFileNames: Set<String>,
+    ): ChapterEntries {
+        val files = fileSystem.getFilesInDirectory(dir)
+        val entries = chapterEntriesOf(files)
+        if (entries.isSingleChapter || entries.chapterFiles.isNotEmpty()) return entries
+        return ChapterEntries(
+            chapterFiles = readChapterFilesWithRecovery(dir, knownChapterFileNames, files),
+            singleChapterPages = emptyList(),
+        )
+    }
+
+    private fun chapterEntriesOf(files: List<UniFile>): ChapterEntries {
+        val chapterFiles = files.filter(Archive::isChapterEntry)
+        // Chapter entries win: a folder that has chapters of its own keeps the layout it has
+        // always had, and any loose file next to them belongs to no chapter.
+        return if (chapterFiles.isNotEmpty()) {
+            ChapterEntries(chapterFiles = chapterFiles, singleChapterPages = emptyList())
+        } else {
+            ChapterEntries(chapterFiles = emptyList(), singleChapterPages = loosePages(files))
+        }
+    }
 
     // Chapters
 
@@ -2116,6 +2190,29 @@ class LocalSource(
             .sortedWith { c1, c2 ->
                 c2.displayName.compareToCaseInsensitiveNaturalOrder(c1.displayName)
             }
+    }
+
+    /**
+     * The chapter entry a folder of loose pages stands for.
+     *
+     * It has no file of its own - the folder is the chapter - so its identity is the virtual name
+     * and its metadata is what the pages say: the newest page dates the chapter, and their count
+     * is what the detail screen shows before the reader opens. The name is the localized one
+     * rather than a file name, because there is no file to name.
+     */
+    internal fun buildSingleChapterEntry(pages: List<UniFile>): ChapterIndexEntry {
+        val latestModified = pages.maxOfOrNull(UniFile::lastModified) ?: 0L
+        return ChapterIndexEntry(
+            name = LOCAL_SINGLE_CHAPTER_NAME,
+            lastModified = latestModified,
+            size = pages.sumOf(UniFile::length),
+            displayName = context.stringResource(MR.strings.local_single_chapter),
+            chapterNumber = -1f,
+            scanlator = null,
+            dateUpload = latestModified,
+            hasComicInfo = false,
+            pageCount = pages.size,
+        )
     }
 
     internal fun buildChapterEntry(manga: SManga, chapterFile: UniFile): ChapterIndexEntry {
@@ -2350,12 +2447,14 @@ class LocalSource(
     suspend fun getChapterPageCounts(manga: SManga): Map<String, Long> = withIOContext {
         val snapshot = getMangaDirectorySnapshot(manga.url, confirmEmptyChapters = true)
         if (!snapshot.isAccessible || snapshot.files.isEmpty()) return@withIOContext emptyMap()
-        val chapterFiles = snapshot.files
-            // Only keep supported formats
-            .filter(Archive::isChapterEntry)
+        val chapterEntries = chapterEntriesOf(snapshot.files)
+        val entries = if (chapterEntries.isSingleChapter) {
+            listOf(buildSingleChapterEntry(chapterEntries.singleChapterPages))
+        } else {
+            getChapterIndex(manga, chapterEntries.chapterFiles)
+        }
 
-        getChapterIndex(manga, chapterFiles)
-            .associate { entry -> "${manga.url}/${entry.name}" to entry.pageCount.toLong() }
+        entries.associate { entry -> "${manga.url}/${entry.name}" to entry.pageCount.toLong() }
     }
 
     /**
@@ -2373,10 +2472,8 @@ class LocalSource(
             existingChapterUrls = existingChapterUrls,
         )
 
-        val currentChapterUrls = snapshot.files
-            .asSequence()
-            .filter(Archive::isChapterEntry)
-            .mapTo(linkedSetOf()) { "$mangaUrl/${it.name.orEmpty()}" }
+        val currentChapterUrls = chapterEntriesOf(snapshot.files).chapterFileNames
+            .mapTo(linkedSetOf()) { "$mangaUrl/$it" }
 
         chapterFileSetChanged(
             existingChapterUrls = existingChapterUrls,
@@ -2395,18 +2492,20 @@ class LocalSource(
         if (!snapshot.isAccessible) {
             error("Unable to read local manga directory: ${manga.url}")
         }
-        val chapterFiles = snapshot.files
-            // Only keep supported formats
-            .filter(Archive::isChapterEntry)
+        val chapterEntries = chapterEntriesOf(snapshot.files)
 
-        if (chapterFiles.isEmpty() && existingChapters.isNotEmpty() && !snapshot.isConfirmedEmpty) {
+        if (chapterEntries.count == 0 && existingChapters.isNotEmpty() && !snapshot.isConfirmedEmpty) {
             logcat(LogPriority.WARN) {
                 "Ignoring an unexpected empty local chapter scan for ${manga.url}; keeping existing chapters"
             }
             return@withIOContext existingChapters
         }
 
-        val entries = getChapterIndex(manga, chapterFiles)
+        val entries = if (chapterEntries.isSingleChapter) {
+            listOf(buildSingleChapterEntry(chapterEntries.singleChapterPages))
+        } else {
+            getChapterIndex(manga, chapterEntries.chapterFiles)
+        }
         val chapters = entries.map { entry ->
             SChapter.create().apply {
                 url = "${manga.url}/${entry.name}"
@@ -2465,7 +2564,14 @@ class LocalSource(
     }
 
     private fun LocalSourceFileSystem.DirectorySnapshot.hasExpectedFiles(confirmEmptyChapters: Boolean): Boolean {
-        return if (confirmEmptyChapters) files.any(Archive::isChapterEntry) else files.isNotEmpty()
+        return if (confirmEmptyChapters) {
+            // A folder of loose pages has no chapter entry, yet it is not empty: counting it as
+            // one makes the detail screen skip the empty-directory retries that would otherwise
+            // mark a perfectly readable single-chapter work as "confirmed empty".
+            chapterEntriesOf(files).count > 0
+        } else {
+            files.isNotEmpty()
+        }
     }
 
     /**
@@ -2494,6 +2600,9 @@ class LocalSource(
     ): Set<String> {
         val exactFileNames = existingChapterUrls
             .mapNotNull { url -> url.removePrefix("$mangaUrl/").takeIf(String::isNotEmpty) }
+            // A folder-level single chapter has no file to recover by name: the folder itself is
+            // the chapter, so looking for a file called after it would only waste lookups.
+            .filterNot(::isSingleChapterEntryName)
             .toSet()
         val exactBaseNames = exactFileNames.mapTo(HashSet(), ::chapterBaseName)
         val indexedBaseNames = loadPersistedChapterNames(mangaUrl)
@@ -2551,10 +2660,18 @@ class LocalSource(
 
     fun getFormat(chapter: SChapter): Format {
         try {
-            val (mangaDirName, chapterName) = chapter.url.split('/', limit = 2)
-            return fileSystem.getBaseDirectory()
-                ?.findFile(mangaDirName)
-                ?.findFile(chapterName)
+            val parts = chapter.url.split('/', limit = 2)
+            val mangaDirectory = fileSystem.getBaseDirectory()
+                ?.findFile(parts[0])
+                ?: throw Exception(context.stringResource(MR.strings.chapter_not_found))
+            // A folder whose pages sit directly in it has no chapter entry of its own: the folder
+            // is the chapter, so the reader gets the folder and opens its loose pages.
+            if (isSingleChapterChapter(chapter.url)) {
+                return Format.Directory(mangaDirectory)
+            }
+            val chapterName = parts.getOrNull(1)
+                ?: throw Exception(context.stringResource(MR.strings.chapter_not_found))
+            return mangaDirectory.findFile(chapterName)
                 ?.let(Format.Companion::valueOf)
                 ?: throw Exception(context.stringResource(MR.strings.chapter_not_found))
         } catch (e: Format.UnknownFormatException) {
@@ -2562,6 +2679,12 @@ class LocalSource(
         } catch (e: Exception) {
             throw e
         }
+    }
+
+    /** Whether [chapterUrl] addresses a folder whose pages sit directly in it. */
+    fun isSingleChapterChapter(chapterUrl: String): Boolean {
+        val parts = chapterUrl.split('/', limit = 2)
+        return parts.size == 2 && isSingleChapterEntryName(parts[1])
     }
 
     private fun updateCover(chapter: SChapter, manga: SManga): UniFile? {
@@ -2575,7 +2698,8 @@ class LocalSource(
                             )
                         }
                         .find {
-                            !it.isDirectory && ImageUtil.isImagePage(it.name) { it.openInputStream() }
+                            !it.isDirectory && !isChapterCoverName(it.name.orEmpty()) &&
+                                ImageUtil.isImagePage(it.name) { it.openInputStream() }
                         }
 
                     entry?.let { coverManager.update(manga, it.openInputStream()) }

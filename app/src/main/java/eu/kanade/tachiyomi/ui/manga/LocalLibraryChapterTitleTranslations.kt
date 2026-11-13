@@ -16,6 +16,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalChapterSyncScan
 import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.io.isSingleChapterEntryName
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -178,7 +179,12 @@ internal class LocalLibraryChapterTitleTranslations(
         val source = sourceManager.get(LocalSource.ID) as? LocalSource
             ?: error("Local source is unavailable")
         val scan = confirmedScan(source)
-        val fileNamesByMangaUrl = scan.chapterFileNamesByMangaUrl
+        // The virtual chapter of a folder-level single work has no file name to translate, so it
+        // stays out of the export: that work is named by its folder, which is the authoritative
+        // name the whole local source is built on.
+        val fileNamesByMangaUrl = scan.chapterFileNamesByMangaUrl.mapValues { (_, names) ->
+            names.filterNotTo(linkedSetOf(), ::isSingleChapterEntryName)
+        }
         LocalFolderSnapshot(
             mangas = fileNamesByMangaUrl.keys.sorted().map { mangaUrl ->
                 val manga = mangaRepository.getMangaByUrlAndSourceId(mangaUrl, LocalSource.ID)
