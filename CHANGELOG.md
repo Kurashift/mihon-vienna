@@ -242,6 +242,26 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ### Other
 - Version: `versionCode` 227 → 228, `versionName` 2.3.8 → 2.3.9, so existing installs can update in place. This is a small release and can be skipped
 
+## [v2.4.0] - 2026-11-13
+### Added
+- Local library: a work whose folder holds its pages or archives directly, with no chapter folder inside, is read as one chapter. The chapter is virtual (`.__single__`) and its url never moves once stored, so the work's progress, marks and translations stay attached to it. Loose images in such a folder are that chapter's pages; `cover.jpg` / `cover.webp` written by the app are excluded, so a cover never becomes page 1
+- Local library: a single-work folder with no `cover.*` uses its first page as the cover, so the card is complete without opening the work
+- Reader: deleting a page from a local or downloaded chapter can be undone. Long-pressing a page deletes the ordinary image or the ZIP/CBZ entry under it — the last page and read-only formats have no delete entry. Consecutive deletes are batched, the undo window is 5 seconds after the last one, holding the pill pauses the countdown and releasing it restarts it. The pill stays after leaving the reader and the batch is committed in the background: ordinary images are not copied, archives are rewritten entry by entry, and a failed replacement rolls the original file back
+- Undo: taking works off the shelf, marking read or unread (selection, swipe, 读到此篇 / 此篇之后), adding and removing bookmarks, re-flagging, good-doujin marks, removing and clearing the personal list, removing works from the marks and good-doujin lists, and marking a finished work unread now end with a 5-second pill. Undo writes the values from before the action rather than running the action backwards: read state comes back together with its resume position and finish time, marks keep their original `markedAt` so the list order does not jump, and taking a work off the shelf restores its join date and categories without refreshing the date to now
+- Undo: clearing history and deleting a category act immediately and offer the same pill instead of asking first. History is restored as absolute values — not upserted, which would double every entry's read time — and a deleted category is recreated with its members, its position in the tab strip, the five category filters and the default-category setting all pointing at the new id; a category with the same name created during the window is merged into instead of duplicated
+### Changed
+- Undo: the confirm dialogs for taking works off the shelf, removing or clearing the personal list and marking a finished work unread are gone. Those actions are fully recoverable, so the pill says what is kept — downloads, reading progress — instead of asking a question
+- Undo: marking read offers no undo when 标记为已读后删除下载 is on and this action really deletes files. The files cannot come back, so the operation reports its result in a plain notice rather than promising an undo it cannot keep
+- Notices: the reader, the history page and every screen sharing the snackbar now use the same pill — sized to its text, without the swipe arrow or the close cross
+### Fixed
+- Local library: after a refresh commits, the 「书架有更新了」 banner no longer reappears for the change that refresh just applied. The comparison is against the signature the completed refresh committed, not against the previous read kept in memory
+- Local library: deleting the only chapter of a single-work folder deletes the work itself — the row and the card go, and the action bar offers the delete entry again
+- Startup: a cold start that lands on 本库 or 更多 no longer holds the branded splash for its full 5-second timeout. Those two tabs never told the activity their content was ready, so the splash fell through to `SPLASH_MAX_DURATION`; they now say so like the other tabs, 本库 when its list has been served. Measured on a 553-work library: 5.0–5.7s → 0.69–0.75s, the same range as a start on the shelf
+### Other
+- Local library: the listing, page counts, chapter lists and empty-folder checks share one chapter-entry pass, which removes the 1.25-second retry every single-chapter work paid
+- Tests: new cases for restoring read state, category deletion and restore, the local-directory baseline, reader page deletion, and single-chapter folders
+- Version: `versionCode` 228 → 229, `versionName` 2.3.9 → 2.4.0, so existing installs can update in place
+
 ## [Unreleased]
 
 ## [v2.2.5] - 2026-09-14
