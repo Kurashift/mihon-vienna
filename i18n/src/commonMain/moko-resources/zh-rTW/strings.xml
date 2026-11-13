@@ -28,8 +28,6 @@
     <string name="chapter_filter_scope_section">顯示範圍</string>
     <string name="chapter_list_empty_filtered">目前篩選下還沒有篇目</string>
     <string name="action_remove_from_library">移出書櫃</string>
-    <string name="remove_from_library_title">要把這些作品移出書櫃？</string>
-    <string name="remove_from_library_confirmation">它們會離開書櫃，已下載的篇目、閱讀進度和紀錄都會保留，隨時可以重新加入書櫃。</string>
     <string name="sort_toast_applied">排序：%1$s</string>
     <string name="filter_toast_applied">只看：%1$s</string>
     <string name="filter_toast_cleared">已顯示全部</string>
@@ -1267,11 +1265,9 @@
     <string name="marks_list_open_manga">開啟漫畫</string>
     <string name="marks_list_manga_missing">這部漫畫已不在書櫃中</string>
     <string name="marks_list_clear">清空清單</string>
-    <string name="marks_list_clear_confirm">僅從標記清單中移除，不會刪除本機檔案。</string>
     <string name="marks_list_remove">移除</string>
     <string name="marks_list_remove_entry_confirm">從清單中移除「%1$s」？不會刪除本機漫畫。</string>
     <string name="marks_list_remove_selected_confirm">從清單中移除選取的 %1$d 部漫畫及其全部紀錄？不會刪除本機檔案。</string>
-    <string name="marks_list_remove_selected_entries_confirm">選取的 %1$d 個篇目會移出清單，不會刪除本機漫畫。</string>
     <string name="marks_list_chapter_count">已標記 %1$d 個篇目</string>
     <string name="marks_list_search_hint">依漫畫名或篇目名搜尋</string>
     <string name="marks_list_open_chapter">進入篇目閱讀</string>
@@ -1280,7 +1276,6 @@
     <string name="good_doujin_list_title">好本子清單</string>
     <string name="good_doujin_list_empty">尚無好本子。在篇目項目上左滑加入吧</string>
     <string name="good_doujin_list_no_others">沒有其他好本子</string>
-    <string name="good_doujin_list_clear_confirm">將這部漫畫的全部好本子紀錄從清單中移除，不會刪除本機檔案。</string>
     <string name="good_doujin_list_chapter_count">已收錄 %1$d 個篇目</string>
     <string name="good_doujin_added">已加入好本子</string>
     <string name="good_doujin_removed">已從好本子移除</string>
@@ -1312,8 +1307,6 @@
     <string name="local_read_review_count">共有 %1$d 個本機篇目被標為已讀完</string>
     <string name="local_read_review_empty">還沒有標為已讀完的本機篇目</string>
     <string name="local_read_review_clear">全部標記為未讀</string>
-    <string name="local_read_review_clear_confirm">全部 %1$d 個本機篇目會標為未讀。本機檔案不受影響。</string>
-    <string name="local_read_review_mark_unread_selected_confirm">選取的 %1$d 個篇目會標為未讀。</string>
     <string name="local_read_review_search_hint">依漫畫名或篇目名搜尋（原名與譯名皆可）</string>
     <string name="local_read_review_group_subtitle">%1$d 個篇目 · 最新篇目 %2$s</string>
     <string name="local_import_section_source">匯入來源</string>
@@ -1369,9 +1362,18 @@
     <string name="track_original_title">作品原名：%1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_未譯名</string>
     <string name="confirm_clear_reading_history_title">清除閱讀紀錄？</string>
-    <string name="confirm_clear_list_title">清空清單？</string>
-    <string name="confirm_remove_from_list_title">從清單中移除？</string>
-    <string name="confirm_mark_all_unread_title">全部標記為未讀？</string>
     <string name="confirm_mark_unread_title">標記為未讀？</string>
     <string name="confirm_mark_read_title">標記為已讀？</string>
+    <string name="undo_removed_from_library">已移出書櫃 %1$d 部，下載與閱讀進度保留</string>
+    <string name="undo_chapters_marked_read">已標記 %1$d 個篇目為已讀</string>
+    <string name="undo_chapters_marked_unread">已標記 %1$d 個篇目為未讀</string>
+    <string name="undo_chapters_bookmarked">已為 %1$d 個篇目加上書籤</string>
+    <string name="undo_chapters_unbookmarked">已移除 %1$d 個篇目的書籤</string>
+    <string name="undo_marks_added">已標記 %1$d 個篇目</string>
+    <string name="undo_marks_removed">已取消 %1$d 個篇目的標記</string>
+    <string name="undo_marks_cleared">已清空標記清單</string>
+    <string name="undo_good_doujins_added">已加入好本子 %1$d 個篇目</string>
+    <string name="undo_good_doujins_removed">已從好本子移除 %1$d 個篇目</string>
+    <string name="undo_good_doujins_cleared">已清空好本子清單</string>
+    <string name="undo_local_read_marked_unread">已標記 %1$d 個篇目為未讀</string>
 </resources>

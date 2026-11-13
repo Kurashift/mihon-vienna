@@ -5,6 +5,7 @@ import logcat.LogPriority
 import tachiyomi.core.common.util.lang.withNonCancellableContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.model.ChapterReadState
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.download.service.DownloadPreferences
@@ -30,12 +31,7 @@ class SetReadStatus(
     }
 
     suspend fun await(read: Boolean, vararg chapters: Chapter): Result = withNonCancellableContext {
-        val chaptersToUpdate = chapters.filter {
-            when (read) {
-                true -> !it.read
-                false -> it.read || it.lastPageRead > 0
-            }
-        }
+        val chaptersToUpdate = chapters.toList().readStateCandidates(read)
         if (chaptersToUpdate.isEmpty()) {
             return@withNonCancellableContext Result.NoChapters
         }
@@ -65,6 +61,17 @@ class SetReadStatus(
         Result.Success
     }
 
+    /**
+     * Puts the read state back exactly as [states] describe it.
+     *
+     * Undoing a read/unread edit is not the same write as making it: the resume point must land
+     * where it was, not where the shared update path would normalise it.
+     */
+    suspend fun restoreReadStates(states: List<ChapterReadState>) = withNonCancellableContext {
+        if (states.isEmpty()) return@withNonCancellableContext
+        chapterRepository.updateReadStates(states)
+    }
+
     suspend fun await(mangaId: Long, read: Boolean): Result = withNonCancellableContext {
         await(
             read = read,
@@ -81,5 +88,18 @@ class SetReadStatus(
         data object Success : Result
         data object NoChapters : Result
         data class InternalError(val error: Throwable) : Result
+    }
+}
+
+/**
+ * The chapters a read/unread edit will actually change.
+ *
+ * Shared by the edit itself and by the snapshot taken before it, so an undo can never restore a
+ * different set than the one that was touched.
+ */
+internal fun List<Chapter>.readStateCandidates(read: Boolean): List<Chapter> = filter {
+    when (read) {
+        true -> !it.read
+        false -> it.read || it.lastPageRead > 0
     }
 }

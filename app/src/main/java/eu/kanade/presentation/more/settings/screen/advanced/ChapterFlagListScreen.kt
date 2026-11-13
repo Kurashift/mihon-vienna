@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.PlaylistRemove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,7 +47,6 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
-import eu.kanade.presentation.components.ConfirmDialog
 import eu.kanade.presentation.components.DeleteLocalEntriesDialog
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.mylists.MY_LIST_COVER_ASPECT_RATIO
@@ -73,6 +73,7 @@ import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -85,6 +86,7 @@ import tachiyomi.domain.manga.model.withLocalChapterDisplayMode
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.FastScrollLazyVerticalGrid
+import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.LocalSource
@@ -99,7 +101,8 @@ import uy.kohesive.injekt.api.get
 enum class ChapterFlagListType(
     val titleRes: StringResource,
     val emptyRes: StringResource,
-    val clearConfirmRes: StringResource,
+    val clearUndoRes: StringResource,
+    val removeUndoRes: StringResource,
     val chapterCountRes: StringResource,
     /**
      * The part of a work this list is about.
@@ -112,14 +115,16 @@ enum class ChapterFlagListType(
     DUPLICATES(
         MR.strings.marks_list_title,
         MR.strings.marks_list_empty,
-        MR.strings.marks_list_clear_confirm,
+        MR.strings.undo_marks_cleared,
+        MR.strings.undo_marks_removed,
         MR.strings.marks_list_chapter_count,
         ChapterScope.FLAGGED,
     ),
     GOOD_DOUJINS(
         MR.strings.good_doujin_list_title,
         MR.strings.good_doujin_list_empty,
-        MR.strings.good_doujin_list_clear_confirm,
+        MR.strings.undo_good_doujins_cleared,
+        MR.strings.undo_good_doujins_removed,
         MR.strings.good_doujin_list_chapter_count,
         ChapterScope.GOOD_DOUJIN,
     ),
@@ -193,11 +198,10 @@ class ChapterFlagListScreen(
                     )
                 }
         }
-        var showClearConfirm by remember { mutableStateOf(false) }
         // 多选粒度是「篇目」：长按卡片勾选单个，长按分组头一键勾选该组下全部本地篇目。
         // 非本地条目没有磁盘文件可删，置灰且不可勾选。
         var selectedChapterIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-        var pendingRemovalChapterIds by remember { mutableStateOf<Set<Long>?>(null) }
+        val snackbarHostState = remember { SnackbarHostState() }
         val selectedMarks = remember(visibleGroups, selectedChapterIds) {
             visibleGroups.flatMap { it.marks }.filter { it.chapterId in selectedChapterIds }
         }
@@ -266,7 +270,20 @@ class ChapterFlagListScreen(
                                 AppBar.Action(
                                     title = stringResource(MR.strings.marks_list_clear),
                                     icon = Icons.Outlined.DeleteSweep,
-                                    onClick = { showClearConfirm = true },
+                                    onClick = {
+                                        // 条目可以原样放回来（连标记时间一起），所以不再弹确认，
+                                        // 清空后给一次撤销即可。
+                                        val cleared = marks
+                                        scope.launch {
+                                            store.clear()
+                                            snackbarHostState.showUndoSnackbar(
+                                                message = context.stringResource(type.clearUndoRes),
+                                                undoLabel = context.stringResource(MR.strings.action_undo),
+                                            ) {
+                                                store.setAll(cleared, true)
+                                            }
+                                        }
+                                    },
                                 ),
                             ),
                         )
@@ -289,7 +306,21 @@ class ChapterFlagListScreen(
                                     AppBar.Action(
                                         title = stringResource(MR.strings.marks_list_remove),
                                         icon = Icons.Outlined.PlaylistRemove,
-                                        onClick = { pendingRemovalChapterIds = selectedChapterIds },
+                                        onClick = {
+                                            // 移除的只是清单条目，可以连标记时间一起放回来。
+                                            val removed = grouped.flatMap { it.marks }
+                                                .filter { it.chapterId in selectedChapterIds }
+                                            selectedChapterIds = emptySet()
+                                            scope.launch {
+                                                store.setAll(removed, false)
+                                                snackbarHostState.showUndoSnackbar(
+                                                    message = context.stringResource(type.removeUndoRes, removed.size),
+                                                    undoLabel = context.stringResource(MR.strings.action_undo),
+                                                ) {
+                                                    store.setAll(removed, true)
+                                                }
+                                            }
+                                        },
                                     ),
                                 )
                                 // 删除本地文件只给标记清单：好本子清单的条目都在库里管着，
@@ -317,6 +348,7 @@ class ChapterFlagListScreen(
                     scrollBehavior = scrollBehavior,
                 )
             },
+            snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
         ) { contentPadding ->
             if (marks.isEmpty()) {
                 MyListEmptyState(stringRes = type.emptyRes, contentPadding = contentPadding)
@@ -391,38 +423,6 @@ class ChapterFlagListScreen(
                     )
                 }
             }
-        }
-
-        if (showClearConfirm) {
-            ConfirmDialog(
-                title = stringResource(MR.strings.confirm_clear_list_title),
-                text = stringResource(type.clearConfirmRes),
-                confirmText = stringResource(MR.strings.marks_list_clear),
-                onConfirm = {
-                    scope.launch {
-                        store.clear()
-                        showClearConfirm = false
-                    }
-                },
-                onDismiss = { showClearConfirm = false },
-            )
-        }
-
-        pendingRemovalChapterIds?.let { ids ->
-            ConfirmDialog(
-                title = stringResource(MR.strings.confirm_remove_from_list_title),
-                text = stringResource(MR.strings.marks_list_remove_selected_entries_confirm, ids.size),
-                confirmText = stringResource(MR.strings.marks_list_remove),
-                onConfirm = {
-                    scope.launch {
-                        val marks = grouped.flatMap { it.marks }.filter { it.chapterId in ids }
-                        store.setAll(marks, false)
-                        selectedChapterIds = selectedChapterIds - ids
-                        pendingRemovalChapterIds = null
-                    }
-                },
-                onDismiss = { pendingRemovalChapterIds = null },
-            )
         }
 
         pendingDeletion?.let { ids ->

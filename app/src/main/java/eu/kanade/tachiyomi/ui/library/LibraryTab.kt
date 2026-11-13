@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,7 +29,6 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.library.DeleteLibraryMangaDialog
 import eu.kanade.presentation.library.LibrarySettingsDialog
-import eu.kanade.presentation.library.RemoveFromLibraryDialog
 import eu.kanade.presentation.library.components.LibraryContent
 import eu.kanade.presentation.library.components.LibraryToolbar
 import eu.kanade.presentation.manga.components.LibraryBottomActionMenu
@@ -93,7 +90,7 @@ data object LibraryTab : Tab {
         val settingsViewModel = viewModel<LibrarySettingsViewModel>()
         val state by viewModel.state.collectAsState()
 
-        val snackbarHostState = remember { SnackbarHostState() }
+        val snackbarHostState = viewModel.snackbarHostState
 
         val onClickRefresh: (Category?) -> Boolean = { category ->
             val started = LibraryUpdateJob.startNow(context, category)
@@ -160,7 +157,7 @@ data object LibraryTab : Tab {
                 LibraryBottomActionMenu(
                     visible = state.selectionMode,
                     onChangeCategoryClicked = viewModel::openChangeCategoryDialog,
-                    onRemoveFromLibraryClicked = viewModel::openRemoveFromLibraryDialog,
+                    onRemoveFromLibraryClicked = viewModel::removeFromLibrary,
                     onMarkAsReadClicked = { viewModel.markReadSelection(true) },
                     onMarkAsUnreadClicked = { viewModel.markReadSelection(false) },
                     onDownloadClicked = viewModel::performDownloadAction
@@ -267,12 +264,6 @@ data object LibraryTab : Tab {
                     // it files the works there; taking them off the shelf is the row's own button,
                     // so the picker stays a picker and does not double as a second remove path.
                     includeDefaultCategory = true,
-                )
-            }
-            is LibraryViewModel.Dialog.RemoveFromLibrary -> {
-                RemoveFromLibraryDialog(
-                    onDismissRequest = onDismissRequest,
-                    onConfirm = viewModel::removeFromLibrary,
                 )
             }
             is LibraryViewModel.Dialog.DeleteManga -> {

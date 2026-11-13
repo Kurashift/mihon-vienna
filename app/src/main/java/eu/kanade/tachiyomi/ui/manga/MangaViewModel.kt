@@ -18,6 +18,8 @@ import eu.kanade.core.util.addOrRemove
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.interactor.GetAvailableScanlators
 import eu.kanade.domain.chapter.interactor.SetReadStatus
+import eu.kanade.domain.chapter.interactor.readStateCandidates
+import eu.kanade.domain.chapter.interactor.toReadStates
 import eu.kanade.domain.manga.interactor.GetExcludedScanlators
 import eu.kanade.domain.manga.interactor.SetExcludedScanlators
 import eu.kanade.domain.manga.interactor.UpdateManga
@@ -49,6 +51,7 @@ import eu.kanade.tachiyomi.util.chapter.getFirstChapter
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
+import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -101,6 +104,7 @@ import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -463,9 +467,14 @@ class MangaViewModel(
 
     fun toggleFavorite() {
         toggleFavorite(
-            onRemoved = {
-                viewModelScope.launch {
-                    if (!hasDownloads()) return@launch
+            onRemoved = { restore ->
+                val undone = snackbarHostState.showUndoSnackbar(
+                    message = context.stringResource(MR.strings.undo_removed_from_library, 1),
+                    undoLabel = context.stringResource(MR.strings.action_undo),
+                    onUndo = restore,
+                )
+                // Back on the shelf: there is nothing to ask about its downloads.
+                if (!undone && hasDownloads()) {
                     val result = snackbarHostState.showSnackbarReplacing(
                         message = context.stringResource(MR.strings.delete_downloads_for_manga),
                         actionLabel = context.stringResource(MR.strings.action_delete),
@@ -481,9 +490,11 @@ class MangaViewModel(
 
     /**
      * Update favorite status of manga, (removes / adds) manga (to / from) library.
+     *
+     * @param onRemoved called after the work left the shelf, with the action that puts it back.
      */
     fun toggleFavorite(
-        onRemoved: () -> Unit,
+        onRemoved: suspend (restore: suspend () -> Unit) -> Unit,
         checkDuplicate: Boolean = true,
     ) {
         val state = successState ?: return
@@ -492,6 +503,10 @@ class MangaViewModel(
 
             if (isFavorited) {
                 // Remove from library
+                // Captured before the removal: the undo puts the work back on the shelves it was
+                // filed under and on the day it was added, not on today.
+                val dateAdded = manga.dateAdded
+                val categoryIds = getMangaCategoryIds(manga)
                 if (updateManga.awaitUpdateFavorite(manga.id, false)) {
                     // Remove covers and update last modified in db
                     if (manga.removeCovers() != manga) {
@@ -500,7 +515,21 @@ class MangaViewModel(
                     // Shelf membership belongs to being in the library: rows left behind would
                     // resurface as pre-checked shelves when the manga is added again.
                     setMangaCategories.await(manga.id, emptyList())
-                    withUIContext { onRemoved() }
+                    val restore: suspend () -> Unit = {
+                        // One write instead of awaitUpdateFavorite plus a fix-up: that helper dates
+                        // the work as of now, which would move it to the top of the date-added
+                        // sort and lose the day it was actually added. The local source keeps its
+                        // own import date, so it is left untouched.
+                        updateManga.await(
+                            MangaUpdate(
+                                id = manga.id,
+                                favorite = true,
+                                dateAdded = dateAdded.takeIf { !manga.isLocal() },
+                            ),
+                        )
+                        setMangaCategories.await(manga.id, categoryIds)
+                    }
+                    withUIContext { onRemoved(restore) }
                 }
             } else {
                 // Add to library
@@ -791,21 +820,29 @@ class MangaViewModel(
         val state = successState ?: return
         val manga = state.manga
         if (!manga.isLocal()) return
+        // The entry as it stood. Putting it back with its original timestamp keeps its place in a
+        // list that is ordered by when the chapter was marked.
+        val existing = goodDoujinStore.marks.value.firstOrNull { it.chapterId == chapter.id }
         viewModelScope.launch {
-            val added = goodDoujinStore.toggle(
-                MangaMark(
-                    mangaId = manga.id,
-                    mangaTitle = manga.title,
-                    chapterId = chapter.id,
-                    chapterName = chapter.name,
-                    markedAt = System.currentTimeMillis(),
-                ),
+            val mark = MangaMark(
+                mangaId = manga.id,
+                mangaTitle = manga.title,
+                chapterId = chapter.id,
+                chapterName = chapter.name,
+                markedAt = System.currentTimeMillis(),
             )
-            snackbarHostState.showSnackbarReplacing(
-                context.stringResource(
+            val added = goodDoujinStore.toggle(mark)
+            snackbarHostState.showUndoSnackbar(
+                message = context.stringResource(
                     if (added) MR.strings.good_doujin_added else MR.strings.good_doujin_removed,
                 ),
-            )
+                undoLabel = context.stringResource(MR.strings.action_undo),
+            ) {
+                when {
+                    added -> goodDoujinStore.setAll(listOf(mark), false)
+                    existing != null -> goodDoujinStore.setAll(listOf(existing), true)
+                }
+            }
         }
     }
 
@@ -1047,11 +1084,28 @@ class MangaViewModel(
     fun markChaptersRead(chapters: List<Chapter>, read: Boolean, clearSelection: Boolean = true) {
         if (clearSelection) toggleAllSelection(false)
         if (chapters.isEmpty()) return
+        // Taken before the write: the undo has to put back the resume point and the finish
+        // timestamp as they were, and only the chapters this edit will touch are kept.
+        val snapshot = chapters.readStateCandidates(read).toReadStates()
         viewModelScope.launchIO {
             setReadStatus.await(
                 read = read,
                 chapters = chapters.toTypedArray(),
             )
+
+            if (snapshot.isEmpty()) return@launchIO
+
+            val undone = snackbarHostState.showUndoSnackbar(
+                message = context.stringResource(
+                    if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
+                    snapshot.size,
+                ),
+                undoLabel = context.stringResource(MR.strings.action_undo),
+            ) {
+                setReadStatus.restoreReadStates(snapshot)
+            }
+            // Chapters that were put back to unread have no progress to offer a tracker.
+            if (undone) return@launchIO
 
             if (!read || successState?.hasLoggedInTrackers == false || autoTrackState == AutoTrackState.NEVER) {
                 return@launchIO
@@ -1128,9 +1182,28 @@ class MangaViewModel(
                 markedAt = System.currentTimeMillis(),
             )
         }
+        val chapterIds = chapters.mapTo(HashSet()) { it.id }
+        val existing = goodDoujinStore.marks.value.filter { it.chapterId in chapterIds }
         viewModelScope.launch {
             goodDoujinStore.setAll(marks, marked)
             toggleAllSelection(false)
+            snackbarHostState.showUndoSnackbar(
+                message = context.stringResource(
+                    if (marked) {
+                        MR.strings.undo_good_doujins_added
+                    } else {
+                        MR.strings.undo_good_doujins_removed
+                    },
+                    marks.size,
+                ),
+                undoLabel = context.stringResource(MR.strings.action_undo),
+            ) {
+                if (marked) {
+                    goodDoujinStore.setAll(marks, false)
+                } else {
+                    goodDoujinStore.setAll(existing, true)
+                }
+            }
         }
     }
 
@@ -1383,11 +1456,20 @@ class MangaViewModel(
      * bottom bar drops the selection after its own action; a swipe on a single row does not.
      */
     fun bookmarkChapters(chapters: List<Chapter>, bookmarked: Boolean, clearSelection: Boolean = true) {
+        val changed = chapters.filterNot { it.bookmark == bookmarked }
         viewModelScope.launchIO {
-            chapters
-                .filterNot { it.bookmark == bookmarked }
-                .map { ChapterUpdate(id = it.id, bookmark = bookmarked) }
-                .let { updateChapter.awaitAll(it) }
+            if (changed.isEmpty()) return@launchIO
+            updateChapter.awaitAll(changed.map { ChapterUpdate(id = it.id, bookmark = bookmarked) })
+
+            snackbarHostState.showUndoSnackbar(
+                message = context.stringResource(
+                    if (bookmarked) MR.strings.undo_chapters_bookmarked else MR.strings.undo_chapters_unbookmarked,
+                    changed.size,
+                ),
+                undoLabel = context.stringResource(MR.strings.action_undo),
+            ) {
+                updateChapter.awaitAll(changed.map { ChapterUpdate(id = it.id, bookmark = it.bookmark) })
+            }
         }
         if (clearSelection) toggleAllSelection(false)
     }

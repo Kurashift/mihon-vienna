@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.library
 
+import android.content.Context
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastFilter
@@ -10,6 +12,8 @@ import eu.kanade.core.preference.asState
 import eu.kanade.core.util.fastFilterNot
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.interactor.SetReadStatus
+import eu.kanade.domain.chapter.interactor.readStateCandidates
+import eu.kanade.domain.chapter.interactor.toReadStates
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.presentation.category.components.writableCategoryIds
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
@@ -24,6 +28,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.removeCovers
+import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -37,10 +42,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
+import kotlinx.coroutines.launch
 import mihon.core.common.utils.mutate
 import mihon.core.viewmodel.StateViewModel
 import mihon.domain.library.model.search.QueryNode
 import mihon.feature.library.matches
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.core.common.preference.TriState
 import tachiyomi.core.common.util.lang.launchIO
@@ -66,6 +73,7 @@ import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracksPerManga
 import tachiyomi.domain.track.model.Track
+import tachiyomi.i18n.MR
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
@@ -74,6 +82,7 @@ import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
 class LibraryViewModel(
+    private val context: Context = Injekt.get(),
     private val getLibraryManga: GetLibraryManga = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
     private val getTracksPerManga: GetTracksPerManga = Injekt.get(),
@@ -94,6 +103,9 @@ class LibraryViewModel(
     private val trackerManager: TrackerManager = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
 ) : StateViewModel<LibraryViewModel.State>(State()) {
+
+    /** Owned here rather than by the tab, so a result that outlives the screen still has a host. */
+    val snackbarHostState: SnackbarHostState = SnackbarHostState()
 
     init {
         mutableState.update { state ->
@@ -580,11 +592,30 @@ class LibraryViewModel(
     fun markReadSelection(read: Boolean) {
         val selection = state.value.selectedManga
         viewModelScope.launchNonCancellable {
+            // Captured before the write, in one batched query: the undo has to put each chapter's
+            // resume point and finish time back as they were, and only the chapters this edit
+            // will touch are kept.
+            val chapters = getChaptersByMangaId.await(selection.map { it.id })
+            val snapshot = chapters.readStateCandidates(read).toReadStates()
             selection.forEach { manga ->
                 setReadStatus.await(
                     manga = manga,
                     read = read,
                 )
+            }
+            if (snapshot.isEmpty()) return@launchNonCancellable
+            // The edit must finish even if the screen goes away; the pill is only feedback, so it
+            // runs in a job that is cancelled with the screen instead.
+            viewModelScope.launch {
+                snackbarHostState.showUndoSnackbar(
+                    message = context.stringResource(
+                        if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
+                        snapshot.size,
+                    ),
+                    undoLabel = context.stringResource(MR.strings.action_undo),
+                ) {
+                    setReadStatus.restoreReadStates(snapshot)
+                }
             }
         }
         clearSelection()
@@ -643,11 +674,18 @@ class LibraryViewModel(
      * whose date sort reads date_added as the day the work last entered the library (see
      * LocalSource's ordering): a work taken off the shelf is still in the local library, so its
      * import date stays.
+     *
+     * The result is a pill that can put the works back: same shelves, same date added. It replaces
+     * the confirmation dialog this action used to open, since nothing here is destructive.
      */
     fun removeFromLibrary() {
         val selected = state.value.selectedManga
         if (selected.isEmpty()) return
         viewModelScope.launchNonCancellable {
+            // Captured before the rows change. Without these the works would come back filed
+            // nowhere and dated today, which is not what they looked like a second ago.
+            val dateAddedById = selected.associate { it.id to it.dateAdded }
+            val categoryIdsById = selected.associate { it.id to getCategories.await(it.id).map { c -> c.id } }
             updateManga.awaitAll(
                 selected.map {
                     it.removeCovers(coverCache)
@@ -661,6 +699,31 @@ class LibraryViewModel(
             // Shelf membership belongs to being in the library: rows left behind would resurface
             // as pre-checked shelves when the work is added again.
             selected.forEach { setMangaCategories.await(it.id, emptyList()) }
+
+            val restore: suspend () -> Unit = {
+                updateManga.awaitAll(
+                    selected.map {
+                        MangaUpdate(
+                            id = it.id,
+                            favorite = true,
+                            // One write, not awaitUpdateFavorite: that helper dates the work as of
+                            // now, which would move it to the top of the date-added sort. The local
+                            // source keeps its own import date, so it is left untouched.
+                            dateAdded = dateAddedById[it.id].takeIf { _ -> it.source != LocalSource.ID },
+                        )
+                    },
+                )
+                selected.forEach { setMangaCategories.await(it.id, categoryIdsById[it.id].orEmpty()) }
+            }
+            // The removal must finish even if the screen goes away; the pill is only feedback, so
+            // it runs in a job that is cancelled with the screen instead.
+            viewModelScope.launch {
+                snackbarHostState.showUndoSnackbar(
+                    message = context.stringResource(MR.strings.undo_removed_from_library, selected.size),
+                    undoLabel = context.stringResource(MR.strings.action_undo),
+                    onUndo = restore,
+                )
+            }
         }
         clearSelection()
     }
@@ -821,18 +884,6 @@ class LibraryViewModel(
         mutableState.update { it.copy(dialog = Dialog.DeleteManga(state.value.selectedManga)) }
     }
 
-    /**
-     * Asks before the selection leaves the shelf.
-     *
-     * Nothing is erased by the action itself, but it is the one step that takes works out of the
-     * library, and a batch of them disappears from the list at once. The dialog is also where the
-     * reassurance belongs: what is kept (downloads, progress, history) is exactly what the red
-     * erase button next to it would destroy, which is the confusion it exists to prevent.
-     */
-    fun openRemoveFromLibraryDialog() {
-        mutableState.update { it.copy(dialog = Dialog.RemoveFromLibrary(state.value.selectedManga)) }
-    }
-
     fun closeDialog() {
         mutableState.update { it.copy(dialog = null) }
     }
@@ -845,8 +896,6 @@ class LibraryViewModel(
         ) : Dialog
 
         data class DeleteManga(val manga: List<Manga>) : Dialog
-
-        data class RemoveFromLibrary(val manga: List<Manga>) : Dialog
     }
 
     @Immutable

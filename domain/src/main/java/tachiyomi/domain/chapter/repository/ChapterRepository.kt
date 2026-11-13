@@ -2,6 +2,7 @@ package tachiyomi.domain.chapter.repository
 
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.model.ChapterReadState
 import tachiyomi.domain.chapter.model.ChapterTranslatedName
 import tachiyomi.domain.chapter.model.ChapterUpdate
 
@@ -12,6 +13,12 @@ interface ChapterRepository {
     suspend fun update(chapterUpdate: ChapterUpdate)
 
     suspend fun updateAll(chapterUpdates: List<ChapterUpdate>)
+
+    /**
+     * Writes read states back exactly as they were captured, without the resume-point
+     * normalisation the shared update path applies. Used to undo a read/unread edit.
+     */
+    suspend fun updateReadStates(states: List<ChapterReadState>)
 
     suspend fun relocateAll(chapterUpdates: List<ChapterUpdate>)
 

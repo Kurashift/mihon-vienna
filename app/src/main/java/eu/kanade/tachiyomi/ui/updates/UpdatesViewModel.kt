@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.updates
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -10,6 +11,8 @@ import eu.kanade.core.preference.asState
 import eu.kanade.core.util.addOrRemove
 import eu.kanade.core.util.insertSeparators
 import eu.kanade.domain.chapter.interactor.SetReadStatus
+import eu.kanade.domain.chapter.interactor.readStateCandidates
+import eu.kanade.domain.chapter.interactor.toReadStates
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
 import eu.kanade.presentation.updates.UpdatesUiModel
 import eu.kanade.tachiyomi.data.download.DownloadCache
@@ -17,6 +20,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.util.lang.toLocalDate
+import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -36,6 +40,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import logcat.LogPriority
 import mihon.core.viewmodel.StateViewModel
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.TriState
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
@@ -50,11 +55,13 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.updates.interactor.GetUpdates
 import tachiyomi.domain.updates.model.UpdatesWithRelations
 import tachiyomi.domain.updates.service.UpdatesPreferences
+import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import kotlin.time.Clock
 
 class UpdatesViewModel(
+    private val context: Context = Injekt.get(),
     private val sourceManager: SourceManager = Injekt.get(),
     private val downloadManager: DownloadManager = Injekt.get(),
     private val downloadCache: DownloadCache = Injekt.get(),
@@ -262,22 +269,46 @@ class UpdatesViewModel(
      */
     fun markUpdatesRead(updates: List<UpdatesItem>, read: Boolean) {
         viewModelScope.launchIO {
+            val chapters = updates.mapNotNull { getChapter.await(it.update.chapterId) }
+            // Captured before the write, so the undo puts the resume point and the finish
+            // timestamp back as they were.
+            val snapshot = chapters.readStateCandidates(read).toReadStates()
             setReadStatus.await(
                 read = read,
-                chapters = updates
-                    .mapNotNull { getChapter.await(it.update.chapterId) }
-                    .toTypedArray(),
+                chapters = chapters.toTypedArray(),
             )
+            if (snapshot.isEmpty()) return@launchIO
+            snackbarHostState.showUndoSnackbar(
+                message = context.stringResource(
+                    if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
+                    snapshot.size,
+                ),
+                undoLabel = context.stringResource(MR.strings.action_undo),
+            ) {
+                setReadStatus.restoreReadStates(snapshot)
+            }
         }
         toggleAllSelection(false)
     }
 
     fun bookmarkUpdates(updates: List<UpdatesItem>, bookmark: Boolean) {
+        val changed = updates.filterNot { it.update.bookmark == bookmark }
         viewModelScope.launchIO {
-            updates
-                .filterNot { it.update.bookmark == bookmark }
-                .map { ChapterUpdate(id = it.update.chapterId, bookmark = bookmark) }
-                .let { updateChapter.awaitAll(it) }
+            if (changed.isEmpty()) return@launchIO
+            updateChapter.awaitAll(
+                changed.map { ChapterUpdate(id = it.update.chapterId, bookmark = bookmark) },
+            )
+            snackbarHostState.showUndoSnackbar(
+                message = context.stringResource(
+                    if (bookmark) MR.strings.undo_chapters_bookmarked else MR.strings.undo_chapters_unbookmarked,
+                    changed.size,
+                ),
+                undoLabel = context.stringResource(MR.strings.action_undo),
+            ) {
+                updateChapter.awaitAll(
+                    changed.map { ChapterUpdate(id = it.update.chapterId, bookmark = it.update.bookmark) },
+                )
+            }
         }
         toggleAllSelection(false)
     }

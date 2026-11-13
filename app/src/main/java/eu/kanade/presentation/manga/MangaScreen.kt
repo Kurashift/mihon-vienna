@@ -103,10 +103,12 @@ import eu.kanade.tachiyomi.source.getNameForMangaInfo
 import eu.kanade.tachiyomi.ui.manga.ChapterList
 import eu.kanade.tachiyomi.ui.manga.MangaViewModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
+import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableLazyListState
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.model.Manga
@@ -220,6 +222,10 @@ fun MangaScreen(
             // chapter individually, which would unmark the ones already marked and mark the rest,
             // making it impossible to keep several chapters flagged at once.
             val allMarked = chapters.all { it.id in markedChapterIds }
+            // The entries as they stand, so the undo keeps the time each chapter was marked and
+            // the list keeps its order.
+            val chapterIds = chapters.mapTo(HashSet()) { it.id }
+            val existing = markStore.marks.value.filter { it.chapterId in chapterIds }
             val chapterMarks = chapters.map { chapter ->
                 MangaMark(
                     mangaId = state.manga.id,
@@ -231,6 +237,19 @@ fun MangaScreen(
             }
             scope.launch {
                 markStore.setAll(chapterMarks, marked = !allMarked)
+                snackbarHostState.showUndoSnackbar(
+                    message = context.stringResource(
+                        if (allMarked) MR.strings.undo_marks_removed else MR.strings.undo_marks_added,
+                        chapters.size,
+                    ),
+                    undoLabel = context.stringResource(MR.strings.action_undo),
+                ) {
+                    if (allMarked) {
+                        markStore.setAll(existing, true)
+                    } else {
+                        markStore.setAll(chapterMarks, false)
+                    }
+                }
             }
         }
     } else {
