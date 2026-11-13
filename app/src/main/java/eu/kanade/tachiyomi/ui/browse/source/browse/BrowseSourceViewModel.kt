@@ -256,7 +256,6 @@ class BrowseSourceViewModel(
      */
     private val hideInLibraryItems = sourcePreferences.hideInLibraryItems.get()
 
-    private var observedLocalDirectorySignature: String? = null
     private var lastLocalDirectoryCheckAt = Long.MIN_VALUE
     private var visibleSnapshotRefreshJob: Job? = null
     private var quietChapterSyncJob: Job? = null
@@ -600,7 +599,7 @@ class BrowseSourceViewModel(
             return
         }
         val now = SystemClock.elapsedRealtime()
-        if (observedLocalDirectorySignature != null &&
+        if (lastLocalDirectoryCheckAt != Long.MIN_VALUE &&
             now - lastLocalDirectoryCheckAt < LOCAL_DIRECTORY_POLL_MILLIS
         ) {
             return
@@ -608,43 +607,53 @@ class BrowseSourceViewModel(
         lastLocalDirectoryCheckAt = now
 
         var directorySnapshot = local.getMangaDirectorySnapshot() ?: return
-        var signature = directorySnapshot.signature
-        val previous = observedLocalDirectorySignature
-        if (previous == signature && localChapterCounts.value.isNotEmpty()) return
-
+        // The signature a completed refresh committed is the only record of what the shelf was last
+        // confirmed to be. The previous read is not a second one - see
+        // [localDirectoryDiffersFromBaseline].
         val committed = basePreferences.localSourceDirectorySignature.get()
         val listingUrls = local.listingSnapshot.value.allUrls.toSet()
-        val matchesListing = listingUrls.isNotEmpty() && directorySnapshot.urls == listingUrls
-        val differsFromBaseline = when {
-            matchesListing || directorySnapshot.fromListingFallback -> false
-            previous != null -> signature != previous
-            committed.isNotBlank() -> signature != committed
-            else -> false
-        }
+        var matchesListing = listingUrls.isNotEmpty() && directorySnapshot.urls == listingUrls
+        var differsFromBaseline = localDirectoryDiffersFromBaseline(
+            signature = directorySnapshot.signature,
+            committedSignature = committed,
+            fromListingFallback = directorySnapshot.fromListingFallback,
+            matchesListing = matchesListing,
+        )
 
         if (differsFromBaseline) {
             if (!localDirectoryChangeCanApplyImmediately(directorySnapshot.urls, listingUrls)) {
                 // A partial provider result can repeat identically. Confirm every missing folder
                 // before letting it invalidate the last known-good shelf snapshot.
                 directorySnapshot = local.getConfirmedMangaDirectorySnapshot() ?: return
-                signature = directorySnapshot.signature
+                // The confirmed read is the one that counts, so the verdict is taken again: a
+                // result that confirms to the committed baseline is not a change at all.
+                matchesListing = listingUrls.isNotEmpty() && directorySnapshot.urls == listingUrls
+                differsFromBaseline = localDirectoryDiffersFromBaseline(
+                    signature = directorySnapshot.signature,
+                    committedSignature = committed,
+                    fromListingFallback = directorySnapshot.fromListingFallback,
+                    matchesListing = matchesListing,
+                )
             }
-            val currentListingUrls = local.listingSnapshot.value.allUrls.toSet()
-            if (currentListingUrls.isEmpty() || directorySnapshot.urls != currentListingUrls) {
-                // The rebuild is not requested here: invalidating the listing is what raises the
-                // revision, and the collector in `init` is the single place that turns it into one.
-                // Asking for it here as well derived the listing twice for one directory change.
-                local.invalidateListing()
-                localSourceChanged.value = true
-            } else {
-                basePreferences.localSourceDirectorySignature.set(signature)
+            if (differsFromBaseline) {
+                val currentListingUrls = local.listingSnapshot.value.allUrls.toSet()
+                if (currentListingUrls.isEmpty() || directorySnapshot.urls != currentListingUrls) {
+                    // The rebuild is not requested here: invalidating the listing is what raises the
+                    // revision, and the collector in `init` is the single place that turns it into
+                    // one. Asking for it here as well derived the listing twice for one change.
+                    local.invalidateListing()
+                    localSourceChanged.value = true
+                    logcat(LogPriority.DEBUG) {
+                        "Local directory changed: dirs=${directorySnapshot.urls.size} " +
+                            "listed=${currentListingUrls.size} committed=$committed"
+                    }
+                } else {
+                    basePreferences.localSourceDirectorySignature.set(directorySnapshot.signature)
+                }
             }
-        } else if (committed.isBlank() || matchesListing) {
-            basePreferences.localSourceDirectorySignature.set(signature)
         }
-
-        if (!differsFromBaseline || localSourceChanged.value) {
-            observedLocalDirectorySignature = signature
+        if (!differsFromBaseline && (committed.isBlank() || matchesListing)) {
+            basePreferences.localSourceDirectorySignature.set(directorySnapshot.signature)
         }
         localChapterCounts.value = local.getChapterCounts()
     }
@@ -2880,6 +2889,29 @@ internal fun localDirectoryChangeCanApplyImmediately(
     observedUrls: Set<String>,
     listingUrls: Set<String>,
 ): Boolean = listingUrls.isNotEmpty() && observedUrls.containsAll(listingUrls)
+
+/**
+ * Whether the directories read now differ from the state the shelf was last confirmed to be in.
+ *
+ * The baseline is the signature a completed refresh committed, not the previous read kept in
+ * memory: after a refresh commits the new state, a copy of the earlier read still holds the state
+ * from before that change, so comparing against it reports the change that refresh had just applied
+ * as a new one - and the banner asks for a refresh that already happened.
+ *
+ * A listing that equals the directories in full is up to date whatever the baseline says, since the
+ * rebuild that produced it read those same directories. A snapshot rebuilt from the listing index
+ * confirms nothing about the directory, so it is not a change either.
+ */
+internal fun localDirectoryDiffersFromBaseline(
+    signature: String,
+    committedSignature: String,
+    fromListingFallback: Boolean,
+    matchesListing: Boolean,
+): Boolean = when {
+    matchesListing || fromListingFallback -> false
+    committedSignature.isNotBlank() -> signature != committedSignature
+    else -> false
+}
 
 /**
  * Urls of the works carrying a mark, valued by the newest mark time on each.
