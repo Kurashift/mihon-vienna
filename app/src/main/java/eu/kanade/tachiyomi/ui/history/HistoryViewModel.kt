@@ -35,6 +35,7 @@ import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetHistory
+import tachiyomi.domain.history.model.History
 import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.history.model.withLocalChapterDisplayMode
@@ -330,9 +331,18 @@ class HistoryViewModel(
 
     fun removeAllHistory() {
         viewModelScope.launchIO {
+            // Taken before the delete: the table is emptied outright, and the list on screen is
+            // filtered by the search field, so it cannot stand in for the snapshot.
+            val snapshot = historyRepository.getAllHistory()
             val result = historyRepository.deleteAllHistory()
             if (!result) return@launchIO
-            _events.send(Event.HistoryCleared)
+            _events.send(Event.HistoryCleared(snapshot))
+        }
+    }
+
+    fun restoreAllHistory(entries: List<History>) {
+        viewModelScope.launchIO {
+            historyRepository.restoreHistory(entries)
         }
     }
 
@@ -354,7 +364,6 @@ class HistoryViewModel(
     )
 
     sealed interface Dialog {
-        data object DeleteAll : Dialog
         data class DuplicateManga(val manga: Manga, val duplicates: List<MangaWithChapterCount>) : Dialog
         data class ChangeCategory(
             val manga: Manga,
@@ -367,7 +376,7 @@ class HistoryViewModel(
     sealed interface Event {
         data class OpenChapter(val chapter: Chapter?) : Event
         data object InternalError : Event
-        data object HistoryCleared : Event
+        data class HistoryCleared(val entries: List<History>) : Event
         data class HistoryDeleted(val updates: List<HistoryUpdate>) : Event
     }
 }

@@ -486,7 +486,6 @@
     <string name="no_chapters_error">沒有篇目</string>
     <string name="set_chapter_settings_as_default">儲存為預設值</string>
     <string name="clear_history_completed">已刪除紀錄</string>
-    <string name="clear_history_confirmation">所有閱讀紀錄都會遺失。</string>
     <string name="pref_clear_history">清除閱讀紀錄</string>
     <string name="pref_incognito_mode_summary">暫停記錄閱讀紀錄</string>
     <string name="pref_incognito_mode">無痕模式</string>
@@ -807,9 +806,7 @@
     <string name="pref_app_language">應用程式語言</string>
     <string name="theme_lavender">薰衣草</string>
     <string name="description_placeholder">沒有簡介</string>
-    <string name="delete_category_confirmation">確定要刪除「%s」類別嗎？</string>
     <string name="internal_error">內部錯誤：詳情請見當機記錄</string>
-    <string name="delete_category">刪除類別</string>
     <string name="pref_reset_user_agent_string">重設預設使用者代理字串</string>
     <string name="pref_user_agent_string">預設使用者代理字串</string>
     <string name="action_remove_everything">全部清除</string>
@@ -1376,4 +1373,6 @@
     <string name="undo_good_doujins_removed">已從好本子移除 %1$d 個篇目</string>
     <string name="undo_good_doujins_cleared">已清空好本子清單</string>
     <string name="undo_local_read_marked_unread">已標記 %1$d 個篇目為未讀</string>
+    <string name="undo_history_cleared">已清除 %1$d 條歷史紀錄</string>
+    <string name="undo_category_deleted">已刪除分類「%1$s」</string>
 </resources>

@@ -13,6 +13,7 @@ import tachiyomi.domain.history.model.History
 import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.history.repository.HistoryRepository
+import java.util.Date
 
 class HistoryRepositoryImpl(
     private val database: Database,
@@ -91,6 +92,34 @@ class HistoryRepositoryImpl(
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
             false
+        }
+    }
+
+    override suspend fun getAllHistory(): List<History> {
+        return try {
+            database.historyQueries.getAllHistory(HistoryMapper::mapHistory).awaitAsList()
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, throwable = e)
+            emptyList()
+        }
+    }
+
+    override suspend fun restoreHistory(entries: List<History>) {
+        if (entries.isEmpty()) return
+        try {
+            database.transaction {
+                entries.forEach { entry ->
+                    database.historyQueries.restoreHistory(
+                        chapterId = entry.chapterId,
+                        // A row whose last_read was reset to 0 comes back as Date(0), not null;
+                        // null here would only mean "no row", which never happens.
+                        readAt = entry.readAt ?: Date(0),
+                        time_read = entry.readDuration,
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, throwable = e)
         }
     }
 

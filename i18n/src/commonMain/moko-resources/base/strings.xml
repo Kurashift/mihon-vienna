@@ -147,8 +147,6 @@
     <string name="action_edit_categories">Edit categories</string>
     <string name="action_rename_category">Rename category</string>
     <string name="action_move_category">Set categories</string>
-    <string name="delete_category_confirmation">Do you wish to delete the category \"%s\"?</string>
-    <string name="delete_category">Delete category</string>
     <string name="action_edit_cover">Edit cover</string>
     <string name="action_view_chapters">View works</string>
     <string name="action_pause">Pause</string>
@@ -1017,7 +1015,6 @@
     <string name="recent_manga_time">Work %1$s - %2$s</string>
     <string name="pref_clear_history">Clear history</string>
     <string name="clear_history_completed">History deleted</string>
-    <string name="clear_history_confirmation">Are you sure? All history will be lost.</string>
     <string name="action_clear_reading_history">Clear reading records</string>
     <string name="action_clear_current_list_history">Clear current list records</string>
     <string name="clear_reading_history_completed">Reading records cleared</string>
@@ -1532,4 +1529,6 @@
     <string name="undo_good_doujins_removed">Removed %1$d chapters from the good-doujin list</string>
     <string name="undo_good_doujins_cleared">Cleared the good-doujin list</string>
     <string name="undo_local_read_marked_unread">Marked %1$d chapters as unread</string>
+    <string name="undo_history_cleared">Cleared %1$d history entries</string>
+    <string name="undo_category_deleted">Deleted the category “%1$s”</string>
 </resources>

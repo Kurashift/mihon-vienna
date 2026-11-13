@@ -87,6 +87,25 @@ WHERE _id IN :historyIds;
 removeAllHistory:
 DELETE FROM history;
 
+-- 清空历史前的整表快照。连着 last_read = 0 的旧行一起取：它们界面上不显示，
+-- 但阅读时长（getReadDuration）把它们算进去了，漏掉就会让统计缩水。
+getAllHistory:
+SELECT
+H._id,
+H.chapter_id,
+H.last_read,
+H.time_read
+FROM history H;
+
+-- 按绝对值写回，用于撤销「清空历史」。不能用 upsert：那条对时长是累加语义
+-- （time_read = time_read + 参数），恢复时会翻倍。
+restoreHistory:
+INSERT INTO history(chapter_id, last_read, time_read)
+VALUES (:chapterId, :readAt, :time_read)
+ON CONFLICT(chapter_id) DO UPDATE SET
+    last_read = excluded.last_read,
+    time_read = excluded.time_read;
+
 removeResettedHistory:
 DELETE FROM history
 WHERE last_read = 0;

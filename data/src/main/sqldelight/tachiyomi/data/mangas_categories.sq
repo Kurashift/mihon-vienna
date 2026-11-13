@@ -22,6 +22,21 @@ insert:
 INSERT INTO mangas_categories(manga_id, category_id)
 VALUES (:mangaId, :categoryId);
 
+-- 撤销删除分类时把成员放回去。这张表没有唯一约束，先查再插，避免同一条边出现两次。
+insertIfMissing:
+INSERT INTO mangas_categories(manga_id, category_id)
+SELECT :mangaId, :categoryId
+WHERE NOT EXISTS (
+    SELECT 1 FROM mangas_categories
+    WHERE manga_id = :mangaId AND category_id = :categoryId
+);
+
+-- 删除分类前的成员快照。
+getMangaIdsByCategoryId:
+SELECT manga_id
+FROM mangas_categories
+WHERE category_id = :categoryId;
+
 deleteMangaCategoryByMangaId:
 DELETE FROM mangas_categories
 WHERE manga_id = :mangaId;

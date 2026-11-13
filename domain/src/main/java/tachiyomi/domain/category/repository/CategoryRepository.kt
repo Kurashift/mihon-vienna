@@ -17,6 +17,14 @@ interface CategoryRepository {
 
     suspend fun insert(category: Category)
 
+    /** Inserts [category] and returns the id the row got, for callers that must keep referring to it. */
+    suspend fun insertReturningId(category: Category): Long
+
+    suspend fun getMangaIdsByCategoryId(categoryId: Long): List<Long>
+
+    /** Files [mangaId] under [categoryId] unless the pair is already there. */
+    suspend fun addMangaCategoryIfMissing(mangaId: Long, categoryId: Long)
+
     suspend fun updateName(categoryId: Long, name: String)
 
     suspend fun updateFlags(categoryId: Long, flags: Long)

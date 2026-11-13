@@ -532,7 +532,6 @@
     <string name="pref_incognito_mode">无痕模式</string>
     <string name="history_incognito_note">无痕模式已开启，不记录阅读历史和进度</string>
     <string name="pref_clear_history">清除历史记录</string>
-    <string name="clear_history_confirmation">所有阅读记录都会丢失。</string>
     <string name="action_clear_reading_history">清空阅读记录</string>
     <string name="action_clear_current_list_history">清空阅读记录</string>
     <string name="clear_reading_history_completed">阅读记录已清空</string>
@@ -731,8 +730,6 @@
     <string name="pref_app_language">应用语言</string>
     <string name="theme_lavender">薰衣草</string>
     <string name="description_placeholder">无简介</string>
-    <string name="delete_category_confirmation">确定要删除「%s」分类吗？</string>
-    <string name="delete_category">删除分类</string>
     <string name="internal_error">内部错误：详情请见崩溃日志</string>
     <string name="pref_user_agent_string">默认 User Agent 字符串</string>
     <string name="pref_reset_user_agent_string">恢复默认 User Agent 字符串</string>
@@ -1380,4 +1377,6 @@
     <string name="undo_good_doujins_removed">已从好本子移除 %1$d 个篇目</string>
     <string name="undo_good_doujins_cleared">已清空好本子清单</string>
     <string name="undo_local_read_marked_unread">已标记 %1$d 个篇目为未读</string>
+    <string name="undo_history_cleared">已清除 %1$d 条历史记录</string>
+    <string name="undo_category_deleted">已删除分类「%1$s」</string>
 </resources>
