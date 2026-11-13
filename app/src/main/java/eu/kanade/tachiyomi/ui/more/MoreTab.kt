@@ -4,9 +4,11 @@ import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -26,6 +28,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.updater.AppUpdateState
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
+import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.stats.StatsScreen
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,6 +67,13 @@ data object MoreTab : Tab {
         val viewModel = viewModel<MoreViewModel>()
         val downloadQueueState by viewModel.downloadQueueState.collectAsState()
         val hasAppUpdate by AppUpdateState.availableRelease.collectAsState()
+
+        // This tab has no data to wait for: it is ready the moment it is composed. Without saying
+        // so, a cold start landing here kept the launch splash for its full timeout.
+        val context = LocalContext.current
+        LaunchedEffect(Unit) {
+            (context as? MainActivity)?.ready = true
+        }
 
         MoreScreen(
             downloadQueueStateProvider = { downloadQueueState },

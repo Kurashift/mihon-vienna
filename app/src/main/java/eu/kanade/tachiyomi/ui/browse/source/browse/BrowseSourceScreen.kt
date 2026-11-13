@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.paging.LoadState
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
@@ -125,6 +126,7 @@ import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.MarkFil
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.ReadingFilter
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.local.LocalImportScreen
+import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.manga.opensGoodDoujinJump
@@ -368,6 +370,18 @@ data class BrowseSourceScreen(
 
         val mangaList = viewModel.mangaPagerFlowFlow.collectAsLazyPagingItems()
         val currentMangaList by rememberUpdatedState(mangaList)
+
+        // The launch splash is released by whichever screen is on top at start-up saying its
+        // content has arrived. Every other home tab does that from its own loaded state; this one
+        // is the local library's tab and never did, so a cold start here held the branded splash
+        // for its full timeout (~5s) instead of the ~0.5s a start on the shelf takes.
+        val splashOwner = LocalContext.current as? MainActivity
+        val listRefreshState = mangaList.loadState.refresh
+        LaunchedEffect(isRoot, listRefreshState) {
+            if (isRoot && listRefreshState !is LoadState.Loading) {
+                splashOwner?.ready = true
+            }
+        }
 
         val basePreferences = remember { Injekt.get<BasePreferences>() }
         // The first-use coach marks for the bottom-start FAB: only the local library carries the
