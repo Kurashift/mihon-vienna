@@ -36,27 +36,37 @@ object DatabaseSnapshot {
      */
     fun beforeMigration(app: Application, versionCode: Int) {
         try {
-            snapshot(app, versionCode)
+            snapshot(
+                database = app.getDatabasePath(DATABASE_NAME),
+                directory = File(app.filesDir, BACKUP_DIR),
+                versionCode = versionCode,
+                schemaVersion = Database.Schema.version,
+            )
         } catch (e: Exception) {
             Log.w(TAG, "迁移前快照失败，继续启动", e)
         }
     }
 
-    private fun snapshot(app: Application, versionCode: Int) {
-        val database = app.getDatabasePath(DATABASE_NAME)
-        if (!database.exists()) return
+    /** 返回写出的快照文件；不需要复制时返回 null。 */
+    internal fun snapshot(
+        database: File,
+        directory: File,
+        versionCode: Int,
+        schemaVersion: Long,
+    ): File? {
+        if (!database.exists()) return null
 
-        val userVersion = readUserVersion(database) ?: return
-        if (userVersion >= Database.Schema.version) return
+        val userVersion = readUserVersion(database) ?: return null
+        if (userVersion >= schemaVersion) return null
 
-        val directory = File(app.filesDir, BACKUP_DIR)
         val target = File(directory, "$BACKUP_PREFIX$versionCode.db")
         // 同一个版本重复启动（比如上次迁移失败）时保留第一份，那份才是迁移前的状态。
-        if (target.exists()) return
+        if (target.exists()) return null
 
         directory.mkdirs()
         database.copyTo(target, overwrite = false)
         prune(directory)
+        return target
     }
 
     /**
@@ -65,7 +75,7 @@ object DatabaseSnapshot {
      * 走 SQLite API 会在启动路径上拿锁，还可能触发 WAL 恢复；读文件头不会。WAL 模式下这个值
      * 只会比实际旧、不会更新，所以读到旧值时最多多复制一份，不会漏掉该有的备份。
      */
-    private fun readUserVersion(database: File): Long? {
+    internal fun readUserVersion(database: File): Long? {
         RandomAccessFile(database, "r").use { file ->
             if (file.length() < SQLITE_HEADER_SIZE) return null
             val magic = ByteArray(SQLITE_HEADER_MAGIC_SIZE)
