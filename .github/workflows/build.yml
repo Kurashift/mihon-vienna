@@ -18,8 +18,10 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build & Test App
+  # The three checks that have actually failed on this repository. Kept in their own job so they
+  # finish while the delivery build is still running, instead of queueing behind it.
+  checks:
+    name: Format, tests, migrations
     runs-on: 'ubuntu-24.04'
 
     steps:
@@ -56,10 +58,56 @@ jobs:
           name: test-report-${{ github.sha }}
           path: app/build/reports/tests/testDebugUnitTest
 
-      # No assemble here on purpose. The APK this project ships is built locally against the
-      # release keystore and published from there, so a CI build was a second, unused artifact:
-      # it accounted for roughly two thirds of the job's runtime and produced the only file that
-      # was ever uploaded (arm64) out of five splits. What it did verify — R8 rules, resource
-      # shrinking, manifest merge — is checked by the release build itself before anything is
-      # published. Format, unit tests and migrations stay: they are the checks that have actually
-      # failed on this repository.
+  # What ships is the R8-shrunk vienna build, and R8 rules, resource shrinking and manifest
+  # merging are only exercised there — a PR that passes format and tests can still produce an
+  # APK that fails to build or crashes on first launch. Checking the delivery variant here moves
+  # that failure from release day to the pull request that caused it.
+  #
+  # CI has no keystore.properties, so the build falls back to the default debug keystore. That is
+  # fine: this job validates the artifact, it does not produce the release. The APK is uploaded
+  # only so the build can be installed on a device without a local build.
+  assemble:
+    name: Assemble vienna
+    runs-on: 'ubuntu-24.04'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Assemble vienna
+        run: ./gradlew :app:assembleVienna
+
+      - name: Upload arm64 APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vienna-arm64-${{ github.sha }}
+          path: app/build/outputs/apk/vienna/MihonVienna-*-arm64-v8a.apk
+          retention-days: 7
+          if-no-files-found: error
+
+  # Branch protection watches this one name. Jobs above can be split, renamed or added without
+  # touching the repository settings, and a skipped job can never be mistaken for a passing one.
+  gate:
+    name: Build & Test App
+    if: always()
+    needs: [checks, assemble]
+    runs-on: 'ubuntu-24.04'
+
+    steps:
+      - name: Require every job to succeed
+        run: |
+          echo "checks:   ${{ needs.checks.result }}"
+          echo "assemble: ${{ needs.assemble.result }}"
+          if [[ "${{ needs.checks.result }}" != "success" || "${{ needs.assemble.result }}" != "success" ]]; then
+            echo "::error::A required job did not succeed."
+            exit 1
+          fi
