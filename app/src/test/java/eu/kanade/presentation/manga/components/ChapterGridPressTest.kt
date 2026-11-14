@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.ui.manga.ChapterList
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.chapter.model.Chapter
 
@@ -55,10 +56,66 @@ class ChapterGridPressTest {
     }
 
     /**
-     * A grid of [rows] full rows of three cards, each 100x150 with a 10px gutter, laid out from
-     * the list's own top-left corner. The list is 600x800, so two rows of cards cover y in 0..310.
+     * 长按落定但一张卡片都没换位：这是"卡片跟着手指动了一下"，不是排序。
+     *
+     * 以前这条路径会无条件提交，于是手指抖过 touchSlop 就重写整份 custom_order、还把作品的
+     * 排序方式切成「手动」——一次什么都没改的手势，却把用户选的排序弄丢了。
      */
-    private fun gridState(rows: Int): ChapterGridDragState {
+    @Test
+    fun `a press that never swaps writes no order`() {
+        var commits = 0
+        val state = gridState(rows = 2) { commits++ }
+
+        state.beginPress(1L, Offset(40f, 70f), SLOP, SLOP)
+        state.commit()
+
+        assertEquals(0, commits, "a press that never swapped must not write an order")
+    }
+
+    /** 真的换过位才提交，而且只提交一次。 */
+    @Test
+    fun `a press that swaps a card writes the order`() {
+        var commits = 0
+        val state = gridState(rows = 2) { commits++ }
+
+        state.beginPress(1L, Offset(40f, 70f), SLOP, SLOP)
+        // 拖到第二排中间那张卡片上：越过邻格中线，库会把两张换位。
+        state.onDragMove(Offset(160f, 235f))
+
+        assertTrue(state.orderChanged, "crossing the neighbour must rearrange the cards")
+        state.commit()
+        assertEquals(1, commits)
+    }
+
+    /**
+     * 拖出去再拖回来，松手时顺序必须还原。
+     *
+     * 拖动中的防回摆要求卡片越过接缝 35% 才允许换回去，手指停回原格右半边时那一次换位会被
+     * 吃掉：卡片看着已经回到原格，顺序却还差一格。按这个顺序提交，"拖出去又拖回来"就被当成
+     * 真的改了顺序，作品的排序方式跟着切成「手动」，而屏幕上什么都没变。
+     */
+    @Test
+    fun `dragging a card back to its cell restores the order`() {
+        var commits = 0
+        val items = gridItems(rows = 2)
+        val state = gridState(rows = 2, onCommit = { commits++ }, items = items)
+        val before = items.map { it.id }
+
+        state.beginPress(1L, Offset(50f, 75f), SLOP, SLOP)
+        state.onDragMove(Offset(160f, 75f))
+        assertEquals(listOf(2L, 1L, 3L, 4L, 5L, 6L), items.map { it.id }, "拖到右邻格应当换位")
+
+        // 停回原格右半边：换位判定认这一格，防回摆却还差一点才放行。
+        Thread.sleep(20)
+        state.onDragMove(Offset(90f, 75f))
+        assertEquals(listOf(2L, 1L, 3L, 4L, 5L, 6L), items.map { it.id }, "防回摆会吃掉这一次换位")
+
+        state.commit()
+        assertEquals(before, items.map { it.id }, "松手落点在原格，顺序必须还原")
+        assertEquals(0, commits, "顺序没变就不该提交")
+    }
+
+    private fun gridItems(rows: Int): SnapshotStateList<ChapterList.Item> {
         val items = SnapshotStateList<ChapterList.Item>()
         repeat(rows * COLUMNS) { index ->
             items.add(
@@ -69,11 +126,23 @@ class ChapterGridPressTest {
                 ),
             )
         }
+        return items
+    }
+
+    /**
+     * A grid of [rows] full rows of three cards, each 100x150 with a 10px gutter, laid out from
+     * the list's own top-left corner. The list is 600x800, so two rows of cards cover y in 0..310.
+     */
+    private fun gridState(
+        rows: Int,
+        items: SnapshotStateList<ChapterList.Item> = gridItems(rows),
+        onCommit: () -> Unit = {},
+    ): ChapterGridDragState {
         val state = ChapterGridDragState(
             listState = LazyListState(0, 0),
             items = items,
             columns = COLUMNS,
-            onCommit = {},
+            onCommit = onCommit,
         )
         state.onListPlaced(FakeCoordinates(Offset.Zero, IntSize(600, 800)))
         for (index in 0 until rows * COLUMNS) {

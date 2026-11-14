@@ -43,6 +43,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,17 +55,16 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -72,7 +72,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastMap
@@ -592,9 +591,16 @@ private fun MangaScreenSmallImpl(
                 false
             } else {
                 reorderChanged = false
-                pendingReorder = true
-                onReorderChapters(chapterItems.fastMap { it.chapter.id })
-                true
+                // 拖出去又拖回原位：净顺序和数据层一致，等于没改过。这里不能再写库——那会把
+                // 排序方式切成「手动」并重写整份 custom_order，用户选的排序就这么没了，
+                // 而屏幕上什么都没变。
+                if (chapterItems.matchesVisibleChapterOrder(chapters)) {
+                    false
+                } else {
+                    pendingReorder = true
+                    onReorderChapters(chapterItems.fastMap { it.chapter.id })
+                    true
+                }
             }
         }
         val reorderableState = rememberReorderableLazyListState(chapterListState, reorderScrollPadding) { from, to ->
@@ -1103,9 +1109,14 @@ fun MangaScreenLargeImpl(
                             false
                         } else {
                             reorderChanged = false
-                            pendingReorder = true
-                            onReorderChapters(chapterItems.fastMap { it.chapter.id })
-                            true
+                            // 同小屏：净顺序没变就不写库，别把排序方式顺手切成「手动」。
+                            if (chapterItems.matchesVisibleChapterOrder(chapters)) {
+                                false
+                            } else {
+                                pendingReorder = true
+                                onReorderChapters(chapterItems.fastMap { it.chapter.id })
+                                true
+                            }
                         }
                     }
                     val reorderableState =
@@ -1542,7 +1553,6 @@ private fun LazyListScope.sharedChapterItems(
         contentType = { MangaScreenItem.CHAPTER },
     ) { item ->
         val haptic = LocalHapticFeedback.current
-        val context = LocalContext.current
 
         val isRead = item.chapter.read
         val chapterProgress = item.chapter.toChapterProgressUi()
@@ -1559,13 +1569,8 @@ private fun LazyListScope.sharedChapterItems(
                 null
             },
         )
-        val copyTitle = { context.copyToClipboard(item.chapter.name, item.chapter.name) }
         ReorderableItem(reorderableState, "chapter-${item.id}") {
-            var dragStartIndex by remember { mutableStateOf(-1) }
             var dragMoved by remember { mutableStateOf(false) }
-            var rowRootOffset by remember { mutableStateOf(Offset.Zero) }
-            var titleBounds by remember { mutableStateOf<Rect?>(null) }
-            var downPosition by remember { mutableStateOf<Offset?>(null) }
             val selectFromLongPress = {
                 onChapterSelected(item, !item.selected, true)
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1575,17 +1580,18 @@ private fun LazyListScope.sharedChapterItems(
             // gesture hanging off the same press: a slow swipe would spend 400 ms inside the
             // slop, land the long press and fire it, which is what buzzed the device.
             val dragDetectionEnabled = manga.isLocal()
-            // Read through an updated state so the gesture callbacks below, which may outlive
-            // the composition that created them, always see the current selection mode.
-            val selectionActive by rememberUpdatedState(isAnyChapterSelected)
             MangaChapterListItem(
                 modifier = Modifier
-                    .onGloballyPositioned { rowRootOffset = it.positionInRoot() }
                     .then(
                         if (dragDetectionEnabled) {
                             // Observe the pointer without consuming it: once the finger really
-                            // moves, treat the gesture as a drag so it is never mistaken for a
-                            // long-press copy afterwards.
+                            // moves, the gesture is a drag and must never be read back as a long
+                            // press, however little the order ends up changing.
+                            //
+                            // 距离要在帧与帧之间累加，不能直接拿当前坐标和按下点比：行从长按成立
+                            // 那一刻起就跟着手指走，本行坐标系里每帧只剩这一帧的位移，和按下点比
+                            // 永远差一截——慢慢拖过大半行也判不出"移动过"，松手就退回选中。网格那
+                            // 边量的是不跟着动的列表节点，本来就没这问题，两边因此对不齐。
                             Modifier.pointerInput(item.id) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown(
@@ -1603,6 +1609,9 @@ private fun LazyListScope.sharedChapterItems(
                                     }
                                     dragMoved = false
                                     var moved = false
+                                    // 净位移的最大值：来回抖动会互相抵消，拖出去再拖回来仍算移动过。
+                                    var travel = Offset.Zero
+                                    var reach = 0f
                                     while (true) {
                                         val event = awaitPointerEvent(PointerEventPass.Initial)
                                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -1618,20 +1627,18 @@ private fun LazyListScope.sharedChapterItems(
                                             }
                                             break
                                         }
-                                        if (!moved) {
-                                            val dx = change.position.x - down.position.x
-                                            val dy = change.position.y - down.position.y
-                                            if (maxOf(abs(dx), abs(dy)) > viewConfiguration.touchSlop) {
-                                                moved = true
-                                                dragMoved = true
-                                                // Past the long-press timeout the reorderable
-                                                // handle owns the gesture, so this is a real drag
-                                                // rather than a swipe or a scroll.
-                                                if (change.uptimeMillis - down.uptimeMillis >=
-                                                    viewConfiguration.longPressTimeoutMillis
-                                                ) {
-                                                    onChapterDragMovedChanged(true)
-                                                }
+                                        travel += change.positionChange()
+                                        reach = maxOf(reach, travel.getDistance())
+                                        if (!moved && reach > viewConfiguration.touchSlop) {
+                                            moved = true
+                                            dragMoved = true
+                                            // Past the long-press timeout the reorderable
+                                            // handle owns the gesture, so this is a real drag
+                                            // rather than a swipe or a scroll.
+                                            if (change.uptimeMillis - down.uptimeMillis >=
+                                                viewConfiguration.longPressTimeoutMillis
+                                            ) {
+                                                onChapterDragMovedChanged(true)
                                             }
                                         }
                                     }
@@ -1646,30 +1653,17 @@ private fun LazyListScope.sharedChapterItems(
                         // series keep their source ordering and long-press selects instead.
                         enabled = dragDetectionEnabled,
                         onDragStarted = {
-                            dragStartIndex = chapters.indexOf(item)
-                            downPosition = it
                             // Vibrate as soon as the long-press registers so the user
                             // feels it immediately instead of waiting for the release.
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         },
                         onDragStopped = {
                             onChapterDragMovedChanged(false)
-                            if (selectionActive) {
-                                // Selection mode: every long press means select or deselect,
-                                // wherever the finger landed.
-                                if (!onReorder() && !dragMoved) {
-                                    onChapterSelected(item, !item.selected, true)
-                                }
-                            } else if (!onReorder() && !dragMoved) {
-                                // Long-press without moving: on the title it copies, anywhere
-                                // else it selects and exposes the existing bottom action bar.
-                                val down = downPosition
-                                val bounds = titleBounds
-                                if (down != null && bounds != null && bounds.contains(rowRootOffset + down)) {
-                                    copyTitle()
-                                } else {
-                                    onChapterSelected(item, !item.selected, true)
-                                }
+                            // 动过手指就只是拖：松手要么落成排序，要么换位没成、行自己弹回去。
+                            // 选中只属于"完全没动"的那一次长按——行都已经跟着手指走了，再退回
+                            // 去选中等于否掉用户刚看到的画面。没换位时不写库，由 onReorder 判断。
+                            if (!onReorder() && !dragMoved) {
+                                onChapterSelected(item, !item.selected, true)
                             }
                         },
                     ),
@@ -1734,16 +1728,6 @@ private fun LazyListScope.sharedChapterItems(
                 onChapterSwipe = {
                     onChapterSwipe(item, it)
                 },
-                onCopyTitle = copyTitle,
-                // Local chapters read the long-press target from the drag handle instead, so the
-                // title never runs a competing long-press timer of its own. With a selection
-                // open, copying is out for every source: the long press only selects.
-                copyTitleOnLongPress = !manga.isLocal() && !isAnyChapterSelected,
-                onTitleBoundsChanged = if (manga.isLocal()) {
-                    { coordinates -> titleBounds = Rect(coordinates.positionInRoot(), coordinates.size.toSize()) }
-                } else {
-                    null
-                },
             )
         }
     }
@@ -1801,22 +1785,27 @@ private fun LazyListScope.sharedChapterGridItems(
                     Spacer(modifier = Modifier.weight(1f))
                     continue
                 }
-                ChapterGridCard(
-                    modifier = Modifier.weight(1f),
-                    manga = manga,
-                    item = item,
-                    slot = slot,
-                    gridDragState = gridDragState,
-                    isAnyChapterSelected = isAnyChapterSelected,
-                    dragEnabled = dragEnabled,
-                    flagMarked = item.chapter.id in markedChapterIds,
-                    goodDoujinMarked = item.chapter.id in goodDoujinChapterIds,
-                    chapterSwipeStartAction = chapterSwipeStartAction,
-                    chapterSwipeEndAction = chapterSwipeEndAction,
-                    onChapterClicked = onChapterClicked,
-                    onChapterSelected = onChapterSelected,
-                    onChapterSwipe = onChapterSwipe,
-                )
+                // 格子按篇目做 key，不按位置。换位时这一格的 composable 跟着那一章一起走：
+                // 封面不会被当成"换了一张图"重新请求（那会闪一帧占位色），抬起状态也不会从
+                // 一张卡转交给另一张。行的 key 仍然按位置，见上面的说明。
+                key(item.id) {
+                    ChapterGridCard(
+                        modifier = Modifier.weight(1f),
+                        manga = manga,
+                        item = item,
+                        slot = slot,
+                        gridDragState = gridDragState,
+                        isAnyChapterSelected = isAnyChapterSelected,
+                        dragEnabled = dragEnabled,
+                        flagMarked = item.chapter.id in markedChapterIds,
+                        goodDoujinMarked = item.chapter.id in goodDoujinChapterIds,
+                        chapterSwipeStartAction = chapterSwipeStartAction,
+                        chapterSwipeEndAction = chapterSwipeEndAction,
+                        onChapterClicked = onChapterClicked,
+                        onChapterSelected = onChapterSelected,
+                        onChapterSwipe = onChapterSwipe,
+                    )
+                }
             }
         }
     }

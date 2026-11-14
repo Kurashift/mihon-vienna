@@ -1,8 +1,6 @@
 package eu.kanade.presentation.manga.components
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -90,14 +88,11 @@ fun MangaChapterGridItem(
     modifier: Modifier = Modifier,
 ) {
     val swipeState = rememberSwipeableActionsState()
-    // 抬起要跟得上手指、放下要有重量感，所以两个方向不共用一条弹簧：拿起偏硬，落下偏软。
-    val lift by animateFloatAsState(
-        targetValue = if (dragging) 1f else 0f,
-        animationSpec = spring(
-            stiffness = if (dragging) Spring.StiffnessMedium else Spring.StiffnessMediumLow,
-        ),
-        label = "chapterGridLift",
-    )
+    // 抬起不做过渡，直接切。换位时"抬起"要从一张卡转交给另一张卡：被挤开的那张若还带着
+    // 动画，就会先接住这 5% 的放大、再慢慢缩回去，看上去正是"被经过的卡片大小突变一下"。
+    // 瞬时切换时两张卡各自都已经是正确尺寸——被挤开的那张此刻正被位移留在原处——接缝因此
+    // 看不出来。
+    val lift = if (dragging) 1f else 0f
     // 拖拽中 1:1 贴着手指走，其余时候是零。
     //
     // 这里刻意不保留任何状态：跟手偏移属于「手指下那一张卡」，不属于格子，而格子是按位置
