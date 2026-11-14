@@ -13,6 +13,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ## [Unreleased]
 ### Fixed
 - 分页阅读器：相邻篇目在首次布局前加载完成时保持当前页；双页拆分按篇目分别保存，避免同页码的拆页插入其他篇目。
+- 全局搜索：多个来源同时返回时分别保留结果；反复进入搜索不再为每个页面创建独立线程池，并发数仍为 5。
 
 ### Added
 - Reader: page deletion now covers 7z/cb7 and tar/cbt chapters as well as ZIP/CBZ. The archive is rewritten in its own format, so a `.cb7` stays a 7z file and a `.cbt` stays a tar at the same path: tar entries are copied uncompressed, while 7z is recompressed by libarchive (LZMA2, one solid block), which takes noticeably longer on a large chapter than the ZIP path. rar/cbr stays read-only because libarchive has no RAR writer — those chapters keep every page and show no delete entry. The writable formats are resolved in one place (`ArchiveFormat`), shared by the reader's delete entry and the rewrite path

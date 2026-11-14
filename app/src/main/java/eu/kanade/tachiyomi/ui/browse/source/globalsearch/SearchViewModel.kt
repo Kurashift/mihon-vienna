@@ -7,10 +7,11 @@ import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.Source
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
@@ -27,7 +28,6 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.util.concurrent.Executors
 
 abstract class SearchViewModel(
     initialState: State = State(),
@@ -39,7 +39,7 @@ abstract class SearchViewModel(
     private val preferences: SourcePreferences = Injekt.get(),
 ) : StateViewModel<SearchViewModel.State>(initialState) {
 
-    private val coroutineDispatcher = Executors.newFixedThreadPool(5).asCoroutineDispatcher()
+    private val coroutineDispatcher = Dispatchers.IO.limitedParallelism(5)
     private var searchJob: Job? = null
 
     private val enabledLanguages = sourcePreferences.enabledLanguages.get()
@@ -187,7 +187,7 @@ abstract class SearchViewModel(
     }
 
     private fun updateItem(source: Source, result: SearchItemResult) {
-        updateItems(state.value.items + (source to result))
+        mutableState.updateSearchItem(source, result, sortComparator)
     }
 
     fun setMigrateDialog(currentId: Long, target: Manga) {
@@ -217,6 +217,17 @@ abstract class SearchViewModel(
 
     sealed interface Dialog {
         data class Migrate(val target: Manga, val current: Manga) : Dialog
+    }
+}
+
+internal fun MutableStateFlow<SearchViewModel.State>.updateSearchItem(
+    source: Source,
+    result: SearchItemResult,
+    sortComparator: (Map<Source, SearchItemResult>) -> Comparator<Source>,
+) {
+    update { currentState ->
+        val items = currentState.items + (source to result)
+        currentState.copy(items = items.toSortedMap(sortComparator(items)))
     }
 }
 
