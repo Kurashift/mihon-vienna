@@ -1,0 +1,124 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 一个 tag 只发一次。取消正在跑的发布没有意义：被打断的那次可能已经建了 Release。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish
+    runs-on: 'ubuntu-24.04'
+
+    # app/build.gradle.kts 见到 MIHON_GITHUB_RELEASE=true 就会把 storeFileBase64 解到
+    # $RUNNER_TEMP/antsy.keystore，并用下面四个变量签名。没有 keystore.properties 时它
+    # 会退回 debug keystore——那正是「发出去的包和老用户对不上」的来源，所以签名身份要在
+    # 构建之后单独验一次指纹。
+    env:
+      MIHON_GITHUB_RELEASE: 'true'
+      storeFileBase64: ${{ secrets.STORE_FILE_BASE64 }}
+      storePassword: ${{ secrets.STORE_PASSWORD }}
+      keyAlias: ${{ secrets.KEY_ALIAS }}
+      keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Verify the tag before building
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="$(grep -oP '^\s*versionName = "\K[^"]+' app/build.gradle.kts | head -1)"
+          version_code="$(grep -oP '^\s*versionCode = \K[0-9]+' app/build.gradle.kts | head -1)"
+          echo "tag=$tag version=$version versionCode=$version_code"
+
+          if [ "v$version" != "$tag" ]; then
+            echo "::error::tag $tag 与 app/build.gradle.kts 的 versionName $version 不一致"
+            exit 1
+          fi
+
+          if [ ! -f "docs/release-post-$tag.md" ]; then
+            echo "::error::缺少发布正文 docs/release-post-$tag.md"
+            exit 1
+          fi
+
+          # tag 必须打在合并后的 main 上：打在分支上发出去的包，以后没法追溯是哪版代码。
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $tag 不在 main 上"
+            exit 1
+          fi
+
+      - name: Assemble vienna
+        run: ./gradlew :app:assembleVienna
+
+      - name: Verify the signing certificate
+        run: |
+          set -euo pipefail
+          version="$(grep -oP '^\s*versionName = "\K[^"]+' app/build.gradle.kts | head -1)"
+          apksigner="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          echo "apksigner: $apksigner"
+
+          "$apksigner" verify --print-certs \
+            "app/build/outputs/apk/vienna/MihonVienna-${version}-arm64-v8a.apk" | tee /tmp/certs.txt
+
+          # 这把钥匙是应用的签名身份：换一把，老用户只能卸载重装、本地库和进度一起丢。
+          expected='fe8823116beff06892c1d877c0b331d03f6df0aaf8227df0ae7d383cda2b96a0'
+          if ! grep -qi "$expected" /tmp/certs.txt; then
+            echo "::error::签名指纹不是 $expected，不要发布"
+            exit 1
+          fi
+
+      - name: Write checksums
+        run: |
+          set -euo pipefail
+          cd app/build/outputs/apk/vienna
+          ls -1 MihonVienna-*.apk
+          sha256sum MihonVienna-*.apk > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::Release $tag 已存在，不覆盖。要重发请先在网页上删掉它。"
+            exit 1
+          fi
+
+          # Release 页面自带版本号，正文里的第一个一级标题要剥掉。
+          awk 'BEGIN { skip = 1 } skip && /^# / { skip = 0; next } { print }' \
+            "docs/release-post-${tag}.md" > /tmp/body.md
+
+          gh release create "$tag" \
+            --title "Mihon Vienna ${tag#v}" \
+            --notes-file /tmp/body.md \
+            app/build/outputs/apk/vienna/MihonVienna-*.apk \
+            app/build/outputs/apk/vienna/SHA256SUMS
+
+      - name: Read back the assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$GITHUB_REF_NAME" --json tagName,url,assets

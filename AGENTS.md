@@ -29,7 +29,7 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 真正发版时再按 `docs/release-process.md` 同时改 `versionCode` 与 `versionName`。那时 `versionCode` 必须高于这台设备上曾经装过的每一个包，不只是 git 里的上一个 tag；本地诊断包若占用过某个数字，只在这一步检查并决定加多少，不要提前占用。
 - 正式交付绝不能保留 `isDebuggable = true`；临时诊断插桩用完后必须删除。
 - 只有用户明确要求时才构建并安装最终 APK。诊断测试包要说明它不是正式交付。
-- 发布走 `docs/release-process.md`（升版本、写文案、构建校验、提交打 tag、传附件）。不要手写 GitHub API 调用，一律用 `python scripts/publish_release.py <tag> <abi...>`。用户说「上传 git 并发布」即视为要求提交、推送和发 Release。
+- 发布走 `docs/release-process.md`（升版本、写文案、PR 合并、打 tag）。**push tag 就是发布**：`.github/workflows/release.yml` 会构建、验签、建 Release，不要在本机另打一份包上传。`scripts/publish_release.py` 只在 CI 失败后手动补传时用。用户说「上传 git 并发布」即视为要求提交、推送、打 tag 和发 Release。
 
 ## 文档与工作区卫生
 
