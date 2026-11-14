@@ -22,6 +22,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ### Added
 - Reader: page deletion now covers 7z/cb7 and tar/cbt chapters as well as ZIP/CBZ. The archive is rewritten in its own format, so a `.cb7` stays a 7z file and a `.cbt` stays a tar at the same path: tar entries are copied uncompressed, while 7z is recompressed by libarchive (LZMA2, one solid block), which takes noticeably longer on a large chapter than the ZIP path. rar/cbr stays read-only because libarchive has no RAR writer — those chapters keep every page and show no delete entry. The writable formats are resolved in one place (`ArchiveFormat`), shared by the reader's delete entry and the rewrite path
 
+### Changed
+- 备份：逐部读写漫画，不再同时保留全库篇目和完整备份字节；恢复前完整检查文件，保留原有 .tachibk 格式、阅读进度、译名、标记与自定义封面。
+
 ## [v2.4.0] - 2026-11-13
 ### Added
 - Local library: a work whose folder holds its pages or archives directly, with no chapter folder inside, is read as one chapter. The chapter is virtual (`.__single__`) and its url never moves once stored, so the work's progress, marks and translations stay attached to it. Loose images in such a folder are that chapter's pages; `cover.jpg` / `cover.webp` written by the app are excluded, so a cover never becomes page 1

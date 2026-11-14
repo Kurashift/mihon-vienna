@@ -9,6 +9,9 @@ import eu.kanade.tachiyomi.data.backup.models.BackupChapter
 import eu.kanade.tachiyomi.data.backup.models.BackupHistory
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupTracking
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import logcat.LogPriority
@@ -48,19 +51,6 @@ class MangaRestorer(
     private val now = Clock.System.now().toLocalDateTime(timeZone)
     private val currentFetchWindow = fetchInterval.getWindow(now.date, timeZone)
 
-    suspend fun sortByNew(backupMangas: List<BackupManga>): List<BackupManga> {
-        val urlsBySource = database.mangasQueries
-            .getAllMangaSourceAndUrl()
-            .awaitAsList()
-            .groupBy({ it.source }, { it.url })
-
-        return backupMangas
-            .sortedWith(
-                compareBy<BackupManga> { it.url in urlsBySource[it.source].orEmpty() }
-                    .then(compareByDescending { it.lastModifiedAt }),
-            )
-    }
-
     suspend fun restore(
         backupManga: BackupManga,
         backupCategories: List<BackupCategory>,
@@ -91,12 +81,16 @@ class MangaRestorer(
     private suspend fun restoreCustomChapterCovers(mangaId: Long, backupChapters: List<BackupChapter>) {
         val chaptersByUrl = getChaptersByMangaId.await(mangaId).associateBy(Chapter::url)
         backupChapters.forEach { backupChapter ->
+            currentCoroutineContext().ensureActive()
             val data = backupChapter.customCover ?: return@forEach
             val chapter = chaptersByUrl[backupChapter.url] ?: return@forEach
-            runCatching { localChapterCoverManager.restoreCustom(chapter.id, data) }
-                .onFailure { error ->
-                    logcat(LogPriority.ERROR, error) { "Failed to restore a local chapter custom cover" }
-                }
+            try {
+                localChapterCoverManager.restoreCustom(chapter.id, data)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logcat(LogPriority.ERROR, error) { "Failed to restore a local chapter custom cover" }
+            }
         }
     }
 
