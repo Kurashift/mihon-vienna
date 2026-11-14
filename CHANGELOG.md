@@ -12,6 +12,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 ### Fixed
+- 内置网页：跳转其他主机时不附带原图源请求头，过滤 WebView 不支持的请求头；网页渲染进程退出后关闭失效页面并释放等待任务，避免连带退出应用。
+- 详细网络日志：遮蔽 Authorization 和 Auth 的值，请求本身不变。
 - 分页阅读器：相邻篇目在首次布局前加载完成时保持当前页；双页拆分按篇目分别保存，避免同页码的拆页插入其他篇目。
 - 全局搜索：多个来源同时返回时分别保留结果；反复进入搜索不再为每个页面创建独立线程池，并发数仍为 5。
 

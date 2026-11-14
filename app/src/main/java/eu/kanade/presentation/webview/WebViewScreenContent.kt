@@ -5,8 +5,10 @@ import android.graphics.Bitmap
 import android.os.Message
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -33,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
@@ -43,7 +46,6 @@ import com.kevinnzou.web.LoadingState
 import com.kevinnzou.web.WebContent
 import com.kevinnzou.web.WebView
 import com.kevinnzou.web.WebViewNavigator
-import com.kevinnzou.web.WebViewState
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.WarningBanner
@@ -52,21 +54,13 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.util.system.getHtml
 import eu.kanade.tachiyomi.util.system.setDefaultSettings
 import eu.kanade.tachiyomi.util.system.setUserAgent
+import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.launch
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
-
-class WebViewWindow(webContent: WebContent, val navigator: WebViewNavigator) {
-    var state by mutableStateOf(WebViewState(webContent))
-    var popupMessage: Message? = null
-        private set
-    var webView: WebView? = null
-
-    constructor(popupMessage: Message, navigator: WebViewNavigator) : this(WebContent.NavigatorOnly, navigator) {
-        this.popupMessage = popupMessage
-    }
-}
 
 @Composable
 fun WebViewScreenContent(
@@ -81,11 +75,12 @@ fun WebViewScreenContent(
     onUrlChange: (String) -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val headerPolicy = remember(url, headers) { WebViewHeaderPolicy(url, headers) }
 
     val windowStack = remember {
         mutableStateStackOf(
             WebViewWindow(
-                WebContent.Url(url = url, additionalHttpHeaders = headers),
+                WebContent.Url(url = url, additionalHttpHeaders = headerPolicy.headersFor(url)),
                 WebViewNavigator(coroutineScope),
             ),
         )
@@ -95,6 +90,7 @@ fun WebViewScreenContent(
     val navigator = currentWindow.navigator
 
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var currentUrl by remember { mutableStateOf(url) }
@@ -102,8 +98,13 @@ fun WebViewScreenContent(
     var isActive by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
-        onDispose { isActive = false }
+        onDispose {
+            isActive = false
+            windowStack.items.forEach { it.destroyWebView() }
+        }
     }
+
+    if (!isActive) return
 
     val webClient = remember {
         object : AccompanistWebViewClient() {
@@ -118,6 +119,7 @@ fun WebViewScreenContent(
             override fun onPageFinished(view: WebView, url: String?) {
                 super.onPageFinished(view, url)
                 scope.launch {
+                    if (!isActive || windowStack.items.none { it.webView === view }) return@launch
                     val html = view.getHtml()
                     showCloudflareHelp = "window._cf_chl_opt" in html || "Ray ID is" in html
                 }
@@ -144,15 +146,30 @@ fun WebViewScreenContent(
                 // Ignore intents urls
                 if (url.startsWith("intent://")) return true
 
-                // Only open valid web urls
-                if (url.startsWith("http") || url.startsWith("https")) {
-                    if (url != view?.url) {
-                        view?.loadUrl(url, headers)
+                if (request.isForMainFrame && view != null && url != view.url) {
+                    val requestHeaders = headerPolicy.headersFor(url)
+                    if (requestHeaders.isNotEmpty()) {
+                        view.loadUrl(url, requestHeaders)
                         return true
                     }
                 }
 
                 return false
+            }
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                logcat(LogPriority.ERROR) {
+                    "WebView renderer gone: crashed=${detail.didCrash()}, " +
+                        "priority=${detail.rendererPriorityAtExit()}"
+                }
+                val shouldNavigateUp = isActive
+                isActive = false
+                windowStack.items.forEach { it.destroyWebView() }
+                if (shouldNavigateUp) {
+                    context.toast(MR.strings.internal_error, Toast.LENGTH_LONG)
+                    onNavigateUp()
+                }
+                return true
             }
         }
     }
@@ -166,7 +183,7 @@ fun WebViewScreenContent(
                 resultMsg: Message,
             ): Boolean {
                 // if it wasn't initiated by a user gesture, we should ignore it like a normal browser would
-                if (isUserGesture) {
+                if (isActive && isUserGesture) {
                     windowStack.push(WebViewWindow(resultMsg, WebViewNavigator(coroutineScope)))
                     return true
                 }
@@ -217,7 +234,9 @@ fun WebViewScreenContent(
             if (windowStack.size == 1) {
                 onNavigateUp()
             } else {
+                val window = windowStack.lastItemOrNull
                 windowStack.pop()
+                window?.destroyWebView()
             }
         }
     }
@@ -346,11 +365,7 @@ fun WebViewScreenContent(
                 },
                 onDispose = { webView ->
                     val window = windowStack.items.find { it.webView == webView }
-                    if (window == null) {
-                        // If we couldn't find any window on the stack that owns this WebView, it means that we can
-                        // safely dispose of it because the window containing it has been closed.
-                        webView.destroy()
-                    } else {
+                    if (window != null) {
                         // The composable is being disposed but the WebView object is not.
                         // When the WebView element is recomposed, we will want the WebView to resume from its state
                         // before it was unmounted, we won't want it to reset back to its original target.
