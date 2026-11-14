@@ -39,8 +39,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -75,9 +73,6 @@ fun MangaChapterListItem(
     onClick: () -> Unit,
     onDownloadClick: ((ChapterDownloadAction) -> Unit)?,
     onChapterSwipe: (LibraryPreferences.ChapterSwipeAction) -> Unit,
-    onCopyTitle: (() -> Unit)? = null,
-    copyTitleOnLongPress: Boolean = true,
-    onTitleBoundsChanged: ((LayoutCoordinates) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val start = getSwipeAction(
@@ -159,22 +154,9 @@ fun MangaChapterListItem(
                             color = LocalContentColor.current
                                 .copy(alpha = if (read) DISABLED_ALPHA else SECONDARY_ALPHA),
                         )
-                    // 「译名与原名」模式下原名作为第二行显示，长按复制的命中判定要覆盖
-                    // 这两行整体：只挂在主标题上的话，按在原名那行会被当成选中章节。
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = when {
-                            onCopyTitle != null && copyTitleOnLongPress -> Modifier.combinedClickable(
-                                onClick = onClick,
-                                onLongClick = onCopyTitle,
-                                // 波纹仍由外层整行的 clickable 提供，这里不要再叠一层。
-                                indication = null,
-                                interactionSource = null,
-                            )
-                            onTitleBoundsChanged != null -> Modifier.onGloballyPositioned(onTitleBoundsChanged)
-                            else -> Modifier
-                        },
-                    ) {
+                    // 标题区不再挂自己的长按：这一列在列表布局里就是整行的宽度，
+                    // 让它复制标题等于把「长按进入多选」从整行上抹掉。长按统一交给外层整行。
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,

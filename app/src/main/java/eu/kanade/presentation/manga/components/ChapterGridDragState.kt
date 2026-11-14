@@ -75,6 +75,9 @@ private const val SWAP_REVERSAL_HYSTERESIS_FRACTION = 0.35f
  */
 private const val SWAP_THROTTLE_MILLIS = 16L
 
+/** 松手时把顺序对齐到落点，最多走几格。正常只差一格，留点余量免得几何缺失时空转。 */
+private const val SNAP_STEP_LIMIT = 8
+
 /**
  * Cap on how many cell rectangles are tracked at once.
  *
@@ -132,6 +135,9 @@ class ChapterGridDragState(
     private var grabOffset = Offset.Zero
 
     private var pressedId: Long? = null
+
+    /** 按下那一刻的顺序。手势结束时和它比，才知道这次到底有没有改过顺序。 */
+    private var pressOrder: List<Long> = emptyList()
 
     /** How far each card is currently drawn away from the cell it occupies. */
     private val settleShift = SnapshotStateMap<Int, Offset>()
@@ -210,6 +216,7 @@ class ChapterGridDragState(
         hitSlopPx = slopPx
         movedAfterLongPress = false
         orderChanged = false
+        pressOrder = items.map { it.id }
         settleShift.clear()
         settleVelocity.clear()
         lastSwapFrom = -1
@@ -244,8 +251,28 @@ class ChapterGridDragState(
         settleSignal.trySend(Unit)
     }
 
+    /**
+     * Hands the finished drag to the screen, but only when it rearranged something.
+     *
+     * A press that never swapped two cards is not a reorder: the finger moved past the slop and
+     * the card followed it, but nothing was rearranged. Committing that would rewrite the whole
+     * chapter order and switch the work to manual sorting for a gesture that changed nothing, so
+     * it is dropped here. The press still counts as a drag on the caller's side — the card visibly
+     * followed the finger — it just leaves no trace behind.
+     *
+     * 落点先对齐再提交。拖动中的防回摆要求卡片越过接缝 35% 才允许换回去，手指停在原格右半边
+     * 时那次换位会被吃掉：卡片看着已经回到原格，顺序却还差一格。按这个顺序提交，就会把"拖出去
+     * 又拖回来"当成真的改了顺序，排序方式跟着切成「手动」。松手时落点已经确定，没有来回抖动要
+     * 防，所以这里强制补上这一格。
+     */
     fun commit() {
-        onCommit()
+        var guard = 0
+        while (guard++ < SNAP_STEP_LIMIT && moveToTargetAtPointer(force = true)) {
+            // 一次只走一格，追上落点为止。
+        }
+        // 对齐之后和按下时的顺序比：拖出去又拖回来等于没改，不必提交，排序方式也就不会跟着
+        // 变成「手动」。
+        if (orderChanged && items.map { it.id } != pressOrder) onCommit()
     }
 
     fun toRoot(local: Offset): Offset = listTopLeft + local
@@ -316,16 +343,16 @@ class ChapterGridDragState(
         return listState.dispatchRawDelta(ratio * maxSpeed)
     }
 
-    fun moveToTargetAtPointer() {
-        val id = draggingId ?: return
+    fun moveToTargetAtPointer(force: Boolean = false): Boolean {
+        val id = draggingId ?: return false
         // Hit test with the card's own centre, not the bare pointer: grabbing a card near its
         // edge would otherwise let the finger reach the next cell while the card is still behind.
         val dragCenter = pointerRoot - grabOffset
-        val target = slotAt(dragCenter, hitSlopPx) ?: return
+        val target = slotAt(dragCenter, hitSlopPx) ?: return false
         val from = items.indexOfFirst { it.id == id }
-        if (from < 0 || from == target) return
+        if (from < 0 || from == target) return false
         val to = target.coerceIn(0, items.lastIndex)
-        if (to == from) return
+        if (to == from) return false
         // One cell at a time. A single jump across the whole range would displace every card in
         // between at once, which reads as the grid exploding rather than making room.
         //
@@ -337,14 +364,16 @@ class ChapterGridDragState(
         // just scrolled in has not run onGloballyPositioned yet; swapping without the pair leaves
         // settleMove nothing to measure, so the card jumps straight to its new cell instead of
         // being pushed aside. Skip and let the frame loop retry once the geometry lands.
-        if (!hasGeometry(from, step)) return
-        if (step == lastSwapFrom && from == lastSwapTo && !crossedBackOverSeam(from, step)) return
-        val now = System.nanoTime()
-        if (now - lastSwapNanos < SWAP_THROTTLE_MILLIS * 1_000_000L) return
+        if (!hasGeometry(from, step)) return false
+        if (!force) {
+            if (step == lastSwapFrom && from == lastSwapTo && !crossedBackOverSeam(from, step)) return false
+            if (System.nanoTime() - lastSwapNanos < SWAP_THROTTLE_MILLIS * 1_000_000L) return false
+        }
         lastSwapFrom = from
         lastSwapTo = step
-        lastSwapNanos = now
+        lastSwapNanos = System.nanoTime()
         swapOnce(from, step)
+        return true
     }
 
     private fun crossedBackOverSeam(from: Int, to: Int): Boolean {
@@ -819,6 +848,8 @@ fun Modifier.chapterGridDragSource(
                 scrollJob.cancel()
             }
 
+            // 动过就是拖：换过位才算排序，没换位就什么都不发生（卡片已经跟手走过，弹回去就是
+            // 答案）。两种情况都不再回落到长按——视觉上已经进入拖拽了，松手不能退回选中。
             if (state.movedAfterLongPress) {
                 state.commit()
             } else {
