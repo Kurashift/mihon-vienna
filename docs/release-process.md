@@ -25,6 +25,8 @@
 
 ## 3. 构建与校验
 
+发布包由 CI 打：push tag 之后 `.github/workflows/release.yml` 会 `assembleVienna` 并验签。本地只在想先自己装一版看效果时才构建：
+
 ```powershell
 .\gradlew :app:assembleVienna
 ```
@@ -83,34 +85,38 @@ git rev-parse vX.Y.Z^{commit}
 git push origin vX.Y.Z
 ```
 
-## 5. 发布
+## 5. 打 tag，CI 构建并发布
 
-先干跑一次校验，不联网、不上传：
+合并后切回 main、拉最新、打 tag、推送：
+
+```powershell
+git switch main
+git pull --ff-only
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+push tag 触发 `.github/workflows/release.yml`，它按顺序做四件事：
+
+1. **构建前校验**：tag 与 `versionName` 一致、`docs/release-post-<tag>.md` 存在、tag 指向的提交在 `main` 上。任何一项不符直接失败，不构建
+2. `./gradlew :app:assembleVienna`，出四个 ABI 加 `universal`，签名用仓库 Secrets 里的密钥（`STORE_FILE_BASE64` / `STORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`）
+3. **验签**：`apksigner verify --print-certs` 比对第 3 节记的指纹，对不上就不发布
+4. 生成 `SHA256SUMS`，`gh release create` 建 Release，正文取 `docs/release-post-<tag>.md`（剥掉一级标题）
+
+最后一步会把附件清单打印出来（`gh release view --json assets`），回读核对名称与大小。
+
+Release 已存在时 workflow 失败而不是覆盖——要重发先在网页上删掉那个 Release。
+
+### 手动补救
+
+`scripts/publish_release.py` 留着，用于 CI 失败后手动补传，或者只想改正文的时候：
 
 ```powershell
 python scripts/publish_release.py --check vX.Y.Z arm64-v8a armeabi-v7a x86_64 universal
-```
-
-通过了再真发：
-
-```powershell
 python scripts/publish_release.py vX.Y.Z arm64-v8a armeabi-v7a x86_64 universal
 ```
 
-脚本行为：
-
-- **联网前先校验**，任何一项对不上直接退出：tag 与 `app/build.gradle.kts` 的 `versionName` 一致、`CHANGELOG.md` 第一个版本标题就是 tag、`docs/release-post-<tag>.md` 存在、工作区干净、当前在 `main`、tag 指向 HEAD、`output-metadata.json` 里每个元素都是目标版本、每个请求的 ABI 都有对应 APK。所以顺序必须是「合并 PR → 切回 main → 打 tag → 发布」，在分支上或工作区有改动时脚本会拒绝执行
-- 少传某个 ABI 不会中止，但会打印一行提示：Release 上会缺那个架构
-- Token 从 `secrets.properties` 读，不写死在脚本里，也不入库
-- Release 不存在时自动创建（非 draft、非 prerelease，`target_commitish` 为 `main`），已存在则只更新正文
-- 正文取 `docs/release-post-vX.Y.Z.md`
-- APK 按 **tag 对应的版本精确取**，不按目录里最大的版本取——产物目录会累积历次构建，按最大版本取会把留着的诊断包传上去
-- 顺带生成并上传 `SHA256SUMS`，手动下载的用户可以自证文件完整
-- 同名旧附件先删再传，整条命令幂等，可重复运行
-
-发布前确认 Release 上没有上一次遗留的旧命名附件；发布后回读 API 核对附件清单（名称、大小、`state` 应为 `uploaded`）。
-
-本机没有 GitHub CLI（`gh` 命令不存在），Release 只能走脚本或网页端。
+它要求本机已经有对应版本的 APK（先 `assembleVienna`），校验项与 workflow 一致。日常发版不要用它——产物要来自 CI，本机打的那份没有构建记录可查。
 
 ---
 
