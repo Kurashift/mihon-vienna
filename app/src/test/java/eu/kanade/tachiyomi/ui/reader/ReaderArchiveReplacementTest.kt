@@ -6,6 +6,7 @@ import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import mihon.core.archive.ArchiveFormat
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
@@ -90,7 +91,7 @@ class ReaderArchiveReplacementTest {
         every { archive.uri } returns uri
         every { archive.name } returns originalName
         every { archive.parentFile } returns parent
-        val target = ReaderPage.DeletionTarget.ZipEntry(archive, "001.png")
+        val target = ReaderPage.DeletionTarget.ArchiveEntry(archive, "001.png", ArchiveFormat.ZIP)
 
         every { archive.name } returns backupName
         every { uri.toString() } returns "content://chapters/backup"

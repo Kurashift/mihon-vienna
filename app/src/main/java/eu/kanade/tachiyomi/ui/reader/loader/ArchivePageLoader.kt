@@ -4,6 +4,7 @@ import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
+import mihon.core.archive.ArchiveFormat
 import mihon.core.archive.ArchiveReader
 import tachiyomi.source.local.io.Archive
 
@@ -46,11 +47,19 @@ internal class ArchivePageLoader(
                     .toList()
             }
         }
+        // Only formats the app can write back get a deletion target. rar/cbr open fine through
+        // libarchive, but it has no RAR writer, so those chapters stay read-only.
+        val writableFormat = ArchiveFormat.fromFileName(file.name)
         return entries.mapIndexed { i, entry ->
             ReaderPage(i).apply {
                 stream = { reader.getInputStream(entry.name)!! }
-                if (isZipArchive(file)) {
-                    deletionTarget = ReaderPage.DeletionTarget.ZipEntry(file, entry.name, invalidateLocalSource)
+                if (writableFormat != null) {
+                    deletionTarget = ReaderPage.DeletionTarget.ArchiveEntry(
+                        file,
+                        entry.name,
+                        writableFormat,
+                        invalidateLocalSource,
+                    )
                 }
                 status = Page.State.Ready
                 if (entry.width > 0 && entry.height > 0) {
@@ -58,10 +67,6 @@ internal class ArchivePageLoader(
                 }
             }
         }
-    }
-
-    private fun isZipArchive(file: UniFile): Boolean {
-        return file.name.orEmpty().substringAfterLast('.', "").lowercase() in setOf("zip", "cbz")
     }
 
     override suspend fun loadPage(page: ReaderPage) {

@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.reader.model
 
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.source.model.Page
+import mihon.core.archive.ArchiveFormat
 import java.io.InputStream
 
 open class ReaderPage(
@@ -31,9 +32,10 @@ open class ReaderPage(
 
     sealed interface DeletionTarget {
         data class File(val file: UniFile, val invalidateLocalSource: Boolean = false) : DeletionTarget
-        data class ZipEntry(
+        data class ArchiveEntry(
             val archive: UniFile,
             val entryName: String,
+            val format: ArchiveFormat,
             val invalidateLocalSource: Boolean = false,
         ) : DeletionTarget {
             val archiveUri: String = archive.uri.toString()
