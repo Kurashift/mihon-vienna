@@ -1701,7 +1701,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
 private fun DeletionTarget.key(): String = when (this) {
     is DeletionTarget.File -> "file:${file.uri}"
-    is DeletionTarget.ZipEntry -> "zip:$archiveUri:$entryName"
+    is DeletionTarget.ArchiveEntry -> "archive:$archiveUri:$entryName"
 }
 
 private data class RandomJumpPreload(

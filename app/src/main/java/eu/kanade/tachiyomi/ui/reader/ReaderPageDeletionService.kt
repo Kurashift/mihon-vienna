@@ -13,7 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import logcat.LogPriority
-import mihon.core.archive.ZipWriter
+import mihon.core.archive.ArchiveWriter
 import mihon.core.archive.archiveReader
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.source.service.SourceManager
@@ -93,7 +93,7 @@ class ReaderPageDeletionService(
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
                         val failures = mutableListOf<ReaderPage.DeletionTarget>()
-                        val archives = targets.filterIsInstance<ReaderPage.DeletionTarget.ZipEntry>()
+                        val archives = targets.filterIsInstance<ReaderPage.DeletionTarget.ArchiveEntry>()
                             .groupBy { it.archiveUri }
                         targets.filterIsInstance<ReaderPage.DeletionTarget.File>().forEach { target ->
                             runCatching { target.file.delete() }.onFailure {
@@ -123,7 +123,7 @@ class ReaderPageDeletionService(
         }
     }
 
-    private fun rewriteArchive(target: ReaderPage.DeletionTarget.ZipEntry, removedNames: Set<String>): Boolean {
+    private fun rewriteArchive(target: ReaderPage.DeletionTarget.ArchiveEntry, removedNames: Set<String>): Boolean {
         val parent = target.archiveParent ?: return false
         val originalName = target.archiveName ?: return false
         val archive = parent.findFile(originalName) ?: return false
@@ -133,7 +133,9 @@ class ReaderPageDeletionService(
         val staged = parent.createFile(stagedName) ?: return false
 
         return try {
-            val writer = ZipWriter(app, staged)
+            // Rewrite in the archive's own format: a .cb7 stays a 7z file and a .cbt stays a tar,
+            // so the replacement never changes what other readers see at that path.
+            val writer = ArchiveWriter(app, staged, target.format)
             try {
                 archive.archiveReader(app).use { reader ->
                     reader.forEachEntry { entry, input ->
@@ -192,10 +194,10 @@ internal fun replaceReaderArchive(
 
 private fun ReaderPage.DeletionTarget.key(): String = when (this) {
     is ReaderPage.DeletionTarget.File -> "file:${file.uri}"
-    is ReaderPage.DeletionTarget.ZipEntry -> "zip:$archiveUri:$entryName"
+    is ReaderPage.DeletionTarget.ArchiveEntry -> "archive:$archiveUri:$entryName"
 }
 
 private fun ReaderPage.DeletionTarget.invalidatesLocalSource(): Boolean = when (this) {
     is ReaderPage.DeletionTarget.File -> invalidateLocalSource
-    is ReaderPage.DeletionTarget.ZipEntry -> invalidateLocalSource
+    is ReaderPage.DeletionTarget.ArchiveEntry -> invalidateLocalSource
 }
