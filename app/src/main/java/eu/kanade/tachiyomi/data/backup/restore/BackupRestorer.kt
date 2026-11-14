@@ -2,33 +2,31 @@ package eu.kanade.tachiyomi.data.backup.restore
 
 import android.content.Context
 import android.net.Uri
-import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import eu.kanade.tachiyomi.data.backup.BackupDecoder
 import eu.kanade.tachiyomi.data.backup.BackupNotifier
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
-import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupMarks
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
 import eu.kanade.tachiyomi.data.backup.restore.restorers.CategoriesRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.ExtensionStoreRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.MangaRestorer
+import eu.kanade.tachiyomi.data.backup.restore.restorers.MarksRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.PreferenceRestorer
 import eu.kanade.tachiyomi.data.download.DownloadCache
-import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
-import eu.kanade.tachiyomi.data.manga.MangaMark
-import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.util.system.createFileInCacheDir
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.Database
-import tachiyomi.domain.manga.interactor.GetMangaByUrlAndSourceId
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -52,6 +50,8 @@ class BackupRestorer(
     private val preferenceRestorer: PreferenceRestorer = PreferenceRestorer(context),
     private val extensionStoreRestorer: ExtensionStoreRestorer = ExtensionStoreRestorer(),
     private val mangaRestorer: MangaRestorer = MangaRestorer(),
+    private val decoder: BackupDecoder = BackupDecoder(context),
+    private val marksRestorer: MarksRestorer = MarksRestorer(database),
 ) {
 
     private var restoreAmount = 0
@@ -90,15 +90,17 @@ class BackupRestorer(
         )
     }
 
-    private suspend fun restoreFromFile(uri: Uri, options: RestoreOptions) {
-        val backup = BackupDecoder(context).decode(uri)
+    internal suspend fun restoreFromFile(uri: Uri, options: RestoreOptions) {
+        val coroutineContext = currentCoroutineContext()
+        val metadata = decoder.decodeMetadata(uri, checkCancelled = { coroutineContext.ensureActive() })
+        val backup = metadata.backup
 
         // Store source mapping for error messages
         val backupMaps = backup.backupSources
         sourceMapping = backupMaps.associate { it.sourceId to it.name }
 
         if (options.libraryEntries) {
-            restoreAmount += backup.backupManga.size
+            restoreAmount += metadata.entryCount
         }
         if (options.categories) {
             restoreAmount += 1
@@ -125,7 +127,7 @@ class BackupRestorer(
             }
             if (options.libraryEntries) {
                 restoreManga(
-                    backup.backupManga,
+                    uri,
                     if (options.categories) backup.backupCategories else emptyList(),
                     backup.backupMarks,
                 )
@@ -138,7 +140,7 @@ class BackupRestorer(
         }
     }
 
-    private fun CoroutineScope.restoreCategories(backupCategories: List<BackupCategory>) = launch {
+    private suspend fun CoroutineScope.restoreCategories(backupCategories: List<BackupCategory>) {
         ensureActive()
         categoriesRestorer(backupCategories)
 
@@ -152,75 +154,37 @@ class BackupRestorer(
     }
 
     private fun CoroutineScope.restoreManga(
-        backupMangas: List<BackupManga>,
+        uri: Uri,
         backupCategories: List<BackupCategory>,
         backupMarks: List<BackupMarks>,
     ) = launch {
-        mangaRestorer.sortByNew(backupMangas)
-            .chunked(100)
-            .forEach { chunk ->
-                val restoredAsBatch = try {
-                    database.transaction {
-                        chunk.forEach {
-                            ensureActive()
-                            mangaRestorer.restore(it, backupCategories)
-                        }
-                    }
-                    true
-                } catch (e: Exception) {
-                    ensureActive()
-                    logcat(LogPriority.WARN, e) { "Batch restore failed, retrying entry by entry" }
-                    false
-                }
-
-                if (restoredAsBatch) {
-                    restoreProgress.addAndFetch(chunk.size)
-                } else {
-                    chunk.forEach {
-                        ensureActive()
-
-                        try {
-                            mangaRestorer.restore(it, backupCategories)
-                        } catch (e: Exception) {
-                            ensureActive()
-                            val sourceName = sourceMapping[it.source] ?: it.source.toString()
-                            errors.add(Date() to "${it.title} [$sourceName]: ${e.message}")
-                        }
-
-                        restoreProgress.incrementAndFetch()
-                    }
-                }
-
-                notifier.showRestoreProgress(chunk.last().title, restoreProgress.load(), restoreAmount, isSync)
+        var restoredCount = 0
+        var lastTitle = ""
+        decoder.decodeEntries(uri).collect { manga ->
+            ensureActive()
+            try {
+                mangaRestorer.restore(manga, backupCategories)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ensureActive()
+                val sourceName = sourceMapping[manga.source] ?: manga.source.toString()
+                errors.add(Date() to "${manga.title} [$sourceName]: ${e.message}")
             }
+            lastTitle = manga.title
+            restoredCount++
+            val progress = restoreProgress.incrementAndFetch()
+            if (restoredCount % 100 == 0) {
+                notifier.showRestoreProgress(lastTitle, progress, restoreAmount, isSync)
+            }
+        }
+        if (restoredCount % 100 != 0) {
+            notifier.showRestoreProgress(lastTitle, restoreProgress.load(), restoreAmount, isSync)
+        }
 
         // Marks point at manga/chapter ids from the backup, so they can only be
         // restored once the mangas above exist again.
-        restoreMarks(backupMarks)
-    }
-
-    private suspend fun CoroutineScope.restoreMarks(backupMarks: List<BackupMarks>) {
-        if (backupMarks.isEmpty()) return
-        val mangaMarkStore = Injekt.get<MangaMarkStore>()
-        val goodDoujinStore = Injekt.get<GoodDoujinStore>()
-        val getMangaByUrlAndSourceId = Injekt.get<GetMangaByUrlAndSourceId>()
-        for (mark in backupMarks) {
-            ensureActive()
-            val manga = getMangaByUrlAndSourceId.await(mark.mangaUrl, mark.sourceId) ?: continue
-            val chapter = database.chaptersQueries
-                .getChapterByUrlAndMangaId(mark.chapterUrl, manga.id)
-                .awaitAsOneOrNull() ?: continue
-            val store = if (mark.listType == 0) mangaMarkStore else goodDoujinStore
-            store.add(
-                MangaMark(
-                    mangaId = manga.id,
-                    mangaTitle = mark.mangaTitle.ifBlank { manga.title },
-                    chapterId = chapter._id,
-                    chapterName = mark.chapterName.ifBlank { chapter.name },
-                    markedAt = mark.markedAt,
-                ),
-            )
-        }
+        marksRestorer(backupMarks)
     }
 
     private fun CoroutineScope.restoreAppPreferences(
@@ -267,7 +231,10 @@ class BackupRestorer(
 
                         try {
                             extensionStoreRestorer(it)
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
+                            ensureActive()
                             errors.add(Date() to "Error Adding Repo: ${it.name} : ${e.message}")
                         }
 

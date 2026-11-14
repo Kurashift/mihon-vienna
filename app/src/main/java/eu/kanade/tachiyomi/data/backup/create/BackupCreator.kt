@@ -5,6 +5,7 @@ import android.net.Uri
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.backup.BackupFileValidator
+import eu.kanade.tachiyomi.data.backup.BackupWriter
 import eu.kanade.tachiyomi.data.backup.create.creators.CategoriesBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.ExtensionStoresBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.MangaBackupCreator
@@ -13,14 +14,14 @@ import eu.kanade.tachiyomi.data.backup.create.creators.SourcesBackupCreator
 import eu.kanade.tachiyomi.data.backup.models.Backup
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
-import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupMarks
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
-import eu.kanade.tachiyomi.data.backup.models.BackupSource
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
-import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.protobuf.ProtoBuf
 import logcat.LogPriority
 import okio.buffer
@@ -85,38 +86,43 @@ class BackupCreator(
                 throw IllegalStateException(context.stringResource(MR.strings.create_backup_file_error))
             }
 
-            val nonFavoriteManga = if (options.readEntries) mangaRepository.getReadMangaNotInLibrary() else emptyList()
-            val localManga = if (options.libraryEntries) getCurrentLocalManga() else emptyList()
-            val manga = (getFavorites.await() + nonFavoriteManga + localManga).distinctBy(Manga::id)
-            val backupManga = backupMangas(manga, options)
-
-            val backup = Backup(
-                backupManga = backupManga,
+            val coroutineContext = currentCoroutineContext()
+            val manga = if (options.libraryEntries) {
+                val nonFavorites = if (options.readEntries) mangaRepository.getReadMangaNotInLibrary() else emptyList()
+                (getFavorites.await() + nonFavorites + getCurrentLocalManga()).distinctBy(Manga::id)
+            } else {
+                emptyList()
+            }
+            val metadata = Backup(
+                backupManga = emptyList(),
                 backupCategories = backupCategories(options),
-                backupSources = backupSources(backupManga),
+                backupSources = sourcesBackupCreator(manga.mapTo(mutableSetOf(), Manga::source)),
                 backupPreferences = backupAppPreferences(options),
                 backupExtensionStores = backupExtensionStores(options),
                 backupSourcePreferences = backupSourcePreferences(options),
                 backupMarks = backupMarks(),
             )
 
-            val byteArray = parser.encodeToByteArray(Backup.serializer(), backup)
-            if (byteArray.isEmpty()) {
-                throw IllegalStateException(context.stringResource(MR.strings.empty_backup_error))
-            }
-
             file.openOutputStream()
                 .also {
                     // Force overwrite old file
                     (it as? FileOutputStream)?.channel?.truncate(0)
                 }
-                .sink().gzip().buffer().use {
-                    it.write(byteArray)
+                .sink().gzip().buffer().use { sink ->
+                    val writer = BackupWriter(sink, parser) { coroutineContext.ensureActive() }
+                    manga.forEach {
+                        coroutineContext.ensureActive()
+                        writer.writeEntry(mangaBackupCreator(it, options))
+                    }
+                    writer.writeMetadata(metadata)
+                    if (writer.isEmpty) {
+                        throw IllegalStateException(context.stringResource(MR.strings.empty_backup_error))
+                    }
                 }
             val fileUri = file.uri
 
             // Make sure it's a valid backup file
-            BackupFileValidator(context).validate(fileUri)
+            BackupFileValidator(context).validate(fileUri) { coroutineContext.ensureActive() }
 
             if (isAutoBackup) {
                 backupPreferences.lastAutoBackupTimestamp.set(Clock.System.now().toEpochMilliseconds())
@@ -137,9 +143,21 @@ class BackupCreator(
         val chapterRepository = Injekt.get<ChapterRepository>()
         val allMarks = mangaMarkStore.marks.value.map { it to 0 } + goodDoujinStore.marks.value.map { it to 1 }
         return allMarks.mapNotNull { (mark, listType) ->
-            val manga = runCatching { mangaRepository.getMangaById(mark.mangaId) }.getOrNull() ?: return@mapNotNull null
-            val chapter =
-                runCatching { chapterRepository.getChapterById(mark.chapterId) }.getOrNull() ?: return@mapNotNull null
+            currentCoroutineContext().ensureActive()
+            val manga = try {
+                mangaRepository.getMangaById(mark.mangaId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            } ?: return@mapNotNull null
+            val chapter = try {
+                chapterRepository.getChapterById(mark.chapterId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            } ?: return@mapNotNull null
             BackupMarks(
                 sourceId = manga.source,
                 mangaUrl = manga.url,
@@ -158,12 +176,6 @@ class BackupCreator(
         return categoriesBackupCreator()
     }
 
-    private suspend fun backupMangas(mangas: List<Manga>, options: BackupOptions): List<BackupManga> {
-        if (!options.libraryEntries) return emptyList()
-
-        return mangaBackupCreator(mangas, options)
-    }
-
     private suspend fun getCurrentLocalManga(): List<Manga> {
         val source = sourceManager.get(LocalSource.ID) as? LocalSource ?: return emptyList()
         val currentMangaUrls = checkNotNull(source.getConfirmedMangaUrls()) {
@@ -172,10 +184,6 @@ class BackupCreator(
         return currentMangaUrls.mapNotNull { url ->
             mangaRepository.getMangaByUrlAndSourceId(url, LocalSource.ID)
         }
-    }
-
-    private fun backupSources(mangas: List<BackupManga>): List<BackupSource> {
-        return sourcesBackupCreator(mangas)
     }
 
     private fun backupAppPreferences(options: BackupOptions): List<BackupPreference> {

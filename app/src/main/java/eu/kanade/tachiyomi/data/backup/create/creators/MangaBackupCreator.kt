@@ -26,13 +26,7 @@ class MangaBackupCreator(
     private val localChapterCoverManager: LocalChapterCoverManager = Injekt.get(),
 ) {
 
-    suspend operator fun invoke(mangas: List<Manga>, options: BackupOptions): List<BackupManga> {
-        return mangas.map {
-            backupManga(it, options)
-        }
-    }
-
-    private suspend fun backupManga(manga: Manga, options: BackupOptions): BackupManga {
+    suspend operator fun invoke(manga: Manga, options: BackupOptions): BackupManga {
         // Entry for this manga
         val mangaObject = manga.toBackupManga()
 

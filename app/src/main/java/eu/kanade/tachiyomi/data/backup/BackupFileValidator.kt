@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.backup
 import android.content.Context
 import android.net.Uri
 import eu.kanade.tachiyomi.data.track.TrackerManager
+import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -12,6 +13,7 @@ class BackupFileValidator(
 
     private val sourceManager: SourceManager = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
+    private val decoder: BackupDecoder = BackupDecoder(context),
 ) {
 
     /**
@@ -19,9 +21,17 @@ class BackupFileValidator(
      *
      * @return List of missing sources or missing trackers.
      */
-    fun validate(uri: Uri): Results {
+    fun validate(uri: Uri, checkCancelled: () -> Unit = {}): Results {
+        val trackers = mutableSetOf<Int>()
         val backup = try {
-            BackupDecoder(context).decode(uri)
+            decoder.decodeMetadata(
+                uri,
+                onlySources = true,
+                onTrackingId = { trackers.add(it) },
+                checkCancelled = checkCancelled,
+            ).backup
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             throw IllegalStateException(e)
         }
@@ -40,10 +50,6 @@ class BackupFileValidator(
             .distinct()
             .sorted()
 
-        val trackers = backup.backupManga
-            .flatMap { it.tracking }
-            .map { it.syncId }
-            .distinct()
         val missingTrackers = trackers
             .mapNotNull { trackerManager.get(it.toLong()) }
             .filter { !it.isLoggedIn }
