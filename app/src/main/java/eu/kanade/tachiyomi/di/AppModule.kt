@@ -10,6 +10,7 @@ import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDatabaseType
 import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriver
 import com.eygraber.sqldelight.androidx.driver.FileProvider
 import eu.kanade.domain.track.store.DelayedTrackingStore
+import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
 import eu.kanade.tachiyomi.data.audio.AudioCacheInterceptor
 import eu.kanade.tachiyomi.data.audio.AudioCategoryCache
@@ -21,6 +22,7 @@ import eu.kanade.tachiyomi.data.audio.AudioTrackCache
 import eu.kanade.tachiyomi.data.audio.KikoeruApi
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.cache.CoverCache
+import eu.kanade.tachiyomi.data.database.DatabaseSnapshot
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
@@ -86,6 +88,9 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory<SqlDriver> {
             synchronized(lock) {
                 sqlDriverRef?.get()?.let { return@synchronized it }
+
+                // 迁移写坏了没有第二条路可以回来：动手之前先把数据库整份留一份。
+                DatabaseSnapshot.beforeMigration(app, BuildConfig.VERSION_CODE)
 
                 AndroidxSqliteDriver(
                     driver = BundledSQLiteDriver(),
