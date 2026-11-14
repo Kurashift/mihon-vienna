@@ -27,7 +27,7 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
     /**
      * Holds preprocessed items so they don't get removed when changing chapter
      */
-    private var preprocessed: MutableMap<Int, InsertPage> = mutableMapOf()
+    private val preprocessed = PagerPageSplits()
 
     var nextTransition: ChapterTransition.Next? = null
         private set
@@ -79,12 +79,12 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
             val lastPage = pages.last()
 
             // Insert preprocessed pages into current page list
-            preprocessed.keys.sortedDescending()
-                .forEach { key ->
-                    if (lastPage.index == key) {
-                        insertPageLastPage = preprocessed[key]
+            preprocessed.forChapter(chapters.currChapter.chapter.id)
+                .forEach { page ->
+                    if (lastPage.index == page.index) {
+                        insertPageLastPage = page
                     }
-                    preprocessed[key]?.let { pages.add(key + 1, it) }
+                    pages.add(page.index + 1, page)
                 }
 
             newItems.addAll(pages)
@@ -106,6 +106,8 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
 
         chapters.nextChapter?.pages?.let(newItems::addAll)
 
+        val currentItem = items.getOrNull(viewer.pager.currentItem)
+
         // Resets double-page splits, else insert pages get misplaced
         items.filterIsInstance<InsertPage>().also { items.removeAll(it) }
 
@@ -113,9 +115,15 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
             newItems.reverse()
         }
 
-        preprocessed = mutableMapOf()
+        val adjacentChapterIds = setOfNotNull(chapters.prevChapter?.chapter?.id, chapters.nextChapter?.chapter?.id)
+        preprocessed.retainChapters(adjacentChapterIds)
         items = newItems
         notifyDataSetChanged()
+
+        val currentPosition = items.indexOf(currentItem)
+        if (currentPosition != -1 && currentPosition != viewer.pager.currentItem) {
+            viewer.pager.setCurrentItem(currentPosition, false)
+        }
 
         // Will skip insert page otherwise
         if (insertPageLastPage != null) {
@@ -163,7 +171,7 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
 
         // Put aside preprocessed pages for next chapter so they don't get removed when changing chapter
         if (currentPage.chapter.chapter.id != currentChapter?.chapter?.id) {
-            preprocessed[newPage.index] = newPage
+            preprocessed.add(newPage)
             return
         }
 
@@ -197,5 +205,21 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
 
     fun refresh() {
         readerThemedContext = viewer.activity.createReaderThemeContext()
+    }
+}
+
+internal class PagerPageSplits {
+    private val pages = mutableMapOf<Pair<Long?, Int>, InsertPage>()
+
+    fun add(page: InsertPage) {
+        pages.putIfAbsent(page.chapter.chapter.id to page.index, page)
+    }
+
+    fun forChapter(chapterId: Long?): List<InsertPage> = pages.values
+        .filter { it.chapter.chapter.id == chapterId }
+        .sortedByDescending { it.index }
+
+    fun retainChapters(chapterIds: Set<Long>) {
+        pages.keys.retainAll { it.first in chapterIds }
     }
 }
