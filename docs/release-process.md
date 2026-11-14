@@ -40,6 +40,24 @@
 
 ABI 选择：`arm64-v8a`（手机/平板）、`x86_64`（模拟器）、`armeabi-v7a`（老旧 32 位）、`universal`（全架构，体积最大，前三个都不合适时才用）。
 
+### 签名身份
+
+发之前对一次指纹，确认这四个包是这把钥匙签的：
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\36.0.0\apksigner.bat" verify --print-certs `
+  app\build\outputs\apk\vienna\MihonVienna-<versionName>-arm64-v8a.apk
+```
+
+对上的两行：
+
+- `Signer #1 certificate DN: CN=Mihon Personal Build, OU=Personal, O=Personal, L=Local, ST=Local, C=CN`
+- `Signer #1 certificate SHA-256 digest: fe8823116beff06892c1d877c0b331d03f6df0aaf8227df0ae7d383cda2b96a0`
+
+指纹对不上就不要传。装出去之后换不回来：新密钥签的包无法覆盖安装，老用户只能卸载重装，本地库和进度一起丢。
+
+密钥本身在仓库外：`D:\DATA\keys\mihon-release.keystore`（别名 `mihon`，密码在仓库根的 `keystore.properties`）。文件丢失无法从 APK 反推，只能换新密钥；`D:\DATA\keys\backup\` 有一份校验过哈希的副本，建议另外放一份到云盘或移动硬盘，与密码分开存放。
+
 ## 4. 提交、PR 与推送
 
 `main` 开了分支保护：改动只能经 PR 合并，且 `Build & Test App` 检查通过；直接 `git push origin main` 会被 GitHub 拒绝。tag 不受分支保护限制，照常推送。
