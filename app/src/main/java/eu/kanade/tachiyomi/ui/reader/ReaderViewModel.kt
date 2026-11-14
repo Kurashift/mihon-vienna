@@ -335,17 +335,7 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     override fun onCleared() {
-        pendingPageDeletion?.let { pending ->
-            pendingPageDeletion = null
-            committingPageDeletions += pending
-            pageDeletionService.deferAfterReaderExit(
-                targets = pending.targets.map { it.target },
-                count = pending.targets.size,
-                revision = pageDeletionRevision,
-                deadlineMillis = pageDeletionTimer.deadlineMillis,
-                onComplete = { completePageDeletion(pending, it) },
-            )
-        }
+        handOffPendingPageDeletion()
         pageDeletionTimer.cancel()
         val currentChapters = state.value.viewerChapters
         if (currentChapters != null) {
@@ -354,6 +344,32 @@ class ReaderViewModel @JvmOverloads constructor(
                 downloadManager.addDownloadsToStartOfQueue(listOf(it))
             }
         }
+    }
+
+    /**
+     * Hands a still-undoable page deletion over to the app-level service.
+     *
+     * Called as soon as the reader starts finishing, not from [onCleared]: the main window has to
+     * already hold the pending deletion when it becomes visible, otherwise the pill blinks out
+     * with the reader's window and pops back in once this activity is gone.
+     *
+     * The reader's own count is left alone on purpose. Its pill has to stay on screen while its
+     * window fades out, so the two windows draw the same pill in the same place for that frame
+     * instead of one disappearing before the other arrives.
+     */
+    fun handOffPendingPageDeletion() {
+        val pending = pendingPageDeletion ?: return
+        pendingPageDeletion = null
+        committingPageDeletions += pending
+        pageDeletionService.deferAfterReaderExit(
+            targets = pending.targets.map { it.target },
+            count = pending.targets.size,
+            revision = pageDeletionRevision,
+            deadlineMillis = pageDeletionTimer.deadlineMillis,
+            onComplete = { completePageDeletion(pending, it) },
+        )
+        // The service owns the deadline from here; two timers would commit twice.
+        pageDeletionTimer.cancel()
     }
 
     /**

@@ -86,6 +86,7 @@ import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
 import eu.kanade.presentation.components.LocalDeletionHost
 import eu.kanade.presentation.components.ReaderPageDeletionHost
+import eu.kanade.presentation.components.UndoPillHost
 import eu.kanade.presentation.more.UpdateAvailableDialog
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
@@ -293,6 +294,7 @@ class MainActivity : BaseActivity() {
                         // them.
                         LocalDeletionHost()
                         ReaderPageDeletionHost(modifier = Modifier.align(Alignment.BottomCenter))
+                        UndoPillHost(modifier = Modifier.align(Alignment.BottomCenter))
                     }
                 }
 

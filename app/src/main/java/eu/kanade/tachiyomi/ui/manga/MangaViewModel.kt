@@ -44,6 +44,7 @@ import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.data.undo.UndoPillService
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.ui.browse.source.browse.LocalReadingFilter
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
@@ -51,7 +52,6 @@ import eu.kanade.tachiyomi.util.chapter.getFirstChapter
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
-import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -149,6 +149,7 @@ class MangaViewModel(
     private val mangaRepository: MangaRepository = Injekt.get(),
     private val mangaMarkStore: MangaMarkStore = Injekt.get(),
     private val goodDoujinStore: GoodDoujinStore = Injekt.get(),
+    private val undoPill: UndoPillService = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
     private val localRandomScope: LocalRandomScope = Injekt.get(),
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
@@ -468,11 +469,8 @@ class MangaViewModel(
     fun toggleFavorite() {
         toggleFavorite(
             onRemoved = { restore ->
-                val undone = snackbarHostState.showUndoSnackbar(
-                    message = context.stringResource(MR.strings.undo_removed_from_library, 1),
-                    undoLabel = context.stringResource(MR.strings.action_undo),
-                    onUndo = restore,
-                )
+                val undone = undoPill.show(context.stringResource(MR.strings.undo_removed_from_library, 1), restore)
+                    .await()
                 // Back on the shelf: there is nothing to ask about its downloads.
                 if (!undone && hasDownloads()) {
                     val result = snackbarHostState.showSnackbarReplacing(
@@ -832,11 +830,10 @@ class MangaViewModel(
                 markedAt = System.currentTimeMillis(),
             )
             val added = goodDoujinStore.toggle(mark)
-            snackbarHostState.showUndoSnackbar(
-                message = context.stringResource(
+            undoPill.show(
+                context.stringResource(
                     if (added) MR.strings.good_doujin_added else MR.strings.good_doujin_removed,
                 ),
-                undoLabel = context.stringResource(MR.strings.action_undo),
             ) {
                 when {
                     added -> goodDoujinStore.setAll(listOf(mark), false)
@@ -1106,12 +1103,9 @@ class MangaViewModel(
                 snackbarHostState.showSnackbarReplacing(message)
                 false
             } else {
-                snackbarHostState.showUndoSnackbar(
-                    message = message,
-                    undoLabel = context.stringResource(MR.strings.action_undo),
-                ) {
+                undoPill.show(message) {
                     setReadStatus.restoreReadStates(snapshot)
-                }
+                }.await()
             }
             // Chapters that were put back to unread have no progress to offer a tracker.
             if (undone) return@launchIO
@@ -1196,8 +1190,8 @@ class MangaViewModel(
         viewModelScope.launch {
             goodDoujinStore.setAll(marks, marked)
             toggleAllSelection(false)
-            snackbarHostState.showUndoSnackbar(
-                message = context.stringResource(
+            undoPill.show(
+                context.stringResource(
                     if (marked) {
                         MR.strings.undo_good_doujins_added
                     } else {
@@ -1205,7 +1199,6 @@ class MangaViewModel(
                     },
                     marks.size,
                 ),
-                undoLabel = context.stringResource(MR.strings.action_undo),
             ) {
                 if (marked) {
                     goodDoujinStore.setAll(marks, false)
@@ -1470,12 +1463,11 @@ class MangaViewModel(
             if (changed.isEmpty()) return@launchIO
             updateChapter.awaitAll(changed.map { ChapterUpdate(id = it.id, bookmark = bookmarked) })
 
-            snackbarHostState.showUndoSnackbar(
-                message = context.stringResource(
+            undoPill.show(
+                context.stringResource(
                     if (bookmarked) MR.strings.undo_chapters_bookmarked else MR.strings.undo_chapters_unbookmarked,
                     changed.size,
                 ),
-                undoLabel = context.stringResource(MR.strings.action_undo),
             ) {
                 updateChapter.awaitAll(changed.map { ChapterUpdate(id = it.id, bookmark = it.bookmark) })
             }

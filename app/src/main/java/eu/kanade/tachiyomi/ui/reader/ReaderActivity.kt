@@ -843,6 +843,9 @@ class ReaderActivity : BaseActivity() {
      */
     override fun finish() {
         viewModel.onActivityFinish()
+        // Before the window starts fading: the main window draws the same pill from here on, so
+        // the undo survives the hand-off without blinking out and back in.
+        viewModel.handOffPendingPageDeletion()
         super.finish()
     }
 

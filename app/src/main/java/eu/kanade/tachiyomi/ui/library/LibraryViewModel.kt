@@ -23,13 +23,13 @@ import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.manga.RandomSelectionCooldown
 import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.data.undo.UndoPillService
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
-import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -103,6 +103,7 @@ class LibraryViewModel(
     private val downloadCache: DownloadCache = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
     private val randomSelectionCooldown: RandomSelectionCooldown = Injekt.get(),
+    private val undoPill: UndoPillService = Injekt.get(),
 ) : StateViewModel<LibraryViewModel.State>(State()) {
 
     /** Owned here rather than by the tab, so a result that outlives the screen still has a host. */
@@ -609,23 +610,16 @@ class LibraryViewModel(
                 }
             }
             if (snapshot.isEmpty()) return@launchNonCancellable
-            // The edit must finish even if the screen goes away; the pill is only feedback, so it
-            // runs in a job that is cancelled with the screen instead.
-            viewModelScope.launch {
-                val message = context.stringResource(
-                    if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
-                    snapshot.size,
-                )
-                // 开了「标记为已读后删除下载」时文件随这次编辑一起没了，撤销补不回来，只报一句结果。
-                if (removedDownloads) {
-                    snackbarHostState.showSnackbarReplacing(message)
-                } else {
-                    snackbarHostState.showUndoSnackbar(
-                        message = message,
-                        undoLabel = context.stringResource(MR.strings.action_undo),
-                    ) {
-                        setReadStatus.restoreReadStates(snapshot)
-                    }
+            val message = context.stringResource(
+                if (read) MR.strings.undo_chapters_marked_read else MR.strings.undo_chapters_marked_unread,
+                snapshot.size,
+            )
+            // 开了「标记为已读后删除下载」时文件随这次编辑一起没了，撤销补不回来，只报一句结果。
+            if (removedDownloads) {
+                viewModelScope.launch { snackbarHostState.showSnackbarReplacing(message) }
+            } else {
+                undoPill.show(message) {
+                    setReadStatus.restoreReadStates(snapshot)
                 }
             }
         }
@@ -726,15 +720,7 @@ class LibraryViewModel(
                 )
                 selected.forEach { setMangaCategories.await(it.id, categoryIdsById[it.id].orEmpty()) }
             }
-            // The removal must finish even if the screen goes away; the pill is only feedback, so
-            // it runs in a job that is cancelled with the screen instead.
-            viewModelScope.launch {
-                snackbarHostState.showUndoSnackbar(
-                    message = context.stringResource(MR.strings.undo_removed_from_library, selected.size),
-                    undoLabel = context.stringResource(MR.strings.action_undo),
-                    onUndo = restore,
-                )
-            }
+            undoPill.show(context.stringResource(MR.strings.undo_removed_from_library, selected.size), restore)
         }
         clearSelection()
     }

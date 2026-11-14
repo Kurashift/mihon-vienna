@@ -23,7 +23,6 @@ import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.PlaylistRemove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,10 +69,10 @@ import eu.kanade.tachiyomi.data.manga.ChapterFlagStore
 import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
 import eu.kanade.tachiyomi.data.manga.MangaMark
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
+import eu.kanade.tachiyomi.data.undo.UndoPillService
 import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
-import eu.kanade.tachiyomi.util.system.showUndoSnackbar
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -86,7 +85,6 @@ import tachiyomi.domain.manga.model.withLocalChapterDisplayMode
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.FastScrollLazyVerticalGrid
-import tachiyomi.presentation.core.components.material.AutoDismissSnackbarHost
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.LocalSource
@@ -201,7 +199,7 @@ class ChapterFlagListScreen(
         // 多选粒度是「篇目」：长按卡片勾选单个，长按分组头一键勾选该组下全部本地篇目。
         // 非本地条目没有磁盘文件可删，置灰且不可勾选。
         var selectedChapterIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-        val snackbarHostState = remember { SnackbarHostState() }
+        val undoPill = remember { Injekt.get<UndoPillService>() }
         val selectedMarks = remember(visibleGroups, selectedChapterIds) {
             visibleGroups.flatMap { it.marks }.filter { it.chapterId in selectedChapterIds }
         }
@@ -276,10 +274,7 @@ class ChapterFlagListScreen(
                                         val cleared = marks
                                         scope.launch {
                                             store.clear()
-                                            snackbarHostState.showUndoSnackbar(
-                                                message = context.stringResource(type.clearUndoRes),
-                                                undoLabel = context.stringResource(MR.strings.action_undo),
-                                            ) {
+                                            undoPill.show(context.stringResource(type.clearUndoRes)) {
                                                 store.setAll(cleared, true)
                                             }
                                         }
@@ -313,9 +308,8 @@ class ChapterFlagListScreen(
                                             selectedChapterIds = emptySet()
                                             scope.launch {
                                                 store.setAll(removed, false)
-                                                snackbarHostState.showUndoSnackbar(
-                                                    message = context.stringResource(type.removeUndoRes, removed.size),
-                                                    undoLabel = context.stringResource(MR.strings.action_undo),
+                                                undoPill.show(
+                                                    context.stringResource(type.removeUndoRes, removed.size),
                                                 ) {
                                                     store.setAll(removed, true)
                                                 }
@@ -348,7 +342,6 @@ class ChapterFlagListScreen(
                     scrollBehavior = scrollBehavior,
                 )
             },
-            snackbarHost = { AutoDismissSnackbarHost(hostState = snackbarHostState) },
         ) { contentPadding ->
             if (marks.isEmpty()) {
                 MyListEmptyState(stringRes = type.emptyRes, contentPadding = contentPadding)
