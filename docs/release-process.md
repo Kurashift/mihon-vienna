@@ -36,6 +36,8 @@
 
 `vienna` 目录会累积历次产物，不核对容易把旧包传上去。不要为了省事删 build 目录。
 
+这两项发布脚本也会再查一遍，但它是发版那一刻才查的；构建完先看一眼，比等到打 tag 之后才发现对不上省事。
+
 ABI 选择：`arm64-v8a`（手机/平板）、`x86_64`（模拟器）、`armeabi-v7a`（老旧 32 位）、`universal`（全架构，体积最大，前三个都不合适时才用）。
 
 ## 4. 提交、PR 与推送
@@ -83,16 +85,27 @@ git push origin vX.Y.Z
 
 ## 5. 发布
 
+先干跑一次校验，不联网、不上传：
+
+```powershell
+python scripts/publish_release.py --check vX.Y.Z arm64-v8a armeabi-v7a x86_64 universal
+```
+
+通过了再真发：
+
 ```powershell
 python scripts/publish_release.py vX.Y.Z arm64-v8a armeabi-v7a x86_64 universal
 ```
 
 脚本行为：
 
+- **联网前先校验**，任何一项对不上直接退出：tag 与 `app/build.gradle.kts` 的 `versionName` 一致、`CHANGELOG.md` 第一个版本标题就是 tag、`docs/release-post-<tag>.md` 存在、工作区干净、当前在 `main`、tag 指向 HEAD、`output-metadata.json` 里每个元素都是目标版本、每个请求的 ABI 都有对应 APK。所以顺序必须是「合并 PR → 切回 main → 打 tag → 发布」，在分支上或工作区有改动时脚本会拒绝执行
+- 少传某个 ABI 不会中止，但会打印一行提示：Release 上会缺那个架构
 - Token 从 `secrets.properties` 读，不写死在脚本里，也不入库
 - Release 不存在时自动创建（非 draft、非 prerelease，`target_commitish` 为 `main`），已存在则只更新正文
 - 正文取 `docs/release-post-vX.Y.Z.md`
-- APK 按**语义版本号**排序取最新版。字符串排序会把 `2.10.0` 排在 `2.2.1` 前面，到双位数小版本时会误传旧包
+- APK 按 **tag 对应的版本精确取**，不按目录里最大的版本取——产物目录会累积历次构建，按最大版本取会把留着的诊断包传上去
+- 顺带生成并上传 `SHA256SUMS`，手动下载的用户可以自证文件完整
 - 同名旧附件先删再传，整条命令幂等，可重复运行
 
 发布前确认 Release 上没有上一次遗留的旧命名附件；发布后回读 API 核对附件清单（名称、大小、`state` 应为 `uploaded`）。
