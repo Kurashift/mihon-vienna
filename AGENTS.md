@@ -83,4 +83,15 @@ Mihon Vienna —— 基于 Mihon 的个人分支，Android 应用，Kotlin + Com
 - 验收现场统计时，需明确排除少量已知损坏且在未 Root 状态下无法删除的文件，不得把它们计入对数或误报为回归。
 - 未经用户明确同意，不得把清除应用数据、撤销存储权限、重建整个本地库、删除索引或重新导入文件当作修复捷径。
 - Agent 完成一个编译通过、自洽的改动单元后，可以主动 commit 并推送，不必等用户要求；半成品、临时插桩、未验证的中间态不提交也不推送。推送前遵守下一条的 fetch / rebase 规则。提交前用 `git status` 确认改动范围：发现并行会话进行中的改动，只提交自己名下的文件，不要把别人的工作扫进自己的提交。
-- 推送前先 `git fetch`；落后就 rebase。`main` 开了分支保护：改动只能经 PR 合入——切分支、推分支、开 PR，等 `Build & Test App` 变绿再合并；直接 `git push origin main` 会被 GitHub 拒绝。tag 不受分支保护限制，但必须打在合并后的 `main` 上，已推送的 annotated tag 要删掉重打（`git ls-remote --tags` 与 `git rev-parse vX.Y.Z` 返回的是 tag object，核对指向用 `vX.Y.Z^{commit}`）。
+- 推送前先 `git fetch`；落后就 rebase。`main` 开了分支保护：改动只能经 PR 合入——切分支、推分支、开 PR、挂 auto-merge，绿了自动合入；直接 `git push origin main` 会被 GitHub 拒绝。tag 不受分支保护限制，但必须打在合并后的 `main` 上，已推送的 annotated tag 要删掉重打（`git ls-remote --tags` 与 `git rev-parse vX.Y.Z` 返回的是 tag object，核对指向用 `vX.Y.Z^{commit}`）。
+
+## 协作节奏
+
+项目所有者不手动执行 git 与 CI 的任何步骤，所有动作由 agent 完成。因此 agent 的默认行为决定了这件事有多慢：不要让所有者等一件它并不需要等的事。
+
+- **一个可编译、自洽的改动单元 = 一个分支 = 一个 PR。** 不要为一行改动单独开 PR，也不要把两件不相关的事塞进一个 PR。改动拆得太碎时，等待次数按 PR 数量翻倍。
+- **push 完立刻回报，不要等 CI 变绿再回话。** 回报写清：分支名、PR 号、本地跑过哪几步、还剩什么没验证。等绿再回话会把一个回合拖成一次阻塞。
+- **开 PR 时挂 auto-merge（squash）。** CI 绿了 GitHub 自己合，不需要人守着点合并，也不需要 agent 守着查状态。
+- **只有下一个改动依赖合并结果时，才去查 CI 状态。** 否则下一件事照常开始；互不相关的改动可以同时挂多个 PR，GitHub 会并行跑。
+- **CI 红了先在本地复现**（`./gradlew spotlessCheck testDebugUnitTest verifySqlDelightMigration`），修好再推。不要靠反复推送试错：一次推送 + 等待是 8 分钟，推三次就是半小时。
+- **需要所有者判断的只有三类**：两种实现之间的取舍、真机上的界面状态、发版（版本号与文案）。其余自己决定，不要反问「要不要我提交」。
