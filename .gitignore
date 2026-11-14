@@ -37,6 +37,7 @@ secrets.properties
 .codebuddy/
 .dsh/
 .zcode/
+.zcodeignore
 __pycache__/
 *.pyc
 gradle/build-logic/bin/
