@@ -109,6 +109,12 @@ class LibraryViewModel(
     /** Owned here rather than by the tab, so a result that outlives the screen still has a host. */
     val snackbarHostState: SnackbarHostState = SnackbarHostState()
 
+    private val tracks = libraryTrackingFlow(
+        getCategories.subscribe(),
+        getTrackingFiltersFlow(),
+        getTracksPerManga.subscribe(),
+    )
+
     init {
         mutableState.update { state ->
             state.copy(activeCategoryIndex = libraryPreferences.lastUsedCategory.get())
@@ -118,7 +124,7 @@ class LibraryViewModel(
                 state.map { it.searchQuery }.distinctUntilChanged().debounce(0.25.seconds),
                 getCategories.subscribe(),
                 combine(getFavoritesFlow(), getChapterTranslatedNamesFlow(), ::Pair),
-                combine(getTracksPerManga.subscribe(), getTrackingFiltersFlow(), ::Pair),
+                combine(tracks, getTrackingFiltersFlow(), ::Pair),
                 getLibraryItemPreferencesFlow(),
             ) {
                     searchQuery,
