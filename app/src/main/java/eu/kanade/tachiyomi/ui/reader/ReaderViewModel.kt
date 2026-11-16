@@ -79,7 +79,6 @@ import tachiyomi.domain.chapter.service.getChapterSort
 import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.history.interactor.UpsertHistory
-import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
@@ -95,7 +94,6 @@ import tachiyomi.source.local.io.Format
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.util.Date
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.getValue
@@ -185,10 +183,10 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     private var loader: ChapterLoader? = null
 
-    /**
-     * The time the chapter was started reading
-     */
-    private var chapterReadStartTime: Long? = null
+    private val historyRecorder = ReaderHistoryRecorder(
+        upsert = upsertHistory::await,
+        onError = { logcat(LogPriority.ERROR, it) },
+    )
 
     private var chapterToDownload: Download? = null
     private var pendingPageDeletion: PendingPageDeletion? = null
@@ -477,6 +475,10 @@ class ReaderViewModel @JvmOverloads constructor(
         )
 
         withUIContext {
+            if (getCurrentChapter()?.chapter?.id != chapter.chapter.id && getCurrentChapter() != null) {
+                updateHistory()
+                restartReadTimer()
+            }
             mutableState.update {
                 // Add new references first to avoid unnecessary recycling
                 newChapters.ref()
@@ -504,9 +506,6 @@ class ReaderViewModel @JvmOverloads constructor(
 
         viewModelScope.launchIO {
             logcat { "Loading ${chapter.chapter.url}" }
-
-            updateHistory()
-            restartReadTimer()
 
             try {
                 loadChapter(loader, chapter)
@@ -890,21 +889,23 @@ class ReaderViewModel @JvmOverloads constructor(
      * Persists the current in-memory reading position of [readerChapter], used when leaving the
      * reader or when crossing into another chapter so the last position is never lost.
      */
-    private suspend fun flushChapterProgress(readerChapter: ReaderChapter) {
-        val chapterId = readerChapter.chapter.id ?: return
+    private fun prepareChapterProgressFlush(readerChapter: ReaderChapter): (suspend () -> Unit)? {
+        val chapterId = readerChapter.chapter.id ?: return null
         val pageIndex = if (chapterReadingSessions[chapterId]?.canCompleteOnForwardExit() == true) {
             readerChapter.pages?.lastIndex
         } else {
             progressSession.getForExit(chapterId)
-        } ?: return
+        } ?: return null
         val sequence = chapterProgressSequence.incrementAndGet()
         latestChapterProgressSequences[chapterId] = sequence
-        persistLatestChapterProgress(
-            readerChapter = readerChapter,
-            pageIndex = pageIndex,
-            sequence = sequence,
-            completingOnExit = true,
-        )
+        return {
+            persistLatestChapterProgress(
+                readerChapter = readerChapter,
+                pageIndex = pageIndex,
+                sequence = sequence,
+                completingOnExit = true,
+            )
+        }
     }
 
     private suspend fun updateChapterProgressOnComplete(readerChapter: ReaderChapter) {
@@ -937,25 +938,28 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     fun restartReadTimer() {
-        chapterReadStartTime = Clock.System.now().toEpochMilliseconds()
+        historyRecorder.restartTimer()
     }
 
     /**
      * Saves the chapter to the reading history if incognito mode isn't on. Merely opening a
      * chapter is enough to enter history — there is no minimum pages/stay-duration gate.
      */
-    suspend fun updateHistory() {
-        getCurrentChapter()?.let { readerChapter ->
-            if (incognitoMode) return@let
-
-            flushChapterProgress(readerChapter)
-
-            val chapterId = readerChapter.chapter.id!!
-            val endTime = Date()
-            val sessionReadDuration = chapterReadStartTime?.let { endTime.time - it } ?: 0
-
-            upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
-            chapterReadStartTime = null
+    fun updateHistory() {
+        val readerChapter = getCurrentChapter() ?: return
+        val chapterId = readerChapter.chapter.id ?: return
+        if (incognitoMode) {
+            historyRecorder.save(chapterId, incognito = true)
+            return
+        }
+        val flushProgress = prepareChapterProgressFlush(readerChapter)
+        readerChapter.ref()
+        historyRecorder.save(chapterId, incognito = false) {
+            try {
+                flushProgress?.invoke()
+            } finally {
+                withUIContext { readerChapter.unref() }
+            }
         }
     }
 
