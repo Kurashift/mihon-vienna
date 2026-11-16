@@ -15,11 +15,23 @@ internal class ReaderHistoryRecorder(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private var startedAt: Long? = null
+    private var reading = false
     private var pendingSave: Job? = null
 
     @Synchronized
     fun restartTimer() {
+        reading = true
         startedAt = now()
+    }
+
+    @Synchronized
+    fun restartTimerIfReading() {
+        if (reading) startedAt = now()
+    }
+
+    @Synchronized
+    fun pauseTimer() {
+        reading = false
     }
 
     @Synchronized
