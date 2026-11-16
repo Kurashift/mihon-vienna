@@ -151,6 +151,7 @@
     <string name="reader_group_display">显示</string>
     <string name="reader_group_navigation">导航</string>
     <string name="reader_group_image">图片</string>
+    <string name="reader_group_zoom">缩放</string>
     <string name="reader_group_dual_page">双页</string>
     <string name="reader_group_reading">阅读行为</string>
     <string name="reader_group_flash">翻页闪光</string>
@@ -821,7 +822,7 @@
     <string name="pref_debug_info">调试信息</string>
     <string name="pref_chapter_swipe_end">向右滑动篇目</string>
     <string name="pref_chapter_swipe_start">向左滑动篇目</string>
-    <string name="pref_double_tap_zoom">双击放大</string>
+    <string name="pref_double_tap_zoom">双击缩放</string>
     <string name="pref_update_only_in_release_period">预测下次更新时间</string>
     <string name="action_ok">确定</string>
     <string name="track_delete_title">要删除 %s 的记录吗？</string>
@@ -923,7 +924,8 @@
     <string name="manga_interval_expected_update_soon">即将更新</string>
     <string name="ext_revoke_trust">撤销已信任的未知插件</string>
     <string name="action_open_repo">打开插件仓库</string>
-    <string name="pref_webtoon_disable_zoom_out">禁用缩小</string>
+    <string name="pref_webtoon_disable_zoom_out">不允许缩得比默认更小</string>
+    <string name="pref_webtoon_disable_zoom_out_summary">放大后的图片仍可缩回默认大小。</string>
     <string name="action_add_anyway">依然添加</string>
     <string name="pref_display_profile">自定义校色文件</string>
     <string name="action_view_upcoming">查看即将到来的更新</string>

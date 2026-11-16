@@ -9,7 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
-import androidx.core.animation.doOnEnd
+import androidx.core.view.doOnNextLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import eu.kanade.tachiyomi.ui.reader.viewer.GestureDetectorWithLongTap
@@ -27,9 +27,11 @@ class WebtoonRecyclerView @JvmOverloads constructor(
     defStyle: Int = 0,
 ) : RecyclerView(context, attrs, defStyle) {
 
-    private var isZooming = false
+    private val zoomAnimation = WebtoonZoomAnimation()
+    private var viewportChangeGeneration = 0
+    private var restoringViewport = false
     val isZoomAnimating
-        get() = isZooming
+        get() = zoomAnimation.targetScale != null || restoringViewport
     private var atLastPosition = false
     private var atFirstPosition = false
     private var halfWidth = 0
@@ -37,7 +39,7 @@ class WebtoonRecyclerView @JvmOverloads constructor(
     var originalHeight = 0
         private set
     private var heightSet = false
-    private var landscapeTargetScale: Float? = null
+    private var landscapeMinScale: Float? = null
     private var landscapeInitialScaleApplied = false
     private var firstVisibleItemPosition = 0
     private var lastVisibleItemPosition = 0
@@ -45,15 +47,18 @@ class WebtoonRecyclerView @JvmOverloads constructor(
     var zoomOutDisabled = false
         set(value) {
             field = value
-            if (value && currentScale < DEFAULT_RATE) {
-                zoom(currentScale, DEFAULT_RATE, x, 0f, y, 0f)
+            if (value) {
+                cancelZoomAnimation()
+                if (currentScale < DEFAULT_RATE) {
+                    zoom(currentScale, DEFAULT_RATE, x, 0f, y, 0f)
+                }
             }
         }
     private val minRate
         get() = if (zoomOutDisabled) {
             DEFAULT_RATE
         } else {
-            minOf(MIN_RATE, landscapeTargetScale ?: MIN_RATE)
+            minOf(MIN_RATE, landscapeMinScale ?: MIN_RATE)
         }
 
     private val listener = GestureListener()
@@ -139,9 +144,9 @@ class WebtoonRecyclerView @JvmOverloads constructor(
         }
 
         landscapeInitialScaleApplied = true
-        val targetScale = landscapeScaleFor(referenceView, WebtoonLandscapeZoom.FULL_HEIGHT_FRACTION)
-        landscapeTargetScale = targetScale
-        setLandscapeScaleImmediately(targetScale)
+        val levels = zoomLevels(referenceView)
+        landscapeMinScale = levels.minimum
+        setLandscapeScaleImmediately(levels.reading)
         return true
     }
 
@@ -156,6 +161,44 @@ class WebtoonRecyclerView @JvmOverloads constructor(
 
     fun isLandscapeWebtoon(): Boolean {
         return originalHeight > 0 && width > originalHeight && !zoomOutDisabled
+    }
+
+    internal fun cancelZoomAnimation() {
+        zoomAnimation.cancel()
+    }
+
+    internal fun onViewportSizeChanged(viewportWidth: Int, viewportHeight: Int) {
+        val generation = ++viewportChangeGeneration
+        restoringViewport = true
+        halfWidth = width / 2
+        halfHeight = height / 2
+        val anchor = captureLandscapeViewportAnchor()
+        val widthRatio = if (width > 0) viewportWidth.toFloat() / width else 1f
+        val referenceHeight = landscapeReferenceViewAt(halfWidth.toFloat(), screenToContentY(originalHeight / 2f))
+            ?.height?.times(widthRatio)?.roundToInt() ?: 0
+        cancelZoomAnimation()
+        originalHeight = viewportHeight
+        heightSet = true
+        halfWidth = viewportWidth / 2
+        landscapeInitialScaleApplied = referenceHeight > 0
+        val levels = WebtoonZoom.levels(viewportWidth, viewportHeight, referenceHeight, zoomOutDisabled)
+        landscapeMinScale = levels.minimum
+        setLandscapeScaleImmediately(levels.reading)
+        doOnNextLayout {
+            if (generation == viewportChangeGeneration) {
+                keepLandscapeAnchorInPlace(
+                    anchor?.copy(offsetInPage = anchor.offsetInPage * widthRatio, screenY = viewportHeight / 2f),
+                )
+                restoringViewport = false
+            }
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        cancelZoomAnimation()
+        viewportChangeGeneration++
+        restoringViewport = false
+        super.onDetachedFromWindow()
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -306,7 +349,6 @@ class WebtoonRecyclerView @JvmOverloads constructor(
         fromY: Float,
         toY: Float,
     ) {
-        isZooming = true
         val animatorSet = AnimatorSet()
         val translationXAnimator = ValueAnimator.ofFloat(fromX, toX)
         translationXAnimator.addUpdateListener { animation -> x = animation.animatedValue as Float }
@@ -326,22 +368,18 @@ class WebtoonRecyclerView @JvmOverloads constructor(
             doubleTapAnimDuration * context.animatorDurationScale
             ).toLong().coerceAtLeast(1L)
         animatorSet.interpolator = DecelerateInterpolator()
-        animatorSet.start()
-        animatorSet.doOnEnd {
-            isZooming = false
-            currentScale = toRate
-        }
+        zoomAnimation.start(animatorSet, toRate)
     }
 
-    private fun toggleLandscapeHeight(tapX: Float, tapY: Float) {
-        val referenceView = landscapeReferenceViewAt(tapX, tapY) ?: return
-        if (referenceView.height <= 0) return
+    private fun toggleLandscapeHeight(tapX: Float, tapY: Float): Boolean {
+        val referenceView = landscapeReferenceViewAt(tapX, tapY) ?: return false
+        if (referenceView.height <= 0) return false
 
-        val displayedHeightFraction = referenceView.height * currentScale / originalHeight
-        val targetHeightFraction = WebtoonLandscapeZoom.targetHeightFraction(displayedHeightFraction)
-        val targetScale = landscapeScaleFor(referenceView, targetHeightFraction)
-        landscapeTargetScale = targetScale
+        val levels = zoomLevels(referenceView)
+        val targetScale = levels.nextScale(currentScale, zoomAnimation.targetScale)
+        landscapeMinScale = levels.minimum
         animateLandscapeScaleInPlace(targetScale)
+        return true
     }
 
     private fun landscapeReferenceViewAt(tapX: Float, tapY: Float): View? {
@@ -353,17 +391,17 @@ class WebtoonRecyclerView @JvmOverloads constructor(
                 .minByOrNull { abs((it.top + it.bottom) / 2f - tapY) }
     }
 
-    private fun landscapeScaleFor(referenceView: View, heightFraction: Float): Float {
-        return (originalHeight * heightFraction / referenceView.height)
-            // The page starts at fit-width. Never exceed that baseline in landscape, otherwise
-            // a very wide image would be cropped horizontally just to satisfy the height target.
-            .coerceIn(MIN_LANDSCAPE_SCALE, DEFAULT_RATE)
-    }
+    private fun zoomLevels(referenceView: View) = WebtoonZoom.levels(
+        viewportWidth = width,
+        viewportHeight = originalHeight,
+        pageHeight = referenceView.height,
+        zoomOutDisabled = zoomOutDisabled,
+    )
 
     private fun animateLandscapeScaleInPlace(toScale: Float) {
         val fromScale = currentScale
+        val fromX = x
         val anchor = captureLandscapeViewportAnchor()
-        isZooming = true
         ValueAnimator.ofFloat(fromScale, toScale).apply {
             duration = landscapeDoubleTapDuration()
             interpolator = DecelerateInterpolator()
@@ -371,12 +409,12 @@ class WebtoonRecyclerView @JvmOverloads constructor(
                 currentScale = animation.animatedValue as Float
                 setScaleRate(currentScale)
                 updateLayoutForScale()
-                x = 0f
+                x = fromX * (1f - animation.animatedFraction)
                 y = steadyTranslationY(currentScale)
                 keepLandscapeAnchorInPlace(anchor)
                 requestLayout()
             }
-            doOnEnd {
+            zoomAnimation.start(this, toScale) {
                 currentScale = toScale
                 setScaleRate(currentScale)
                 updateLayoutForScale()
@@ -384,9 +422,7 @@ class WebtoonRecyclerView @JvmOverloads constructor(
                 y = steadyTranslationY(currentScale)
                 keepLandscapeAnchorInPlace(anchor)
                 requestLayout()
-                isZooming = false
             }
-            start()
         }
     }
 
@@ -451,7 +487,7 @@ class WebtoonRecyclerView @JvmOverloads constructor(
 
         animatorSet.duration = 400
         animatorSet.interpolator = DecelerateInterpolator()
-        animatorSet.start()
+        zoomAnimation.start(animatorSet)
 
         return true
     }
@@ -492,6 +528,8 @@ class WebtoonRecyclerView @JvmOverloads constructor(
     }
 
     fun onScaleBegin() {
+        cancelZoomAnimation()
+        stopScroll()
         if (detector.isDoubleTapping) {
             detector.isQuickScaling = true
         }
@@ -522,14 +560,13 @@ class WebtoonRecyclerView @JvmOverloads constructor(
         }
 
         fun onDoubleTapConfirmed(ev: MotionEvent) {
-            if (!isZooming && doubleTapZoom) {
+            if (doubleTapZoom) {
+                stopScroll()
                 val isLandscape = originalHeight > 0 && width > originalHeight && !zoomOutDisabled
-                if (isLandscape) {
-                    toggleLandscapeHeight(ev.x, ev.y)
-                    return
-                }
+                if (isLandscape && toggleLandscapeHeight(ev.x, ev.y)) return
 
-                val toScale = if (scaleX != DEFAULT_RATE) DEFAULT_RATE else DOUBLE_TAP_SCALE
+                val toScale = WebtoonZoom.levels(width, originalHeight, 0, zoomOutDisabled)
+                    .nextScale(currentScale, zoomAnimation.targetScale)
 
                 if (toScale == DEFAULT_RATE) {
                     zoom(currentScale, DEFAULT_RATE, x, 0f, y, 0f)
@@ -637,10 +674,8 @@ class WebtoonRecyclerView @JvmOverloads constructor(
 }
 
 private const val MIN_RATE = 0.5f
-private const val MIN_LANDSCAPE_SCALE = 0.05f
-private const val DEFAULT_RATE = 1f
+private const val DEFAULT_RATE = WebtoonZoom.DEFAULT_SCALE
 private const val MAX_SCALE_RATE = 3f
-private const val DOUBLE_TAP_SCALE = 2f
 private const val DEFAULT_DOUBLE_TAP_ANIM_DURATION = 500
 private const val HORIZONTAL_SWIPE_DIRECTION_RATIO = 1.5f
 

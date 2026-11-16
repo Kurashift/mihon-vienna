@@ -45,6 +45,15 @@ class WebtoonFrame(context: Context) : FrameLayout(context) {
     private val recycler: WebtoonRecyclerView?
         get() = getChildAt(0) as? WebtoonRecyclerView
 
+    override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight)
+        if (width > 0 && height > 0 && oldWidth > 0 && oldHeight > 0 &&
+            (width != oldWidth || height != oldHeight)
+        ) {
+            recycler?.onViewportSizeChanged(width, height)
+        }
+    }
+
     /**
      * Dispatches a touch event to the detectors.
      */

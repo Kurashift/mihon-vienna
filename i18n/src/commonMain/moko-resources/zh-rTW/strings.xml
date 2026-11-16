@@ -227,6 +227,7 @@
     <string name="reader_group_display">顯示</string>
     <string name="reader_group_navigation">導覽</string>
     <string name="reader_group_image">圖片</string>
+    <string name="reader_group_zoom">縮放</string>
     <string name="reader_group_dual_page">雙頁</string>
     <string name="reader_group_reading">閱讀行為</string>
     <string name="reader_group_flash">翻頁閃光</string>
@@ -982,7 +983,8 @@
     <string name="ext_revoke_trust">復原對不明擴充套件的信任</string>
     <string name="manga_interval_expected_update_soon">即將</string>
     <string name="action_open_repo">開啟來源儲存庫</string>
-    <string name="pref_webtoon_disable_zoom_out">停用縮小</string>
+    <string name="pref_webtoon_disable_zoom_out">不允許縮得比預設更小</string>
+    <string name="pref_webtoon_disable_zoom_out_summary">放大後的圖片仍可縮回預設大小。</string>
     <string name="pref_display_profile">自訂顯示設定檔</string>
     <string name="action_add_anyway">仍要新增</string>
     <string name="upcoming_guide">即將到來指南</string>

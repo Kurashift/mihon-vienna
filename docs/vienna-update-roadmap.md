@@ -50,6 +50,8 @@
 
 ## 固定验证要求
 
+前三批真机回归期间发现的条漫双击缩放问题，先按 [缩放回归说明](reader-zoom-regression.md) 修复并验收。该修复不推进图片分块或阅读器重写。完成本轮回归后再开展第四批。
+
 每批先执行 spotlessCheck、testDebugUnitTest、verifySqlDelightMigration，再执行 :app:compileViennaKotlin。测试通过后提交、推送并开 squash auto-merge PR，立即报告本地结果与待验项目。
 
 跨模块改动前后核对共享调用方。缓存与保护逻辑同时覆盖正常新增、删除、批量移动、目录改名、冷启动和缓存恢复。文件操作只使用测试副本；不通过清数据、撤销权限、重建主库或制造真实文件损坏完成验收。
