@@ -477,7 +477,7 @@ class ReaderViewModel @JvmOverloads constructor(
         withUIContext {
             if (getCurrentChapter()?.chapter?.id != chapter.chapter.id && getCurrentChapter() != null) {
                 updateHistory()
-                restartReadTimer()
+                historyRecorder.restartTimerIfReading()
             }
             mutableState.update {
                 // Add new references first to avoid unnecessary recycling
@@ -939,6 +939,11 @@ class ReaderViewModel @JvmOverloads constructor(
 
     fun restartReadTimer() {
         historyRecorder.restartTimer()
+    }
+
+    fun pauseReading() {
+        historyRecorder.pauseTimer()
+        updateHistory()
     }
 
     /**

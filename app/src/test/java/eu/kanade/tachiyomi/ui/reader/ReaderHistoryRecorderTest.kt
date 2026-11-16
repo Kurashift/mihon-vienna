@@ -14,6 +14,27 @@ import tachiyomi.domain.history.model.HistoryUpdate
 class ReaderHistoryRecorderTest {
 
     @Test
+    fun `chapter load finishing in background cannot restart the timer`() = runTest {
+        var time = 100L
+        val saved = mutableListOf<HistoryUpdate>()
+        val recorder = ReaderHistoryRecorder({ saved.add(it) }, { throw it }, backgroundScope) { time }
+        recorder.restartTimer()
+        time = 200
+        recorder.pauseTimer()
+        recorder.save(1, false)
+        time = 500
+        recorder.restartTimerIfReading()
+        time = 900
+        recorder.save(2, false)
+        recorder.restartTimer()
+        time = 1_000
+        recorder.save(2, false)
+        runCurrent()
+
+        assertEquals(listOf(100L, 0L, 100L), saved.map { it.sessionReadDuration })
+    }
+
+    @Test
     fun `overlapping saves consume duration before progress suspends`() = runTest {
         var time = 100L
         val saved = mutableListOf<HistoryUpdate>()

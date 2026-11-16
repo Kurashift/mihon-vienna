@@ -804,7 +804,7 @@ class ReaderActivity : BaseActivity() {
     }
 
     override fun onPause() {
-        viewModel.updateHistory()
+        viewModel.pauseReading()
         super.onPause()
     }
 
