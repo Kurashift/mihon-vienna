@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.extension.util
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.net.toUri
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.extension.installer.Installer
@@ -11,17 +12,14 @@ import eu.kanade.tachiyomi.extension.model.InstallStep
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.util.storage.getUriCompat
 import eu.kanade.tachiyomi.util.system.isPackageInstalled
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.launch
 import logcat.LogPriority
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import tachiyomi.core.common.util.system.logcat
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -36,9 +34,12 @@ internal class ExtensionInstaller(
     private val context: Context,
 ) {
 
-    private val scope = CoroutineScope(Dispatchers.IO)
-    private val activeJobs = mutableMapOf<String, Job>()
-    private val activeSteps = mutableMapOf<Long, MutableStateFlow<InstallStep>>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val tasks = ExtensionInstallTasks(
+        scope,
+        { Installer.cancelInstallQueue(context, it) },
+        { logcat(LogPriority.ERROR, it) },
+    )
     private val extensionInstaller = Injekt.get<BasePreferences>().extensionInstaller
 
     private val httpClient: OkHttpClient = Injekt.get<NetworkHelper>().client
@@ -47,57 +48,36 @@ internal class ExtensionInstaller(
      * Adds the given extension to the downloads queue and returns an observable containing its
      * step in the installation process.
      *
-     * @param url The url of the apk.
      * @param extension The extension to install.
      * @param isUpdateForPrivatelyInstalled If this is an update for a privately installed extension
      */
     fun downloadAndInstall(
-        url: String,
-        extension: Extension,
+        extension: Extension.Available,
         isUpdateForPrivatelyInstalled: Boolean = false,
     ): Flow<InstallStep> {
-        val downloadId = extension.pkgName.hashCode().toLong()
-        cancelInstall(extension.pkgName)
-
-        val step = MutableStateFlow(InstallStep.Pending)
-        activeSteps[downloadId] = step
-
-        val job = scope.launch {
-            val tmpFile = File(context.cacheDir, "extension_${extension.pkgName}.apk")
+        return tasks.start(extension.pkgName) { task ->
+            val tmpFile = File.createTempFile("extension_", ".apk", context.cacheDir)
+            var handedOff = false
             try {
-                step.value = InstallStep.Downloading
-                val request = Request.Builder().url(url).build()
-                val response = httpClient.newCall(request).execute()
-
-                if (!response.isSuccessful) {
-                    throw Exception("Failed to download extension")
-                }
-                response.body.byteStream().use { input ->
-                    tmpFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-
-                step.value = InstallStep.Installing
-                installApk(downloadId, tmpFile, isUpdateForPrivatelyInstalled)
-            } catch (e: Exception) {
-                if (e is InterruptedException) {
-                    // Canceled
-                } else {
-                    logcat(LogPriority.ERROR, e)
-                    step.value = InstallStep.Error
-                }
+                task.step.value = InstallStep.Downloading
+                downloadExtensionApk(httpClient, extension.apkUrl, tmpFile)
+                task.job.ensureActive()
+                val packageInfo = ExtensionLoader.getArchivePackageInfo(context, tmpFile)
+                    ?: error("Downloaded file is not an extension")
+                validateExtensionPackage(
+                    extension,
+                    packageInfo.packageName,
+                    PackageInfoCompat.getLongVersionCode(packageInfo),
+                    ExtensionLoader.getSignatures(packageInfo).orEmpty(),
+                )
+                task.job.ensureActive()
+                task.step.value = InstallStep.Installing
+                installApk(task.id, tmpFile, isUpdateForPrivatelyInstalled) { task.job.ensureActive() }
+                handedOff = true
+            } finally {
+                if (!handedOff) tmpFile.delete()
             }
         }
-
-        activeJobs[extension.pkgName] = job
-
-        return step.asStateFlow()
-            .onCompletion {
-                activeJobs.remove(extension.pkgName)
-                activeSteps.remove(downloadId)
-                job.cancel()
-            }
     }
 
     /**
@@ -106,9 +86,14 @@ internal class ExtensionInstaller(
      * @param tempFile The file of the extension to install. Delete after use.
      * @param isUpdateForPrivatelyInstalled If this install is an update for a privately installed extension
      */
-    private fun installApk(downloadId: Long, tempFile: File, isUpdateForPrivatelyInstalled: Boolean = false) {
+    private fun installApk(
+        downloadId: Long,
+        tempFile: File,
+        isUpdateForPrivatelyInstalled: Boolean,
+        ensureActive: () -> Unit,
+    ) {
         if (isUpdateForPrivatelyInstalled) {
-            installApkPrivately(downloadId, tempFile)
+            installApkPrivately(downloadId, tempFile, ensureActive)
             return
         }
 
@@ -123,7 +108,7 @@ internal class ExtensionInstaller(
             }
 
             BasePreferences.ExtensionInstaller.PRIVATE -> {
-                installApkPrivately(downloadId, tempFile)
+                installApkPrivately(downloadId, tempFile, ensureActive)
             }
 
             else -> {
@@ -138,27 +123,27 @@ internal class ExtensionInstaller(
         }
     }
 
-    private fun installApkPrivately(downloadId: Long, tempFile: File) {
+    private fun installApkPrivately(downloadId: Long, tempFile: File, ensureActive: () -> Unit) {
         try {
-            if (ExtensionLoader.installPrivateExtensionFile(context, tempFile)) {
+            if (ExtensionLoader.installPrivateExtensionFile(context, tempFile, ensureActive)) {
                 updateInstallStep(downloadId, InstallStep.Installed)
             } else {
                 updateInstallStep(downloadId, InstallStep.Error)
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e) { "Failed to read downloaded extension file." }
             updateInstallStep(downloadId, InstallStep.Error)
+        } finally {
+            tempFile.delete()
         }
-
-        tempFile.delete()
     }
 
     /**
      * Cancels extension install and remove from download manager and installer.
      */
     fun cancelInstall(pkgName: String) {
-        activeJobs.remove(pkgName)?.cancel()
-        Installer.cancelInstallQueue(context, pkgName.hashCode().toLong())
+        tasks.cancel(pkgName)
     }
 
     /**
@@ -185,8 +170,10 @@ internal class ExtensionInstaller(
      * @param step New install step.
      */
     fun updateInstallStep(downloadId: Long, step: InstallStep) {
-        activeSteps[downloadId]?.let { it.value = step }
+        tasks.update(downloadId, step)
     }
+
+    fun isActive(downloadId: Long): Boolean = tasks.isActive(downloadId)
 
     companion object {
         const val APK_MIME = "application/vnd.android.package-archive"

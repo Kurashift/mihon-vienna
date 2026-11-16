@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import mihon.core.viewmodel.StateViewModel
@@ -42,6 +41,7 @@ class ExtensionsViewModel(
 ) : StateViewModel<ExtensionsViewModel.State>(State()) {
 
     private val currentDownloads = MutableStateFlow<Map<String, InstallStep>>(hashMapOf())
+    private val downloadOwners = mutableMapOf<String, Any>()
 
     init {
         val context = Injekt.get<Application>()
@@ -143,7 +143,7 @@ class ExtensionsViewModel(
     }
 
     fun updateAllExtensions() {
-        viewModelScope.launchIO {
+        viewModelScope.launch {
             state.value.items.values.flatten()
                 .map { it.extension }
                 .filterIsInstance<Extension.Installed>()
@@ -153,18 +153,15 @@ class ExtensionsViewModel(
     }
 
     fun installExtension(extension: Extension.Available) {
-        viewModelScope.launchIO {
-            extensionManager.installExtension(extension).collectToInstallUpdate(extension)
-        }
+        collectInstallation(extension) { extensionManager.installExtension(extension) }
     }
 
     fun updateExtension(extension: Extension.Installed) {
-        viewModelScope.launchIO {
-            extensionManager.updateExtension(extension).collectToInstallUpdate(extension)
-        }
+        collectInstallation(extension) { extensionManager.updateExtension(extension) }
     }
 
     fun cancelInstallUpdateExtension(extension: Extension) {
+        downloadOwners.remove(extension.pkgName)
         extensionManager.cancelInstallUpdateExtension(extension)
         removeDownloadState(extension)
     }
@@ -177,12 +174,26 @@ class ExtensionsViewModel(
         currentDownloads.update { it - extension.pkgName }
     }
 
-    private suspend fun Flow<InstallStep>.collectToInstallUpdate(extension: Extension) =
-        this
-            .onEach { installStep -> addDownloadState(extension, installStep) }
-            .takeWhile { installStep -> installStep != InstallStep.Installed }
-            .onCompletion { removeDownloadState(extension) }
-            .collect()
+    private fun collectInstallation(extension: Extension, start: () -> Flow<InstallStep>) {
+        val owner = Any()
+        downloadOwners[extension.pkgName] = owner
+        viewModelScope.launch {
+            if (downloadOwners[extension.pkgName] !== owner) return@launch
+            start()
+                .onEach { step ->
+                    if (downloadOwners[extension.pkgName] === owner) addDownloadState(extension, step)
+                }
+                .onCompletion {
+                    if (downloadOwners[extension.pkgName] === owner) {
+                        downloadOwners.remove(extension.pkgName)
+                        if (currentDownloads.value[extension.pkgName] != InstallStep.Error) {
+                            removeDownloadState(extension)
+                        }
+                    }
+                }
+                .collect()
+        }
+    }
 
     fun uninstallExtension(extension: Extension) {
         extensionManager.uninstallExtension(extension)

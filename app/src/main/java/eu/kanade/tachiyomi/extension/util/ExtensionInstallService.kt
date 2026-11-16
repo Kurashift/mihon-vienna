@@ -8,6 +8,7 @@ import android.os.IBinder
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.notification.Notifications
+import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.installer.Installer
 import eu.kanade.tachiyomi.extension.installer.PackageInstallerInstaller
 import eu.kanade.tachiyomi.extension.installer.ShizukuInstaller
@@ -18,6 +19,8 @@ import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 class ExtensionInstallService : Service() {
 
@@ -41,6 +44,12 @@ class ExtensionInstallService : Service() {
         val installerUsed = intent?.getSerializableExtraCompat<BasePreferences.ExtensionInstaller>(EXTRA_INSTALLER)
         if (uri == null || id == null || installerUsed == null) {
             stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (!Injekt.get<ExtensionManager>().isInstallActive(id)) {
+            contentResolver.delete(uri, null, null)
+            if (installer == null) stopSelfResult(startId)
             return START_NOT_STICKY
         }
 

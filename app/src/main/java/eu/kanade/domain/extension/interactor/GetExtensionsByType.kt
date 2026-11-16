@@ -44,7 +44,6 @@ class GetExtensionsByType(
                             ext.copy(
                                 name = it.name,
                                 lang = it.lang,
-                                pkgName = "${ext.pkgName}-${it.id}",
                                 sources = listOf(it),
                             )
                         }

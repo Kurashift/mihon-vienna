@@ -24,6 +24,11 @@ class ExtensionInstallActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val downloadId = intent.getLongExtra(ExtensionInstaller.EXTRA_DOWNLOAD_ID, -1)
+        if (!Injekt.get<ExtensionManager>().isInstallActive(downloadId)) {
+            finish()
+            return
+        }
 
         @Suppress("DEPRECATION")
         val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE)

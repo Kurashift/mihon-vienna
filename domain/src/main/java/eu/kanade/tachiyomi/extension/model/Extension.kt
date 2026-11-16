@@ -29,8 +29,19 @@ sealed class Extension {
         val hasUpdate: Boolean = false,
         val isObsolete: Boolean = false,
         val isShared: Boolean,
+        val signatures: List<String>,
         val store: ExtensionStore? = null,
-    ) : Extension()
+    ) : Extension() {
+
+        fun findListing(available: Collection<Available>): Available? {
+            return available.filter { it.pkgName == pkgName && it.store.signingKey in signatures }
+                .maxWithOrNull(compareBy<Available> { it.versionCode }.thenBy { it.libVersion })
+        }
+
+        fun findUpdate(available: Collection<Available>): Available? {
+            return findListing(available)?.takeIf { it.versionCode > versionCode || it.libVersion > libVersion }
+        }
+    }
 
     data class Available(
         override val name: String,
