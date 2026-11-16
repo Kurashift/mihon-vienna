@@ -200,6 +200,17 @@ VALUES (
 )
 RETURNING _id;
 
+updateSourceFields:
+UPDATE chapters
+SET name = coalesce(:name, name),
+    scanlator = :scanlator,
+    chapter_number = coalesce(:chapterNumber, chapter_number),
+    source_order = coalesce(:sourceOrder, source_order),
+    date_upload = coalesce(:dateUpload, date_upload),
+    total_pages = coalesce(:totalPages, total_pages),
+    memo = coalesce(:memo, memo)
+WHERE _id = :chapterId;
+
 -- Same parameter-order trap as `insert`: the last_page_read CASE references :totalPages first, so
 -- the generated signature puts totalPages before lastPageRead. Keep these calls named.
 update:

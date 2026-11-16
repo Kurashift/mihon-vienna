@@ -3,6 +3,8 @@ package tachiyomi.data.chapter
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.JsonObject
@@ -25,37 +27,71 @@ class ChapterRepositoryImpl(
     override suspend fun addAll(chapters: List<Chapter>): List<Chapter> {
         return try {
             database.transactionWithResult {
-                chapters.map { chapter ->
-                    // Named arguments on purpose: the insert's CASE makes :totalPages the earlier
-                    // of the two parameters, so the generated order is (totalPages, lastPageRead),
-                    // not the column order. Positional arguments silently swap the two columns.
-                    val chapterId = database.chaptersQueries.insertReturningId(
-                        mangaId = chapter.mangaId,
-                        url = chapter.url,
-                        name = chapter.name,
-                        scanlator = chapter.scanlator,
-                        read = chapter.read,
-                        bookmark = chapter.bookmark,
-                        totalPages = chapter.totalPages,
-                        lastPageRead = chapter.lastPageRead,
-                        customOrder = chapter.customOrder,
-                        chapterNumber = chapter.chapterNumber,
-                        sourceOrder = chapter.sourceOrder,
-                        dateFetch = chapter.dateFetch,
-                        dateUpload = chapter.dateUpload,
-                        version = chapter.version,
-                        memo = chapter.memo,
-                        translatedName = chapter.translatedName,
-                        markedReadAt = chapter.markedReadAt,
-                    )
-                        .awaitAsOne()
-                    chapter.copy(id = chapterId)
-                }
+                chapters.map { insertChapter(it) }
             }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
             emptyList()
         }
+    }
+
+    override suspend fun applySourceSync(
+        removedChapterIds: List<Long>,
+        newChapters: List<Chapter>,
+        chapterUpdates: List<ChapterUpdate>,
+    ): List<Chapter> {
+        return database.transactionWithResult {
+            currentCoroutineContext().ensureActive()
+            if (removedChapterIds.isNotEmpty()) {
+                database.chaptersQueries.removeChaptersWithIds(removedChapterIds)
+            }
+            val inserted = newChapters.distinctBy { it.mangaId to it.url }.mapNotNull { chapter ->
+                currentCoroutineContext().ensureActive()
+                val existing = database.chaptersQueries.getChapterByUrlAndMangaId(
+                    chapter.url,
+                    chapter.mangaId,
+                ).awaitAsOneOrNull()
+                if (existing == null) insertChapter(chapter) else null
+            }
+            chapterUpdates.forEach { update ->
+                currentCoroutineContext().ensureActive()
+                database.chaptersQueries.updateSourceFields(
+                    name = update.name,
+                    scanlator = update.scanlator,
+                    chapterNumber = update.chapterNumber,
+                    sourceOrder = update.sourceOrder,
+                    dateUpload = update.dateUpload,
+                    totalPages = update.totalPages,
+                    memo = update.memo?.let(MemoColumnAdapter::encode),
+                    chapterId = update.id,
+                )
+            }
+            currentCoroutineContext().ensureActive()
+            inserted
+        }
+    }
+
+    private suspend fun insertChapter(chapter: Chapter): Chapter {
+        val chapterId = database.chaptersQueries.insertReturningId(
+            mangaId = chapter.mangaId,
+            url = chapter.url,
+            name = chapter.name,
+            scanlator = chapter.scanlator,
+            read = chapter.read,
+            bookmark = chapter.bookmark,
+            totalPages = chapter.totalPages,
+            lastPageRead = chapter.lastPageRead,
+            customOrder = chapter.customOrder,
+            chapterNumber = chapter.chapterNumber,
+            sourceOrder = chapter.sourceOrder,
+            dateFetch = chapter.dateFetch,
+            dateUpload = chapter.dateUpload,
+            version = chapter.version,
+            memo = chapter.memo,
+            translatedName = chapter.translatedName,
+            markedReadAt = chapter.markedReadAt,
+        ).awaitAsOne()
+        return chapter.copy(id = chapterId)
     }
 
     override suspend fun update(chapterUpdate: ChapterUpdate) {
