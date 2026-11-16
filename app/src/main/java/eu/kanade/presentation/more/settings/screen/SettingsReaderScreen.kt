@@ -58,6 +58,7 @@ object SettingsReaderScreen : SearchableSettings {
             getReadingGroup(readerPreferences = readerPref),
             getPagedGroup(readerPreferences = readerPref),
             getWebtoonGroup(readerPreferences = readerPref),
+            getWebtoonZoomGroup(readerPreferences = readerPref),
             getNavigationGroup(readerPreferences = readerPref),
             getActionsGroup(readerPreferences = readerPref),
         )
@@ -360,17 +361,25 @@ object SettingsReaderScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_page_rotate_invert),
                     enabled = rotateToFit,
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.webtoonDoubleTapZoomEnabled,
-                    title = stringResource(MR.strings.pref_double_tap_zoom),
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.webtoonDisableZoomOut,
-                    title = stringResource(MR.strings.pref_webtoon_disable_zoom_out),
-                ),
             ),
         )
     }
+
+    @Composable
+    private fun getWebtoonZoomGroup(readerPreferences: ReaderPreferences) = Preference.PreferenceGroup(
+        title = stringResource(MR.strings.webtoon_viewer) + " · " + stringResource(MR.strings.reader_group_zoom),
+        preferenceItems = listOf(
+            Preference.PreferenceItem.SwitchPreference(
+                preference = readerPreferences.webtoonDoubleTapZoomEnabled,
+                title = stringResource(MR.strings.pref_double_tap_zoom),
+            ),
+            Preference.PreferenceItem.SwitchPreference(
+                preference = readerPreferences.webtoonDisableZoomOut,
+                title = stringResource(MR.strings.pref_webtoon_disable_zoom_out),
+                subtitle = stringResource(MR.strings.pref_webtoon_disable_zoom_out_summary),
+            ),
+        ),
+    )
 
     @Composable
     private fun getNavigationGroup(readerPreferences: ReaderPreferences): Preference.PreferenceGroup {

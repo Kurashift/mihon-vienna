@@ -311,6 +311,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      */
     override fun destroy() {
         super.destroy()
+        recycler.cancelZoomAnimation()
         releaseInitialPageAnchor(clearSelectionGuard = true)
         scope.cancel()
     }

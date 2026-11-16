@@ -513,6 +513,7 @@
     <string name="reader_group_display">Display</string>
     <string name="reader_group_navigation">Navigation</string>
     <string name="reader_group_image">Image</string>
+    <string name="reader_group_zoom">Zoom</string>
     <string name="reader_group_dual_page">Dual page</string>
     <string name="reader_group_reading">Reading behavior</string>
     <string name="reader_group_flash">Page flash</string>
@@ -574,7 +575,8 @@
     <string name="pref_high">High</string>
     <string name="pref_low">Low</string>
     <string name="pref_lowest">Lowest</string>
-    <string name="pref_webtoon_disable_zoom_out">Disable zoom out</string>
+    <string name="pref_webtoon_disable_zoom_out">Keep images at least their default size</string>
+    <string name="pref_webtoon_disable_zoom_out_summary">Enlarged images can still return to their default size.</string>
 
       <!-- Downloads section -->
     <string name="pref_category_delete_chapters">Delete works</string>
