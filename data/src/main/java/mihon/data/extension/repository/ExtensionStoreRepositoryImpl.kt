@@ -2,6 +2,7 @@ package mihon.data.extension.repository
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import eu.kanade.tachiyomi.extension.model.Extension
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
@@ -49,12 +50,14 @@ class ExtensionStoreRepositoryImpl(
                         }
                     }
                     .onFailure {
+                        if (it is CancellationException) throw it
                         logcat(LogPriority.ERROR, it) {
                             "Failed to refresh extension store '${store.name} (${store.index_url})'"
                         }
                     }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
         }
     }
@@ -78,6 +81,7 @@ class ExtensionStoreRepositoryImpl(
                 database.extension_storeQueries.getAll(::extensionStoreMapper).awaitAsList().map { store ->
                     async {
                         service.getExtensions(store).onFailure {
+                            if (it is CancellationException) throw it
                             this@ExtensionStoreRepositoryImpl.logcat(LogPriority.ERROR, it) {
                                 "Failed to fetch extensions for store '${store.name} (${store.indexUrl})'"
                             }
@@ -88,6 +92,7 @@ class ExtensionStoreRepositoryImpl(
                     .flatMap { it.getOrDefault(emptyList()) }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
             emptyList()
         }

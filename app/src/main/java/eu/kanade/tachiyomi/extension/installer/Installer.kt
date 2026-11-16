@@ -47,6 +47,11 @@ abstract class Installer(private val service: Service) {
      * @param uri Uri of APK to install
      */
     fun addToQueue(downloadId: Long, uri: Uri) {
+        if (!extensionManager.isInstallActive(downloadId)) {
+            service.contentResolver.delete(uri, null, null)
+            checkQueue()
+            return
+        }
         queue.add(Entry(downloadId, uri))
         checkQueue()
     }
@@ -83,6 +88,7 @@ abstract class Installer(private val service: Service) {
     fun continueQueue(resultStep: InstallStep) {
         val completedEntry = waitingInstall.exchange(null)
         if (completedEntry != null) {
+            service.contentResolver.delete(completedEntry.uri, null, null)
             extensionManager.updateInstallStep(completedEntry.downloadId, resultStep)
             checkQueue()
         }
@@ -95,7 +101,7 @@ abstract class Installer(private val service: Service) {
      * @see ready
      */
     fun checkQueue() {
-        if (!ready) {
+        if (!ready || waitingInstall.load() != null) {
             return
         }
         if (queue.isEmpty()) {
@@ -115,9 +121,15 @@ abstract class Installer(private val service: Service) {
     @CallSuper
     open fun onDestroy() {
         LocalBroadcastManager.getInstance(service).unregisterReceiver(cancelReceiver)
-        queue.forEach { extensionManager.updateInstallStep(it.downloadId, InstallStep.Error) }
+        queue.forEach {
+            extensionManager.updateInstallStep(it.downloadId, InstallStep.Error)
+            service.contentResolver.delete(it.uri, null, null)
+        }
         queue.clear()
-        waitingInstall.store(null)
+        waitingInstall.exchange(null)?.let {
+            extensionManager.updateInstallStep(it.downloadId, InstallStep.Error)
+            service.contentResolver.delete(it.uri, null, null)
+        }
     }
 
     protected fun getActiveEntry(): Entry? = waitingInstall.load()
@@ -129,9 +141,12 @@ abstract class Installer(private val service: Service) {
      */
     private fun cancelQueue(downloadId: Long) {
         val waitingInstall = this.waitingInstall.load()
-        val toCancel = queue.find { it.downloadId == downloadId } ?: waitingInstall ?: return
+        val toCancel = queue.find { it.downloadId == downloadId }
+            ?: waitingInstall?.takeIf { it.downloadId == downloadId }
+            ?: return
         if (cancelEntry(toCancel)) {
             queue.remove(toCancel)
+            service.contentResolver.delete(toCancel.uri, null, null)
             if (waitingInstall == toCancel) {
                 // Currently processing removed entry, continue queue
                 this.waitingInstall.store(null)

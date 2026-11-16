@@ -13,8 +13,8 @@ import eu.kanade.tachiyomi.extension.model.LoadResult
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
 import eu.kanade.tachiyomi.util.lang.Hash
-import eu.kanade.tachiyomi.util.storage.copyAndSetReadOnlyTo
 import eu.kanade.tachiyomi.util.system.ChildFirstPathClassLoader
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -66,9 +66,15 @@ internal object ExtensionLoader {
 
     private fun getPrivateExtensionDir(context: Context) = File(context.filesDir, "exts")
 
-    fun installPrivateExtensionFile(context: Context, file: File): Boolean {
-        val extension = context.packageManager.getPackageArchiveInfo(file.absolutePath, PACKAGE_FLAGS)
-            ?.takeIf { isPackageAnExtension(it) } ?: return false
+    fun getArchivePackageInfo(context: Context, file: File): PackageInfo? {
+        return context.packageManager.getPackageArchiveInfo(file.absolutePath, PACKAGE_FLAGS)
+            ?.takeIf { isPackageAnExtension(it) }
+    }
+
+    fun installPrivateExtensionFile(context: Context, file: File, ensureActive: () -> Unit): Boolean {
+        val extension = getArchivePackageInfo(context, file) ?: return false
+        val extensionSignatures = getSignatures(extension).orEmpty()
+        if (extensionSignatures.isEmpty()) return false
         val currentExtension = getExtensionPackageInfoFromPkgName(context, extension.packageName)
 
         if (currentExtension != null) {
@@ -79,33 +85,27 @@ internal object ExtensionLoader {
                 return false
             }
 
-            val extensionSignatures = getSignatures(extension)
-            if (extensionSignatures.isNullOrEmpty()) {
-                logcat(LogPriority.ERROR) { "Extension to be installed is not signed." }
-                return false
-            }
-
-            if (!extensionSignatures.containsAll(getSignatures(currentExtension)!!)) {
+            val currentSignatures = getSignatures(currentExtension).orEmpty()
+            if (currentSignatures.isEmpty() || !extensionSignatures.containsAll(currentSignatures)) {
                 logcat(LogPriority.ERROR) { "Installed extension signature is not matched." }
                 return false
             }
         }
 
         val target = File(getPrivateExtensionDir(context), "${extension.packageName}.$PRIVATE_EXTENSION_EXTENSION")
-        return try {
-            target.delete()
-            file.copyAndSetReadOnlyTo(target, overwrite = true)
-            if (currentExtension != null) {
-                ExtensionInstallReceiver.notifyReplaced(context, extension.packageName)
-            } else {
-                ExtensionInstallReceiver.notifyAdded(context, extension.packageName)
-            }
-            true
+        try {
+            replacePrivateExtensionFile(file, target, beforeCommit = ensureActive)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e) { "Failed to copy extension file." }
-            target.delete()
-            false
+            return false
         }
+        if (currentExtension != null) {
+            ExtensionInstallReceiver.notifyReplaced(context, extension.packageName)
+        } else {
+            ExtensionInstallReceiver.notifyAdded(context, extension.packageName)
+        }
+        return true
     }
 
     fun uninstallPrivateExtension(context: Context, pkgName: String) {
@@ -328,6 +328,7 @@ internal object ExtensionLoader {
             pkgFactory = appInfo.metaData.getString(METADATA_SOURCE_FACTORY),
             icon = appInfo.loadIcon(pkgManager),
             isShared = extensionInfo.isShared,
+            signatures = signatures,
         )
         return LoadResult.Success(extension)
     }
@@ -369,9 +370,9 @@ internal object ExtensionLoader {
      * @param pkgInfo The package info of the application.
      * @return List SHA256 digest of the signatures
      */
-    private fun getSignatures(pkgInfo: PackageInfo): List<String>? {
+    fun getSignatures(pkgInfo: PackageInfo): List<String>? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val signingInfo = pkgInfo.signingInfo!!
+            val signingInfo = pkgInfo.signingInfo ?: return null
             if (signingInfo.hasMultipleSigners()) {
                 signingInfo.apkContentsSigners
             } else {

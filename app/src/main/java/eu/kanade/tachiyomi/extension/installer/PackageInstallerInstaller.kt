@@ -24,6 +24,8 @@ class PackageInstallerInstaller(private val service: Service) : Installer(servic
 
     private val packageActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+            if (sessionId != activeSession?.second) return
             when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
                 PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                     val userAction = intent.getParcelableExtraCompat<Intent>(Intent.EXTRA_INTENT)
@@ -50,10 +52,17 @@ class PackageInstallerInstaller(private val service: Service) : Installer(servic
                     service.startActivity(userAction)
                 }
                 PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                    activeSession = null
                     continueQueue(InstallStep.Idle)
                 }
-                PackageInstaller.STATUS_SUCCESS -> continueQueue(InstallStep.Installed)
-                else -> continueQueue(InstallStep.Error)
+                PackageInstaller.STATUS_SUCCESS -> {
+                    activeSession = null
+                    continueQueue(InstallStep.Installed)
+                }
+                else -> {
+                    activeSession = null
+                    continueQueue(InstallStep.Error)
+                }
             }
         }
     }

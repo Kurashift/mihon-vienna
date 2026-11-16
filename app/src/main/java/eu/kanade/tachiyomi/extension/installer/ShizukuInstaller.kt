@@ -55,15 +55,9 @@ class ShizukuInstaller(private val service: Service) : Installer(service) {
         }
     }
 
-    private val statusIntent = PendingIntent.getBroadcast(
-        service.applicationContext,
-        0,
-        Intent(ACTION_INSTALL_RESULT).setPackage(BuildConfig.APPLICATION_ID),
-        PendingIntent.FLAG_MUTABLE,
-    )
-
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (intent.getLongExtra(EXTRA_INSTALL_ID, -1) != getActiveEntry()?.downloadId) return
             val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
             val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
             val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
@@ -118,6 +112,13 @@ class ShizukuInstaller(private val service: Service) : Installer(service) {
     override fun processEntry(entry: Entry) {
         super.processEntry(entry)
         try {
+            val statusIntent = PendingIntent.getBroadcast(
+                service.applicationContext,
+                entry.downloadId.hashCode(),
+                Intent(ACTION_INSTALL_RESULT).setPackage(BuildConfig.APPLICATION_ID)
+                    .putExtra(EXTRA_INSTALL_ID, entry.downloadId),
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
             service.contentResolver.openAssetFileDescriptor(entry.uri, "r").use {
                 shellInterface?.install(it, statusIntent.intentSender)
             }
@@ -162,4 +163,5 @@ class ShizukuInstaller(private val service: Service) : Installer(service) {
 }
 
 private const val SHIZUKU_PERMISSION_REQUEST_CODE = 14045
+private const val EXTRA_INSTALL_ID = "ShizukuInstaller.extra.INSTALL_ID"
 const val ACTION_INSTALL_RESULT = "${BuildConfig.APPLICATION_ID}.ACTION_INSTALL_RESULT"
