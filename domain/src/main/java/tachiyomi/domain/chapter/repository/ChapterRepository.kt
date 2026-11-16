@@ -10,6 +10,12 @@ interface ChapterRepository {
 
     suspend fun addAll(chapters: List<Chapter>): List<Chapter>
 
+    suspend fun applySourceSync(
+        removedChapterIds: List<Long>,
+        newChapters: List<Chapter>,
+        chapterUpdates: List<ChapterUpdate>,
+    ): List<Chapter>
+
     suspend fun update(chapterUpdate: ChapterUpdate)
 
     suspend fun updateAll(chapterUpdates: List<ChapterUpdate>)

@@ -201,6 +201,29 @@ class DownloadCache(
      * @param manga the manga of the chapter.
      */
     suspend fun addChapter(chapterDirName: String, mangaUniFile: UniFile, manga: Manga) {
+        updateChapterCache(setOf(chapterDirName), mangaUniFile, manga, emptySet())
+    }
+
+    suspend fun renameChapter(
+        oldChapter: Chapter,
+        newChapter: Chapter,
+        chapterDirNames: Set<String>,
+        mangaUniFile: UniFile,
+        manga: Manga,
+    ) {
+        val removedNames = buildSet {
+            addAll(provider.getValidChapterDirNames(oldChapter.name, oldChapter.scanlator, oldChapter.url))
+            addAll(provider.getValidChapterDirNames(newChapter.name, newChapter.scanlator, newChapter.url))
+        }
+        updateChapterCache(chapterDirNames, mangaUniFile, manga, removedNames)
+    }
+
+    private suspend fun updateChapterCache(
+        chapterDirNames: Set<String>,
+        mangaUniFile: UniFile,
+        manga: Manga,
+        removedNames: Set<String>,
+    ) {
         rootDownloadsDirMutex.withLock {
             // Retrieve the cached source directory or cache a new one
             var sourceDir = rootDownloadsDir.sourceDirs[manga.source]
@@ -220,7 +243,8 @@ class DownloadCache(
             }
 
             // Save the chapter directory
-            mangaDir.chapterDirs += chapterDirName
+            mangaDir.chapterDirs -= removedNames
+            mangaDir.chapterDirs += chapterDirNames
         }
 
         notifyChanges()

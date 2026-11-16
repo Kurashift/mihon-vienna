@@ -4,6 +4,8 @@ import android.content.Context
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.drop
@@ -27,6 +29,7 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.IOException
 
 /**
  * This class is used to manage chapter downloads in the application. It must be instantiated once
@@ -368,31 +371,49 @@ class DownloadManager(
      * @param oldChapter the existing chapter with the old name.
      * @param newChapter the target chapter with the new name.
      */
-    suspend fun renameChapter(source: Source, manga: Manga, oldChapter: Chapter, newChapter: Chapter) {
+    suspend fun renameChapter(
+        source: Source,
+        manga: Manga,
+        oldChapter: Chapter,
+        newChapter: Chapter,
+    ): ChapterRenameReceipt? {
+        currentCoroutineContext().ensureActive()
         val oldNames = provider.getValidChapterDirNames(oldChapter.name, oldChapter.scanlator, oldChapter.url)
-        val mangaDir = provider.getMangaDir(manga.title, source).getOrElse { e ->
-            logcat(LogPriority.ERROR, e) { "Manga download folder doesn't exist. Skipping renaming after source sync" }
-            return
-        }
-
-        // Assume there's only 1 version of the chapter name formats present
+        val mangaDir = provider.getMangaDir(manga.title, source).getOrThrow()
         val oldDownload = oldNames.asSequence()
             .mapNotNull { mangaDir.findFile(it) }
-            .firstOrNull() ?: return
-
+            .firstOrNull() ?: throw IOException("Chapter download not found: ${oldNames.joinToString()}")
+        val oldName = oldDownload.name ?: throw IOException("Chapter download has no name: ${oldNames.joinToString()}")
         var newName = provider.getChapterDirName(newChapter.name, newChapter.scanlator, newChapter.url)
         if (oldDownload.isFile && oldDownload.extension == "cbz") {
             newName += ".cbz"
         }
+        if (oldName == newName) return null
 
-        if (oldDownload.name == newName) return
-
-        if (oldDownload.renameTo(newName)) {
-            cache.removeChapter(oldChapter, manga)
-            cache.addChapter(newName, mangaDir, manga)
-        } else {
-            logcat(LogPriority.ERROR) { "Could not rename downloaded chapter: ${oldNames.joinToString()}" }
-        }
+        return ChapterRenameReceipt.rename(
+            oldName = oldName,
+            newName = newName,
+            exists = { mangaDir.findFile(it) != null },
+            renameTo = oldDownload::renameTo,
+            updateCache = { currentName ->
+                try {
+                    val presentNames = buildSet {
+                        add(currentName)
+                        listOf(oldName, newName).forEach { name ->
+                            if (name != currentName && mangaDir.findFile(name) != null) add(name)
+                        }
+                    }
+                    cache.renameChapter(oldChapter, newChapter, presentNames, mangaDir, manga)
+                } catch (failure: Throwable) {
+                    try {
+                        cache.invalidateCache()
+                    } catch (cacheFailure: Throwable) {
+                        failure.addSuppressed(cacheFailure)
+                    }
+                    throw failure
+                }
+            },
+        )
     }
 
     private suspend fun getChaptersToDelete(chapters: List<Chapter>, manga: Manga): List<Chapter> {
