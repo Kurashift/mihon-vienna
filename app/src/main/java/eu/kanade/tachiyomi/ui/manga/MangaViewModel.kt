@@ -82,8 +82,10 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.core.common.preference.TriState
 import tachiyomi.core.common.preference.mapAsCheckboxState
+import tachiyomi.core.common.util.lang.SubscriberGate
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
+import tachiyomi.core.common.util.lang.pausedWhileUnsubscribed
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
@@ -115,6 +117,7 @@ import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import kotlin.time.Duration.Companion.seconds
 
 class MangaViewModel(
     private val context: Context,
@@ -159,7 +162,7 @@ class MangaViewModel(
 ) : StateViewModel<MangaViewModel.State>(State.Loading) {
 
     /** Emitted when the row behind [mangaId] is already gone, so the screen can go back. */
-    private val _mangaMissing = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _mangaMissing = MutableSharedFlow<Unit>(replay = 1)
     val mangaMissing: Flow<Unit> = _mangaMissing.asSharedFlow()
 
     companion object {
@@ -183,6 +186,8 @@ class MangaViewModel(
             }
         }
     }
+
+    private val subscriberGate = SubscriberGate()
 
     private val successState: State.Success?
         get() = state.value as? State.Success
@@ -248,6 +253,9 @@ class MangaViewModel(
     }
 
     init {
+        viewModelScope.launch {
+            subscriberGate.observeSubscriptions(mutableState.subscriptionCount, 5.seconds)
+        }
         // A local delete runs on the service's own scope, so the receipt - not this ViewModel's
         // coroutine - is what says the row is gone. Watching it keeps the back navigation working
         // even when the run outlives the page that started it.
@@ -263,13 +271,13 @@ class MangaViewModel(
         // Both marks describe this screen: they badge the chapter rows, and the display scope the
         // reader arrived with narrows the list to one of them. Read together so a scope switch and
         // the marks it reads can never be a frame apart.
-        viewModelScope.launchIO {
+        viewModelScope.launch(Dispatchers.IO + subscriberGate) {
             combine(
                 mangaMarkStore.marks,
                 goodDoujinStore.marks,
-            ) { marks, doujins ->
-                marks.chapterIdsOf(mangaId) to doujins.chapterIdsOf(mangaId)
-            }
+            ) { marks, doujins -> marks to doujins }
+                .pausedWhileUnsubscribed()
+                .map { (marks, doujins) -> marks.chapterIdsOf(mangaId) to doujins.chapterIdsOf(mangaId) }
                 .distinctUntilChanged()
                 .collectLatest { (markedChapterIds, goodDoujinChapterIds) ->
                     updateSuccessState {
@@ -281,12 +289,18 @@ class MangaViewModel(
                 }
         }
 
-        viewModelScope.launchIO {
+        viewModelScope.launch(Dispatchers.IO + subscriberGate) {
             combine(
                 getMangaAndChapters.subscribe(mangaId, applyScanlatorFilter = true).distinctUntilChanged(),
                 downloadCache.changes,
                 downloadManager.queueState,
             ) { mangaAndChapters, _, _ -> mangaAndChapters }
+                .pausedWhileUnsubscribed()
+                .catch { error ->
+                    if (error is CancellationException) throw error
+                    if (getMangaAndChapters.awaitMangaOrNull(mangaId) != null) throw error
+                    _mangaMissing.emit(Unit)
+                }
                 .collectLatest { (manga, chapters) ->
                     updateSuccessState {
                         it.copy(
@@ -297,7 +311,7 @@ class MangaViewModel(
                 }
         }
 
-        viewModelScope.launchIO {
+        viewModelScope.launch(Dispatchers.IO + subscriberGate) {
             getExcludedScanlators.subscribe(mangaId)
                 .distinctUntilChanged()
                 .collectLatest { excludedScanlators ->
@@ -307,7 +321,7 @@ class MangaViewModel(
                 }
         }
 
-        viewModelScope.launchIO {
+        viewModelScope.launch(Dispatchers.IO + subscriberGate) {
             getAvailableScanlators.subscribe(mangaId)
                 .distinctUntilChanged()
                 .collectLatest { availableScanlators ->
@@ -684,6 +698,7 @@ class MangaViewModel(
     private fun observeDownloads() {
         viewModelScope.launchIO {
             downloadManager.statusFlow()
+                .filter { subscriberGate.isOpen }
                 .filter { it.manga.id == successState?.manga?.id }
                 .catch { error -> logcat(LogPriority.ERROR, error) }
                 .collect {
@@ -695,6 +710,7 @@ class MangaViewModel(
 
         viewModelScope.launchIO {
             downloadManager.progressFlow()
+                .filter { subscriberGate.isOpen }
                 .filter { it.manga.id == successState?.manga?.id }
                 .catch { error -> logcat(LogPriority.ERROR, error) }
                 .collect {
@@ -1589,7 +1605,7 @@ class MangaViewModel(
     private fun observeTrackers() {
         val manga = successState?.manga ?: return
 
-        viewModelScope.launchIO {
+        viewModelScope.launch(Dispatchers.IO + subscriberGate) {
             combine(
                 getTracks.subscribe(manga.id).catch { logcat(LogPriority.ERROR, it) },
                 trackerManager.loggedInTrackersFlow(),
@@ -1600,6 +1616,7 @@ class MangaViewModel(
                 val supportedTrackerTracks = mangaTracks.filter { it.trackerId in supportedTrackerIds }
                 supportedTrackerTracks.size to supportedTrackers.isNotEmpty()
             }
+                .pausedWhileUnsubscribed()
                 .distinctUntilChanged()
                 .collectLatest { (trackingCount, hasLoggedInTrackers) ->
                     updateSuccessState {
