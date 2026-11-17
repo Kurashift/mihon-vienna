@@ -173,7 +173,8 @@ class LocalChapterCoverManager(
         try {
             lock.withLock {
                 val bitmap = decodeCopiedThumbnail(ByteArrayInputStream(data)) ?: return@withLock false
-                writeCover(bitmap, target) != null
+                val restoreContext = coroutineContext
+                writeCover(bitmap, target) { restoreContext.ensureActive() } != null
             }
         } finally {
             keyLocks.remove(target.name, lock)
@@ -360,25 +361,19 @@ class LocalChapterCoverManager(
         }
     }
 
-    private fun writeCover(bitmap: Bitmap, target: File): File? {
-        val targetDirectory = target.parentFile ?: return null
-        targetDirectory.mkdirs()
-        val temp = File(targetDirectory, "${target.name}.tmp")
+    private fun writeCover(bitmap: Bitmap, target: File, beforeCommit: () -> Unit = {}): File? {
         return try {
-            temp.outputStream().buffered().use { output ->
-                @Suppress("DEPRECATION")
-                check(bitmap.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, output))
-            }
-            if (target.exists()) {
-                target.delete()
-            }
-            if (!temp.renameTo(target)) {
-                temp.copyTo(target, overwrite = true)
-            }
-            target.takeIf { it.isValidCover() }
+            writeChapterCover(
+                target = target,
+                write = { output ->
+                    @Suppress("DEPRECATION")
+                    check(bitmap.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, output))
+                },
+                isValid = { it.isFile && it.length() > 0L },
+                beforeCommit = beforeCommit,
+            )
         } finally {
             bitmap.recycle()
-            temp.delete()
         }
     }
 

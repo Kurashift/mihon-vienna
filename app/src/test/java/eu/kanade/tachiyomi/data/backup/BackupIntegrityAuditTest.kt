@@ -9,6 +9,7 @@ import app.cash.sqldelight.db.SqlPreparedStatement
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.tachiyomi.data.backup.create.BackupOptions
 import eu.kanade.tachiyomi.data.backup.create.creators.MangaBackupCreator
+import eu.kanade.tachiyomi.data.backup.create.creators.MarksBackupCreator
 import eu.kanade.tachiyomi.data.backup.models.Backup
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupChapter
@@ -16,10 +17,15 @@ import eu.kanade.tachiyomi.data.backup.models.BackupHistory
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupMarks
 import eu.kanade.tachiyomi.data.backup.restore.restorers.MangaRestorer
+import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
+import eu.kanade.tachiyomi.data.manga.MangaMark
+import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.protobuf.ProtoBuf
@@ -30,6 +36,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import tachiyomi.core.common.preference.Preference
 import tachiyomi.data.Chapters
 import tachiyomi.data.Database
 import tachiyomi.data.DateColumnAdapter
@@ -42,10 +49,12 @@ import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.manga.interactor.FetchInterval
 import tachiyomi.domain.manga.interactor.GetMangaByUrlAndSourceId
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
@@ -191,7 +200,7 @@ class BackupIntegrityAuditTest {
     }
 
     @Test
-    fun `legacy chapter defaults are observable when restoring over a manual order`() = runTest {
+    fun `legacy chapter omissions preserve existing manual order and memo`() = runTest {
         val fixture = Fixture()
         val backup = fixture.backup().apply {
             chapters = listOf(BackupChapter(url = fixture.chapter.url, name = "legacy", lastPageRead = 2))
@@ -201,20 +210,134 @@ class BackupIntegrityAuditTest {
 
         val update = fixture.driver.chapterUpdate()
         assertEquals(17L, fixture.chapter.customOrder)
-        assertEquals(0L, update.argumentAfter("custom_order = coalesce("))
+        assertEquals(17L, update.argumentAfter("custom_order = coalesce("))
         assertEquals(null, update.argumentAfter("translated_name = coalesce("))
+        assertArrayEquals(
+            MemoColumnAdapter.encode(fixture.chapter.memo),
+            update.argumentAfter("memo = coalesce(") as ByteArray,
+        )
+    }
+
+    @Test
+    fun `explicit zero order and empty memo survive encoding and reset existing values`() = runTest {
+        val fixture = Fixture()
+        val source = fixture.backup().chapters.single().apply {
+            customOrder = 0
+            memo = "{}".toByteArray()
+        }
+        val restored = ProtoBuf.decodeFromByteArray(
+            BackupChapter.serializer(),
+            ProtoBuf.encodeToByteArray(BackupChapter.serializer(), source),
+        )
+        assertEquals(0L, restored.customOrder)
+        assertArrayEquals("{}".toByteArray(), restored.memo)
+        fixture.restorer.restore(fixture.backup().apply { chapters = listOf(restored) }, emptyList())
+        val update = fixture.driver.chapterUpdate()
+        assertEquals(0L, update.argumentAfter("custom_order = coalesce("))
         assertArrayEquals("{}".toByteArray(), update.argumentAfter("memo = coalesce(") as ByteArray)
     }
 
     @Test
-    fun `cover rejection currently returns normally after database commit`() = runTest {
+    fun `missing fields still use defaults for a newly restored chapter`() = runTest {
+        val fixture = Fixture()
+        coEvery { fixture.chapters.await(any<Long>(), any()) } returns emptyList()
+        val legacy = BackupChapter(fixture.chapter.url, "legacy")
+        fixture.restorer.restore(fixture.backup().apply { chapters = listOf(legacy) }, emptyList())
+        val insert = fixture.driver.statements.single { it.sql.startsWith("INSERT INTO chapters(") }
+        assertEquals(0L, legacy.toChapterImpl().customOrder)
+        assertTrue(legacy.toChapterImpl().memo.isEmpty())
+        assertEquals(0L, insert.values[11])
+        assertArrayEquals("{}".toByteArray(), insert.values[17] as ByteArray)
+    }
+
+    @Test
+    fun `cover rejection is reported after database commit`() = runTest {
         val fixture = Fixture()
         coEvery { fixture.covers.restoreCustom(any(), any()) } returns false
 
-        fixture.restorer.restore(fixture.backup(), emptyList())
+        val error = assertThrows<IOException> { fixture.restorer.restore(fixture.backup(), emptyList()) }
 
+        assertTrue(error.message!!.contains(fixture.chapter.url))
         assertTrue("commit" in fixture.driver.events)
+        assertFalse("rollback" in fixture.driver.events)
         coVerify(exactly = 1) { fixture.covers.restoreCustom(9002, any()) }
+    }
+
+    @Test
+    fun `a cover failure does not skip later covers and all failures are named`() = runTest {
+        val fixture = Fixture()
+        val second = fixture.chapter.copy(id = 9003, url = "work/second.cbz", name = "second")
+        val third = fixture.chapter.copy(id = 9004, url = "work/third.cbz", name = "third")
+        coEvery { fixture.chapters.await(any<Long>(), any()) } returns listOf(fixture.chapter, second, third)
+        coEvery { fixture.covers.restoreCustom(9002, any()) } returns false
+        coEvery { fixture.covers.restoreCustom(9003, any()) } throws IOException("disk full")
+        val backup = fixture.backup().apply {
+            chapters = listOf(fixture.chapter, second, third).map { chapter ->
+                BackupChapter(chapter.url, chapter.name, customCover = byteArrayOf(1))
+            }
+        }
+        val error = assertThrows<IOException> { fixture.restorer.restore(backup, emptyList()) }
+        assertTrue(error.message!!.contains(fixture.chapter.url))
+        assertTrue(error.message!!.contains(second.url))
+        assertTrue(error.message!!.contains("disk full"))
+        coVerify(exactly = 1) { fixture.covers.restoreCustom(9004, any()) }
+        assertTrue("commit" in fixture.driver.events)
+    }
+
+    @Test
+    fun `cover cancellation propagates and stops further cover writes`() = runTest {
+        val fixture = Fixture()
+        val second = fixture.chapter.copy(id = 9003, url = "work/second.cbz")
+        coEvery { fixture.chapters.await(any<Long>(), any()) } returns listOf(fixture.chapter, second)
+        coEvery { fixture.covers.restoreCustom(9002, any()) } throws CancellationException("cancelled")
+        val backup = fixture.backup().apply {
+            chapters = chapters + BackupChapter(second.url, "second", customCover = byteArrayOf(1))
+        }
+        assertThrows<CancellationException> { fixture.restorer.restore(backup, emptyList()) }
+        coVerify(exactly = 1) { fixture.covers.restoreCustom(9002, any()) }
+        coVerify(exactly = 0) { fixture.covers.restoreCustom(9003, any()) }
+        assertTrue("commit" in fixture.driver.events)
+    }
+
+    @Test
+    fun `cold good mark snapshot reads database before UI subscription starts and reflects later changes`() = runTest {
+        val fixture = Fixture()
+        val preference = mockk<Preference<String>> {
+            every { get() } returns ""
+            every { delete() } returns Unit
+        }
+        val store = GoodDoujinStore(fixture.database, preference, backgroundScope)
+        val mark = MangaMark(9001, "work", 9002, "chapter", 123)
+        fixture.driver.goodMarks = listOf(mark)
+        assertTrue(store.marks.value.isEmpty())
+        assertEquals(listOf(mark), store.snapshot())
+        assertTrue(store.marks.value.isEmpty())
+        val creator = MarksBackupCreator(
+            mockk<MangaMarkStore> { every { marks } returns MutableStateFlow(emptyList()) },
+            store,
+            mockk<MangaRepository> { coEvery { getMangaByIdOrNull(9001) } returns fixture.manga },
+            mockk<ChapterRepository> { coEvery { getChapterById(9002) } returns fixture.chapter },
+        )
+        val saved = creator().single()
+        assertEquals(1, saved.listType)
+        assertEquals(fixture.manga.url, saved.mangaUrl)
+        assertEquals(fixture.chapter.url, saved.chapterUrl)
+        fixture.driver.goodMarks = emptyList()
+        assertTrue(creator().isEmpty())
+    }
+
+    @Test
+    fun `good mark query failure and cancellation propagate instead of exporting empty marks`() = runTest {
+        val fixture = Fixture()
+        val preference = mockk<Preference<String>> {
+            every { get() } returns ""
+            every { delete() } returns Unit
+        }
+        val store = GoodDoujinStore(fixture.database, preference, backgroundScope)
+        fixture.driver.goodMarkError = IOException("query failed")
+        assertThrows<IOException> { store.snapshot() }
+        fixture.driver.goodMarkError = CancellationException("cancelled")
+        assertThrows<CancellationException> { store.snapshot() }
     }
 
     @Test
@@ -253,6 +376,7 @@ class BackupIntegrityAuditTest {
         val chapter = Chapter.create().copy(
             id = 9002, mangaId = 9001, url = "work/chapter.cbz", name = "chapter", totalPages = 22,
             lastPageRead = 5, customOrder = 17, translatedName = "translated", bookmark = true,
+            memo = MemoColumnAdapter.decode("""{"mihon.pageCount":22}""".toByteArray()),
         )
         val driver = AuditDriver(chapter)
         val database = Database(
@@ -313,6 +437,8 @@ class BackupIntegrityAuditTest {
         val events = mutableListOf<String>()
         var historyRow: List<Any?>? = null
         var failChapterUpdate = false
+        var goodMarks = emptyList<MangaMark>()
+        var goodMarkError: Exception? = null
         private var transaction: Transacter.Transaction? = null
 
         fun chapterUpdate() = statements.single { it.sql.startsWith("UPDATE chapters") }
@@ -353,7 +479,11 @@ class BackupIntegrityAuditTest {
             binders: (SqlPreparedStatement.() -> Unit)?,
         ): QueryResult<R> {
             record(sql, parameters, binders)
+            if ("FROM good_doujins GD" in sql) goodMarkError?.let { throw it }
             val rows = when {
+                "FROM good_doujins GD" in sql -> goodMarks.map {
+                    listOf(it.mangaId, it.mangaTitle, it.chapterId, it.chapterName, it.markedAt)
+                }
                 sql.startsWith("INSERT INTO mangas(") -> listOf(listOf(9001L))
                 "FROM history" in sql -> listOfNotNull(historyRow)
                 "FROM chapters" in sql -> listOf(

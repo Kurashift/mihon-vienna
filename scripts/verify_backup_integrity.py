@@ -33,11 +33,11 @@ class BackupSqlIntegrityTest(unittest.TestCase):
         self.database.execute(statement, parameters)
         return self.database.execute("SELECT * FROM chapters WHERE _id=9002").fetchone()
 
-    def test_legacy_defaults_reset_order_and_memo_but_null_translation_is_retained(self):
-        row = self.update(customOrder=0, translatedName=None, memo=b"{}", totalPages=22, lastPageRead=5)
-        self.assertEqual(0, row["custom_order"])
+    def test_legacy_restore_retains_existing_order_memo_and_translation(self):
+        row = self.update(customOrder=17, translatedName=None, memo=b'{"mihon.pageCount":22}', totalPages=22, lastPageRead=5)
+        self.assertEqual(17, row["custom_order"])
         self.assertEqual("translated", row["translated_name"])
-        self.assertEqual(b"{}", row["memo"])
+        self.assertEqual(b'{"mihon.pageCount":22}', row["memo"])
         self.assertEqual(9002, row["_id"])
         self.assertEqual(9001, row["manga_id"])
 

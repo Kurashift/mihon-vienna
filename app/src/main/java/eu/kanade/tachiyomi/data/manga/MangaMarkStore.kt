@@ -134,8 +134,8 @@ class MangaMarkStore(
 class GoodDoujinStore(
     private val database: Database,
     private val legacyPreference: Preference<String>,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : ChapterFlagStore {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeMutex = Mutex()
     private val _marks = MutableStateFlow<List<MangaMark>>(emptyList())
     override val marks: StateFlow<List<MangaMark>> = _marks.asStateFlow()
@@ -221,10 +221,18 @@ class GoodDoujinStore(
         database.good_doujinsQueries.removeMany(chapterIds)
     }
 
-    private suspend fun refreshMarks() {
-        _marks.value = database.good_doujinsQueries
+    suspend fun snapshot(): List<MangaMark> {
+        migrateLegacyMarks()
+        return writeMutex.withLock { readMarks() }
+    }
+
+    private suspend fun readMarks(): List<MangaMark> =
+        database.good_doujinsQueries
             .getAll(::mapGoodDoujin)
             .awaitAsList()
+
+    private suspend fun refreshMarks() {
+        _marks.value = readMarks()
     }
 
     private fun mapGoodDoujin(

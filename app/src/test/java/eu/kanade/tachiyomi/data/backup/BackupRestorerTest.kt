@@ -32,11 +32,16 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.data.Database
+import java.io.File
 import java.io.IOException
 
 class BackupRestorerTest {
+    @TempDir
+    lateinit var directory: File
+
     private val context = mockk<Context>()
     private val notifier = mockk<BackupNotifier>(relaxed = true)
     private val decoder = mockk<BackupDecoder>()
@@ -175,5 +180,23 @@ class BackupRestorerTest {
         verify(exactly = 0) { decoder.decodeEntries(any()) }
         coVerify(exactly = 0) { marksRestorer(any()) }
         coVerify(exactly = 1) { preferenceRestorer.restoreApp(backup.backupPreferences, null) }
+    }
+
+    @Test
+    fun `cover failure reaches completion count and error log while later entries and marks restore`() = runTest {
+        every { context.externalCacheDir } returns directory
+        every { decoder.decodeEntries(uri) } returns flow { backup.backupManga.forEach { emit(it) } }
+        coEvery { mangaRestorer.restore(backup.backupManga[0], any()) } throws
+            IOException("Custom chapter cover restore failed: chapter-A")
+        coEvery { mangaRestorer.restore(backup.backupManga[1], any()) } returns Unit
+
+        restorer.restore(uri, options.copy(categories = false, appSettings = false))
+
+        coVerify(exactly = 1) { mangaRestorer.restore(backup.backupManga[1], any()) }
+        coVerify(exactly = 1) { marksRestorer(backup.backupMarks) }
+        verify(exactly = 1) {
+            notifier.showRestoreComplete(any(), 1, directory.path, "mihon_restore_error.txt", false)
+        }
+        assertTrue(File(directory, "mihon_restore_error.txt").readText().contains("chapter-A"))
     }
 }

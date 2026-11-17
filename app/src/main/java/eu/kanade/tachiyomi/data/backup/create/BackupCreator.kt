@@ -9,16 +9,14 @@ import eu.kanade.tachiyomi.data.backup.BackupWriter
 import eu.kanade.tachiyomi.data.backup.create.creators.CategoriesBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.ExtensionStoresBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.MangaBackupCreator
+import eu.kanade.tachiyomi.data.backup.create.creators.MarksBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.PreferenceBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.SourcesBackupCreator
 import eu.kanade.tachiyomi.data.backup.models.Backup
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
-import eu.kanade.tachiyomi.data.backup.models.BackupMarks
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
-import eu.kanade.tachiyomi.data.manga.GoodDoujinStore
-import eu.kanade.tachiyomi.data.manga.MangaMarkStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -30,7 +28,6 @@ import okio.sink
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.backup.service.BackupPreferences
-import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -60,6 +57,7 @@ class BackupCreator(
     private val preferenceBackupCreator: PreferenceBackupCreator = PreferenceBackupCreator(),
     private val extensionStoresBackupCreator: ExtensionStoresBackupCreator = ExtensionStoresBackupCreator(),
     private val sourcesBackupCreator: SourcesBackupCreator = SourcesBackupCreator(),
+    private val marksBackupCreator: MarksBackupCreator = MarksBackupCreator(),
 ) {
 
     suspend fun backup(uri: Uri, options: BackupOptions): String {
@@ -100,7 +98,7 @@ class BackupCreator(
                 backupPreferences = backupAppPreferences(options),
                 backupExtensionStores = backupExtensionStores(options),
                 backupSourcePreferences = backupSourcePreferences(options),
-                backupMarks = backupMarks(),
+                backupMarks = marksBackupCreator(),
             )
 
             file.openOutputStream()
@@ -133,40 +131,6 @@ class BackupCreator(
             logcat(LogPriority.ERROR, e)
             file?.delete()
             throw e
-        }
-    }
-
-    private suspend fun backupMarks(): List<BackupMarks> {
-        val mangaMarkStore = Injekt.get<MangaMarkStore>()
-        val goodDoujinStore = Injekt.get<GoodDoujinStore>()
-        val mangaRepository = Injekt.get<MangaRepository>()
-        val chapterRepository = Injekt.get<ChapterRepository>()
-        val allMarks = mangaMarkStore.marks.value.map { it to 0 } + goodDoujinStore.marks.value.map { it to 1 }
-        return allMarks.mapNotNull { (mark, listType) ->
-            currentCoroutineContext().ensureActive()
-            val manga = try {
-                mangaRepository.getMangaById(mark.mangaId)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                null
-            } ?: return@mapNotNull null
-            val chapter = try {
-                chapterRepository.getChapterById(mark.chapterId)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                null
-            } ?: return@mapNotNull null
-            BackupMarks(
-                sourceId = manga.source,
-                mangaUrl = manga.url,
-                chapterUrl = chapter.url,
-                mangaTitle = mark.mangaTitle,
-                chapterName = mark.chapterName,
-                markedAt = mark.markedAt,
-                listType = listType,
-            )
         }
     }
 
