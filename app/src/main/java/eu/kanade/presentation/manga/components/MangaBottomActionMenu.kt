@@ -113,16 +113,8 @@ fun MangaBottomActionMenu(
             shape = MaterialTheme.shapes.large.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            val confirm = remember { mutableStateListOf(false, false, false, false, false) }
-            var resetJob by remember { mutableStateOf<Job?>(null) }
-            val onLongClickItem: (Int) -> Unit = { toConfirmIndex ->
-                confirm.indices.forEach { i -> confirm[i] = i == toConfirmIndex }
-                resetJob?.cancel()
-                resetJob = scope.launch {
-                    delay(1.seconds)
-                    if (isActive) confirm[toConfirmIndex] = false
-                }
-            }
+            val confirm = remember(scope) { ChapterActionLabelState(scope) }
+            val onLongClickItem: (ChapterBottomAction) -> Unit = confirm::show
             Row(
                 modifier = Modifier
                     .padding(
@@ -152,7 +144,7 @@ fun MangaBottomActionMenu(
                         },
                     ),
                     confirm = confirm,
-                    confirmIndex = CONFIRM_BOOKMARK,
+                    confirmAction = ChapterBottomAction.BOOKMARK,
                     onLongClickItem = onLongClickItem,
                 )
                 ActionGroup(
@@ -186,7 +178,7 @@ fun MangaBottomActionMenu(
                         },
                     ),
                     confirm = confirm,
-                    confirmIndex = CONFIRM_MARK,
+                    confirmAction = ChapterBottomAction.MARK,
                     onLongClickItem = onLongClickItem,
                     groupTitle = stringResource(MR.strings.action_mark_group),
                     groupIcon = Icons.AutoMirrored.Outlined.Label,
@@ -203,15 +195,15 @@ fun MangaBottomActionMenu(
                     readRanges = readRanges,
                     onMarkRangeClicked = onMarkRangeClicked,
                     confirm = confirm,
-                    confirmIndex = CONFIRM_READ,
+                    confirmAction = ChapterBottomAction.READ,
                     onLongClickItem = onLongClickItem,
                 )
                 if (onDownloadClicked != null) {
                     Button(
                         title = stringResource(MR.strings.action_download),
                         icon = Icons.Outlined.Download,
-                        toConfirm = confirm[CONFIRM_DOWNLOAD],
-                        onLongClick = { onLongClickItem(CONFIRM_DOWNLOAD) },
+                        toConfirm = confirm.isShowing(ChapterBottomAction.DOWNLOAD),
+                        onLongClick = { onLongClickItem(ChapterBottomAction.DOWNLOAD) },
                         onClick = onDownloadClicked,
                     )
                 }
@@ -231,8 +223,8 @@ fun MangaBottomActionMenu(
                     Button(
                         title = stringResource(MR.strings.edit_chapter_translated_title),
                         icon = Icons.Outlined.Edit,
-                        toConfirm = confirm[CONFIRM_TITLE],
-                        onLongClick = { onLongClickItem(CONFIRM_TITLE) },
+                        toConfirm = confirm.isShowing(ChapterBottomAction.TITLE),
+                        onLongClick = { onLongClickItem(ChapterBottomAction.TITLE) },
                         onClick = onEditTranslatedTitleClicked,
                     )
                 }
@@ -261,8 +253,8 @@ fun MangaBottomActionMenu(
                     Button(
                         title = stringResource(MR.strings.action_delete),
                         icon = Icons.Outlined.Delete,
-                        toConfirm = confirm[CONFIRM_DELETE],
-                        onLongClick = { onLongClickItem(CONFIRM_DELETE) },
+                        toConfirm = confirm.isShowing(ChapterBottomAction.DELETE),
+                        onLongClick = { onLongClickItem(ChapterBottomAction.DELETE) },
                         onClick = onDeleteClicked,
                     )
                 }
@@ -524,13 +516,6 @@ fun LibraryBottomActionMenu(
 private val BottomBarMenuDpOffset = DpOffset(0.dp, 0.dp)
 
 // Slots that a long press can label. Actions sharing a slot share one entry.
-private const val CONFIRM_BOOKMARK = 0
-private const val CONFIRM_MARK = 1
-private const val CONFIRM_READ = 2
-private const val CONFIRM_DOWNLOAD = 3
-private const val CONFIRM_TITLE = 4
-private const val CONFIRM_DELETE = 5
-
 private data class BottomBarAction(
     val title: String,
     val icon: ImageVector,
@@ -570,9 +555,9 @@ data class ReadRangeActions(
 @Composable
 private fun RowScope.ActionGroup(
     actions: List<BottomBarAction>,
-    confirm: List<Boolean>,
-    confirmIndex: Int,
-    onLongClickItem: (Int) -> Unit,
+    confirm: ChapterActionLabelState,
+    confirmAction: ChapterBottomAction,
+    onLongClickItem: (ChapterBottomAction) -> Unit,
     groupTitle: String? = null,
     groupIcon: ImageVector? = null,
 ) {
@@ -582,8 +567,8 @@ private fun RowScope.ActionGroup(
         Button(
             title = action.title,
             icon = action.icon,
-            toConfirm = confirm[confirmIndex],
-            onLongClick = { onLongClickItem(confirmIndex) },
+            toConfirm = confirm.isShowing(confirmAction),
+            onLongClick = { onLongClickItem(confirmAction) },
             onClick = action.onClick,
         )
         return
@@ -592,8 +577,8 @@ private fun RowScope.ActionGroup(
     Button(
         title = groupTitle ?: actions.first().title,
         icon = groupIcon ?: actions.first().icon,
-        toConfirm = confirm[confirmIndex],
-        onLongClick = { onLongClickItem(confirmIndex) },
+        toConfirm = confirm.isShowing(confirmAction),
+        onLongClick = { onLongClickItem(confirmAction) },
         onClick = { expanded = true },
     ) {
         DropdownMenu(
@@ -633,9 +618,9 @@ private fun RowScope.ReadStatusGroup(
     selectedCount: Int,
     readRanges: ReadRangeActions?,
     onMarkRangeClicked: ((chapters: List<Chapter>, read: Boolean) -> Unit)?,
-    confirm: List<Boolean>,
-    confirmIndex: Int,
-    onLongClickItem: (Int) -> Unit,
+    confirm: ChapterActionLabelState,
+    confirmAction: ChapterBottomAction,
+    onLongClickItem: (ChapterBottomAction) -> Unit,
 ) {
     val selfRead = onMarkAsReadClicked?.let { onClick ->
         BottomBarAction(
@@ -663,8 +648,8 @@ private fun RowScope.ReadStatusGroup(
     Button(
         title = stringResource(MR.strings.action_read_group),
         icon = ImageVector.vectorResource(R.drawable.ic_done_edit_24dp),
-        toConfirm = confirm[confirmIndex],
-        onLongClick = { onLongClickItem(confirmIndex) },
+        toConfirm = confirm.isShowing(confirmAction),
+        onLongClick = { onLongClickItem(confirmAction) },
         onClick = { expanded = true },
     ) {
         DropdownMenu(
