@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import eu.kanade.presentation.components.TabbedDialog
 import eu.kanade.presentation.components.TabbedDialogPaddings
@@ -34,7 +35,7 @@ fun ReaderSettingsDialog(
 
     BoxWithConstraints {
         TabbedDialog(
-            modifier = Modifier.heightIn(max = maxHeight * 0.75f),
+            modifier = Modifier.heightIn(max = maxHeight * 0.85f),
             onDismissRequest = {
                 onDismissRequest()
                 onShowMenus()
@@ -56,7 +57,8 @@ fun ReaderSettingsDialog(
 
             Column(
                 modifier = Modifier
-                    .padding(vertical = TabbedDialogPaddings.Vertical)
+                    // 底部留一点空：最后一排滚动到底时不会贴着面板边缘。
+                    .padding(top = TabbedDialogPaddings.Vertical, bottom = 16.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
                 when (page) {

@@ -83,7 +83,9 @@ fun AdaptiveSheet(
     }
 }
 
+// 窗口铺满全屏，系统栏的内边距由面板自己处理：否则面板画不到屏幕底边，
+// 手势条那条带子会露出被 dim 的页面，看起来像镂空。
 private val dialogProperties = DialogProperties(
     usePlatformDefaultWidth = false,
-    decorFitsSystemWindows = true,
+    decorFitsSystemWindows = false,
 )
