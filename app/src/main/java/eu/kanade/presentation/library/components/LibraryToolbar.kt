@@ -75,6 +75,31 @@ private fun LibraryRegularToolbar(
     scrollBehavior: TopAppBarScrollBehavior?,
 ) {
     val pillAlpha = if (isSystemInDarkTheme()) 0.12f else 0.08f
+    val filterTint = if (hasFilters) MaterialTheme.colorScheme.active else LocalContentColor.current
+    val filterAction = AppBar.Action(
+        title = stringResource(MR.strings.action_filter),
+        icon = Icons.Outlined.FilterList,
+        iconTint = filterTint,
+        onClick = onClickFilter,
+    )
+    val overflowActions = listOf(
+        AppBar.OverflowAction(
+            title = stringResource(MR.strings.action_update_library),
+            onClick = onClickGlobalUpdate,
+        ),
+        AppBar.OverflowAction(
+            title = stringResource(MR.strings.action_update_category),
+            onClick = onClickRefresh,
+        ),
+        AppBar.OverflowAction(
+            title = stringResource(MR.strings.action_edit_categories),
+            onClick = onClickEditCategories,
+        ),
+        AppBar.OverflowAction(
+            title = stringResource(MR.strings.action_open_random_manga),
+            onClick = onClickOpenRandomManga,
+        ),
+    )
     SearchToolbar(
         titleContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -97,33 +122,11 @@ private fun LibraryRegularToolbar(
         onChangeSearchQuery = onSearchQueryChange,
         historyKey = SearchHistoryScope.LIBRARY,
         actions = {
-            val filterTint = if (hasFilters) MaterialTheme.colorScheme.active else LocalContentColor.current
-            AppBarActions(
-                listOf(
-                    AppBar.Action(
-                        title = stringResource(MR.strings.action_filter),
-                        icon = Icons.Outlined.FilterList,
-                        iconTint = filterTint,
-                        onClick = onClickFilter,
-                    ),
-                    AppBar.OverflowAction(
-                        title = stringResource(MR.strings.action_update_library),
-                        onClick = onClickGlobalUpdate,
-                    ),
-                    AppBar.OverflowAction(
-                        title = stringResource(MR.strings.action_update_category),
-                        onClick = onClickRefresh,
-                    ),
-                    AppBar.OverflowAction(
-                        title = stringResource(MR.strings.action_edit_categories),
-                        onClick = onClickEditCategories,
-                    ),
-                    AppBar.OverflowAction(
-                        title = stringResource(MR.strings.action_open_random_manga),
-                        onClick = onClickOpenRandomManga,
-                    ),
-                ),
-            )
+            AppBarActions(listOf(filterAction) + overflowActions)
+        },
+        // 搜索时只留筛选：它决定搜的是哪一批作品，更新、分类、随机都与输入无关。
+        searchActions = {
+            AppBarActions(listOf(filterAction))
         },
         scrollBehavior = scrollBehavior,
     )
