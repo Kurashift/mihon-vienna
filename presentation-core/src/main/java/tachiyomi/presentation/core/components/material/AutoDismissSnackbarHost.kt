@@ -1,12 +1,5 @@
 package tachiyomi.presentation.core.components.material
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.SnackbarDuration
@@ -15,7 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.unit.dp
@@ -50,14 +42,9 @@ fun AutoDismissSnackbarHost(
     }
 
     // Own the timeout here: Material's host has a second timer that cannot pause on touch.
-    AnimatedContent(
-        targetState = currentData,
+    PillHost(
+        target = currentData,
         modifier = modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center,
-        transitionSpec = {
-            (fadeIn(tween(120)) + slideInVertically(tween(160)) { it / 2 })
-                .togetherWith(fadeOut(tween(100)) + slideOutVertically(tween(140)) { it / 3 })
-        },
         label = "Snackbar",
     ) { data ->
         if (data != null) {
