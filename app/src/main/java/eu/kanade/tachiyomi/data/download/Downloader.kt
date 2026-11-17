@@ -19,9 +19,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,8 +40,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import mihon.core.archive.ZipWriter
 import nl.adaptivity.xmlutil.serialization.XML
@@ -97,13 +101,13 @@ class Downloader(
     private val notifier by lazy { DownloadNotifier(context) }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var downloaderJob: Job? = null
+    private val downloadRun = DownloadRun(scope)
 
     /**
      * Whether the downloader is running.
      */
     val isRunning: Boolean
-        get() = downloaderJob?.isActive ?: false
+        get() = downloadRun.isRunning
 
     /**
      * Whether the downloader is paused
@@ -124,14 +128,13 @@ class Downloader(
      *
      * @return true if the downloader is started, false otherwise.
      */
+    @Synchronized
     fun start(): Boolean {
         if (isRunning || queueState.value.isEmpty()) {
             return false
         }
 
         val pending = queueState.value.filter { it.status != Download.State.DOWNLOADED }
-        pending.forEach { if (it.status != Download.State.QUEUE) it.status = Download.State.QUEUE }
-
         isPaused = false
 
         launchDownloaderJob()
@@ -142,6 +145,7 @@ class Downloader(
     /**
      * Stops the downloader.
      */
+    @Synchronized
     fun stop(reason: String? = null) {
         cancelDownloaderJob()
         queueState.value
@@ -167,6 +171,7 @@ class Downloader(
     /**
      * Pauses the downloader
      */
+    @Synchronized
     fun pause() {
         cancelDownloaderJob()
         queueState.value
@@ -178,6 +183,7 @@ class Downloader(
     /**
      * Removes everything from the queue.
      */
+    @Synchronized
     fun clearQueue() {
         cancelDownloaderJob()
 
@@ -191,7 +197,9 @@ class Downloader(
     private fun launchDownloaderJob() {
         if (isRunning) return
 
-        downloaderJob = scope.launch {
+        downloadRun.start { owner ->
+            queueState.value.filter { it.status != Download.State.DOWNLOADED }
+                .forEach { if (it.status != Download.State.QUEUE) it.status = Download.State.QUEUE }
             val activeDownloadsFlow = combine(
                 queueState,
                 downloadPreferences.parallelSourceLimit.changes(),
@@ -224,44 +232,55 @@ class Downloader(
                 activeDownloadsFlow.collectLatest { activeDownloads ->
                     val downloadJobsToStop = downloadJobs.filter { it.key !in activeDownloads }
                     downloadJobsToStop.forEach { (download, job) ->
-                        job.cancel()
-                        downloadJobs.remove(download)
+                        withContext(NonCancellable) {
+                            job.cancelAndJoin()
+                            downloadJobs.remove(download)
+                        }
                     }
+
+                    ensureActive()
 
                     val downloadsToStart = activeDownloads.filter { it !in downloadJobs }
                     downloadsToStart.forEach { download ->
-                        downloadJobs[download] = launchDownloadJob(download)
+                        downloadJobs[download] = launchDownloadJob(download, owner)
                     }
                 }
             }
         }
     }
 
-    private fun CoroutineScope.launchDownloadJob(download: Download) = launchIO {
+    private fun CoroutineScope.launchDownloadJob(download: Download, owner: Job) = launchIO {
         try {
             downloadChapter(download)
+            ensureActive()
 
             // Remove successful download from queue
             if (download.status == Download.State.DOWNLOADED) {
                 removeFromQueue(download)
             }
-            if (areAllDownloadsFinished()) {
-                stop()
-            }
+            stopIfCurrent(owner, onlyIfFinished = true)
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            logcat(LogPriority.ERROR, e)
-            notifier.onError(e.message)
-            stop()
+            ensureActive()
+            stopIfCurrent(owner, failure = e)
         }
+    }
+
+    @Synchronized
+    private fun stopIfCurrent(owner: Job, onlyIfFinished: Boolean = false, failure: Throwable? = null) {
+        if (!downloadRun.isCurrent(owner) || (onlyIfFinished && !areAllDownloadsFinished())) return
+        if (failure != null) {
+            logcat(LogPriority.ERROR, failure)
+            notifier.onError(failure.message)
+        }
+        stop()
     }
 
     /**
      * Destroys the downloader subscriptions.
      */
     private fun cancelDownloaderJob() {
-        downloaderJob?.cancel()
-        downloaderJob = null
+        downloadRun.cancel()
     }
 
     /**
@@ -389,6 +408,7 @@ class Downloader(
 
             // Do after download completes
 
+            currentCoroutineContext().ensureActive()
             if (!isDownloadSuccessful(download, tmpDir)) {
                 download.status = Download.State.ERROR
                 return
@@ -720,6 +740,7 @@ class Downloader(
         }
     }
 
+    @Synchronized
     fun updateQueue(downloads: List<Download>) {
         val wasRunning = isRunning
 
