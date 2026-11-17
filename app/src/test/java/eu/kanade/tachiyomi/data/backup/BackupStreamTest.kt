@@ -127,6 +127,8 @@ class BackupStreamTest {
             assertEquals(0L, chapter.markedReadAt)
             assertNull(chapter.customCover)
             assertNull(chapter.translatedName)
+            assertNull(chapter.customOrder)
+            assertNull(chapter.memo)
             assertTrue(reader.readMetadata().backupMarks.isEmpty())
         }
     }

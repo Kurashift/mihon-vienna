@@ -14,8 +14,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import logcat.LogPriority
-import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
@@ -31,6 +29,7 @@ import tachiyomi.domain.track.model.Track
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.IOException
 import java.util.Date
 import kotlin.math.max
 import kotlin.time.Clock
@@ -79,18 +78,28 @@ class MangaRestorer(
     }
 
     private suspend fun restoreCustomChapterCovers(mangaId: Long, backupChapters: List<BackupChapter>) {
+        if (backupChapters.none { it.customCover != null }) return
         val chaptersByUrl = getChaptersByMangaId.await(mangaId).associateBy(Chapter::url)
+        val failures = mutableListOf<String>()
         backupChapters.forEach { backupChapter ->
             currentCoroutineContext().ensureActive()
             val data = backupChapter.customCover ?: return@forEach
-            val chapter = chaptersByUrl[backupChapter.url] ?: return@forEach
             try {
-                localChapterCoverManager.restoreCustom(chapter.id, data)
+                val chapter = chaptersByUrl[backupChapter.url]
+                    ?: throw IOException("Restored chapter not found")
+                if (!localChapterCoverManager.restoreCustom(chapter.id, data)) {
+                    throw IOException("Image could not be decoded or written")
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                logcat(LogPriority.ERROR, error) { "Failed to restore a local chapter custom cover" }
+                failures.add(
+                    "${backupChapter.name} [${backupChapter.url}]: ${error.message ?: error.javaClass.simpleName}",
+                )
             }
+        }
+        if (failures.isNotEmpty()) {
+            throw IOException("Custom chapter cover restore failed: ${failures.joinToString("; ")}")
         }
     }
 
@@ -181,6 +190,8 @@ class MangaRestorer(
                     .copy(
                         id = dbChapter.id,
                         bookmark = chapter.bookmark || dbChapter.bookmark,
+                        customOrder = it.customOrder ?: dbChapter.customOrder,
+                        memo = if (it.memo == null) dbChapter.memo else chapter.memo,
                         totalPages = chapter.totalPages.takeIf { it > 0 } ?: dbChapter.totalPages,
                         // The backup's timestamp wins when it carries one; otherwise the device's own
                         // date is kept, so restoring an older file cannot wipe a recorded finish time.

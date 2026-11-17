@@ -28,9 +28,9 @@ class BackupChapter(
     @ProtoNumber(10) var sourceOrder: Long = 0,
     @ProtoNumber(11) var lastModifiedAt: Long = 0,
     @ProtoNumber(12) var version: Long = 0,
-    @ProtoNumber(13) var memo: ByteArray = JsonObjectEmptyBytes,
+    @ProtoNumber(13) var memo: ByteArray? = null,
     @ProtoNumber(14) var totalPages: Long = 0,
-    @ProtoNumber(15) var customOrder: Long = 0,
+    @ProtoNumber(15) var customOrder: Long? = null,
     @ProtoNumber(16) var translatedName: String? = null,
     @ProtoNumber(17) var customCover: ByteArray? = null,
     // When the chapter was first finished. Absent in backups written before this field existed, so
@@ -41,7 +41,7 @@ class BackupChapter(
     var chapterId: Long = 0
 
     fun toChapterImpl(): Chapter {
-        val memo = MemoColumnAdapter.decode(this@BackupChapter.memo)
+        val memo = MemoColumnAdapter.decode(this@BackupChapter.memo ?: JsonObjectEmptyBytes)
         val scannedPageCount = memo["mihon.pageCount"]
             ?.jsonPrimitive
             ?.intOrNull
@@ -69,7 +69,7 @@ class BackupChapter(
             version = this@BackupChapter.version,
             memo = memo,
             totalPages = restoredTotalPages,
-            customOrder = this@BackupChapter.customOrder,
+            customOrder = this@BackupChapter.customOrder ?: 0,
             translatedName = this@BackupChapter.translatedName,
             markedReadAt = this@BackupChapter.markedReadAt,
         )
