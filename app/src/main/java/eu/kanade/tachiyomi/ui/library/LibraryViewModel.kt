@@ -30,7 +30,9 @@ import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.showSnackbarReplacing
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -38,9 +40,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
@@ -108,6 +112,10 @@ class LibraryViewModel(
 
     /** Owned here rather than by the tab, so a result that outlives the screen still has a host. */
     val snackbarHostState: SnackbarHostState = SnackbarHostState()
+
+    private val libraryManga = getLibraryManga.subscribe()
+        .flowOn(Dispatchers.IO)
+        .shareIn(viewModelScope, SharingStarted.Lazily, replay = 1)
 
     private val tracks = libraryTrackingFlow(
         getCategories.subscribe(),
@@ -434,7 +442,7 @@ class LibraryViewModel(
 
     private fun getFavoritesFlow(): Flow<List<LibraryItem>> {
         return combine(
-            getLibraryManga.subscribe(),
+            libraryManga,
             getLibraryItemPreferencesFlow(),
             downloadCache.changes,
         ) { libraryManga, preferences, _ ->
@@ -483,7 +491,7 @@ class LibraryViewModel(
      * searchable as soon as the user returns to the library.
      */
     private fun getChapterTranslatedNamesFlow(): Flow<Map<Long, List<String>>> {
-        return getLibraryManga.subscribe()
+        return libraryManga
             .map { mangas -> mangas.map { it.id } }
             .distinctUntilChanged()
             .flatMapLatest { mangaIds -> getChapterTranslatedNames.observe(mangaIds) }
