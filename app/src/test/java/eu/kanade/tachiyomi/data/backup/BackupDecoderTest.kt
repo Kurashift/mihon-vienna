@@ -70,6 +70,27 @@ class BackupDecoderTest {
     }
 
     @Test
+    fun `reading statistics are validated in full and lightweight preflight`() {
+        val valid = eu.kanade.tachiyomi.data.backup.models.BackupReadingLedger(1)
+        listOf(valid.copy(schemaVersion = 0), valid.copy(schemaVersion = 2)).forEach { ledger ->
+            open(encodeBackup(Backup(emptyList(), readingLedger = ledger)))
+            assertThrows<IOException> { decoder.decodeMetadata(uri) }
+            assertThrows<IOException> { decoder.decodeMetadata(uri, onlySources = true) }
+        }
+    }
+
+    @Test
+    fun `reading statistics absence and an authoritative empty envelope remain distinct`() {
+        // An entirely default Backup serializes to zero bytes and is intentionally not a valid file.
+        open(encodeBackup(backupFixture()))
+        org.junit.jupiter.api.Assertions.assertNull(decoder.decodeMetadata(uri).backup.readingLedger)
+        val empty = eu.kanade.tachiyomi.data.backup.models.BackupReadingLedger(1)
+        open(encodeBackup(Backup(emptyList(), readingLedger = empty)))
+        assertEquals(empty, decoder.decodeMetadata(uri).backup.readingLedger)
+        assertEquals(empty, decoder.decodeMetadata(uri, onlySources = true).backup.readingLedger)
+    }
+
+    @Test
     fun `plain and gzip backups preflight completely then stream the same entries`() = runTest {
         val backup = backupFixture()
         val bytes = encodeBackup(backup)
@@ -134,6 +155,7 @@ class BackupDecoderTest {
             mangaRestorer = manga,
             decoder = decoder,
             marksRestorer = marks,
+            historyRepository = mockk(relaxed = true),
         )
         val failure = try {
             restorer.restoreFromFile(uri, RestoreOptions())

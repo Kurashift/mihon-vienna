@@ -242,7 +242,6 @@ class ClearDatabaseViewModel : StateViewModel<ClearDatabaseViewModel.State>(Stat
     suspend fun removeMangaBySourceId(keepReadManga: Boolean) = withNonCancellableContext {
         val state = state.value as? State.Ready ?: return@withNonCancellableContext
         database.mangasQueries.deleteNonLibraryManga(state.selection, keepReadManga.toLong())
-        database.historyQueries.removeResettedHistory()
     }
 
     fun toggleSelection(source: Source) = mutableState.update { state ->

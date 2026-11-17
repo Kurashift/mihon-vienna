@@ -49,6 +49,7 @@ class BackupRestorerTest {
     private val preferenceRestorer = mockk<PreferenceRestorer>(relaxed = true)
     private val mangaRestorer = mockk<MangaRestorer>()
     private val marksRestorer = mockk<MarksRestorer>(relaxed = true)
+    private val historyRepository = mockk<tachiyomi.domain.history.repository.HistoryRepository>(relaxed = true)
     private val uri = mockk<Uri>()
     private val backup = backupFixture()
     private val restorer = BackupRestorer(
@@ -62,11 +63,13 @@ class BackupRestorerTest {
         mangaRestorer = mangaRestorer,
         decoder = decoder,
         marksRestorer = marksRestorer,
+        historyRepository = historyRepository,
     )
-    private val options = RestoreOptions(extensionStores = false, sourceSettings = false)
+    private val options = RestoreOptions(extensionStores = false, sourceSettings = false, history = false)
 
     @BeforeEach
     fun setUp() {
+        coEvery { historyRepository.exportPermanentRecords() } returns emptyList()
         mockkStatic("tachiyomi.core.common.i18n.LocalizeKt")
         every { context.stringResource(any<StringResource>()) } returns "Label"
         every { decoder.decodeMetadata(uri, any(), any(), any()) } returns BackupDecoder.Metadata(
@@ -78,6 +81,35 @@ class BackupRestorerTest {
     @AfterEach
     fun tearDown() {
         unmockkStatic("tachiyomi.core.common.i18n.LocalizeKt")
+    }
+
+    @Test
+    fun `authoritative empty statistics restore independently and never reads legacy entries`() = runTest {
+        val metadata = backup.copy(
+            backupManga = emptyList(),
+            readingLedger = eu.kanade.tachiyomi.data.backup.models.BackupReadingLedger(1),
+        )
+        every { decoder.decodeMetadata(uri, any(), any(), any()) } returns BackupDecoder.Metadata(2, metadata)
+        restorer.restoreFromFile(
+            uri,
+            options.copy(libraryEntries = false, categories = false, appSettings = false, history = true),
+        )
+        coVerify(exactly = 2) { historyRepository.importPermanentRecords(emptyList(), legacyMode = false) }
+        coVerify(exactly = 0) { historyRepository.importPermanentRecords(any(), legacyMode = true) }
+        coVerify(exactly = 0) { mangaRestorer.restore(any(), any(), any()) }
+        verify(exactly = 0) { decoder.decodeEntries(any()) }
+    }
+
+    @Test
+    fun `legacy reading records restore without importing library entries`() = runTest {
+        every { decoder.decodeEntries(uri) } returns flow { backup.backupManga.forEach { emit(it) } }
+        restorer.restoreFromFile(
+            uri,
+            options.copy(libraryEntries = false, categories = false, appSettings = false, history = true),
+        )
+        val expected = backup.backupManga.flatMap { it.toLegacyReadingRecords() }
+        coVerify(exactly = 2) { historyRepository.importPermanentRecords(expected, legacyMode = true) }
+        coVerify(exactly = 0) { mangaRestorer.restore(any(), any(), any()) }
     }
 
     @Test
@@ -98,7 +130,7 @@ class BackupRestorerTest {
                 emit(it)
             }
         }
-        coEvery { mangaRestorer.restore(any(), backup.backupCategories) } coAnswers {
+        coEvery { mangaRestorer.restore(any(), backup.backupCategories, any()) } coAnswers {
             assertTrue("categories end" in events)
             delay(1)
             events.add("restored " + firstArg<BackupManga>().url)
@@ -130,7 +162,7 @@ class BackupRestorerTest {
         assertSame(expected, actual)
         coVerify(exactly = 0) { categoriesRestorer(any()) }
         coVerify(exactly = 0) { preferenceRestorer.restoreApp(any(), any()) }
-        coVerify(exactly = 0) { mangaRestorer.restore(any(), any()) }
+        coVerify(exactly = 0) { mangaRestorer.restore(any(), any(), any()) }
         coVerify(exactly = 0) { marksRestorer(any()) }
         verify(exactly = 0) { decoder.decodeEntries(any()) }
     }
@@ -144,7 +176,7 @@ class BackupRestorerTest {
             decodedSecond = true
             emit(backup.backupManga[1])
         }
-        coEvery { mangaRestorer.restore(any(), any()) } coAnswers {
+        coEvery { mangaRestorer.restore(any(), any(), any()) } coAnswers {
             started.complete(Unit)
             awaitCancellation()
         }
@@ -164,8 +196,8 @@ class BackupRestorerTest {
         every { decoder.decodeEntries(uri) } returns flow {
             backup.backupManga.forEach { emit(it) }
         }
-        coEvery { mangaRestorer.restore(backup.backupManga[0], any()) } throws IOException("entry failed")
-        coEvery { mangaRestorer.restore(backup.backupManga[1], any()) } coAnswers { completed = true }
+        coEvery { mangaRestorer.restore(backup.backupManga[0], any(), any()) } throws IOException("entry failed")
+        coEvery { mangaRestorer.restore(backup.backupManga[1], any(), any()) } coAnswers { completed = true }
         coEvery { marksRestorer(any()) } coAnswers { assertTrue(completed) }
 
         restorer.restoreFromFile(uri, options.copy(categories = false, appSettings = false))
@@ -186,13 +218,13 @@ class BackupRestorerTest {
     fun `cover failure reaches completion count and error log while later entries and marks restore`() = runTest {
         every { context.externalCacheDir } returns directory
         every { decoder.decodeEntries(uri) } returns flow { backup.backupManga.forEach { emit(it) } }
-        coEvery { mangaRestorer.restore(backup.backupManga[0], any()) } throws
+        coEvery { mangaRestorer.restore(backup.backupManga[0], any(), any()) } throws
             IOException("Custom chapter cover restore failed: chapter-A")
-        coEvery { mangaRestorer.restore(backup.backupManga[1], any()) } returns Unit
+        coEvery { mangaRestorer.restore(backup.backupManga[1], any(), any()) } returns Unit
 
         restorer.restore(uri, options.copy(categories = false, appSettings = false))
 
-        coVerify(exactly = 1) { mangaRestorer.restore(backup.backupManga[1], any()) }
+        coVerify(exactly = 1) { mangaRestorer.restore(backup.backupManga[1], any(), any()) }
         coVerify(exactly = 1) { marksRestorer(backup.backupMarks) }
         verify(exactly = 1) {
             notifier.showRestoreComplete(any(), 1, directory.path, "mihon_restore_error.txt", false)

@@ -9,7 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SQL = ROOT / "data/src/main/sqldelight/tachiyomi"
 
 
-def create_database():
+def create_database(reading_triggers=False):
     database = sqlite3.connect(":memory:", cached_statements=0)
     database.row_factory = sqlite3.Row
     for path in sorted((SQL / "data").glob("*.sq")):
@@ -18,6 +18,10 @@ def create_database():
         for statement in re.findall(r"CREATE TABLE .*?\n\);", source, re.S):
             database.executescript(statement)
         for statement in re.findall(r"CREATE (?:UNIQUE )?INDEX [^;]+;", source):
+            database.executescript(statement)
+    if reading_triggers:
+        source = (SQL / "data/history.sq").read_text(encoding="utf-8")
+        for statement in re.findall(r"CREATE TRIGGER .*?\nEND;", source, re.S):
             database.executescript(statement)
     set_view(database, (SQL / "view/libraryView.sq").read_text(encoding="utf-8"))
     return database
@@ -44,10 +48,24 @@ def add_chapter(database, chapter_id, manga_id, scanlator=None, read=0, bookmark
          chapter_id * 10, chapter_id * 20),
     )
     if history is not None:
-        database.execute(
-            "INSERT INTO history(chapter_id,last_read,time_read) VALUES(?,?,0)",
-            (chapter_id, history),
-        )
+        record_history(database, chapter_id, history)
+
+
+def record_history(database, chapter_id, read_at):
+    database.execute(
+        "INSERT INTO history(chapter_id,last_read,time_read,record_key,work_key,source_id,"
+        "manga_url,manga_title,chapter_url,chapter_name,completed,hidden) "
+        "SELECT C._id,?,0,'record:' || lower(hex(randomblob(16))),"
+        "'work:' || M.source || ':' || length(M.url) || ':' || M.url,"
+        "M.source,M.url,M.title,C.url,C.name,C.read,0 "
+        "FROM chapters C JOIN mangas M ON M._id=C.manga_id WHERE C._id=? "
+        "ON CONFLICT(chapter_id) DO UPDATE SET last_read=excluded.last_read,hidden=0",
+        (read_at, chapter_id),
+    )
+    database.execute(
+        "INSERT OR IGNORE INTO reading_chapter_link(chapter_id,record_key) "
+        "SELECT chapter_id,record_key FROM history WHERE chapter_id=?", (chapter_id,),
+    )
 
 
 def library_rows(database):
@@ -131,10 +149,8 @@ def benchmark(baseline, favorite_count=3000, history_stride=4):
               "hidden" if chapter_id % 7 == 0 else None, chapter_id, chapter_id)
              for chapter_id in range(1, 600001)),
         )
-        database.executemany(
-            "INSERT INTO history(chapter_id,last_read,time_read) VALUES(?,?,0)",
-            ((chapter_id, chapter_id) for chapter_id in range(history_stride, 600001, history_stride)),
-        )
+        for chapter_id in range(history_stride, 600001, history_stride):
+            record_history(database, chapter_id, chapter_id)
         database.executemany(
             "INSERT INTO excluded_scanlators(manga_id,scanlator) VALUES(?,'hidden')",
             ((manga_id,) for manga_id in range(10, 6001, 10)),

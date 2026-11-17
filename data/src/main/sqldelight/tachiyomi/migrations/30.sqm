@@ -1,0 +1,270 @@
+DROP VIEW historyView;
+DROP VIEW libraryView;
+ALTER TABLE history RENAME TO legacy_history;
+DROP INDEX history_history_chapter_id_index;
+DROP INDEX idx_history_last_read;
+CREATE TABLE history(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    chapter_id INTEGER UNIQUE,
+    last_read INTEGER AS Date,
+    time_read INTEGER NOT NULL DEFAULT 0,
+    record_key TEXT NOT NULL UNIQUE,
+    work_key TEXT NOT NULL,
+    source_id INTEGER NOT NULL,
+    manga_url TEXT NOT NULL,
+    manga_title TEXT NOT NULL,
+    chapter_url TEXT NOT NULL,
+    chapter_name TEXT NOT NULL,
+    has_read_activity INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    state_version INTEGER NOT NULL DEFAULT 0,
+    state_actor TEXT NOT NULL DEFAULT '',
+    hidden INTEGER NOT NULL DEFAULT 1,
+    visibility_version INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(chapter_id) REFERENCES chapters (_id) ON DELETE SET NULL
+);
+
+CREATE INDEX history_history_chapter_id_index ON history(chapter_id);
+CREATE INDEX idx_history_last_read ON history(last_read);
+CREATE INDEX history_work_key_index ON history(work_key);
+CREATE INDEX history_locator_index ON history(source_id, manga_url, chapter_url);
+
+-- The singleton controls a transaction's intent, never a second copy of reading data.
+CREATE TABLE reading_state_context(
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    actor TEXT NOT NULL,
+    suppress_state INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE reading_locator(
+    source_id INTEGER NOT NULL,
+    manga_url TEXT NOT NULL,
+    chapter_url TEXT NOT NULL,
+    record_key TEXT NOT NULL REFERENCES history(record_key) ON DELETE CASCADE,
+    PRIMARY KEY(source_id, manga_url, chapter_url)
+);
+
+CREATE TABLE reading_key_alias(
+    alias_key TEXT NOT NULL PRIMARY KEY,
+    record_key TEXT NOT NULL REFERENCES history(record_key) ON DELETE CASCADE
+);
+
+CREATE TABLE reading_chapter_link(
+    chapter_id INTEGER NOT NULL PRIMARY KEY REFERENCES chapters(_id) ON DELETE CASCADE,
+    record_key TEXT NOT NULL REFERENCES history(record_key) ON DELETE CASCADE
+);
+
+CREATE INDEX reading_chapter_link_record ON reading_chapter_link(record_key);
+
+CREATE TRIGGER reading_baseline_after_chapter_insert
+AFTER INSERT ON chapters
+BEGIN
+    INSERT OR IGNORE INTO reading_state_context(id, actor) VALUES (1, lower(hex(randomblob(16))));
+    UPDATE history SET chapter_id = new._id
+    WHERE record_key = (SELECT record_key FROM reading_locator
+        WHERE source_id = (SELECT source FROM mangas WHERE _id = new.manga_id)
+        AND manga_url = (SELECT url FROM mangas WHERE _id = new.manga_id)
+        AND chapter_url = new.url)
+    AND chapter_id IS NULL;
+    INSERT OR IGNORE INTO history(
+        chapter_id, record_key, work_key, source_id, manga_url, manga_title, chapter_url, chapter_name,
+        completed, has_read_activity, state_version, state_actor
+    )
+    SELECT new._id, 'record:' || lower(hex(randomblob(16))),
+        coalesce((SELECT work_key FROM history WHERE source_id = M.source AND manga_url = M.url LIMIT 1),
+            'work:' || M.source || ':' || length(M.url) || ':' || M.url),
+        M.source, M.url, M.title, new.url, new.name,
+        CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN new.read ELSE 0 END,
+        CASE WHEN new.read = 0 AND new.last_page_read > 2
+            AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN 1 ELSE 0 END,
+        CASE WHEN new.read = 1 AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN 1 ELSE 0 END,
+        (SELECT actor FROM reading_state_context WHERE id = 1)
+    FROM mangas M WHERE M._id = new.manga_id
+    AND NOT EXISTS (SELECT 1 FROM reading_locator WHERE source_id = M.source
+        AND manga_url = M.url AND chapter_url = new.url);
+    INSERT OR IGNORE INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+    SELECT source_id, manga_url, chapter_url, record_key FROM history WHERE chapter_id = new._id;
+    INSERT OR REPLACE INTO reading_chapter_link(chapter_id, record_key)
+    SELECT new._id, L.record_key FROM reading_locator L JOIN mangas M ON M._id = new.manga_id
+    WHERE L.source_id = M.source AND L.manga_url = M.url AND L.chapter_url = new.url;
+    -- Reattached retained state is a projection, not a new read-status operation.
+    UPDATE reading_state_context SET suppress_state = suppress_state + 1 WHERE id = 1;
+    UPDATE chapters SET read = (SELECT completed FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id)),
+        last_page_read = CASE WHEN (SELECT completed FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id)) = 1
+            AND total_pages > 0 THEN total_pages ELSE last_page_read END
+    WHERE _id = new._id AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 1;
+    UPDATE reading_state_context SET suppress_state = suppress_state - 1 WHERE id = 1;
+END;
+
+CREATE TRIGGER reading_state_after_chapter_update
+AFTER UPDATE OF read, last_page_read ON chapters
+BEGIN
+    UPDATE history SET
+        has_read_activity = max(has_read_activity,
+            CASE WHEN new.read = 0 AND new.last_page_read > 2
+                AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN 1 ELSE 0 END),
+        completed = CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0
+            AND new.read != old.read THEN new.read ELSE completed END,
+        state_version = CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0
+            AND new.read != old.read AND completed != new.read THEN state_version + 1
+            ELSE state_version END,
+        state_actor = CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0
+            AND new.read != old.read AND completed != new.read THEN (SELECT actor FROM reading_state_context WHERE id = 1) ELSE state_actor END
+    WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id);
+    -- All current attachments project the same explicit completion; reset commands suppress this.
+    UPDATE chapters SET read = new.read,
+        marked_read_at = CASE WHEN new.read = 0 THEN 0 ELSE marked_read_at END
+    WHERE _id != new._id AND read != new.read
+        AND _id IN (SELECT chapter_id FROM reading_chapter_link WHERE record_key =
+            (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id))
+        AND new.read != old.read AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0;
+END;
+
+CREATE TRIGGER reading_locator_after_chapter_update
+AFTER UPDATE OF manga_id, url, name ON chapters
+BEGIN
+    UPDATE history SET
+        source_id = (SELECT source FROM mangas WHERE _id = new.manga_id),
+        manga_url = (SELECT url FROM mangas WHERE _id = new.manga_id),
+        manga_title = (SELECT title FROM mangas WHERE _id = new.manga_id),
+        chapter_url = new.url,
+        chapter_name = new.name,
+        work_key = CASE WHEN new.manga_id != old.manga_id THEN
+            coalesce((SELECT work_key FROM history H JOIN chapters C ON C._id = H.chapter_id
+                WHERE C.manga_id = new.manga_id AND C._id != new._id LIMIT 1),
+                'work:' || (SELECT source FROM mangas WHERE _id = new.manga_id) || ':' ||
+                length((SELECT url FROM mangas WHERE _id = new.manga_id)) || ':' ||
+                (SELECT url FROM mangas WHERE _id = new.manga_id)) ELSE work_key END
+    WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id);
+    INSERT OR REPLACE INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+    SELECT source_id, manga_url, chapter_url, record_key FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id);
+END;
+
+CREATE TRIGGER reading_locator_after_manga_update
+AFTER UPDATE OF source, url, title ON mangas
+BEGIN
+    UPDATE history SET source_id = new.source, manga_url = new.url, manga_title = new.title
+    WHERE record_key IN (SELECT R.record_key FROM reading_chapter_link R JOIN chapters C
+        ON C._id = R.chapter_id WHERE C.manga_id = new._id);
+    INSERT OR REPLACE INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+    SELECT source_id, manga_url, chapter_url, record_key FROM history
+    WHERE record_key IN (SELECT R.record_key FROM reading_chapter_link R JOIN chapters C
+        ON C._id = R.chapter_id WHERE C.manga_id = new._id);
+END;
+
+INSERT INTO reading_state_context(id, actor) VALUES (1, lower(hex(randomblob(16))));
+INSERT INTO history(_id, chapter_id, last_read, time_read, record_key, work_key, source_id,
+    manga_url, manga_title, chapter_url, chapter_name, has_read_activity, completed, state_version, state_actor, hidden)
+SELECT coalesce(H._id, (SELECT coalesce(max(_id), 0) FROM legacy_history) + C._id), C._id, H.last_read,
+    coalesce(H.time_read, 0), 'record:' || lower(hex(randomblob(16))),
+    'work:' || M.source || ':' || length(M.url) || ':' || M.url,
+    M.source, M.url, M.title, C.url, C.name,
+    CASE WHEN C.last_page_read > 2 AND C.read = 0 THEN 1
+         WHEN C.read = 1 AND coalesce(H.time_read, 0) > 0 THEN 1 ELSE 0 END,
+    C.read, 0, (SELECT actor FROM reading_state_context WHERE id = 1), CASE WHEN coalesce(H.last_read, 0) > 0 THEN 0 ELSE 1 END
+FROM chapters C JOIN mangas M ON C.manga_id = M._id LEFT JOIN legacy_history H ON H.chapter_id = C._id;
+INSERT INTO reading_chapter_link(chapter_id, record_key)
+SELECT chapter_id, record_key FROM history;
+CREATE TABLE reading_migration_canonical AS
+SELECT H.record_key AS old_key,
+    (SELECT K.record_key FROM history K WHERE K.source_id = H.source_id
+        AND K.manga_url = H.manga_url AND K.chapter_url = H.chapter_url ORDER BY K._id LIMIT 1) AS canonical_key
+FROM history H;
+UPDATE history SET
+    time_read = (SELECT sum(D.time_read) FROM history D JOIN reading_migration_canonical C ON C.old_key = D.record_key
+        WHERE C.canonical_key = history.record_key),
+    last_read = (SELECT max(D.last_read) FROM history D JOIN reading_migration_canonical C ON C.old_key = D.record_key
+        WHERE C.canonical_key = history.record_key),
+    completed = (SELECT max(D.completed) FROM history D JOIN reading_migration_canonical C ON C.old_key = D.record_key
+        WHERE C.canonical_key = history.record_key),
+    has_read_activity = (SELECT max(D.has_read_activity) FROM history D JOIN reading_migration_canonical C ON C.old_key = D.record_key
+        WHERE C.canonical_key = history.record_key),
+    hidden = (SELECT min(D.hidden) FROM history D JOIN reading_migration_canonical C ON C.old_key = D.record_key
+        WHERE C.canonical_key = history.record_key)
+WHERE record_key IN (SELECT canonical_key FROM reading_migration_canonical);
+UPDATE reading_chapter_link SET record_key = (SELECT canonical_key FROM reading_migration_canonical C WHERE C.old_key = reading_chapter_link.record_key);
+INSERT INTO reading_key_alias(alias_key, record_key)
+SELECT old_key, canonical_key FROM reading_migration_canonical WHERE old_key != canonical_key;
+DELETE FROM history WHERE record_key IN (SELECT old_key FROM reading_migration_canonical WHERE old_key != canonical_key);
+INSERT INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+SELECT source_id, manga_url, chapter_url, record_key FROM history;
+DROP TABLE reading_migration_canonical;
+DROP TABLE legacy_history;
+CREATE VIEW historyView AS
+SELECT
+    history._id AS id,
+    mangas._id AS mangaId,
+    chapters._id AS chapterId,
+    mangas.title,
+    mangas.thumbnail_url AS thumbnailUrl,
+    mangas.source,
+    mangas.favorite,
+    mangas.cover_last_modified,
+    mangas.chapter_flags AS chapterFlags,
+    chapters.chapter_number AS chapterNumber,
+    chapters.name AS chapterName,
+    chapters.translated_name AS chapterTranslatedName,
+    chapters.url AS chapterUrl,
+    chapters.version AS chapterVersion,
+    chapters.date_upload AS chapterDateUpload,
+    chapters.last_modified_at AS chapterLastModifiedAt,
+    history.last_read AS readAt,
+    history.time_read AS readDuration,
+    chapters.last_page_read AS chapterLastPageRead,
+    chapters.total_pages AS chapterTotalPages,
+    chapters.read AS chapterRead,
+    max_last_read.last_read AS maxReadAt,
+    max_last_read.chapter_id AS maxReadAtChapterId
+FROM mangas
+JOIN chapters
+ON mangas._id = chapters.manga_id
+JOIN reading_chapter_link
+ON chapters._id = reading_chapter_link.chapter_id
+JOIN history
+ON reading_chapter_link.record_key = history.record_key
+JOIN (
+    SELECT chapters.manga_id,chapters._id AS chapter_id, MAX(history.last_read) AS last_read
+    FROM chapters JOIN reading_chapter_link ON chapters._id = reading_chapter_link.chapter_id
+    JOIN history ON reading_chapter_link.record_key = history.record_key
+    WHERE history.hidden = 0
+    GROUP BY chapters.manga_id
+) AS max_last_read
+ON chapters.manga_id = max_last_read.manga_id;
+
+CREATE VIEW libraryView AS
+SELECT
+    M.*,
+    coalesce(C.total, 0) AS totalCount,
+    coalesce(C.readCount, 0) AS readCount,
+    coalesce(C.latestUpload, 0) AS latestUpload,
+    coalesce(C.fetchedAt, 0) AS chapterFetchedAt,
+    coalesce(C.lastRead, 0) AS lastRead,
+    coalesce(C.bookmarkCount, 0) AS bookmarkCount,
+    coalesce(MC.categories, '0') AS categories
+FROM mangas M
+LEFT JOIN (
+    SELECT
+        chapters.manga_id,
+        count(*) AS total,
+        sum(read) AS readCount,
+        coalesce(max(chapters.date_upload), 0) AS latestUpload,
+        coalesce(max(history.last_read), 0) AS lastRead,
+        coalesce(max(chapters.date_fetch), 0) AS fetchedAt,
+        sum(chapters.bookmark) AS bookmarkCount
+    FROM chapters
+    LEFT JOIN excluded_scanlators
+    ON chapters.manga_id = excluded_scanlators.manga_id
+    AND chapters.scanlator = excluded_scanlators.scanlator
+    LEFT JOIN reading_chapter_link ON chapters._id = reading_chapter_link.chapter_id
+    LEFT JOIN history ON reading_chapter_link.record_key = history.record_key
+    WHERE excluded_scanlators.scanlator IS NULL
+    GROUP BY chapters.manga_id
+) AS C
+ON M._id = C.manga_id
+LEFT JOIN (
+    SELECT manga_id, group_concat(category_id) AS categories
+    FROM mangas_categories
+    GROUP BY manga_id
+) AS MC
+ON MC.manga_id = M._id
+WHERE M.favorite = 1;

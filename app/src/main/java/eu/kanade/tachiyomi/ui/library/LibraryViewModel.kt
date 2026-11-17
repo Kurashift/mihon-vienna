@@ -12,8 +12,6 @@ import eu.kanade.core.preference.asState
 import eu.kanade.core.util.fastFilterNot
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.interactor.SetReadStatus
-import eu.kanade.domain.chapter.interactor.readStateCandidates
-import eu.kanade.domain.chapter.interactor.toReadStates
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.presentation.category.components.writableCategoryIds
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
@@ -612,7 +610,7 @@ class LibraryViewModel(
             // resume point and finish time back as they were, and only the chapters this edit
             // will touch are kept.
             val chapters = getChaptersByMangaId.await(selection.map { it.id })
-            val snapshot = chapters.readStateCandidates(read).toReadStates()
+            val snapshot = setReadStatus.captureReadStates(chapters, read)
             var removedDownloads = false
             selection.forEach { manga ->
                 val result = setReadStatus.await(

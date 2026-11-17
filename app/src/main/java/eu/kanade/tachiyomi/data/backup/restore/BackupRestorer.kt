@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import eu.kanade.tachiyomi.data.backup.BackupDecoder
 import eu.kanade.tachiyomi.data.backup.BackupNotifier
+import eu.kanade.tachiyomi.data.backup.ReadingLedgerBackup
+import eu.kanade.tachiyomi.data.backup.ReadingRestoreContext
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
 import eu.kanade.tachiyomi.data.backup.models.BackupMarks
@@ -14,6 +16,7 @@ import eu.kanade.tachiyomi.data.backup.restore.restorers.ExtensionStoreRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.MangaRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.MarksRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.PreferenceRestorer
+import eu.kanade.tachiyomi.data.backup.toLegacyReadingRecords
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.util.system.createFileInCacheDir
 import kotlinx.coroutines.CancellationException
@@ -27,6 +30,8 @@ import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.Database
+import tachiyomi.domain.history.model.PermanentReadingRecord
+import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -52,6 +57,7 @@ class BackupRestorer(
     private val mangaRestorer: MangaRestorer = MangaRestorer(),
     private val decoder: BackupDecoder = BackupDecoder(context),
     private val marksRestorer: MarksRestorer = MarksRestorer(database),
+    private val historyRepository: HistoryRepository = Injekt.get(),
 ) {
 
     private var restoreAmount = 0
@@ -94,6 +100,22 @@ class BackupRestorer(
         val coroutineContext = currentCoroutineContext()
         val metadata = decoder.decodeMetadata(uri, checkCancelled = { coroutineContext.ensureActive() })
         val backup = metadata.backup
+        backup.readingLedger?.validate()
+        val readingBackup = ReadingLedgerBackup(historyRepository)
+        val legacyRecords = if (options.history && backup.readingLedger == null) {
+            val records = mutableListOf<PermanentReadingRecord>()
+            decoder.decodeEntries(uri).collect { manga ->
+                coroutineContext.ensureActive()
+                records.addAll(manga.toLegacyReadingRecords())
+            }
+            records
+        } else {
+            emptyList()
+        }
+        if (options.history) {
+            backup.readingLedger?.let { readingBackup.restore(it) } ?: readingBackup.importLegacy(legacyRecords)
+        }
+        val readingContext = readingBackup.restoreContext(seedChapterStates = !options.history)
 
         // Store source mapping for error messages
         val backupMaps = backup.backupSources
@@ -130,10 +152,16 @@ class BackupRestorer(
                     uri,
                     if (options.categories) backup.backupCategories else emptyList(),
                     backup.backupMarks,
-                )
+                    readingContext,
+                ).join()
             }
             if (options.extensionStores) {
                 restoreExtensionStores(backup.backupExtensionStores)
+            }
+
+            // Reattach restored chapters without seeding from the legacy representation.
+            if (options.history) {
+                backup.readingLedger?.let { readingBackup.restore(it) } ?: readingBackup.importLegacy(legacyRecords)
             }
 
             // TODO: optionally trigger online library + tracker update
@@ -157,13 +185,14 @@ class BackupRestorer(
         uri: Uri,
         backupCategories: List<BackupCategory>,
         backupMarks: List<BackupMarks>,
+        readingContext: ReadingRestoreContext,
     ) = launch {
         var restoredCount = 0
         var lastTitle = ""
         decoder.decodeEntries(uri).collect { manga ->
             ensureActive()
             try {
-                mangaRestorer.restore(manga, backupCategories)
+                mangaRestorer.restore(manga, backupCategories, readingContext)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

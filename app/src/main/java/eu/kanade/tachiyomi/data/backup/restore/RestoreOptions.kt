@@ -9,6 +9,7 @@ data class RestoreOptions(
     val appSettings: Boolean = true,
     val extensionStores: Boolean = true,
     val sourceSettings: Boolean = true,
+    val history: Boolean = true,
 ) {
 
     fun asBooleanArray() = booleanArrayOf(
@@ -17,12 +18,18 @@ data class RestoreOptions(
         appSettings,
         extensionStores,
         sourceSettings,
+        history,
     )
 
-    fun canRestore() = libraryEntries || categories || appSettings || extensionStores || sourceSettings
+    fun canRestore() = libraryEntries || history || categories || appSettings || extensionStores || sourceSettings
 
     companion object {
         val options = listOf(
+            Entry(
+                label = MR.strings.backup_history_and_statistics,
+                getter = RestoreOptions::history,
+                setter = { options, enabled -> options.copy(history = enabled) },
+            ),
             Entry(
                 label = MR.strings.label_library,
                 getter = RestoreOptions::libraryEntries,
@@ -56,6 +63,7 @@ data class RestoreOptions(
             appSettings = array[2],
             extensionStores = array[3],
             sourceSettings = array[4],
+            history = array.getOrNull(5) ?: array[0],
         )
     }
 

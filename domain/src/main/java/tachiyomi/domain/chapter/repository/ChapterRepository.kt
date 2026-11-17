@@ -26,6 +26,10 @@ interface ChapterRepository {
      */
     suspend fun updateReadStates(states: List<ChapterReadState>)
 
+    suspend fun captureReadStates(chapters: List<Chapter>, read: Boolean): List<ChapterReadState>
+
+    suspend fun clearProgress(chapterIds: List<Long>)
+
     suspend fun relocateAll(chapterUpdates: List<ChapterUpdate>)
 
     suspend fun mergeRelocatedChapter(chapterUpdate: ChapterUpdate, duplicateChapterId: Long)
@@ -49,6 +53,11 @@ interface ChapterRepository {
     suspend fun getChapterByMangaId(mangaId: Long, applyScanlatorFilter: Boolean = false): List<Chapter>
 
     suspend fun getChaptersByMangaIds(mangaIds: List<Long>, applyScanlatorFilter: Boolean = false): List<Chapter>
+
+    fun observeChaptersByMangaIds(
+        mangaIds: List<Long>,
+        applyScanlatorFilter: Boolean = false,
+    ): Flow<List<Chapter>>
 
     suspend fun getTranslatedNames(mangaIds: List<Long>): List<ChapterTranslatedName>
 

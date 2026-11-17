@@ -2,134 +2,374 @@ import java.util.Date;
 
 CREATE TABLE history(
     _id INTEGER NOT NULL PRIMARY KEY,
-    chapter_id INTEGER NOT NULL UNIQUE,
+    chapter_id INTEGER UNIQUE,
     last_read INTEGER AS Date,
-    time_read INTEGER NOT NULL,
-    FOREIGN KEY(chapter_id) REFERENCES chapters (_id)
-    ON DELETE CASCADE
+    time_read INTEGER NOT NULL DEFAULT 0,
+    record_key TEXT NOT NULL UNIQUE,
+    work_key TEXT NOT NULL,
+    source_id INTEGER NOT NULL,
+    manga_url TEXT NOT NULL,
+    manga_title TEXT NOT NULL,
+    chapter_url TEXT NOT NULL,
+    chapter_name TEXT NOT NULL,
+    has_read_activity INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    state_version INTEGER NOT NULL DEFAULT 0,
+    state_actor TEXT NOT NULL DEFAULT '',
+    hidden INTEGER NOT NULL DEFAULT 1,
+    visibility_version INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(chapter_id) REFERENCES chapters (_id) ON DELETE SET NULL
 );
 
 CREATE INDEX history_history_chapter_id_index ON history(chapter_id);
 CREATE INDEX idx_history_last_read ON history(last_read);
+CREATE INDEX history_work_key_index ON history(work_key);
+CREATE INDEX history_locator_index ON history(source_id, manga_url, chapter_url);
+
+-- The singleton controls a transaction's intent, never a second copy of reading data.
+CREATE TABLE reading_state_context(
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    actor TEXT NOT NULL,
+    suppress_state INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE reading_locator(
+    source_id INTEGER NOT NULL,
+    manga_url TEXT NOT NULL,
+    chapter_url TEXT NOT NULL,
+    record_key TEXT NOT NULL REFERENCES history(record_key) ON DELETE CASCADE,
+    PRIMARY KEY(source_id, manga_url, chapter_url)
+);
+
+CREATE TABLE reading_key_alias(
+    alias_key TEXT NOT NULL PRIMARY KEY,
+    record_key TEXT NOT NULL REFERENCES history(record_key) ON DELETE CASCADE
+);
+
+CREATE TABLE reading_chapter_link(
+    chapter_id INTEGER NOT NULL PRIMARY KEY REFERENCES chapters(_id) ON DELETE CASCADE,
+    record_key TEXT NOT NULL REFERENCES history(record_key) ON DELETE CASCADE
+);
+
+CREATE INDEX reading_chapter_link_record ON reading_chapter_link(record_key);
+
+CREATE TRIGGER reading_baseline_after_chapter_insert
+AFTER INSERT ON chapters
+BEGIN
+    INSERT OR IGNORE INTO reading_state_context(id, actor) VALUES (1, lower(hex(randomblob(16))));
+    UPDATE history SET chapter_id = new._id
+    WHERE record_key = (SELECT record_key FROM reading_locator
+        WHERE source_id = (SELECT source FROM mangas WHERE _id = new.manga_id)
+        AND manga_url = (SELECT url FROM mangas WHERE _id = new.manga_id)
+        AND chapter_url = new.url)
+    AND chapter_id IS NULL;
+    INSERT OR IGNORE INTO history(
+        chapter_id, record_key, work_key, source_id, manga_url, manga_title, chapter_url, chapter_name,
+        completed, has_read_activity, state_version, state_actor
+    )
+    SELECT new._id, 'record:' || lower(hex(randomblob(16))),
+        coalesce((SELECT work_key FROM history WHERE source_id = M.source AND manga_url = M.url LIMIT 1),
+            'work:' || M.source || ':' || length(M.url) || ':' || M.url),
+        M.source, M.url, M.title, new.url, new.name,
+        CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN new.read ELSE 0 END,
+        CASE WHEN new.read = 0 AND new.last_page_read > 2
+            AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN 1 ELSE 0 END,
+        CASE WHEN new.read = 1 AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN 1 ELSE 0 END,
+        (SELECT actor FROM reading_state_context WHERE id = 1)
+    FROM mangas M WHERE M._id = new.manga_id
+    AND NOT EXISTS (SELECT 1 FROM reading_locator WHERE source_id = M.source
+        AND manga_url = M.url AND chapter_url = new.url);
+    INSERT OR IGNORE INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+    SELECT source_id, manga_url, chapter_url, record_key FROM history WHERE chapter_id = new._id;
+    INSERT OR REPLACE INTO reading_chapter_link(chapter_id, record_key)
+    SELECT new._id, L.record_key FROM reading_locator L JOIN mangas M ON M._id = new.manga_id
+    WHERE L.source_id = M.source AND L.manga_url = M.url AND L.chapter_url = new.url;
+    -- Reattached retained state is a projection, not a new read-status operation.
+    UPDATE reading_state_context SET suppress_state = suppress_state + 1 WHERE id = 1;
+    UPDATE chapters SET read = (SELECT completed FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id)),
+        last_page_read = CASE WHEN (SELECT completed FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id)) = 1
+            AND total_pages > 0 THEN total_pages ELSE last_page_read END
+    WHERE _id = new._id AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 1;
+    UPDATE reading_state_context SET suppress_state = suppress_state - 1 WHERE id = 1;
+END;
+
+CREATE TRIGGER reading_state_after_chapter_update
+AFTER UPDATE OF read, last_page_read ON chapters
+BEGIN
+    UPDATE history SET
+        has_read_activity = max(has_read_activity,
+            CASE WHEN new.read = 0 AND new.last_page_read > 2
+                AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0 THEN 1 ELSE 0 END),
+        completed = CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0
+            AND new.read != old.read THEN new.read ELSE completed END,
+        state_version = CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0
+            AND new.read != old.read AND completed != new.read THEN state_version + 1
+            ELSE state_version END,
+        state_actor = CASE WHEN (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0
+            AND new.read != old.read AND completed != new.read THEN (SELECT actor FROM reading_state_context WHERE id = 1) ELSE state_actor END
+    WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id);
+    -- All current attachments project the same explicit completion; reset commands suppress this.
+    UPDATE chapters SET read = new.read,
+        marked_read_at = CASE WHEN new.read = 0 THEN 0 ELSE marked_read_at END
+    WHERE _id != new._id AND read != new.read
+        AND _id IN (SELECT chapter_id FROM reading_chapter_link WHERE record_key =
+            (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id))
+        AND new.read != old.read AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0;
+END;
+
+CREATE TRIGGER reading_locator_after_chapter_update
+AFTER UPDATE OF manga_id, url, name ON chapters
+BEGIN
+    UPDATE history SET
+        source_id = (SELECT source FROM mangas WHERE _id = new.manga_id),
+        manga_url = (SELECT url FROM mangas WHERE _id = new.manga_id),
+        manga_title = (SELECT title FROM mangas WHERE _id = new.manga_id),
+        chapter_url = new.url,
+        chapter_name = new.name,
+        work_key = CASE WHEN new.manga_id != old.manga_id THEN
+            coalesce((SELECT work_key FROM history H JOIN chapters C ON C._id = H.chapter_id
+                WHERE C.manga_id = new.manga_id AND C._id != new._id LIMIT 1),
+                'work:' || (SELECT source FROM mangas WHERE _id = new.manga_id) || ':' ||
+                length((SELECT url FROM mangas WHERE _id = new.manga_id)) || ':' ||
+                (SELECT url FROM mangas WHERE _id = new.manga_id)) ELSE work_key END
+    WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id);
+    INSERT OR REPLACE INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+    SELECT source_id, manga_url, chapter_url, record_key FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = new._id);
+END;
+
+CREATE TRIGGER reading_locator_after_manga_update
+AFTER UPDATE OF source, url, title ON mangas
+BEGIN
+    UPDATE history SET source_id = new.source, manga_url = new.url, manga_title = new.title
+    WHERE record_key IN (SELECT R.record_key FROM reading_chapter_link R JOIN chapters C
+        ON C._id = R.chapter_id WHERE C.manga_id = new._id);
+    INSERT OR REPLACE INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+    SELECT source_id, manga_url, chapter_url, record_key FROM history
+    WHERE record_key IN (SELECT R.record_key FROM reading_chapter_link R JOIN chapters C
+        ON C._id = R.chapter_id WHERE C.manga_id = new._id);
+END;
 
 getHistoryByMangaId:
-SELECT
-H._id,
-H.chapter_id,
-H.last_read,
-H.time_read
-FROM history H
-JOIN chapters C
-ON H.chapter_id = C._id
-WHERE C.manga_id = :mangaId AND C._id = H.chapter_id;
+SELECT H._id, C._id AS chapter_id,
+    H.last_read, H.time_read
+FROM history H JOIN reading_chapter_link R ON R.record_key = H.record_key
+JOIN chapters C ON R.chapter_id = C._id WHERE C.manga_id = :mangaId;
 
 getHistoryByChapterUrlAndMangaId:
-SELECT
-H._id,
-H.chapter_id,
-H.last_read,
-H.time_read
-FROM history H
-JOIN chapters C
-ON H.chapter_id = C._id
-WHERE C.url = :chapterUrl AND C.manga_id = :mangaId AND C._id = H.chapter_id
-LIMIT 1;
+SELECT H._id, C._id AS chapter_id,
+    H.last_read, H.time_read
+FROM history H JOIN reading_chapter_link R ON R.record_key = H.record_key
+JOIN chapters C ON R.chapter_id = C._id
+WHERE C.url = :chapterUrl AND C.manga_id = :mangaId LIMIT 1;
 
 resetHistoryById:
-UPDATE history
-SET last_read = 0
-WHERE _id = :historyId;
+UPDATE history SET hidden = 1, visibility_version = visibility_version + 1 WHERE _id = :historyId;
 
 resetHistoryByMangaId:
-UPDATE history
-SET last_read = 0
-WHERE _id IN (
-    SELECT H._id
-    FROM mangas M
-    INNER JOIN chapters C
-    ON M._id = C.manga_id
-    INNER JOIN history H
-    ON C._id = H.chapter_id
-    WHERE M._id = :mangaId
-);
+UPDATE history SET hidden = 1, visibility_version = visibility_version + 1
+WHERE record_key IN (SELECT R.record_key FROM reading_chapter_link R JOIN chapters C ON C._id = R.chapter_id
+    WHERE C.manga_id = :mangaId);
 
 resetHistoryBySourceId:
-UPDATE history
-SET last_read = 0
-WHERE _id IN (
-    SELECT H._id
-    FROM mangas M
-    INNER JOIN chapters C
-    ON M._id = C.manga_id
-    INNER JOIN history H
-    ON C._id = H.chapter_id
-    WHERE M.source = :sourceId
-);
+UPDATE history SET hidden = 1, visibility_version = visibility_version + 1 WHERE source_id = :sourceId;
 
 resetHistoryByMangaIds:
-UPDATE history
-SET last_read = 0
-WHERE _id IN (
-    SELECT H._id
-    FROM mangas M
-    INNER JOIN chapters C
-    ON M._id = C.manga_id
-    INNER JOIN history H
-    ON C._id = H.chapter_id
-    WHERE M._id IN :mangaIds
-);
+UPDATE history SET hidden = 1, visibility_version = visibility_version + 1
+WHERE record_key IN (SELECT R.record_key FROM reading_chapter_link R JOIN chapters C ON C._id = R.chapter_id
+    WHERE C.manga_id IN :mangaIds);
 
 resetHistoryByIds:
-UPDATE history
-SET last_read = 0
-WHERE _id IN :historyIds;
+UPDATE history SET hidden = 1, visibility_version = visibility_version + 1 WHERE _id IN :historyIds;
 
 removeAllHistory:
-DELETE FROM history;
+UPDATE history SET hidden = 1, visibility_version = visibility_version + 1 WHERE hidden = 0;
 
--- 清空历史前的整表快照。连着 last_read = 0 的旧行一起取：它们界面上不显示，
--- 但阅读时长（getReadDuration）把它们算进去了，漏掉就会让统计缩水。
 getAllHistory:
-SELECT
-H._id,
-H.chapter_id,
-H.last_read,
-H.time_read
-FROM history H;
+SELECT H._id, coalesce(H.chapter_id, -1) AS chapter_id,
+    H.last_read, H.time_read FROM history H;
 
--- 按绝对值写回，用于撤销「清空历史」。不能用 upsert：那条对时长是累加语义
--- （time_read = time_read + 参数），恢复时会翻倍。
+-- Compatibility restore never subtracts time accumulated since the snapshot was taken.
 restoreHistory:
-INSERT INTO history(chapter_id, last_read, time_read)
-VALUES (:chapterId, :readAt, :time_read)
-ON CONFLICT(chapter_id) DO UPDATE SET
-    last_read = excluded.last_read,
-    time_read = excluded.time_read;
+UPDATE history SET last_read = max(coalesce(last_read, 0), :readAt),
+    time_read = max(time_read, :time_read), hidden = CASE WHEN :readAt > 0 THEN 0 ELSE hidden END,
+    visibility_version = visibility_version + 1 WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId);
 
+-- Retained hidden rows are user data. This compatibility query deliberately removes nothing.
 removeResettedHistory:
-DELETE FROM history
-WHERE last_read = 0;
+DELETE FROM history WHERE 0;
 
 upsert:
-INSERT INTO history(chapter_id, last_read, time_read)
-VALUES (:chapterId, :readAt, :time_read)
-ON CONFLICT(chapter_id)
-DO UPDATE
-SET
-    last_read = :readAt,
-    time_read = time_read + :time_read
-WHERE chapter_id = :chapterId;
+UPDATE history SET last_read = :readAt, time_read = time_read + max(:time_read, 0),
+    hidden = 0, visibility_version = visibility_version + 1
+WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId);
 
 getReadDuration:
-SELECT coalesce(sum(time_read), 0)
-FROM history;
+SELECT coalesce(sum(time_read), 0) FROM history;
+
+getPermanentRecords:
+SELECT record_key, work_key, source_id, manga_url, manga_title, chapter_url, chapter_name,
+    CAST(coalesce(last_read, 0) AS INTEGER) AS read_at, time_read, has_read_activity, completed, state_version, state_actor, hidden
+FROM history ORDER BY record_key;
+
+getReadingOverview:
+SELECT
+    coalesce(sum(CASE WHEN active_count > 0 THEN 1 ELSE 0 END), 0) AS read_work_count,
+    coalesce(sum(CASE WHEN known_count > 0 AND completed_count = known_count THEN 1 ELSE 0 END), 0) AS completed_work_count,
+    CAST(coalesce(sum(completed_count), 0) AS INTEGER) AS read_chapter_count,
+    CAST(coalesce(sum(duration), 0) AS INTEGER) AS total_read_duration
+FROM (
+    SELECT work_key, count(*) AS known_count, sum(completed) AS completed_count,
+        sum(CASE WHEN has_read_activity = 1 OR completed = 1 THEN 1 ELSE 0 END) AS active_count,
+        sum(time_read) AS duration FROM history GROUP BY work_key
+);
+
+getVisibleHistoryIds:
+SELECT _id, visibility_version FROM history WHERE hidden = 0 AND last_read > 0;
+
+getVisibleHistoryIdsIn:
+SELECT _id, visibility_version FROM history WHERE hidden = 0 AND last_read > 0 AND _id IN :historyIds;
+
+restoreVisibility:
+UPDATE history SET hidden = 0, visibility_version = visibility_version + 1
+WHERE _id = :historyId AND hidden = 1 AND visibility_version = :hiddenVersion;
+
+setStateTrackingSuppressed:
+UPDATE reading_state_context SET suppress_state = :suppressed WHERE id = 1;
+
+getStateTrackingSuppressed:
+SELECT suppress_state FROM reading_state_context WHERE id = 1;
+
+ensureStateContext:
+INSERT OR IGNORE INTO reading_state_context(id, actor) VALUES (1, lower(hex(randomblob(16))));
+
+getPermanentRecordByKey:
+SELECT * FROM history WHERE record_key =
+    coalesce((SELECT record_key FROM reading_key_alias WHERE alias_key = :recordKey), :recordKey) LIMIT 1;
+
+getPermanentRecordByLocation:
+SELECT H.* FROM history H JOIN reading_locator L ON L.record_key = H.record_key
+WHERE L.source_id = :sourceId AND L.manga_url = :mangaUrl AND L.chapter_url = :chapterUrl LIMIT 1;
+
+insertPermanentRecord:
+INSERT INTO history(record_key, work_key, source_id, manga_url, manga_title, chapter_url, chapter_name,
+    last_read, time_read, has_read_activity, completed, state_version, state_actor, hidden)
+VALUES (:recordKey, :workKey, :sourceId, :mangaUrl, :mangaTitle, :chapterUrl, :chapterName,
+    :readAt, :readDuration, :hasReadActivity, :completed, :stateVersion, :stateActor, :hidden);
+
+updatePermanentRecord:
+UPDATE history SET last_read = :readAt, time_read = :readDuration, has_read_activity = :hasReadActivity,
+    completed = :completed, state_version = :stateVersion, state_actor = :stateActor, hidden = :hidden
+WHERE record_key = :recordKey;
+
+insertReadingLocator:
+INSERT OR IGNORE INTO reading_locator(source_id, manga_url, chapter_url, record_key)
+VALUES (:sourceId, :mangaUrl, :chapterUrl, :recordKey);
+
+insertReadingKeyAlias:
+INSERT OR REPLACE INTO reading_key_alias(alias_key, record_key) VALUES (:aliasKey, :recordKey);
+
+getWorkKeyByLocation:
+SELECT work_key FROM history WHERE source_id = :sourceId AND manga_url = :mangaUrl LIMIT 1;
+
+attachPermanentRecords:
+INSERT OR IGNORE INTO reading_chapter_link(chapter_id, record_key)
+SELECT C._id, L.record_key FROM chapters C JOIN mangas M ON M._id = C.manga_id
+JOIN reading_locator L ON L.source_id = M.source AND L.manga_url = M.url AND L.chapter_url = C.url;
+
+attachPrimaryChapter:
+UPDATE history SET chapter_id = (SELECT min(chapter_id) FROM reading_chapter_link R WHERE R.record_key = history.record_key)
+WHERE chapter_id IS NULL;
+
+setPermanentCompletion:
+UPDATE history SET completed = :completed,
+    state_version = state_version + 1,
+    state_actor = (SELECT actor FROM reading_state_context WHERE id = 1)
+WHERE record_key IN (SELECT record_key FROM reading_chapter_link WHERE chapter_id IN :chapterIds) AND (completed != :completed OR state_version = 0)
+AND (SELECT suppress_state FROM reading_state_context WHERE id = 1) = 0;
 
 mergeForChapterMove:
-INSERT INTO history(chapter_id, last_read, time_read)
-SELECT :chapterId, max(last_read), sum(time_read)
-FROM history
-WHERE chapter_id IN (:chapterId, :duplicateChapterId)
-HAVING count(*) > 0
-ON CONFLICT(chapter_id) DO UPDATE SET
-    last_read = excluded.last_read,
-    time_read = excluded.time_read;
+UPDATE history SET
+    last_read = (SELECT max(last_read) FROM history WHERE record_key IN (SELECT record_key FROM reading_chapter_link WHERE chapter_id IN (:chapterId, :duplicateChapterId))),
+    time_read = (SELECT sum(time_read) FROM history WHERE record_key IN (SELECT record_key FROM reading_chapter_link WHERE chapter_id IN (:chapterId, :duplicateChapterId))),
+    has_read_activity = (SELECT max(has_read_activity) FROM history WHERE record_key IN (SELECT record_key FROM reading_chapter_link WHERE chapter_id IN (:chapterId, :duplicateChapterId))),
+    completed = (SELECT max(completed) FROM history WHERE record_key IN (SELECT record_key FROM reading_chapter_link WHERE chapter_id IN (:chapterId, :duplicateChapterId))),
+    state_version = (SELECT coalesce(max(state_version), 0) + 1 FROM history),
+    state_actor = (SELECT actor FROM reading_state_context WHERE id = 1),
+    hidden = (SELECT min(hidden) FROM history WHERE record_key IN (SELECT record_key FROM reading_chapter_link WHERE chapter_id IN (:chapterId, :duplicateChapterId)))
+WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId);
+
+redirectMergedLocators:
+UPDATE reading_locator SET record_key = (SELECT record_key FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId))
+WHERE record_key = (SELECT record_key FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :duplicateChapterId));
+
+redirectMergedKeyAliases:
+UPDATE reading_key_alias SET record_key = (SELECT record_key FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId))
+WHERE record_key = (SELECT record_key FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :duplicateChapterId));
+
+rememberMergedRecordKey:
+INSERT OR REPLACE INTO reading_key_alias(alias_key, record_key)
+SELECT duplicate.record_key, kept.record_key FROM history duplicate JOIN history kept
+ON kept.record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId)
+WHERE duplicate.record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :duplicateChapterId)
+AND duplicate.record_key != kept.record_key;
+
+redirectMergedChapterLinks:
+UPDATE reading_chapter_link SET record_key = :keptKey WHERE record_key = :removedKey;
+
+removeMergedHistory:
+DELETE FROM history WHERE record_key = :removedKey AND record_key != :keptKey;
+
+redirectLocatorsByKey:
+UPDATE reading_locator SET record_key = :keptKey WHERE record_key = :removedKey;
+
+redirectKeyAliasesByKey:
+UPDATE reading_key_alias SET record_key = :keptKey WHERE record_key = :removedKey;
+
+applyPermanentCompletionToChapter:
+UPDATE chapters SET read = (SELECT completed FROM history WHERE record_key = :recordKey),
+    last_page_read = CASE WHEN (SELECT completed FROM history WHERE record_key = :recordKey) = 0 THEN 0
+        WHEN total_pages > 0 THEN total_pages ELSE last_page_read END,
+    marked_read_at = CASE WHEN (SELECT completed FROM history WHERE record_key = :recordKey) = 0 THEN 0
+        ELSE marked_read_at END
+WHERE _id IN (SELECT chapter_id FROM reading_chapter_link WHERE record_key = :recordKey);
+
+getPermanentRecordByChapterId:
+SELECT * FROM history WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId);
+
+markReadActivity:
+UPDATE history SET has_read_activity = 1 WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId);
+
+restorePermanentCompletion:
+UPDATE history SET completed = :completed, state_version = state_version + 1,
+    state_actor = (SELECT actor FROM reading_state_context WHERE id = 1) WHERE record_key = (SELECT record_key FROM reading_chapter_link WHERE chapter_id = :chapterId);
+
+getAllReadingLocators:
+SELECT source_id, manga_url, chapter_url, record_key FROM reading_locator;
+
+getAllReadingKeyAliases:
+SELECT alias_key, record_key FROM reading_key_alias;
+
+setWorkKey:
+UPDATE history SET work_key = :keptWorkKey WHERE work_key = :removedWorkKey;
+
+getUnlinkedChapterLocators:
+SELECT C._id, L.record_key FROM chapters C JOIN mangas M ON M._id = C.manga_id
+JOIN reading_locator L ON L.source_id = M.source AND L.manga_url = M.url AND L.chapter_url = C.url
+WHERE NOT EXISTS (SELECT 1 FROM reading_chapter_link R WHERE R.chapter_id = C._id);
+
+enforceExplicitUnreadByMangaId:
+UPDATE chapters SET read = 0, last_page_read = 0, marked_read_at = 0
+WHERE manga_id = :mangaId AND EXISTS (
+    SELECT 1 FROM reading_chapter_link R JOIN history H ON H.record_key = R.record_key
+    WHERE R.chapter_id = chapters._id AND H.state_version > 0 AND H.completed = 0
+);
+
+applyPermanentCompletionToAttachedChapter:
+UPDATE chapters SET read = (
+    SELECT H.completed FROM history H JOIN reading_chapter_link R ON R.record_key = H.record_key
+    WHERE R.chapter_id = :chapterId
+), last_page_read = CASE WHEN (
+    SELECT H.completed FROM history H JOIN reading_chapter_link R ON R.record_key = H.record_key
+    WHERE R.chapter_id = :chapterId
+) = 1 AND total_pages > 0 THEN total_pages ELSE last_page_read END
+WHERE _id = :chapterId;

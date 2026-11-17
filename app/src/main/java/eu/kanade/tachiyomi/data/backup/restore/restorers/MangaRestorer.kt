@@ -4,6 +4,7 @@ import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import eu.kanade.domain.manga.interactor.UpdateManga
+import eu.kanade.tachiyomi.data.backup.ReadingRestoreContext
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupChapter
 import eu.kanade.tachiyomi.data.backup.models.BackupHistory
@@ -53,8 +54,10 @@ class MangaRestorer(
     suspend fun restore(
         backupManga: BackupManga,
         backupCategories: List<BackupCategory>,
+        readingContext: ReadingRestoreContext? = null,
     ) {
-        val restoredMangaId = database.transactionWithResult {
+        suspend fun restoreDatabase(): Long = database.transactionWithResult {
+            readingContext?.seedCurrentChapterStates(backupManga)
             val dbManga = findExistingManga(backupManga)
             val manga = backupManga.getMangaImpl()
             val restoredManga = if (dbManga == null) {
@@ -71,8 +74,14 @@ class MangaRestorer(
                 history = backupManga.history,
                 tracks = backupManga.tracking,
                 excludedScanlators = backupManga.excludedScanlators,
+                readingContext = readingContext,
             )
             restoredManga.id
+        }
+        val restoredMangaId = if (readingContext == null) {
+            restoreDatabase()
+        } else {
+            readingContext.withoutStateChanges { restoreDatabase() }
         }
         restoreCustomChapterCovers(restoredMangaId, backupManga.chapters)
     }
@@ -167,13 +176,23 @@ class MangaRestorer(
         )
     }
 
-    private suspend fun restoreChapters(manga: Manga, backupChapters: List<BackupChapter>) {
+    private suspend fun restoreChapters(
+        manga: Manga,
+        backupChapters: List<BackupChapter>,
+        readingContext: ReadingRestoreContext?,
+    ) {
         val dbChaptersByUrl = getChaptersByMangaId.await(manga.id)
             .associateBy { it.url }
 
         val (existingChapters, newChapters) = backupChapters
             .mapNotNull {
-                val chapter = it.toChapterImpl().copy(mangaId = manga.id)
+                val incomingChapter = it.toChapterImpl().copy(mangaId = manga.id)
+                val explicitUnread = readingContext?.hasExplicitUnread(manga.source, manga.url, it.url) == true
+                val chapter = if (explicitUnread) {
+                    incomingChapter.copy(read = false, lastPageRead = 0L, markedReadAt = 0L)
+                } else {
+                    incomingChapter
+                }
 
                 val dbChapter = dbChaptersByUrl[chapter.url]
                     ?: // New chapter
@@ -197,7 +216,13 @@ class MangaRestorer(
                         // date is kept, so restoring an older file cannot wipe a recorded finish time.
                         markedReadAt = chapter.markedReadAt.takeIf { it > 0 } ?: dbChapter.markedReadAt,
                     )
-                if (dbChapter.read && !updatedChapter.read) {
+                if (explicitUnread) {
+                    updatedChapter = updatedChapter.copy(
+                        read = false,
+                        lastPageRead = dbChapter.lastPageRead,
+                        markedReadAt = 0L,
+                    )
+                } else if (dbChapter.read && !updatedChapter.read) {
                     updatedChapter = updatedChapter.copy(
                         read = true,
                         lastPageRead = dbChapter.lastPageRead,
@@ -221,6 +246,9 @@ class MangaRestorer(
 
         insertNewChapters(newChapters)
         updateExistingChapters(existingChapters)
+        if (readingContext != null) {
+            database.historyQueries.enforceExplicitUnreadByMangaId(manga.id)
+        }
     }
 
     private fun Chapter.forComparison() =
@@ -283,10 +311,13 @@ class MangaRestorer(
                     isSyncing = 0,
                     memo = chapter.memo.let(MemoColumnAdapter::encode),
                     translatedName = chapter.translatedName,
-                    // A read chapter keeps whatever finish time it already had, and gets stamped now
-                    // if it had none - either way the stored value is never cleared, so a restore of
-                    // an older file cannot wipe a date this device recorded.
-                    markedReadAt = chapter.markedReadAt.takeIf { it > 0 } ?: restoredAt.takeIf { chapter.read },
+                    // Null means preserve in this partial update. An unread chapter must instead
+                    // explicitly clear its completion date; a read chapter keeps its known date.
+                    markedReadAt = if (chapter.read) {
+                        chapter.markedReadAt.takeIf { it > 0 } ?: restoredAt
+                    } else {
+                        0L
+                    },
                 )
             }
         }
@@ -333,11 +364,12 @@ class MangaRestorer(
         history: List<BackupHistory>,
         tracks: List<BackupTracking>,
         excludedScanlators: List<String>,
+        readingContext: ReadingRestoreContext?,
     ): Manga {
         restoreCategories(manga, categories, backupCategories)
-        restoreChapters(manga, chapters)
+        restoreChapters(manga, chapters, readingContext)
         restoreTracking(manga, tracks)
-        restoreHistory(manga, history)
+        if (readingContext == null) restoreHistory(manga, history)
         restoreExcludedScanlators(manga, excludedScanlators)
         updateManga.awaitUpdateFetchInterval(manga, timeZone, now, currentFetchWindow)
         return manga
@@ -412,9 +444,9 @@ class MangaRestorer(
         database.transaction {
             toUpdate.forEach {
                 database.historyQueries.upsert(
-                    it.chapterId,
-                    it.readAt,
-                    it.readDuration,
+                    chapterId = it.chapterId,
+                    readAt = it.readAt,
+                    time_read = it.readDuration,
                 )
             }
         }

@@ -26,12 +26,15 @@ SELECT
 FROM mangas
 JOIN chapters
 ON mangas._id = chapters.manga_id
+JOIN reading_chapter_link
+ON chapters._id = reading_chapter_link.chapter_id
 JOIN history
-ON chapters._id = history.chapter_id
+ON reading_chapter_link.record_key = history.record_key
 JOIN (
     SELECT chapters.manga_id,chapters._id AS chapter_id, MAX(history.last_read) AS last_read
-    FROM chapters JOIN history
-    ON chapters._id = history.chapter_id
+    FROM chapters JOIN reading_chapter_link ON chapters._id = reading_chapter_link.chapter_id
+    JOIN history ON reading_chapter_link.record_key = history.record_key
+    WHERE history.hidden = 0
     GROUP BY chapters.manga_id
 ) AS max_last_read
 ON chapters.manga_id = max_last_read.manga_id;
@@ -61,6 +64,7 @@ chapterTotalPages,
 chapterRead
 FROM historyView
 WHERE historyView.readAt > 0
+AND id IN (SELECT _id FROM history WHERE hidden = 0)
 AND maxReadAtChapterId = historyView.chapterId
 AND lower(historyView.title) LIKE ('%' || :query || '%')
 ORDER BY readAt DESC;
@@ -90,5 +94,6 @@ chapterTotalPages,
 chapterRead
 FROM historyView
 WHERE historyView.readAt > 0
+AND id IN (SELECT _id FROM history WHERE hidden = 0)
 ORDER BY readAt DESC
 LIMIT 1;

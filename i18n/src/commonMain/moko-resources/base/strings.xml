@@ -1015,14 +1015,14 @@
 
     <!-- History -->
     <string name="recent_manga_time">Work %1$s - %2$s</string>
-    <string name="pref_clear_history">Clear history</string>
-    <string name="clear_history_completed">History deleted</string>
-    <string name="action_clear_reading_history">Clear reading records</string>
-    <string name="action_clear_current_list_history">Clear current list records</string>
-    <string name="clear_reading_history_completed">Reading records cleared</string>
-    <string name="clear_manga_history_confirmation">Clear the reading records of this manga? Work progress will also be reset.</string>
-    <string name="clear_source_history_confirmation">Clear the reading records of all manga in this source? Work progress will also be reset.</string>
-    <string name="clear_current_list_history_confirmation">Clear the reading records of manga in the current list? Work progress will also be reset.</string>
+    <string name="pref_clear_history">Clear reading history</string>
+    <string name="clear_history_completed">Reading history list cleared</string>
+    <string name="action_clear_reading_history">Clear reading progress</string>
+    <string name="action_clear_current_list_history">Clear current list reading progress</string>
+    <string name="clear_reading_history_completed">Reading progress cleared</string>
+    <string name="clear_manga_history_confirmation">Reset current progress for this work and remove it from recently read. Reading statistics and accumulated time will be kept.</string>
+    <string name="clear_source_history_confirmation">Reset current progress for all works in this source and remove them from recently read. Reading statistics and accumulated time will be kept.</string>
+    <string name="clear_current_list_history_confirmation">Reset current progress for works in the current list and remove them from recently read. Reading statistics and accumulated time will be kept.</string>
 
     <!-- Source Screen -->
     <string name="source_empty_screen">No source found</string>
@@ -1519,7 +1519,7 @@
     <string name="settings_import_local_chapters_summary">Import works from local folders or archives</string>
     <string name="track_original_title">Original title: %1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_untranslated</string>
-    <string name="confirm_clear_reading_history_title">Clear reading records?</string>
+    <string name="confirm_clear_reading_history_title">Clear reading progress?</string>
     <string name="confirm_mark_unread_title">Mark as unread?</string>
     <string name="confirm_mark_read_title">Mark as read?</string>
     <string name="undo_removed_from_library">Removed %1$d works from the library; downloads and progress are kept</string>
@@ -1536,4 +1536,25 @@
     <string name="undo_local_read_marked_unread">Marked %1$d chapters as unread</string>
     <string name="undo_history_cleared">Cleared %1$d history entries</string>
     <string name="undo_category_deleted">Deleted the category “%1$s”</string>
+    <string name="stats_reading_overview">Reading overview</string>
+    <string name="stats_read_works">Works read</string>
+    <string name="stats_completed_works">Works fully read</string>
+    <string name="stats_total_read_duration">Total reading time</string>
+    <string name="stats_reading_scope">Includes local and online reading, even after removal. Marking unread removes a chapter from the read count.</string>
+    <string name="stats_local_library">Local library</string>
+    <string name="stats_current_works">Current works</string>
+    <string name="stats_current_chapters">Current chapters</string>
+    <string name="stats_current_read_chapters">Currently read</string>
+    <string name="stats_local_scope">Based on the last confirmed local library refresh.</string>
+    <string name="stats_local_unknown">Some counts are unavailable. Refresh the local library to update them.</string>
+    <string name="stats_library">Bookshelf</string>
+    <string name="stats_favorite_works">Favorites</string>
+    <string name="stats_local_favorites">Local</string>
+    <string name="stats_online_favorites">Online</string>
+    <string name="stats_online_downloads">Online downloads</string>
+    <string name="stats_downloaded_chapters">Downloaded chapters</string>
+    <string name="stats_download_scope">Online downloads only. Imported local files are counted in the local library.</string>
+    <string name="stats_logged_in_trackers">Signed-in services</string>
+    <string name="stats_tracker_scope">Bookshelf works tracked with signed-in services.</string>
+    <string name="backup_history_and_statistics">Reading history and statistics</string>
 </resources>

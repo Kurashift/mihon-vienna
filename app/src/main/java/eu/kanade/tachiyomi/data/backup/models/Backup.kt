@@ -13,4 +13,5 @@ data class Backup(
     @ProtoNumber(105) var backupSourcePreferences: List<BackupSourcePreferences> = emptyList(),
     @ProtoNumber(106) var backupExtensionStores: List<BackupExtensionStore> = emptyList(),
     @ProtoNumber(107) var backupMarks: List<BackupMarks> = emptyList(),
+    @ProtoNumber(108) var readingLedger: BackupReadingLedger? = null,
 )

@@ -6,6 +6,7 @@ import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.backup.BackupFileValidator
 import eu.kanade.tachiyomi.data.backup.BackupWriter
+import eu.kanade.tachiyomi.data.backup.ReadingLedgerBackup
 import eu.kanade.tachiyomi.data.backup.create.creators.CategoriesBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.ExtensionStoresBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.MangaBackupCreator
@@ -28,6 +29,7 @@ import okio.sink
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.backup.service.BackupPreferences
+import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -58,6 +60,7 @@ class BackupCreator(
     private val extensionStoresBackupCreator: ExtensionStoresBackupCreator = ExtensionStoresBackupCreator(),
     private val sourcesBackupCreator: SourcesBackupCreator = SourcesBackupCreator(),
     private val marksBackupCreator: MarksBackupCreator = MarksBackupCreator(),
+    private val historyRepository: HistoryRepository = Injekt.get(),
 ) {
 
     suspend fun backup(uri: Uri, options: BackupOptions): String {
@@ -99,6 +102,7 @@ class BackupCreator(
                 backupExtensionStores = backupExtensionStores(options),
                 backupSourcePreferences = backupSourcePreferences(options),
                 backupMarks = marksBackupCreator(),
+                readingLedger = if (options.history) ReadingLedgerBackup(historyRepository).export() else null,
             )
 
             file.openOutputStream()

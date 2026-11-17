@@ -35,6 +35,10 @@ class LocalSourceFileSystem(
             ?: getBaseDirectory()?.uri?.toString()
     }
 
+    fun getCachedBaseDirectoryIdentityUri(): String? = storageManager.getCachedLocalSourceDirectoryIdentity()
+
+    val storageChanges get() = storageManager.changes
+
     fun refreshBaseDirectoryMetadata() {
         storageManager.refreshLocalSourceDirectoryMetadata()
     }

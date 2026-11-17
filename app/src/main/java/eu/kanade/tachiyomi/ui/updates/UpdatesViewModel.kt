@@ -11,8 +11,6 @@ import eu.kanade.core.preference.asState
 import eu.kanade.core.util.addOrRemove
 import eu.kanade.core.util.insertSeparators
 import eu.kanade.domain.chapter.interactor.SetReadStatus
-import eu.kanade.domain.chapter.interactor.readStateCandidates
-import eu.kanade.domain.chapter.interactor.toReadStates
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
 import eu.kanade.presentation.updates.UpdatesUiModel
 import eu.kanade.tachiyomi.data.download.DownloadCache
@@ -274,7 +272,7 @@ class UpdatesViewModel(
             val chapters = updates.mapNotNull { getChapter.await(it.update.chapterId) }
             // Captured before the write, so the undo puts the resume point and the finish
             // timestamp back as they were.
-            val snapshot = chapters.readStateCandidates(read).toReadStates()
+            val snapshot = setReadStatus.captureReadStates(chapters, read)
             val result = setReadStatus.await(
                 read = read,
                 chapters = chapters.toTypedArray(),

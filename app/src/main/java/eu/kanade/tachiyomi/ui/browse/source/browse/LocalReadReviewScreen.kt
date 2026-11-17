@@ -91,9 +91,7 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
-import tachiyomi.domain.chapter.interactor.UpdateChapter
-import tachiyomi.domain.chapter.model.ChapterReadState
-import tachiyomi.domain.chapter.model.ChapterUpdate
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -257,7 +255,7 @@ class LocalReadReviewDetailScreen(
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
         val database = remember { Injekt.get<Database>() }
-        val updateChapter = remember { Injekt.get<UpdateChapter>() }
+        val chapterRepository = remember { Injekt.get<ChapterRepository>() }
         val readChapters by remember(database) {
             database.chaptersQueries
                 .getReadChaptersBySource(LocalSource.ID, ::mapReadLocalChapter)
@@ -298,18 +296,14 @@ class LocalReadReviewDetailScreen(
         val markUnreadUndoable: (List<LocalReadReviewItem>) -> Unit = { items ->
             selectedChapterIds = emptySet()
             scope.launch {
-                markUnread(updateChapter, items.map { it.chapterId })
-                undoPill.show(context.stringResource(MR.strings.undo_local_read_marked_unread, items.size)) {
-                    setReadStatus.restoreReadStates(
-                        items.map { item ->
-                            ChapterReadState(
-                                chapterId = item.chapterId,
-                                read = true,
-                                lastPageRead = item.lastPageRead,
-                                markedReadAt = item.finishedAt,
-                            )
-                        },
-                    )
+                val ids = items.mapTo(hashSetOf()) { it.chapterId }
+                val selected = chapterRepository.getChapterByMangaId(mangaId).filter { it.id in ids }
+                val snapshot = setReadStatus.captureReadStates(selected, read = false)
+                val result = setReadStatus.await(read = false, chapters = selected.toTypedArray())
+                if (result is SetReadStatus.Result.Success && snapshot.isNotEmpty()) {
+                    undoPill.show(context.stringResource(MR.strings.undo_local_read_marked_unread, snapshot.size)) {
+                        setReadStatus.restoreReadStates(snapshot)
+                    }
                 }
             }
         }
@@ -623,19 +617,6 @@ private fun openMangaScreen(
         } else {
             context.toast(MR.strings.marks_list_manga_missing)
         }
-    }
-}
-
-private suspend fun markUnread(updateChapter: UpdateChapter, chapterIds: List<Long>) {
-    chapterIds.forEach { chapterId ->
-        updateChapter.await(
-            ChapterUpdate(
-                id = chapterId,
-                read = false,
-                lastPageRead = 0,
-                markedReadAt = 0,
-            ),
-        )
     }
 }
 

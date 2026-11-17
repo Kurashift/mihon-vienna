@@ -102,22 +102,70 @@ class ChapterRepositoryImpl(
         partialUpdate(*chapterUpdates.toTypedArray())
     }
 
+    override suspend fun captureReadStates(chapters: List<Chapter>, read: Boolean): List<ChapterReadState> =
+        database.transactionWithResult {
+            chapters.map { chapter ->
+                val record = database.historyQueries.getPermanentRecordByChapterId(chapter.id).awaitAsOneOrNull()
+                val version = record?.state_version
+                val changesState = record?.completed != read.toLong() || version == 0L
+                ChapterReadState(
+                    chapter.id, chapter.read, chapter.lastPageRead, chapter.markedReadAt,
+                    record?.completed?.let { it != 0L }, version,
+                    version?.let { it + if (changesState) 1 else 0 }, read, record?.visibility_version,
+                )
+            }
+        }
+
     override suspend fun updateReadStates(states: List<ChapterReadState>) {
         if (states.isEmpty()) return
-        try {
-            database.transaction {
-                states.forEach { state ->
-                    database.chaptersQueries.restoreReadState(
-                        read = state.read,
-                        lastPageRead = state.lastPageRead,
-                        markedReadAt = state.markedReadAt,
-                        chapterId = state.chapterId,
-                    )
+        withoutReadingStateChanges {
+            // Validate every token before changing any canonical record shared by several attachments.
+            val accepted = states.mapNotNull { state ->
+                val record = database.historyQueries.getPermanentRecordByChapterId(state.chapterId).awaitAsOneOrNull()
+                val chapter = database.chaptersQueries.getChapterById(state.chapterId).awaitAsOneOrNull()
+                if (state.expectedStateVersion != null && (
+                        record?.state_version != state.expectedStateVersion ||
+                            record?.visibility_version != state.historyVisibilityVersion ||
+                            chapter?.read != state.expectedRead
+                        )
+                ) {
+                    null
+                } else {
+                    state to record?.record_key
                 }
             }
-        } catch (e: Exception) {
-            logcat(LogPriority.ERROR, e)
+            accepted.forEach { (state, _) ->
+                database.chaptersQueries.restoreReadState(
+                    read = state.read,
+                    lastPageRead = state.lastPageRead,
+                    markedReadAt = state.markedReadAt,
+                    chapterId = state.chapterId,
+                )
+            }
+            accepted.distinctBy { (_, key) -> key }.forEach { (state, _) ->
+                database.historyQueries.restorePermanentCompletion(
+                    completed = (state.permanentCompleted ?: state.read).toLong(),
+                    chapterId = state.chapterId,
+                )
+            }
         }
+    }
+
+    private suspend fun <T> withoutReadingStateChanges(block: suspend () -> T): T =
+        database.transactionWithResult {
+            database.historyQueries.ensureStateContext()
+            val previous = database.historyQueries.getStateTrackingSuppressed().awaitAsOne()
+            database.historyQueries.setStateTrackingSuppressed(1)
+            try {
+                block()
+            } finally {
+                database.historyQueries.setStateTrackingSuppressed(previous)
+            }
+        }
+
+    override suspend fun clearProgress(chapterIds: List<Long>) {
+        if (chapterIds.isEmpty()) return
+        withoutReadingStateChanges { database.chaptersQueries.clearProgressByChapterIds(chapterIds) }
     }
 
     override suspend fun relocateAll(chapterUpdates: List<ChapterUpdate>) {
@@ -142,7 +190,18 @@ class ChapterRepositoryImpl(
         database.transaction {
             val mangaId = requireNotNull(chapterUpdate.mangaId)
             val url = requireNotNull(chapterUpdate.url)
+            val keptKey = database.historyQueries.getPermanentRecordByChapterId(
+                chapterUpdate.id,
+            ).awaitAsOne().record_key
+            val removedKey = database.historyQueries.getPermanentRecordByChapterId(
+                duplicateChapterId,
+            ).awaitAsOne().record_key
             database.historyQueries.mergeForChapterMove(chapterUpdate.id, duplicateChapterId)
+            database.historyQueries.redirectMergedLocators(chapterUpdate.id, duplicateChapterId)
+            database.historyQueries.redirectMergedKeyAliases(chapterUpdate.id, duplicateChapterId)
+            database.historyQueries.rememberMergedRecordKey(chapterUpdate.id, duplicateChapterId)
+            database.historyQueries.redirectMergedChapterLinks(keptKey, removedKey)
+            database.historyQueries.removeMergedHistory(removedKey = removedKey, keptKey = keptKey)
             database.good_doujinsQueries.mergeForChapterMove(chapterUpdate.id, mangaId, duplicateChapterId)
             database.chaptersQueries.removeChaptersWithIds(listOf(duplicateChapterId))
             database.chaptersQueries.relocate(
@@ -185,13 +244,16 @@ class ChapterRepositoryImpl(
         completed: Boolean,
         completedAt: Long,
     ) {
-        database.chaptersQueries.updateReaderProgress(
-            chapterId = chapterId,
-            pageNumber = pageNumber,
-            totalPages = totalPages,
-            completed = completed.toLong(),
-            completedAt = completedAt,
-        )
+        database.transaction {
+            database.chaptersQueries.updateReaderProgress(
+                chapterId = chapterId,
+                pageNumber = pageNumber,
+                totalPages = totalPages,
+                completed = completed.toLong(),
+                completedAt = completedAt,
+            )
+            if (pageNumber > 2 || completed) database.historyQueries.markReadActivity(chapterId)
+        }
     }
 
     private suspend fun partialUpdate(vararg chapterUpdates: ChapterUpdate) {
@@ -218,6 +280,9 @@ class ChapterRepositoryImpl(
                     translatedName = chapterUpdate.translatedName,
                     markedReadAt = chapterUpdate.markedReadAt,
                 )
+                chapterUpdate.read?.let { read ->
+                    database.historyQueries.setPermanentCompletion(read.toLong(), listOf(chapterUpdate.id))
+                }
             }
         }
     }
@@ -232,7 +297,7 @@ class ChapterRepositoryImpl(
 
     override suspend fun setAllChaptersUnreadBySource(sourceId: Long) {
         try {
-            database.chaptersQueries.setAllChaptersUnreadBySource(sourceId)
+            withoutReadingStateChanges { database.chaptersQueries.setAllChaptersUnreadBySource(sourceId) }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
         }
@@ -241,7 +306,7 @@ class ChapterRepositoryImpl(
     override suspend fun setAllChaptersUnreadByMangaIds(mangaIds: List<Long>) {
         if (mangaIds.isEmpty()) return
         try {
-            database.chaptersQueries.setAllChaptersUnreadByMangaIds(mangaIds)
+            withoutReadingStateChanges { database.chaptersQueries.setAllChaptersUnreadByMangaIds(mangaIds) }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
         }
@@ -261,6 +326,16 @@ class ChapterRepositoryImpl(
         return database.chaptersQueries
             .getChaptersByMangaIds(mangaIds, applyScanlatorFilter.toLong(), ::mapChapter)
             .awaitAsList()
+    }
+
+    override fun observeChaptersByMangaIds(
+        mangaIds: List<Long>,
+        applyScanlatorFilter: Boolean,
+    ): Flow<List<Chapter>> {
+        if (mangaIds.isEmpty()) return flowOf(emptyList())
+        return database.chaptersQueries
+            .getChaptersByMangaIds(mangaIds, applyScanlatorFilter.toLong(), ::mapChapter)
+            .subscribeToList()
     }
 
     override suspend fun getTranslatedNames(mangaIds: List<Long>): List<ChapterTranslatedName> {

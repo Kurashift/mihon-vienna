@@ -112,7 +112,10 @@ class SourceSyncSqliteTest(unittest.TestCase):
         with self.database:
             self.database.execute(query("removeChaptersWithIds").replace(":chapterIds", "(20)"))
         self.assertEqual([10, 30], [row[0] for row in self.database.execute("SELECT _id FROM chapters ORDER BY _id")])
-        self.assertEqual([10, 30], [row[0] for row in self.database.execute("SELECT chapter_id FROM history ORDER BY chapter_id")])
+        self.assertEqual([None, 10, 30], [row[0] for row in self.database.execute("SELECT chapter_id FROM history ORDER BY chapter_id")])
+        self.assertEqual("20", self.database.execute(
+            "SELECT chapter_url FROM history WHERE chapter_id IS NULL",
+        ).fetchone()[0])
         self.assertEqual([10], [row[0] for row in self.database.execute("SELECT chapter_id FROM good_doujins")])
 
     def test_large_library_mixed_sync_preserves_unrelated_records_and_user_fields(self):

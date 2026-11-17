@@ -29,7 +29,7 @@ data class BackupOptions(
         privateSettings,
     )
 
-    fun canCreate() = libraryEntries || categories || appSettings || extensionStores || sourceSettings
+    fun canCreate() = libraryEntries || history || categories || appSettings || extensionStores || sourceSettings
 
     companion object {
         val libraryOptions = listOf(
@@ -51,10 +51,9 @@ data class BackupOptions(
                 enabled = { it.libraryEntries },
             ),
             Entry(
-                label = MR.strings.history,
+                label = MR.strings.backup_history_and_statistics,
                 getter = BackupOptions::history,
                 setter = { options, enabled -> options.copy(history = enabled) },
-                enabled = { it.libraryEntries },
             ),
             Entry(
                 label = MR.strings.categories,

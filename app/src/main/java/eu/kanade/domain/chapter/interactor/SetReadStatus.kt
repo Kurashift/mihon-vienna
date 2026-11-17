@@ -22,6 +22,13 @@ class SetReadStatus(
     private val downloadManager: DownloadManager,
 ) {
 
+    suspend fun captureReadStates(chapters: List<Chapter>, read: Boolean): List<ChapterReadState> =
+        chapterRepository.captureReadStates(chapters.readStateCandidates(read), read)
+
+    suspend fun clearProgress(chapters: List<Chapter>) = withNonCancellableContext {
+        chapterRepository.clearProgress(chapters.map { it.id })
+    }
+
     private val mapper = { chapter: Chapter, read: Boolean ->
         ChapterUpdate(
             read = read,
@@ -117,6 +124,7 @@ class SetReadStatus(
 internal fun List<Chapter>.readStateCandidates(read: Boolean): List<Chapter> = filter {
     when (read) {
         true -> !it.read
-        false -> it.read || it.lastPageRead > 0
+        // An unread current chapter can still carry a retained completion after clearing progress.
+        false -> true
     }
 }

@@ -18,8 +18,6 @@ import eu.kanade.core.util.addOrRemove
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.interactor.GetAvailableScanlators
 import eu.kanade.domain.chapter.interactor.SetReadStatus
-import eu.kanade.domain.chapter.interactor.readStateCandidates
-import eu.kanade.domain.chapter.interactor.toReadStates
 import eu.kanade.domain.manga.interactor.GetExcludedScanlators
 import eu.kanade.domain.manga.interactor.SetExcludedScanlators
 import eu.kanade.domain.manga.interactor.UpdateManga
@@ -1090,8 +1088,8 @@ class MangaViewModel(
         if (chapters.isEmpty()) return
         // Taken before the write: the undo has to put back the resume point and the finish
         // timestamp as they were, and only the chapters this edit will touch are kept.
-        val snapshot = chapters.readStateCandidates(read).toReadStates()
         viewModelScope.launchIO {
+            val snapshot = setReadStatus.captureReadStates(chapters, read)
             val editResult = setReadStatus.await(
                 read = read,
                 chapters = chapters.toTypedArray(),
@@ -1667,7 +1665,7 @@ class MangaViewModel(
     fun clearHistory() {
         viewModelScope.launchIO {
             removeHistory.await(mangaId)
-            setReadStatus.await(mangaId, read = false)
+            setReadStatus.clearProgress(getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = false))
             viewModelScope.launch {
                 snackbarHostState.showSnackbarReplacing(
                     context.stringResource(MR.strings.clear_reading_history_completed),
