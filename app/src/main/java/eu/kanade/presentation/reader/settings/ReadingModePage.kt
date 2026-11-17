@@ -62,8 +62,6 @@ internal fun ColumnScope.ReadingModePage(viewModel: ReaderSettingsViewModel) {
 
 @Composable
 private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) {
-    HeadingItem(MR.strings.pager_viewer)
-
     HeadingItem(MR.strings.reader_group_navigation)
     val navigationModePager by viewModel.preferences.navigationModePager.collectAsState()
     val pagerNavInverted by viewModel.preferences.pagerNavInverted.collectAsState()
@@ -144,8 +142,6 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
 @Composable
 private fun ColumnScope.WebtoonViewerSettings(viewModel: ReaderSettingsViewModel) {
     val numberFormat = remember { NumberFormat.getPercentInstance() }
-
-    HeadingItem(MR.strings.webtoon_viewer)
 
     HeadingItem(MR.strings.reader_group_navigation)
     val navigationModeWebtoon by viewModel.preferences.navigationModeWebtoon.collectAsState()

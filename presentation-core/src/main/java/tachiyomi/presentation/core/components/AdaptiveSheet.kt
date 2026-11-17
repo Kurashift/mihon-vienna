@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.requiredWidthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -178,16 +180,21 @@ fun AdaptiveSheet(
                         enabled = enableImplicitDismiss,
                         flingBehavior = flingBehavior,
                     )
-                    .navigationBarsPadding()
+                    // 键盘弹出时整块面板抬到键盘上方，贴底的输入框才不会被挡住。
+                    .imePadding()
                     .statusBarsPadding(),
-                shape = MaterialTheme.shapes.extraLarge,
+                // 面板贴底：只圆上面两角。底下两角留在屏幕边缘外，再圆就是两块缺口。
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 content = {
                     BackHandler(
                         enabled = enableImplicitDismiss && anchoredDraggableState.targetValue == 0,
                         onBack = internalOnDismissRequest,
                     )
-                    content()
+                    // 手势条的安全区留在面板内部：底色铺到屏幕底边，内容停在手势条上方。
+                    Box(modifier = Modifier.navigationBarsPadding()) {
+                        content()
+                    }
                 },
             )
 
