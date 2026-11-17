@@ -411,6 +411,9 @@ private fun AppBarActionButton(action: AppBar.Action) {
  * @param searchEnabled Set to false if you don't want to show search action.
  * @param searchQuery If null, use normal toolbar.
  * @param placeholderText If null, [MR.strings.action_search_hint] is used.
+ * @param searchActions Actions that stay while the search field is open. Nothing is kept by
+ * default: the field needs the width, and only a button that changes what the query runs against
+ * is worth it, which the caller has to say.
  */
 @Composable
 fun SearchToolbar(
@@ -425,6 +428,7 @@ fun SearchToolbar(
     onSearch: (String) -> Unit = {},
     onClickCloseSearch: () -> Unit = { onChangeSearchQuery(null) },
     actions: @Composable RowScope.() -> Unit = {},
+    searchActions: @Composable RowScope.() -> Unit = {},
     // Action mode: while a selection is active the search field steps aside for the counter and
     // the selection actions, the same way the non-searchable [AppBar] does.
     actionModeCounter: Int = 0,
@@ -518,7 +522,8 @@ fun SearchToolbar(
                 SearchHistoryDropdown(
                     historyKey = historyKey,
                     query = searchQuery,
-                    expanded = historyExpanded,
+                    // 只有还没输入时才把焦点当成「要挑历史」：一进搜索就展开会盖住半屏结果。
+                    expanded = historyExpanded && searchQuery.isEmpty(),
                     onDismissRequest = { historyExpanded = false },
                     onSelect = { query ->
                         onChangeSearchQuery(query)
@@ -534,6 +539,12 @@ fun SearchToolbar(
             if (isActionMode) {
                 actionModeActions()
                 return@AppBar
+            }
+
+            // 搜索时顶栏只服务输入：页面自己的按钮会把输入框挤到只剩几个字。确实与结果集
+            // 有关的按钮（如书架筛选）由调用方通过 searchActions 留下，清除按钮仍在最右。
+            if (searchQuery != null) {
+                key("searchActions") { searchActions() }
             }
 
             key("search") {
@@ -587,7 +598,9 @@ fun SearchToolbar(
                 }
             }
 
-            key("actions") { actions() }
+            key("actions") {
+                if (searchQuery == null) actions()
+            }
         },
         isActionMode = isActionMode,
         onCancelActionMode = onCancelActionMode,
