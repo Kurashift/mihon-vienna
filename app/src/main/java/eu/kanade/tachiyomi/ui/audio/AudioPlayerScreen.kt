@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.ui.audio
 
 import android.content.pm.ActivityInfo
+import android.os.Build
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -14,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -26,6 +30,7 @@ import eu.kanade.tachiyomi.data.audio.AudioCategoryField
 import eu.kanade.tachiyomi.data.audio.AudioFavoriteStore
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.AudioSubtitleDisplayMode
+import eu.kanade.tachiyomi.data.audio.isVideoSource
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import kotlinx.coroutines.launch
 import uy.kohesive.injekt.Injekt
@@ -114,6 +119,10 @@ class AudioPlayerScreen(
         }
 
         val lifecycleOwner = LocalLifecycleOwner.current
+        // Drives both the floating subtitles and the picture: a video surface is only attached
+        // while this page is the one being looked at, and detaching is what keeps the decoder
+        // from running for frames nobody can see.
+        var isScreenVisible by remember { mutableStateOf(false) }
 
         // Floating subtitles hide only while this page is the one being read, and staying
         // composed is not the same thing: pressing Home keeps the composition alive while the
@@ -123,9 +132,9 @@ class AudioPlayerScreen(
         DisposableEffect(lifecycleOwner) {
             val lifecycle = lifecycleOwner.lifecycle
             fun sync() {
-                controller.notifyPlayerScreenVisibility(
-                    lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
-                )
+                val started = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                isScreenVisible = started
+                controller.notifyPlayerScreenVisibility(started)
             }
             val observer = LifecycleEventObserver { _, _ -> sync() }
             lifecycle.addObserver(observer)
@@ -133,6 +142,7 @@ class AudioPlayerScreen(
             sync()
             onDispose {
                 lifecycle.removeObserver(observer)
+                isScreenVisible = false
                 controller.notifyPlayerScreenVisibility(false)
             }
         }
@@ -162,15 +172,76 @@ class AudioPlayerScreen(
         // USER_PORTRAIT rather than PORTRAIT so a device level rotation lock is respected: the page
         // asks for portrait, it does not force the screen around. Tablets are left alone since
         // there is no landscape layout to fall back on and they have the room anyway.
+        //
+        // Fullscreen is the one exception: a picture wants the whole screen and a phone held
+        // sideways, so the requested orientation follows that state. One effect owns the value and
+        // the original is restored only when the page goes away — two independent effects restoring
+        // their own "previous" value would fight over it and leave the page locked the wrong way.
         val configuration = LocalConfiguration.current
+        val isTablet = configuration.smallestScreenWidthDp >= TABLET_MIN_WIDTH_DP
+        var isFullscreen by remember { mutableStateOf(false) }
+        val originalOrientation = remember { activity?.requestedOrientation }
+        LaunchedEffect(isFullscreen, isTablet) {
+            activity?.requestedOrientation = when {
+                isTablet -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                isFullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                else -> ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+            }
+        }
         DisposableEffect(Unit) {
-            val previousOrientation = activity?.requestedOrientation
-            if (configuration.smallestScreenWidthDp < TABLET_MIN_WIDTH_DP) {
-                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+            onDispose {
+                activity?.requestedOrientation = originalOrientation
+                    ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+
+        // A fullscreen picture takes the system bars with it, the same way the reader does, and
+        // draws into the camera cutout: leaving that strip to the window is what showed as a
+        // white bar along the cutout on a landscape phone.
+        val window = activity?.window
+        DisposableEffect(window, isFullscreen) {
+            if (window == null) return@DisposableEffect onDispose {}
+            val insets = WindowInsetsControllerCompat(window, window.decorView)
+            val previousCutout = window.attributes.layoutInDisplayCutoutMode
+            if (isFullscreen) {
+                insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                insets.hide(WindowInsetsCompat.Type.systemBars())
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    } else {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+                }
+            } else {
+                insets.show(WindowInsetsCompat.Type.systemBars())
             }
             onDispose {
-                activity?.requestedOrientation = previousOrientation
-                    ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                if (isFullscreen) insets.show(WindowInsetsCompat.Type.systemBars())
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = previousCutout
+                }
+            }
+        }
+
+        // Registered after the hand-off handler below, so leaving fullscreen is what back does
+        // first while a picture is on screen.
+        BackHandler(enabled = isFullscreen) { isFullscreen = false }
+
+        // A queue that moves on to a sound track, or a picture this device cannot decode, leaves
+        // nothing to fill the screen with. Staying landscape and barless with the normal page
+        // underneath would be a layout with no way back.
+        //
+        // Keyed on the track's own name rather than on `hasVideo`: that flag is corrected from the
+        // player's tracks, and a surface hand-off empties them for a moment. Reacting to that
+        // flipped the page back to portrait by itself, and the next tap flipped it out again.
+        // Leaving fullscreen is tied to the track changing, not to any derived flag: the picture
+        // is re-prepared whenever the surface moves, and a flag read from that moment fired the
+        // exit two seconds after entering, over and over.
+        val currentStreamUrl = controller.state.item?.mediaStreamUrl
+        LaunchedEffect(isFullscreen, currentStreamUrl) {
+            if (isFullscreen && controller.state.item?.isVideoSource != true) {
+                isFullscreen = false
             }
         }
 
@@ -181,6 +252,9 @@ class AudioPlayerScreen(
             subtitleState = controller.state.subtitleState,
             displayMode = displayMode,
             isFavorite = isFavorite,
+            isFullscreen = isFullscreen,
+            isScreenVisible = isScreenVisible,
+            onToggleFullscreen = { isFullscreen = !isFullscreen },
             floatingSubtitleEnabled = floatingSubtitleEnabled,
             navigateUp = ::navigateBack,
             onToggleFavorite = toggleFavorite,
