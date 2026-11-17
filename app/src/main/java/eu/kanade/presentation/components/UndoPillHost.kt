@@ -1,12 +1,5 @@
 package eu.kanade.presentation.components
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -20,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.data.undo.UndoPillService
 import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.components.material.PillHost
 import tachiyomi.presentation.core.components.material.PillSnackbar
 import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
@@ -44,16 +38,9 @@ fun UndoPillHost(modifier: Modifier = Modifier) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        // AnimatedContent keeps the outgoing pill composed while it fades, so the message stays
+        // The host keeps the outgoing pill composed while it leaves, so the message stays
         // readable for the whole exit instead of collapsing to an empty one first.
-        AnimatedContent(
-            targetState = pill,
-            transitionSpec = {
-                (fadeIn(tween(120)) + slideInVertically(tween(160)) { it / 2 })
-                    .togetherWith(fadeOut(tween(100)) + slideOutVertically(tween(140)) { it / 3 })
-            },
-            label = "UndoPill",
-        ) { current ->
+        PillHost(target = pill, label = "UndoPill") { current ->
             if (current != null) {
                 PillSnackbar(
                     message = current.message,

@@ -790,19 +790,10 @@ class MangaViewModel(
             // A swipe acts on the row under the finger, not on the selection, so it leaves the
             // selection and its bottom bar alone. Only the bar's own buttons dismiss it.
             LibraryPreferences.ChapterSwipeAction.ToggleRead -> {
-                val markAsRead = !chapter.read
-                markChaptersRead(listOf(chapter), markAsRead, clearSelection = false)
-                viewModelScope.launch {
-                    snackbarHostState.showSnackbarReplacing(
-                        context.stringResource(
-                            if (markAsRead) {
-                                MR.strings.chapter_marked_read
-                            } else {
-                                MR.strings.chapter_marked_unread
-                            },
-                        ),
-                    )
-                }
+                // The undo pill reports this change itself, with the count and an undo. A second
+                // message here would be drawn by the screen's own snackbar host at the same time,
+                // so the reader would see two pills for one action.
+                markChaptersRead(listOf(chapter), !chapter.read, clearSelection = false)
             }
             LibraryPreferences.ChapterSwipeAction.ToggleBookmark -> {
                 bookmarkChapters(listOf(chapter), !chapter.bookmark, clearSelection = false)
