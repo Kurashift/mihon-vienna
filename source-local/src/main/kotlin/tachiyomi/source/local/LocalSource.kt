@@ -56,6 +56,7 @@ import tachiyomi.core.common.storage.nameWithoutExtension
 import tachiyomi.core.common.util.lang.SearchTextNormalizer.containsSearch
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.ImageUtil
+import tachiyomi.core.common.util.system.PageImageName
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.core.metadata.comicinfo.COMIC_INFO_FILE
 import tachiyomi.core.metadata.comicinfo.ComicInfo
@@ -611,19 +612,28 @@ class LocalSource(
                 ?.findFile(chapterFileName)
                 ?.takeIf(Archive::isChapterEntry)
                 ?: return@withIOContext null
-            val manga = SManga.create().apply {
-                title = mangaUrl
-                url = mangaUrl
-            }
-            val chapter = SChapter.create().apply {
-                name = chapterFileName.substringBeforeLast('.', chapterFileName)
-                url = "$mangaUrl/$chapterFileName"
-            }
-            updateCover(chapter, manga)?.uri?.toString()
+            generateMangaCover(mangaUrl, chapterFile)
         }
         if (coverUri != null) refreshMangaCover(mangaUrl, coverUri)
         return coverUri
     }
+
+    private fun generateMangaCover(mangaUrl: String, chapterFile: UniFile): String? {
+        val manga = SManga.create().apply {
+            title = mangaUrl
+            url = mangaUrl
+        }
+        return updateCover(manga) { Format.valueOf(chapterFile) }?.uri?.toString()
+    }
+
+    internal fun resolveScannedMangaCover(mangaUrl: String, observed: LocalChapterObservation): String? =
+        coverManager.find(mangaUrl)?.uri?.toString()
+            ?: observed.coverPage?.uri?.toString()
+            ?: observed.snapshot.files
+                .filter(Archive::isChapterEntry)
+                .minWithOrNull { a, b ->
+                    a.name.orEmpty().compareToCaseInsensitiveNaturalOrder(b.name.orEmpty())
+                }?.let { generateMangaCover(mangaUrl, it) }
 
     /**
      * Rebuilds the shelf from the same reliable chapter scan used by manual refresh. This keeps
@@ -649,13 +659,13 @@ class LocalSource(
                     entries.remove(name)
                 } else {
                     val previous = entries[name]
-                    val cover = if (previous?.coverLookedUp == true &&
+                    val cover = if (previous?.coverUri != null &&
                         previous.dirLastModified == observed.state.directoryLastModified &&
                         observed.coverPage == null
                     ) {
                         previous.coverUri
                     } else {
-                        coverManager.find(name)?.uri?.toString() ?: observed.coverPage?.uri?.toString()
+                        resolveScannedMangaCover(name, observed)
                     }
                     entries[name] = ListingIndexEntry(
                         dirLastModified = observed.state.directoryLastModified,
@@ -1827,7 +1837,8 @@ class LocalSource(
                         val listingEntry = listingIndex?.entries?.get(name)
                         val changed = pending || baseline != state.fingerprint ||
                             (listingEntry?.chapterCount ?: 0) != state.chapterFileNames.orEmpty().size ||
-                            (listingEntry != null && !listingEntry.coverLookedUp)
+                            (listingEntry != null && !listingEntry.coverLookedUp) ||
+                            (!reuseUnchangedFolders && listingEntry != null && listingEntry.coverUri == null)
                         name to FolderScan(state, observation.takeIf { changed })
                     }
                 }
@@ -2832,9 +2843,12 @@ class LocalSource(
         return parts.size == 2 && isSingleChapterEntryName(parts[1])
     }
 
-    private fun updateCover(chapter: SChapter, manga: SManga): UniFile? {
+    private fun updateCover(chapter: SChapter, manga: SManga): UniFile? =
+        updateCover(manga) { getFormat(chapter) }
+
+    private inline fun updateCover(manga: SManga, getFormat: () -> Format): UniFile? {
         return try {
-            when (val format = getFormat(chapter)) {
+            when (val format = getFormat()) {
                 is Format.Directory -> {
                     val entry = fileSystem.getFilesInDirectory(format.file)
                         .sortedWith { f1, f2 ->
@@ -2844,7 +2858,9 @@ class LocalSource(
                         }
                         .find {
                             !it.isDirectory && !isChapterCoverName(it.name.orEmpty()) &&
-                                ImageUtil.isImagePage(it.name) { it.openInputStream() }
+                                PageImageName.isPage(it.name) {
+                                    ImageUtil.findImageType { it.openInputStream() } != null
+                                }
                         }
 
                     entry?.let { coverManager.update(manga, it.openInputStream()) }
@@ -2857,7 +2873,11 @@ class LocalSource(
                                 .sortedWith { f1, f2 ->
                                     f1.name.compareToCaseInsensitiveNaturalPageOrder(f2.name)
                                 }
-                                .find { ImageUtil.isImagePage(it.name) { reader.getInputStream(it.name)!! } }
+                                .find { entry ->
+                                    PageImageName.isPage(entry.name) {
+                                        ImageUtil.findImageType { reader.getInputStream(entry.name)!! } != null
+                                    }
+                                }
                         }
 
                         entry?.let { coverManager.update(manga, reader.getInputStream(it.name)!!) }

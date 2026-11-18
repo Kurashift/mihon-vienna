@@ -1276,8 +1276,8 @@
     <string name="notification_local_transfer_complete">已导入 %1$d，跳过 %2$d，失败 %3$d</string>
     <string name="notification_local_move_complete">已移动 %1$d，跳过 %2$d，失败 %3$d</string>
     <string name="local_transfer_conflict_title">发现同名篇目</string>
-    <string name="local_transfer_conflict_message">有 %1$d 个篇目与目标中已有或本次选择的篇目同名，将自动跳过。</string>
-    <string name="local_transfer_continue">继续导入</string>
+    <string name="local_transfer_conflict_message">%1$d 个同名篇目将跳过，不会覆盖原文件。</string>
+    <string name="local_transfer_continue">跳过同名项</string>
 
     <!-- 删除本地资源 -->
     <string name="action_delete_local_files">删除本地文件</string>

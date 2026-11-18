@@ -64,20 +64,34 @@ class SyncChaptersWithSourceTest {
         every { source.id } returns LocalSource.ID
         val subject = createSubject(chapterRepository)
 
-        var protected = false
-        try {
-            subject.await(
-                rawSourceChapters = emptyList(),
-                manga = Manga.create().copy(id = 1L, source = LocalSource.ID),
-                source = source,
-                manualFetch = true,
-            )
-        } catch (_: NoChaptersException) {
-            protected = true
-        }
+        val added = subject.await(
+            rawSourceChapters = emptyList(),
+            manga = Manga.create().copy(id = 1L, source = LocalSource.ID),
+            source = source,
+            manualFetch = true,
+        )
 
-        assertTrue(protected)
+        assertTrue(added.isEmpty())
         coVerify(exactly = 0) { chapterRepository.applySourceSync(any(), any(), any()) }
+    }
+
+    @Test
+    fun `local details add chapters without deleting a possible move source`() = runTest {
+        val repository = mockk<ChapterRepository>()
+        val missing = Chapter.create().copy(id = 10L, mangaId = 1L, url = "Author/Moved.cbz")
+        coEvery { repository.getChapterByMangaId(1L, false) } returns listOf(missing)
+        coEvery { repository.applySourceSync(emptyList(), any(), emptyList()) } answers { secondArg() }
+        val source = mockk<Source>()
+        every { source.id } returns LocalSource.ID
+
+        val added = createSubject(repository).await(
+            rawSourceChapters = listOf(sourceChapter("Author/New.cbz", "New")),
+            manga = Manga.create().copy(id = 1L, source = LocalSource.ID),
+            source = source,
+        )
+
+        assertEquals(listOf("Author/New.cbz"), added.map { it.url })
+        coVerify(exactly = 1) { repository.applySourceSync(emptyList(), any(), emptyList()) }
     }
 
     @Test
@@ -94,7 +108,7 @@ class SyncChaptersWithSourceTest {
             manga = Manga.create().copy(id = 1L, source = LocalSource.ID),
             source = source,
             manualFetch = false,
-            allowEmptyLocalSource = true,
+            allowLocalChapterRemoval = true,
         )
 
         coVerify(exactly = 1) { chapterRepository.applySourceSync(listOf(10L), emptyList(), emptyList()) }
@@ -217,7 +231,7 @@ class SyncChaptersWithSourceTest {
                 emptyList(),
                 Manga.create().copy(id = 1L, source = 2L),
                 source,
-                allowEmptyLocalSource = true,
+                allowLocalChapterRemoval = true,
             )
             fail<Unit>("Expected untrusted empty source protection")
         } catch (_: NoChaptersException) {

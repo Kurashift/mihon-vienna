@@ -1427,7 +1427,7 @@
     <string name="notification_local_move_complete">Moved %1$d, skipped %2$d, failed %3$d</string>
     <string name="local_transfer_conflict_title">Name conflicts found</string>
     <string name="local_transfer_conflict_message">%1$d items have the same name as an existing or selected item. They will be skipped.</string>
-    <string name="local_transfer_continue">Continue import</string>
+    <string name="local_transfer_continue">Skip duplicates</string>
 
     <!-- Delete local files -->
     <string name="action_delete_local_files">Delete local files</string>

@@ -53,14 +53,12 @@ class SyncChaptersWithSource(
         source: Source,
         manualFetch: Boolean = false,
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
-        allowEmptyLocalSource: Boolean = false,
+        allowLocalChapterRemoval: Boolean = false,
     ): List<Chapter> {
         val dbChapters = getChaptersByMangaId.await(manga.id)
-        if (
-            rawSourceChapters.isEmpty() &&
-            (!source.isLocal() || (dbChapters.isNotEmpty() && !allowEmptyLocalSource))
-        ) {
-            throw NoChaptersException()
+        if (rawSourceChapters.isEmpty()) {
+            if (!source.isLocal()) throw NoChaptersException()
+            if (!allowLocalChapterRemoval) return emptyList()
         }
 
         val timeZone = TimeZone.currentSystemDefault()
@@ -85,7 +83,13 @@ class SyncChaptersWithSource(
             }
         }
         val sourceUrls = sourceChapters.mapTo(hashSetOf()) { it.url }
-        val removedChapters = dbChapters.filterNot { it.url in sourceUrls }
+        // A detail refresh sees only one local folder. Let the library scan match its missing
+        // chapters to their new locations before treating them as removed.
+        val removedChapters = if (source.isLocal() && !allowLocalChapterRemoval) {
+            emptyList()
+        } else {
+            dbChapters.filterNot { it.url in sourceUrls }
+        }
 
         // Used to not set upload date of older chapters
         // to a higher value than newer chapters

@@ -3,6 +3,7 @@ package tachiyomi.source.local
 import android.content.ContentResolver
 import android.content.Context
 import android.content.res.Resources
+import android.net.Uri
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
@@ -40,11 +41,12 @@ class LocalSourceChapterEntryTest {
         every { resources } returns mockk<Resources>(relaxed = true)
     }
     private val fileSystem = mockk<LocalSourceFileSystem>(relaxed = true)
+    private val coverManager = mockk<LocalCoverManager>(relaxed = true)
 
     private val source = LocalSource(
         context = context,
         fileSystem = fileSystem,
-        coverManager = mockk<LocalCoverManager>(relaxed = true),
+        coverManager = coverManager,
     )
 
     private val manga = SManga.create().apply { title = "Test Manga" }
@@ -236,6 +238,40 @@ class LocalSourceChapterEntryTest {
         assertEquals(before?.state?.chapterFileNames, after?.state?.chapterFileNames)
         assertNotEquals(before?.state?.fingerprint, after?.state?.fingerprint)
         verify(exactly = 0) { context.contentResolver.openFileDescriptor(any(), any()) }
+    }
+
+    @Test
+    fun `refresh generates a new work cover before anyone opens its details`() = runBlocking {
+        val work = mockk<UniFile>(relaxed = true) {
+            every { name } returns "New Work"
+            every { isDirectory } returns true
+            every { lastModified() } returns 10L
+        }
+        val chapter = mockk<UniFile>(relaxed = true) {
+            every { name } returns "Chapter 1"
+            every { isDirectory } returns true
+        }
+        val page = pageFile("001.png", 0L)
+        val coverUri = mockk<Uri>(relaxed = true)
+        val cover = mockk<UniFile> { every { uri } returns coverUri }
+        every { fileSystem.getDirectorySnapshot(work, any()) } returns
+            LocalSourceFileSystem.DirectorySnapshot(work, listOf(chapter), isAccessible = true)
+        every { fileSystem.getFilesInDirectory(chapter) } returns listOf(page)
+        every { page.openInputStream() } answers { byteArrayOf(1).inputStream() }
+        every { coverManager.find("New Work") } returns null
+        every { coverManager.update(any(), any()) } answers {
+            secondArg<java.io.InputStream>().close()
+            cover
+        }
+
+        val observation = checkNotNull(
+            source.observeChapterFolder(work, 10L, emptySet(), previouslyPopulated = false, fresh = false),
+        )
+        assertEquals(setOf("Chapter 1"), observation.state.chapterFileNames)
+        val result = source.resolveScannedMangaCover("New Work", observation)
+
+        verify(exactly = 1) { coverManager.update(match { it.url == "New Work" }, any()) }
+        assertEquals(coverUri.toString(), result)
     }
 
     private fun pageFile(name: String, lastModified: Long): UniFile = mockk(relaxed = true) {
