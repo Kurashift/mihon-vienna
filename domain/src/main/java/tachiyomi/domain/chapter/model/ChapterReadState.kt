@@ -13,4 +13,9 @@ data class ChapterReadState(
     val read: Boolean,
     val lastPageRead: Long,
     val markedReadAt: Long,
+    val permanentCompleted: Boolean? = null,
+    val permanentStateVersion: Long? = null,
+    val expectedStateVersion: Long? = null,
+    val expectedRead: Boolean? = null,
+    val historyVisibilityVersion: Long? = null,
 )

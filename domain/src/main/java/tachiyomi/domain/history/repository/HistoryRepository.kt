@@ -3,9 +3,24 @@ package tachiyomi.domain.history.repository
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.history.model.History
 import tachiyomi.domain.history.model.HistoryUpdate
+import tachiyomi.domain.history.model.HistoryVisibilityUndo
 import tachiyomi.domain.history.model.HistoryWithRelations
+import tachiyomi.domain.history.model.PermanentReadingRecord
+import tachiyomi.domain.history.model.ReadingOverview
 
 interface HistoryRepository {
+
+    suspend fun exportPermanentRecords(): List<PermanentReadingRecord>
+
+    suspend fun importPermanentRecords(records: List<PermanentReadingRecord>, legacyMode: Boolean = false)
+
+    fun subscribeReadingOverview(): Flow<ReadingOverview>
+
+    suspend fun hideHistory(ids: Set<Long>? = null): HistoryVisibilityUndo
+
+    suspend fun undoHistoryVisibility(undo: HistoryVisibilityUndo)
+
+    suspend fun <T> withoutReadingStateChanges(block: suspend () -> T): T
 
     fun getHistory(query: String): Flow<List<HistoryWithRelations>>
 
@@ -28,17 +43,16 @@ interface HistoryRepository {
     suspend fun deleteAllHistory(): Boolean
 
     /**
-     * Every row of the history table, as it stands - including the ones whose `last_read` was
-     * reset to 0 and therefore never show on screen. They still count towards the read duration,
-     * so a snapshot taken for an undo has to carry them too.
+     * Compatibility projection of all retained rows, including hidden and detached records.
+     * Detached records use chapterId = -1; permanent export carries their durable identities.
+     * Visibility undo uses [hideHistory] and [undoHistoryVisibility], not this projection.
      */
     suspend fun getAllHistory(): List<History>
 
     /**
-     * Puts rows back exactly as [entries] describe them, durations included.
-     *
-     * Not [upsertHistory]: that one accumulates `time_read`, which would double the reading time
-     * of every restored entry.
+     * Compatibility restore using absolute lower bounds for time; never subtracts newer reading.
+     * Visibility undo must use [undoHistoryVisibility] to avoid revealing newer hidden records.
+     * Permanent backup restores use [importPermanentRecords] to preserve detached identities.
      */
     suspend fun restoreHistory(entries: List<History>)
 

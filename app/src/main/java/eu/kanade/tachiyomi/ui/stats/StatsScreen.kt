@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.ui.stats
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -23,6 +25,7 @@ class StatsScreen : Screen() {
 
         val viewModel = viewModel<StatsViewModel>()
         val state by viewModel.state.collectAsState()
+        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
 
         Scaffold(
             topBar = { scrollBehavior ->

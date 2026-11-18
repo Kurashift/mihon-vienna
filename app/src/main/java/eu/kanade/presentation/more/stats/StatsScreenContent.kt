@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.LocalLibrary
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.MaterialTheme
@@ -29,134 +30,100 @@ import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
 @Composable
-fun StatsScreenContent(
-    state: StatsScreenState.Success,
-    paddingValues: PaddingValues,
-) {
+fun StatsScreenContent(state: StatsScreenState.Success, paddingValues: PaddingValues) {
     LazyColumn(
         contentPadding = paddingValues,
         verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
     ) {
-        item {
-            OverviewSection(state.overview)
-        }
-        item {
-            TitlesStats(state.titles)
-        }
-        item {
-            ChapterStats(state.chapters)
-        }
-        item {
-            TrackerStats(state.trackers)
-        }
+        item { OverviewSection(state.overview) }
+        item { LocalLibrarySection(state.localLibrary) }
+        item { LibrarySection(state.library) }
+        item { DownloadsSection(state.downloads) }
+        item { TrackerSection(state.trackers) }
     }
 }
 
+private fun Long?.statText(): String = this?.toString() ?: "—"
+
 @Composable
-private fun LazyItemScope.OverviewSection(
-    data: StatsData.Overview,
-) {
-    val none = stringResource(MR.strings.none)
+private fun LazyItemScope.OverviewSection(data: StatsData.Overview) {
     val context = LocalContext.current
-    val readDurationString = remember(data.totalReadDuration) {
+    val none = stringResource(MR.strings.none)
+    val duration = remember(data.totalReadDuration, context, none) {
         data.totalReadDuration
-            .toDuration(DurationUnit.MILLISECONDS)
-            .toDurationString(context, fallback = none)
+            ?.toDuration(DurationUnit.MILLISECONDS)
+            ?.toDurationString(context, fallback = none) ?: "—"
     }
-    SectionCard(MR.strings.label_overview_section) {
-        Row(
-            modifier = Modifier.height(IntrinsicSize.Min),
-        ) {
+    SectionCard(MR.strings.stats_reading_overview) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
             StatsOverviewItem(
-                title = data.libraryMangaCount.toString(),
-                subtitle = stringResource(MR.strings.in_library),
-                icon = Icons.Outlined.CollectionsBookmark,
+                data.readWorkCount.statText(),
+                stringResource(MR.strings.stats_read_works),
+                Icons.Outlined.LocalLibrary,
             )
             StatsOverviewItem(
-                title = readDurationString,
-                subtitle = stringResource(MR.strings.label_read_duration),
-                icon = Icons.Outlined.Schedule,
+                data.completedWorkCount.statText(),
+                stringResource(MR.strings.stats_completed_works),
+                Icons.Outlined.CollectionsBookmark,
             )
             StatsOverviewItem(
-                title = data.completedMangaCount.toString(),
-                subtitle = stringResource(MR.strings.label_completed_titles),
-                icon = Icons.Outlined.LocalLibrary,
+                data.readChapterCount.statText(),
+                stringResource(MR.strings.stats_read_chapters),
+                Icons.Outlined.DoneAll,
+            )
+            StatsOverviewItem(
+                duration,
+                stringResource(MR.strings.stats_total_read_duration),
+                Icons.Outlined.Schedule,
             )
         }
     }
 }
 
 @Composable
-private fun LazyItemScope.TitlesStats(
-    data: StatsData.Titles,
-) {
-    SectionCard(MR.strings.label_titles_section) {
+private fun LazyItemScope.LocalLibrarySection(data: StatsData.LocalLibrary) {
+    SectionCard(MR.strings.stats_local_library) {
         Row {
-            StatsItem(
-                data.globalUpdateItemCount.toString(),
-                stringResource(MR.strings.label_titles_in_global_update),
-            )
-            StatsItem(
-                data.startedMangaCount.toString(),
-                stringResource(MR.strings.label_started),
-            )
-            StatsItem(
-                data.localMangaCount.toString(),
-                stringResource(MR.strings.label_local),
-            )
+            StatsItem(data.workCount.statText(), stringResource(MR.strings.stats_current_works))
+            StatsItem(data.chapterCount.statText(), stringResource(MR.strings.stats_current_chapters))
+            StatsItem(data.readChapterCount.statText(), stringResource(MR.strings.stats_current_read_chapters))
         }
     }
 }
 
 @Composable
-private fun LazyItemScope.ChapterStats(
-    data: StatsData.Chapters,
-) {
-    SectionCard(MR.strings.chapters) {
+private fun LazyItemScope.LibrarySection(data: StatsData.Library) {
+    SectionCard(MR.strings.stats_library) {
         Row {
-            StatsItem(
-                data.totalChapterCount.toString(),
-                stringResource(MR.strings.label_total_chapters),
-            )
-            StatsItem(
-                data.readChapterCount.toString(),
-                stringResource(MR.strings.label_read_chapters),
-            )
-            StatsItem(
-                data.downloadCount.toString(),
-                stringResource(MR.strings.label_downloaded),
-            )
+            StatsItem(data.workCount.statText(), stringResource(MR.strings.stats_favorite_works))
+            StatsItem(data.localWorkCount.statText(), stringResource(MR.strings.stats_local_favorites))
+            StatsItem(data.onlineWorkCount.statText(), stringResource(MR.strings.stats_online_favorites))
         }
     }
 }
 
 @Composable
-private fun LazyItemScope.TrackerStats(
-    data: StatsData.Trackers,
-) {
+private fun LazyItemScope.DownloadsSection(data: StatsData.Downloads) {
+    SectionCard(MR.strings.stats_online_downloads) {
+        Row {
+            StatsItem(data.chapterCount.statText(), stringResource(MR.strings.stats_downloaded_chapters))
+        }
+    }
+}
+
+@Composable
+private fun LazyItemScope.TrackerSection(data: StatsData.Trackers) {
     val notApplicable = stringResource(MR.strings.not_applicable)
-    val meanScoreStr = remember(data.trackedTitleCount, data.meanScore) {
-        if (data.trackedTitleCount > 0 && !data.meanScore.isNaN()) {
-            // All other numbers are localized in English
-            "%.2f ★".format(Locale.ENGLISH, data.meanScore)
-        } else {
-            notApplicable
-        }
+    val score = when {
+        data.trackedTitleCount == null -> "—"
+        data.meanScore?.isFinite() == true -> "%.2f ★".format(Locale.ENGLISH, data.meanScore)
+        else -> notApplicable
     }
     SectionCard(MR.strings.label_tracker_section) {
         Row {
-            StatsItem(
-                data.trackedTitleCount.toString(),
-                stringResource(MR.strings.label_tracked_titles),
-            )
-            StatsItem(
-                meanScoreStr,
-                stringResource(MR.strings.label_mean_score),
-            )
-            StatsItem(
-                data.trackerCount.toString(),
-                stringResource(MR.strings.label_used),
-            )
+            StatsItem(data.trackedTitleCount.statText(), stringResource(MR.strings.label_tracked_titles))
+            StatsItem(score, stringResource(MR.strings.label_mean_score))
+            StatsItem(data.trackerCount.statText(), stringResource(MR.strings.stats_logged_in_trackers))
         }
     }
 }

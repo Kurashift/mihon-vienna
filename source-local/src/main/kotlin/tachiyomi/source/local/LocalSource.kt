@@ -21,8 +21,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -188,6 +193,47 @@ class LocalSource(
      */
     private val listingRevisionInternal = MutableStateFlow(0L)
     val listingRevision: StateFlow<Long> = listingRevisionInternal
+
+    private val libraryIndexRevision = MutableStateFlow(0L)
+
+    /** Observe only committed private indexes; this path never calls getListing or scans storage. */
+    fun observeCachedLibrarySnapshot(): Flow<LocalLibrarySnapshot> = combine(
+        libraryIndexRevision,
+        fileSystem.storageChanges.onStart { emit(Unit) },
+    ) { _, _ -> getCachedLibrarySnapshot() }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.IO)
+
+    suspend fun getCachedLibrarySnapshot(): LocalLibrarySnapshot = withIOContext {
+        val baseUri = fileSystem.getCachedBaseDirectoryIdentityUri()
+            ?: return@withIOContext LocalLibrarySnapshot(null, null, emptyMap())
+        run {
+            val listing = cachedListing?.takeIf { cachedListingBaseUri == baseUri }
+                ?: loadListingIndex(baseUri)?.toListingEntries()
+                ?: return@run LocalLibrarySnapshot(baseUri, null, emptyMap())
+            val sync = loadSyncIndex(requireCurrentVersion = true)?.takeIf { !it.legacy && it.baseUri == baseUri }
+            val urls = buildMap {
+                listing.forEach { entry ->
+                    val folder = sync?.folders?.get(entry.url)
+                    localLibraryChapterUrls(
+                        mangaUrl = entry.url,
+                        chapterCount = entry.chapterCount.toLong(),
+                        listingModifiedAt = entry.lastModified,
+                        indexedModifiedAt = folder?.directoryLastModified,
+                        fileNames = folder?.chapterFileNames,
+                    )?.let { put(entry.url, it) }
+                }
+            }
+            if (fileSystem.getCachedBaseDirectoryIdentityUri() != baseUri) {
+                return@run LocalLibrarySnapshot(null, null, emptyMap())
+            }
+            LocalLibrarySnapshot(
+                baseUri = baseUri,
+                chapterCounts = listing.associate { it.url to it.chapterCount.toLong() },
+                chapterUrlsByMangaUrl = urls,
+            )
+        }
+    }
 
     @Volatile
     private var cachedListingTime: Long = 0
@@ -364,6 +410,7 @@ class LocalSource(
             cachedBaseDirectorySnapshot = null
             cachedBaseDirectorySnapshotTime = 0L
             listingSnapshotInternal.value = LocalListingSnapshot()
+            libraryIndexRevision.update { it + 1 }
             cachedChapterNames = null
             cachedChapterNamesTime = 0L
             cachedChapterNamesBaseDirLastModified = -1L
@@ -784,6 +831,7 @@ class LocalSource(
     }
 
     private fun publishListingSnapshot(entries: List<LocalMangaEntry>) {
+        libraryIndexRevision.update { it + 1 }
         val latestLimit = System.currentTimeMillis() - LATEST_THRESHOLD
         listingSnapshotInternal.value = LocalListingSnapshot(
             allUrls = entries.map(LocalMangaEntry::url),
@@ -974,6 +1022,7 @@ class LocalSource(
                 .put("entries", array)
 
             writeIndexAtomically(listingIndexFile, root.toString())
+            libraryIndexRevision.update { it + 1 }
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Failed to save local source listing index" }
         }
@@ -1962,11 +2011,12 @@ class LocalSource(
         val legacy: Boolean = false,
     )
 
-    private fun loadSyncIndex(): LocalChapterSyncIndex? {
+    private fun loadSyncIndex(requireCurrentVersion: Boolean = false): LocalChapterSyncIndex? {
         return try {
             if (!syncIndexFile.exists()) return null
             val root = JSONObject(syncIndexFile.readText())
             val version = root.optInt("version", 1)
+            if (requireCurrentVersion && version != 3) return null
             if (version >= 2) {
                 val foldersObject = root.optJSONObject("folders") ?: JSONObject()
                 val folders = buildMap {
@@ -2040,6 +2090,7 @@ class LocalSource(
                 .put("baseDirectoryLastModified", index.baseDirectoryLastModified)
                 .put("folders", folders)
             writeIndexAtomically(syncIndexFile, root.toString())
+            libraryIndexRevision.update { it + 1 }
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Failed to save local source sync index" }
         }

@@ -1,28 +1,30 @@
 package eu.kanade.presentation.more.stats.data
 
 sealed interface StatsData {
-
     data class Overview(
-        val libraryMangaCount: Int,
-        val completedMangaCount: Int,
-        val totalReadDuration: Long,
+        val readWorkCount: Long? = null,
+        val completedWorkCount: Long? = null,
+        val readChapterCount: Long? = null,
+        val totalReadDuration: Long? = null,
     ) : StatsData
 
-    data class Titles(
-        val globalUpdateItemCount: Int,
-        val startedMangaCount: Int,
-        val localMangaCount: Int,
+    data class LocalLibrary(
+        val workCount: Long? = null,
+        val chapterCount: Long? = null,
+        val readChapterCount: Long? = null,
     ) : StatsData
 
-    data class Chapters(
-        val totalChapterCount: Int,
-        val readChapterCount: Int,
-        val downloadCount: Int,
+    data class Library(
+        val workCount: Long? = null,
+        val localWorkCount: Long? = null,
+        val onlineWorkCount: Long? = null,
     ) : StatsData
+
+    data class Downloads(val chapterCount: Long? = null) : StatsData
 
     data class Trackers(
-        val trackedTitleCount: Int,
-        val meanScore: Double,
-        val trackerCount: Int,
+        val trackedTitleCount: Long? = null,
+        val meanScore: Double? = null,
+        val trackerCount: Long? = null,
     ) : StatsData
 }

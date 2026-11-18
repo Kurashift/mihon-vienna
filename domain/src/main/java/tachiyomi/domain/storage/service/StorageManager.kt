@@ -32,6 +32,9 @@ class StorageManager(
 
     private var baseDir: UniFile? = getBaseDir(baseDirUri)
 
+    @Volatile
+    private var localSourceIdentity: Pair<String, String?>? = null
+
     private val _changes: Channel<Unit> = Channel(Channel.UNLIMITED)
     val changes = _changes.receiveAsFlow()
         .shareIn(scope, SharingStarted.Lazily, 1)
@@ -46,6 +49,7 @@ class StorageManager(
                 baseDir?.let { parent ->
                     parent.createDirectory(AUTOMATIC_BACKUPS_PATH)
                     parent.createDirectory(LOCAL_SOURCE_PATH).also {
+                        localSourceIdentity = uri to it?.uri?.toString()
                         DiskUtil.createNoMediaFile(it, context)
                     }
                     parent.createDirectory(DOWNLOADS_PATH).also {
@@ -71,9 +75,36 @@ class StorageManager(
     }
 
     fun getLocalSourceDirectory(): UniFile? {
+        val configuredUri = baseDirUri
         return baseDir?.createDirectory(LOCAL_SOURCE_PATH).also {
+            if (it != null) localSourceIdentity = configuredUri to it.uri.toString()
             DiskUtil.createNoMediaFile(it, context)
         }
+    }
+
+    /** Returns only an identity previously resolved for the current configuration; never touches storage. */
+    fun getCachedLocalSourceDirectoryIdentity(): String? {
+        val configuredUri = baseDirUri
+        localSourceIdentity?.takeIf { it.first == configuredUri }?.second?.let { return it }
+        // External-storage document IDs are hierarchical and can be reconstructed without a query.
+        // Other providers must have resolved an identity through the normal storage path first.
+        return runCatching {
+            val uri = configuredUri.toUri()
+            when {
+                uri.scheme == "file" -> android.net.Uri.fromFile(
+                    File(requireNotNull(uri.path), LOCAL_SOURCE_PATH),
+                ).toString()
+                uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY && DocumentsContract.isTreeUri(uri) -> {
+                    val parentId = DocumentsContract.getTreeDocumentId(uri)
+                    val separator = if (parentId.endsWith(':')) "" else "/"
+                    DocumentsContract.buildDocumentUriUsingTree(
+                        uri,
+                        parentId + separator + LOCAL_SOURCE_PATH,
+                    ).toString()
+                }
+                else -> null
+            }
+        }.getOrNull()
     }
 
     /**

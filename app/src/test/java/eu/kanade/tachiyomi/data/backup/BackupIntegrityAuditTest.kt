@@ -170,8 +170,8 @@ class BackupIntegrityAuditTest {
         assertEquals(22L, insert.values[10])
         assertEquals(17L, insert.values[11])
         assertEquals("translated", insert.values[18])
-        val history = fixture.driver.statements.single { it.sql.startsWith("INSERT INTO history(") }
-        assertEquals(listOf(9002L, 9876L, 4321L), history.values.take(3))
+        val history = fixture.driver.statements.single { it.sql.startsWith("UPDATE history SET last_read =") }
+        assertEquals(listOf(9876L, 4321L, 9002L), history.values.take(3))
         val category = fixture.driver.statements.single { it.sql.startsWith("INSERT INTO mangas_categories") }
         assertEquals(listOf(9001L, 8001L), category.values)
         coVerify(exactly = 1) { fixture.covers.restoreCustom(9002, byteArrayOf(4, 5, 6)) }
@@ -341,6 +341,91 @@ class BackupIntegrityAuditTest {
     }
 
     @Test
+    fun `history off restores new read chapter as zero time hidden completion`() = runTest {
+        val fixture = Fixture()
+        coEvery { fixture.mangaLookup.await(any(), any()) } returns null
+        coEvery { fixture.chapters.await(any<Long>(), any()) } returns emptyList()
+        val repository = mockk<tachiyomi.domain.history.repository.HistoryRepository>(relaxed = true)
+        coEvery { repository.withoutReadingStateChanges<Long>(any()) } coAnswers {
+            firstArg<suspend () -> Long>().invoke()
+        }
+        val imported = mutableListOf<tachiyomi.domain.history.model.PermanentReadingRecord>()
+        coEvery { repository.importPermanentRecords(any(), legacyMode = true) } coAnswers {
+            imported.addAll(firstArg<List<tachiyomi.domain.history.model.PermanentReadingRecord>>())
+        }
+        val backup = fixture.backup().apply {
+            chapters.single().read = true
+            chapters.single().customCover = null
+            history = listOf(BackupHistory(fixture.chapter.url, 9876, 4321))
+        }
+        fixture.restorer.restore(
+            backup,
+            emptyList(),
+            ReadingRestoreContext(repository, emptyList(), seedChapterStates = true),
+        )
+        val record = imported.single()
+        assertTrue(record.completed)
+        assertEquals(0L, record.readDuration)
+        assertEquals(0L, record.readAt)
+        assertTrue(record.hidden)
+        assertFalse(record.hasReadActivity)
+        val insert = fixture.driver.statements.single { it.sql.startsWith("INSERT INTO chapters(") }
+        assertEquals(true, insert.values[4])
+        assertFalse(fixture.driver.statements.any { it.sql.startsWith("UPDATE history SET last_read =") })
+    }
+
+    @Test
+    fun `restore performs fresh unread enforcement after metadata inside the same transaction`() = runTest {
+        val fixture = Fixture()
+        val repository = mockk<tachiyomi.domain.history.repository.HistoryRepository>(relaxed = true)
+        coEvery { repository.withoutReadingStateChanges<Long>(any()) } coAnswers {
+            firstArg<suspend () -> Long>().invoke()
+        }
+        val backup = fixture.backup().apply { chapters.single().read = true }
+        // The snapshot deliberately lacks a later unread edit: the SQL guard must read live state.
+        fixture.restorer.restore(backup, emptyList(), ReadingRestoreContext(repository, emptyList()))
+        val updates = fixture.driver.statements.filter { it.sql.startsWith("UPDATE chapters") }
+        assertTrue(updates.first().sql.contains("WHERE _id"))
+        assertTrue(updates.last().sql.contains("WHERE manga_id ="))
+        assertEquals(listOf(fixture.manga.id), updates.last().values)
+        assertTrue(fixture.driver.events.indexOf("fresh-unread-guard") < fixture.driver.events.indexOf("commit"))
+    }
+
+    @Test
+    fun `old read chapter cannot overwrite newer explicit unread during restore`() = runTest {
+        val fixture = Fixture()
+        val repository = mockk<tachiyomi.domain.history.repository.HistoryRepository>(relaxed = true)
+        coEvery { repository.withoutReadingStateChanges<Long>(any()) } coAnswers {
+            firstArg<suspend () -> Long>().invoke()
+        }
+        val record = tachiyomi.domain.history.model.PermanentReadingRecord(
+            recordKey = "record", workKey = "work", sourceId = fixture.manga.source,
+            mangaUrl = fixture.manga.url, mangaTitle = fixture.manga.title,
+            chapterUrl = fixture.chapter.url, chapterName = fixture.chapter.name,
+            readAt = 0, readDuration = 500, hasReadActivity = true, completed = false,
+            stateVersion = 8, stateActor = "device", hidden = true,
+        )
+        val backup = fixture.backup().apply {
+            chapters.single().read = true
+            history = listOf(BackupHistory(fixture.chapter.url, 100, 100))
+        }
+        fixture.restorer.restore(
+            backup,
+            emptyList(),
+            ReadingRestoreContext(repository, listOf(record), seedChapterStates = true),
+        )
+        coVerify(exactly = 1) { repository.importPermanentRecords(any(), legacyMode = true) }
+        assertEquals(false, fixture.driver.chapterUpdate().argumentAfter("read ="))
+        assertEquals(0L, fixture.driver.chapterUpdate().argumentAfter("marked_read_at ="))
+        assertFalse(
+            fixture.driver.statements.any {
+                it.sql.startsWith("INSERT INTO history(") || it.sql.startsWith("UPDATE history SET last_read =")
+            },
+        )
+        coVerify(exactly = 1) { repository.withoutReadingStateChanges<Long>(any()) }
+    }
+
+    @Test
     fun `history merge keeps newer date and adds only missing duration`() = runTest {
         val fixture = Fixture()
         fixture.driver.historyRow = listOf(77L, 9002L, 12000L, 300L)
@@ -348,8 +433,8 @@ class BackupIntegrityAuditTest {
 
         fixture.restorer.restore(backup, emptyList())
 
-        val upsert = fixture.driver.statements.single { it.sql.startsWith("INSERT INTO history(") }
-        assertEquals(listOf(9002L, 12000L, 200L), upsert.values.take(3))
+        val upsert = fixture.driver.statements.single { it.sql.startsWith("UPDATE history SET last_read =") }
+        assertEquals(listOf(12000L, 200L, 9002L), upsert.values.take(3))
     }
 
     @Test
@@ -441,7 +526,9 @@ class BackupIntegrityAuditTest {
         var goodMarkError: Exception? = null
         private var transaction: Transacter.Transaction? = null
 
-        fun chapterUpdate() = statements.single { it.sql.startsWith("UPDATE chapters") }
+        fun chapterUpdate() = statements.single {
+            it.sql.startsWith("UPDATE chapters") && !it.sql.contains("WHERE manga_id =")
+        }
 
         override fun currentTransaction(): Transacter.Transaction? = transaction
 
@@ -467,6 +554,10 @@ class BackupIntegrityAuditTest {
             binders: (SqlPreparedStatement.() -> Unit)?,
         ): QueryResult<Long> {
             record(sql, parameters, binders)
+            if (sql.startsWith("UPDATE chapters") && sql.contains("WHERE manga_id =")) {
+                check(currentTransaction() != null) { "Fresh unread guard must share the restore transaction" }
+                events.add("fresh-unread-guard")
+            }
             if (failChapterUpdate && sql.startsWith("UPDATE chapters")) throw IOException("injected update failure")
             return QueryResult.Value(1L)
         }

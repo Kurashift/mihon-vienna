@@ -142,19 +142,23 @@ data object HistoryTab : Tab {
                         snackbarHostState.showSnackbarReplacing(context.stringResource(MR.strings.internal_error))
                     is HistoryViewModel.Event.HistoryCleared -> {
                         val cleared = e.entries
-                        if (cleared.isEmpty()) {
+                        if (cleared.entries.isEmpty()) {
                             snackbarHostState.showSnackbarReplacing(
                                 context.stringResource(MR.strings.clear_history_completed),
                             )
                         } else {
                             // The app-level pill, so switching tabs does not take the offer away.
-                            undoPill.show(context.stringResource(MR.strings.undo_history_cleared, cleared.size)) {
+                            undoPill.show(
+                                context.stringResource(MR.strings.undo_history_cleared, cleared.entries.size),
+                            ) {
                                 viewModel.restoreAllHistory(cleared)
                             }
                         }
                     }
                     is HistoryViewModel.Event.HistoryDeleted -> {
-                        undoPill.show(context.stringResource(MR.strings.history_deleted_count, e.updates.size)) {
+                        undoPill.show(
+                            context.stringResource(MR.strings.history_deleted_count, e.updates.entries.size),
+                        ) {
                             viewModel.restoreHistory(e.updates)
                         }
                     }

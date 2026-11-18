@@ -30,7 +30,7 @@ class BackupDecoder(
         onTrackingId: ((Int) -> Unit)? = null,
         checkCancelled: () -> Unit = {},
     ): Metadata {
-        return openReader(uri, if (onlySources) setOf(101) else null, checkCancelled).use { reader ->
+        return openReader(uri, if (onlySources) setOf(101, 108) else null, checkCancelled).use { reader ->
             var entryCount = 0
             while (orInvalid { reader.nextEntry() }) {
                 if (onlySources) {
@@ -41,7 +41,9 @@ class BackupDecoder(
                 }
                 entryCount++
             }
-            Metadata(entryCount, orInvalid { reader.readMetadata() })
+            val backup = orInvalid { reader.readMetadata() }
+            backup.readingLedger?.validate()
+            Metadata(entryCount, backup)
         }
     }
 

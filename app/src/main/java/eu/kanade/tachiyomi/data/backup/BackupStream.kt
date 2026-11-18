@@ -37,6 +37,7 @@ internal class BackupWriter(
 
     fun writeMetadata(metadata: Backup) {
         require(metadata.backupManga.isEmpty())
+        metadata.readingLedger?.validate()
         checkCancelled()
         val bytes = parser.encodeToByteArray(Backup.serializer(), metadata)
         checkCancelled()
@@ -67,7 +68,7 @@ internal interface BackupEntryReader : Closeable {
 internal class BackupReader(
     source: BufferedSource,
     private val parser: ProtoBuf,
-    private val metadataFields: Set<Int> = setOf(2, 101, 104, 105, 106, 107),
+    private val metadataFields: Set<Int> = setOf(2, 101, 104, 105, 106, 107, 108),
     private val checkCancelled: () -> Unit = {},
 ) : BackupEntryReader {
     private val source = object : ForwardingSource(source) {
@@ -78,6 +79,7 @@ internal class BackupReader(
     }.buffer()
     private val metadata = Buffer()
     private var entryLength = NO_ENTRY
+    private var readingLedgerSeen = false
 
     override fun nextEntry(): Boolean {
         check(entryLength == NO_ENTRY)
@@ -92,6 +94,10 @@ internal class BackupReader(
                 return true
             }
             if (field in metadataFields) {
+                if (field == 108) {
+                    if (readingLedgerSeen) throw IOException("Duplicate reading statistics envelope")
+                    readingLedgerSeen = true
+                }
                 if (tag and 7 != 2L) throw IOException("Invalid metadata wire type")
                 val length = source.readBackupLength()
                 metadata.writeBackupVarint(tag)

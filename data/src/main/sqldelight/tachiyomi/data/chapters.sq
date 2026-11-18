@@ -314,8 +314,10 @@ SELECT
 FROM mangas
 JOIN chapters
 ON mangas._id = chapters.manga_id
-LEFT JOIN history
-ON chapters._id = history.chapter_id
+LEFT JOIN reading_chapter_link
+ON chapters._id = reading_chapter_link.chapter_id
+JOIN history
+ON reading_chapter_link.record_key = history.record_key
 WHERE mangas.source = :sourceId
 GROUP BY mangas._id;
 
@@ -352,3 +354,6 @@ JOIN mangas
 ON mangas._id = chapters.manga_id
 WHERE mangas.source = :sourceId
 AND chapters.read = 1;
+
+clearProgressByChapterIds:
+UPDATE chapters SET read = 0, last_page_read = 0, marked_read_at = 0 WHERE _id IN :chapterIds;

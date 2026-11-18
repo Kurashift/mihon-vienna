@@ -8,7 +8,6 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.domain.chapter.model.Chapter
@@ -62,7 +61,7 @@ class SetReadStatusRestoreTest {
     }
 
     @Test
-    fun `marking unread clears progress only for chapters that had some`() = runBlocking {
+    fun `marking unread also retracts retained decisions on chapters with zero current progress`() = runBlocking {
         val halfRead = chapter(id = 1, read = false, lastPageRead = 3, totalPages = 20)
         val read = chapter(id = 2, read = true, lastPageRead = 20, totalPages = 20)
         val untouched = chapter(id = 3, read = false)
@@ -73,7 +72,7 @@ class SetReadStatusRestoreTest {
         coVerify(exactly = 1) {
             chapterRepository.updateAll(
                 match { updates ->
-                    updates.map { it.id } == listOf(1L, 2L) &&
+                    updates.map { it.id } == listOf(1L, 2L, 3L) &&
                         updates.all { it.read == false && it.lastPageRead == 0L && it.markedReadAt == 0L }
                 },
             )
@@ -141,8 +140,7 @@ class SetReadStatusRestoreTest {
         )
 
         assertEquals(listOf(1L, 2L), chapters.readStateCandidates(read = true).map { it.id })
-        assertEquals(listOf(2L, 3L), chapters.readStateCandidates(read = false).map { it.id })
-        assertTrue(chapters.toReadStates().all { it.chapterId in listOf(1L, 2L, 3L) })
+        assertEquals(listOf(1L, 2L, 3L), chapters.readStateCandidates(read = false).map { it.id })
     }
 
     private fun chapter(

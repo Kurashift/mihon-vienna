@@ -133,6 +133,11 @@ class DownloadCache(
             .launchIn(scope)
     }
 
+    /** Wait for the persisted index before publishing its first count. Does not scan storage. */
+    suspend fun awaitReady() {
+        initJob.join()
+    }
+
     /**
      * Returns true if the chapter is downloaded.
      *

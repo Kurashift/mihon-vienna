@@ -35,8 +35,7 @@ import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetHistory
-import tachiyomi.domain.history.model.History
-import tachiyomi.domain.history.model.HistoryUpdate
+import tachiyomi.domain.history.model.HistoryVisibilityUndo
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.history.model.withLocalChapterDisplayMode
 import tachiyomi.domain.history.repository.HistoryRepository
@@ -307,41 +306,27 @@ class HistoryViewModel(
         deleteHistoryInternal(setOf(historyId))
     }
 
-    // 历史的"删除"只是 last_read = 0，行本身和 time_read 都留在原处；撤销走 upsertHistory。
-    // upsert 对时长是累加语义（time_read = time_read + 参数），载荷里必须传 0 才不会把
-    // 阅读时长翻倍，只把删除前的 readAt 写回去，行就原样恢复。
     private fun deleteHistoryInternal(historyIds: Set<Long>) {
         viewModelScope.launchIO {
-            val undoUpdates = state.value.list.orEmpty()
-                .filterIsInstance<HistoryUiModel.Item>()
-                .filter { it.item.id in historyIds }
-                .mapNotNull { entry ->
-                    entry.item.readAt?.let { readAt -> HistoryUpdate(entry.item.chapterId, readAt, 0L) }
-                }
-            historyRepository.resetHistoryByIds(historyIds.toList())
-            _events.send(Event.HistoryDeleted(undoUpdates))
+            val undo = historyRepository.hideHistory(historyIds)
+            if (undo.entries.isNotEmpty()) _events.send(Event.HistoryDeleted(undo))
         }
     }
 
     fun removeAllHistory() {
         viewModelScope.launchIO {
-            // Taken before the delete: the table is emptied outright, and the list on screen is
-            // filtered by the search field, so it cannot stand in for the snapshot.
-            val snapshot = historyRepository.getAllHistory()
-            val result = historyRepository.deleteAllHistory()
-            if (!result) return@launchIO
-            _events.send(Event.HistoryCleared(snapshot))
+            val undo = historyRepository.hideHistory()
+            if (undo.entries.isNotEmpty()) _events.send(Event.HistoryCleared(undo))
         }
     }
 
-    /** Runs from the app-level undo pill, which outlives this screen. */
-    suspend fun restoreAllHistory(entries: List<History>) = withIOContext {
-        historyRepository.restoreHistory(entries)
+    /** The pill outlives this screen. Restore visibility only if no newer visit replaced it. */
+    suspend fun restoreAllHistory(entries: HistoryVisibilityUndo) = withIOContext {
+        historyRepository.undoHistoryVisibility(entries)
     }
 
-    /** Runs from the app-level undo pill, which outlives this screen. */
-    suspend fun restoreHistory(updates: List<HistoryUpdate>) = withIOContext {
-        updates.forEach { historyRepository.upsertHistory(it) }
+    suspend fun restoreHistory(updates: HistoryVisibilityUndo) = withIOContext {
+        historyRepository.undoHistoryVisibility(updates)
     }
 
     fun updateSearchQuery(query: String?) {
@@ -374,7 +359,7 @@ class HistoryViewModel(
     sealed interface Event {
         data class OpenChapter(val chapter: Chapter?) : Event
         data object InternalError : Event
-        data class HistoryCleared(val entries: List<History>) : Event
-        data class HistoryDeleted(val updates: List<HistoryUpdate>) : Event
+        data class HistoryCleared(val entries: HistoryVisibilityUndo) : Event
+        data class HistoryDeleted(val updates: HistoryVisibilityUndo) : Event
     }
 }

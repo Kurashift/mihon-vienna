@@ -26,10 +26,11 @@ fun RowScope.StatsOverviewItem(
 ) {
     BaseStatsItem(
         title = title,
-        titleStyle = MaterialTheme.typography.titleLarge,
+        titleStyle = MaterialTheme.typography.titleMedium,
         subtitle = subtitle,
-        subtitleStyle = MaterialTheme.typography.bodyMedium,
+        subtitleStyle = MaterialTheme.typography.bodySmall,
         icon = icon,
+        titleMaxLines = 2,
     )
 }
 
@@ -53,6 +54,7 @@ private fun RowScope.BaseStatsItem(
     subtitle: String,
     subtitleStyle: TextStyle,
     icon: ImageVector? = null,
+    titleMaxLines: Int = 1,
 ) {
     Column(
         modifier = Modifier
@@ -66,7 +68,7 @@ private fun RowScope.BaseStatsItem(
             style = titleStyle
                 .copy(fontWeight = FontWeight.Bold),
             textAlign = TextAlign.Center,
-            maxLines = 1,
+            maxLines = titleMaxLines,
         )
         Text(
             text = subtitle,

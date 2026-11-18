@@ -73,7 +73,9 @@ class BackupStreamTest {
 
     @Test
     fun `new stream is accepted by a frozen older reader ignoring Vienna additions`() {
-        val backup = backupFixture()
+        val backup = backupFixture().copy(
+            readingLedger = eu.kanade.tachiyomi.data.backup.models.BackupReadingLedger(1),
+        )
         val buffer = Buffer()
         val writer = BackupWriter(buffer, parser)
         backup.backupManga.forEach(writer::writeEntry)
@@ -82,6 +84,18 @@ class BackupStreamTest {
         assertEquals(backup.backupManga.map { it.url }, legacy.manga.map { it.url })
         assertEquals(22L, legacy.manga[0].chapters.single().lastPageRead)
         assertEquals(2, legacy.manga[0].tracking.single().syncId)
+    }
+
+    @Test
+    fun `duplicate reading statistics envelopes are rejected instead of merging ambiguously`() {
+        val metadata = Backup(
+            emptyList(),
+            readingLedger = eu.kanade.tachiyomi.data.backup.models.BackupReadingLedger(1),
+        )
+        val input = Buffer().write(encodeBackup(metadata)).write(encodeBackup(metadata))
+        BackupReader(input, parser).use { reader ->
+            assertThrows<IOException> { reader.readMetadata() }
+        }
     }
 
     @Test
