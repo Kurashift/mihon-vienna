@@ -135,7 +135,7 @@ fun BrowseSourceToolbar(
                                 val actions = buildList {
                                     if (isLocalSource) {
                                         onRefreshChapters?.let {
-                                            add(stringResource(MR.strings.action_refresh_all_chapters_short) to it)
+                                            add(stringResource(MR.strings.action_refresh_all_chapters) to it)
                                         }
                                         onImportLocalChapters?.let {
                                             add(stringResource(MR.strings.action_import_local_chapters_short) to it)

@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.local.withLocalChapterMutationLock
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.SManga
+import kotlinx.coroutines.CancellationException
 import logcat.LogPriority
 import mihon.domain.source.models.RemoteMangaUpdate
 import tachiyomi.core.common.util.lang.withIOContext
@@ -20,6 +21,8 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.source.local.LocalChapterSyncScan
+import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.isLocal
 import kotlin.time.Clock
 
@@ -56,6 +59,7 @@ class UpdateMangaFromRemote(
         fetchChapters: Boolean = false,
         manualFetch: Boolean = false,
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
+        localScan: LocalChapterSyncScan? = null,
     ): Result<RemoteMangaUpdate> {
         return try {
             val performUpdate: suspend () -> RemoteMangaUpdate = {
@@ -66,6 +70,7 @@ class UpdateMangaFromRemote(
                     fetchChapters = fetchChapters,
                     manualFetch = manualFetch,
                     fetchWindow = fetchWindow,
+                    localScan = localScan,
                 )
             }
             val update = if (source.isLocal()) {
@@ -75,6 +80,8 @@ class UpdateMangaFromRemote(
                 performUpdate()
             }
             Result.success(update)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
             Result.failure(e)
@@ -88,16 +95,18 @@ class UpdateMangaFromRemote(
         fetchChapters: Boolean,
         manualFetch: Boolean,
         fetchWindow: Pair<Long, Long>,
+        localScan: LocalChapterSyncScan?,
     ): RemoteMangaUpdate {
         val chapters = chapterRepository.getChapterByMangaId(manga.id)
             .sortedBy { it.sourceOrder }
         val update = withIOContext {
-            source.getMangaUpdate(
-                manga = manga.toSManga(),
-                chapters = chapters.map(Chapter::toSChapter),
-                fetchDetails = fetchDetails,
-                fetchChapters = fetchChapters,
-            )
+            val sourceManga = manga.toSManga()
+            val sourceChapters = chapters.map(Chapter::toSChapter)
+            if (localScan != null) {
+                (source as LocalSource).getScannedMangaUpdate(sourceManga, sourceChapters, localScan)
+            } else {
+                source.getMangaUpdate(sourceManga, sourceChapters, fetchDetails, fetchChapters)
+            }
         }
         awaitUpdateFromSource(manga, update.manga, manualFetch)
         val newChapters = syncChaptersWithSource.await(
@@ -129,7 +138,7 @@ class UpdateMangaFromRemote(
             // would not reach the screen until some unrelated control rebuilt it. The date is what
             // the import-date ordering reads, so the listing has to be derived again for the work
             // to actually move.
-            (source as? tachiyomi.source.local.LocalSource)?.invalidateListing()
+            if (localScan == null) (source as? LocalSource)?.invalidateListing()
         }
         // A local cleanup can drop the row while this update is running; the source work already
         // succeeded, so report it against the entry we started from instead of failing it.

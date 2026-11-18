@@ -53,6 +53,7 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipAnchorPosition
@@ -80,6 +81,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -120,7 +123,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.audio.AudioBrowseScreen
 import eu.kanade.tachiyomi.ui.browse.OnlineSourceCenterScreen
 import eu.kanade.tachiyomi.ui.browse.extension.details.SourcePreferencesScreen
-import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.ChapterRefreshProgress
+import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.ChapterRefreshResult
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.Listing
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.MarkFilter
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceViewModel.ReadingFilter
@@ -222,9 +225,10 @@ data class BrowseSourceScreen(
         val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
         val coverUpdates by viewModel.mangaCoverUpdateStore.covers.collectAsStateWithLifecycle()
         val trailingSlotCount by viewModel.trailingSlotCount.collectAsStateWithLifecycle()
-        val refreshProgress by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
+        val refreshing by viewModel.isRefreshingChapters.collectAsStateWithLifecycle()
         val sortUi by viewModel.sortUiState.collectAsStateWithLifecycle()
-        val localSourceChanged by viewModel.localSourceChanged.collectAsStateWithLifecycle()
+        val localStorageUnavailable by viewModel.localStorageUnavailable.collectAsStateWithLifecycle()
+        val localListing by viewModel.localListingSnapshot.collectAsStateWithLifecycle()
         val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
             .collectAsStateWithLifecycle(initialValue = null)
         val activeTransferStatus = transferStatus
@@ -243,6 +247,13 @@ data class BrowseSourceScreen(
         }
 
         val navigator = LocalNavigator.currentOrThrow
+        val onRefreshChapters = viewModel::refreshAllChapters.takeIf {
+            viewModel.source is LocalSource && activeTransferStatus == null && !refreshing
+        }
+        val importLocalChapters: () -> Unit = { navigator.push(LocalImportScreen()) }
+        val onImportLocalChapters = importLocalChapters.takeIf {
+            viewModel.source is LocalSource && activeTransferStatus == null && !refreshing
+        }
         val navigateUpAction: () -> Unit = {
             if (state.toolbarQuery != null) {
                 viewModel.exitSearch()
@@ -418,12 +429,8 @@ data class BrowseSourceScreen(
                         } else {
                             null
                         },
-                        onRefreshChapters = viewModel::refreshAllChapters.takeIf {
-                            viewModel.source is LocalSource && activeTransferStatus == null
-                        },
-                        onImportLocalChapters = {
-                            if (viewModel.source is LocalSource) navigator.push(LocalImportScreen())
-                        }.takeIf { viewModel.source is LocalSource && activeTransferStatus == null },
+                        onRefreshChapters = onRefreshChapters,
+                        onImportLocalChapters = onImportLocalChapters,
                         onChapterTitleTranslations = { showChapterTitleTranslations = true }
                             .takeIf { viewModel.source is LocalSource },
                         onClearHistoryClick = { viewModel.setDialog(BrowseSourceViewModel.Dialog.ClearHistory) },
@@ -640,65 +647,7 @@ data class BrowseSourceScreen(
                         }
                     }
 
-                    val currentRefreshProgress = refreshProgress
-                    if (currentRefreshProgress != null) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column {
-                                Text(
-                                    text = when (currentRefreshProgress) {
-                                        is ChapterRefreshProgress.Checking -> {
-                                            if (currentRefreshProgress.total > 0) {
-                                                stringResource(
-                                                    MR.strings.local_source_refresh_checking_progress,
-                                                    currentRefreshProgress.completed,
-                                                    currentRefreshProgress.total,
-                                                )
-                                            } else {
-                                                stringResource(MR.strings.local_source_refresh_checking)
-                                            }
-                                        }
-                                        is ChapterRefreshProgress.Updating -> {
-                                            stringResource(
-                                                MR.strings.refresh_all_chapters_in_progress,
-                                                currentRefreshProgress.completed,
-                                                currentRefreshProgress.total,
-                                            )
-                                        }
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                )
-                                when (currentRefreshProgress) {
-                                    is ChapterRefreshProgress.Checking -> LinearProgressIndicator(
-                                        progress = {
-                                            if (currentRefreshProgress.total == 0) {
-                                                0f
-                                            } else {
-                                                currentRefreshProgress.completed.toFloat() /
-                                                    currentRefreshProgress.total
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    is ChapterRefreshProgress.Updating -> LinearProgressIndicator(
-                                        progress = {
-                                            if (currentRefreshProgress.total == 0) {
-                                                0f
-                                            } else {
-                                                currentRefreshProgress.completed.toFloat() /
-                                                    currentRefreshProgress.total
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-                        }
-                    } else if (activeTransferStatus != null) {
+                    if (activeTransferStatus != null) {
                         val transferProgress = when {
                             activeTransferStatus.totalBytes > 0L -> {
                                 activeTransferStatus.copiedBytes.toFloat() / activeTransferStatus.totalBytes
@@ -742,23 +691,20 @@ data class BrowseSourceScreen(
                                 }
                             }
                         }
-                    } else if (localSourceChanged) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.tertiaryContainer,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = viewModel::refreshAllChapters),
-                        ) {
-                            Text(
-                                text = stringResource(MR.strings.local_source_changed),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    }
+
+                    Box(Modifier.fillMaxWidth().height(2.dp), contentAlignment = Alignment.BottomCenter) {
+                        HorizontalDivider()
+                        if (refreshing && activeTransferStatus == null) {
+                            val description = stringResource(MR.strings.local_source_refresh_checking)
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .semantics { stateDescription = description },
                             )
                         }
                     }
-
-                    HorizontalDivider()
                 }
             },
             // The notice shares the snackbar slot so it lands at the bottom edge, clear of the
@@ -869,7 +815,13 @@ data class BrowseSourceScreen(
                     // and shelved, so graying out the works already on a shelf just dims most of the
                     // grid for no gain. The shelf badge still tells them apart.
                     dimInLibraryCovers = viewModel.source !is LocalSource,
-                    onRefreshChapters = viewModel::refreshAllChapters,
+                    onRefreshChapters = onRefreshChapters,
+                    onImportLocalChapters = onImportLocalChapters,
+                    localStorageUnavailable = localStorageUnavailable,
+                    localConfirmedEmpty = localListing.isConfirmed && localListing.allUrls.isEmpty(),
+                    localViewFiltered = state.listing != Listing.Popular ||
+                        readingFilter != ReadingFilter.ALL || markFilter != MarkFilter.NONE ||
+                        viewModel.listingHidesFavorites,
                     scrollToTopRequest = scrollToTopRequest,
                 )
             }
@@ -1044,37 +996,21 @@ data class BrowseSourceScreen(
         }
 
         LaunchedEffect(viewModel) {
-            viewModel.chapterRefreshEvents.receiveAsFlow().collect { result ->
-                // The local index is already rebuilt at this point. Refresh the currently
-                // collected paging generation so deleted cards disappear without navigating
-                // away and back; this does not trigger another filesystem scan.
-                if (!result.storageUnavailable) {
-                    currentMangaList.refresh()
+            viewModel.chapterRefreshEvents.collectLatest { result ->
+                val message = when (result) {
+                    ChapterRefreshResult.UPDATED, ChapterRefreshResult.BUSY -> return@collectLatest
+                    ChapterRefreshResult.STORAGE_UNAVAILABLE -> MR.strings.local_source_refresh_unavailable
+                    ChapterRefreshResult.NO_CHANGES -> MR.strings.local_source_refresh_no_changes
+                    ChapterRefreshResult.PARTIAL -> MR.strings.local_source_refresh_partial
                 }
-                val message = when {
-                    result.storageUnavailable -> {
-                        context.stringResource(MR.strings.local_source_refresh_unavailable)
-                    }
-                    result.changedManga == 0 -> {
-                        context.stringResource(MR.strings.local_source_refresh_no_changes)
-                    }
-                    result.newChapters == 0 -> {
-                        context.stringResource(
-                            MR.strings.local_source_refresh_completed,
-                            result.changedManga,
-                        )
-                    }
-                    else -> {
-                        context.stringResource(
-                            MR.strings.local_source_refresh_completed_with_new,
-                            result.changedManga,
-                            result.newChapters,
-                        )
-                    }
+                val retry = result == ChapterRefreshResult.PARTIAL
+                if (snackbarHostState.showSnackbarReplacing(
+                        message = context.stringResource(message),
+                        actionLabel = if (retry) context.stringResource(MR.strings.action_retry) else null,
+                    ) == SnackbarResult.ActionPerformed
+                ) {
+                    viewModel.refreshAllChapters()
                 }
-                snackbarHostState.showSnackbarReplacing(
-                    message,
-                )
             }
         }
 

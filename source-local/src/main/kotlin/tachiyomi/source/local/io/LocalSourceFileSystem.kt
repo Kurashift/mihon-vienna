@@ -47,15 +47,18 @@ class LocalSourceFileSystem(
         return storageManager.createLocalSourceDirectoryEntryStateLookup()
     }
 
+    fun createChapterEntryStateLookup(directory: UniFile): (String) -> LocalSourceDirectoryEntryState =
+        storageManager.createLocalSourceChildStateLookup(directory)
+
     fun getFilesInBaseDirectory(): List<UniFile> {
         return getBaseDirectorySnapshot().files
     }
 
     /** Keeps a failed directory read distinct from a valid, empty local library. */
-    fun getBaseDirectorySnapshot(): DirectorySnapshot {
+    fun getBaseDirectorySnapshot(prefetchChildren: Boolean = true): DirectorySnapshot {
         val directory = getBaseDirectory()
             ?: return DirectorySnapshot(null, emptyList(), isAccessible = false)
-        return readDirectorySnapshot(directory, prefetchDirectChildren = true)
+        return readDirectorySnapshot(directory, prefetchDirectChildren = prefetchChildren)
     }
 
     fun getMangaDirectory(name: String): UniFile? {
@@ -75,8 +78,11 @@ class LocalSourceFileSystem(
     }
 
     fun getFilesInDirectory(directory: UniFile): List<UniFile> {
-        return readDirectorySnapshot(directory, usePrefetchedDirectChildren = true).files
+        return getDirectorySnapshot(directory).files
     }
+
+    fun getDirectorySnapshot(directory: UniFile, fresh: Boolean = false): DirectorySnapshot =
+        readDirectorySnapshot(directory, usePrefetchedDirectChildren = !fresh)
 
     /** Reads one directory directly instead of reusing the full-library prefetch tree. */
     fun getFreshFilesInDirectory(directory: UniFile): List<UniFile> {

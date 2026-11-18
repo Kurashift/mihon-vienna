@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.SnackbarDuration
@@ -82,6 +83,10 @@ fun BrowseSourceContent(
     selectedIds: Set<Long> = emptySet(),
     dimInLibraryCovers: Boolean = true,
     onRefreshChapters: (() -> Unit)? = null,
+    onImportLocalChapters: (() -> Unit)? = null,
+    localStorageUnavailable: Boolean = false,
+    localConfirmedEmpty: Boolean = false,
+    localViewFiltered: Boolean = false,
     onLocateMangaHandled: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
     onRandomManga: (() -> Unit)? = null,
@@ -149,23 +154,33 @@ fun BrowseSourceContent(
     if (mangaList.itemCount == 0) {
         EmptyScreen(
             modifier = Modifier.padding(contentPadding),
-            message = when (errorState) {
-                is LoadState.Error -> getErrorMessage(errorState)
+            message = when {
+                errorState is LoadState.Error -> getErrorMessage(errorState)
+                source is LocalSource && localStorageUnavailable && !localViewFiltered ->
+                    stringResource(MR.strings.local_source_refresh_unavailable)
+                source is LocalSource && localViewFiltered -> stringResource(MR.strings.local_source_no_match)
+                source is LocalSource && localConfirmedEmpty -> stringResource(MR.strings.local_source_empty)
                 else -> stringResource(MR.strings.no_results_found)
             },
             actions = if (source is LocalSource) {
-                listOf(
-                    EmptyScreenAction(
-                        stringRes = MR.strings.action_refresh_all_chapters,
-                        icon = Icons.Outlined.Refresh,
-                        onClick = onRefreshChapters ?: {},
-                    ),
-                    EmptyScreenAction(
-                        stringRes = MR.strings.local_source_help_guide,
-                        icon = Icons.AutoMirrored.Outlined.HelpOutline,
-                        onClick = onLocalSourceHelpClick,
-                    ),
-                )
+                when {
+                    localViewFiltered -> emptyList()
+                    localStorageUnavailable || errorState != null -> listOfNotNull(
+                        onRefreshChapters?.let {
+                            EmptyScreenAction(MR.strings.action_retry, Icons.Outlined.Refresh, it)
+                        },
+                        EmptyScreenAction(
+                            MR.strings.local_source_help_guide,
+                            Icons.AutoMirrored.Outlined.HelpOutline,
+                            onLocalSourceHelpClick,
+                        ),
+                    )
+                    else -> listOfNotNull(
+                        onImportLocalChapters?.let {
+                            EmptyScreenAction(MR.strings.action_import_local_chapters, Icons.Outlined.FolderOpen, it)
+                        },
+                    )
+                }
             } else {
                 listOf(
                     EmptyScreenAction(

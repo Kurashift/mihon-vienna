@@ -8,15 +8,20 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
@@ -175,6 +180,62 @@ class LocalSourceChapterEntryTest {
         )
 
         assertEquals(listOf("Work A/01篇"), update.chapters.map { it.url })
+    }
+
+    @Test
+    fun `an unavailable child read remains unknown when the provider cannot confirm absence`() = runBlocking {
+        val work = mockk<UniFile>(relaxed = true)
+        every { fileSystem.getDirectorySnapshot(work, any()) } returns
+            LocalSourceFileSystem.DirectorySnapshot(work, emptyList(), isAccessible = false)
+        every { fileSystem.createChapterEntryStateLookup(work) } returns { LocalSourceDirectoryEntryState.UNKNOWN }
+
+        assertNull(source.observeChapterFolder(work, 5L, setOf("Story.cbz"), previouslyPopulated = true, fresh = false))
+        verify(exactly = 3) { fileSystem.getDirectorySnapshot(work, fresh = true) }
+    }
+
+    @Test
+    fun `a partial child list is retried when an omitted chapter still exists`() = runBlocking {
+        val work = mockk<UniFile>(relaxed = true)
+        val first = chapterFile("First.cbz")
+        val second = chapterFile("Second.cbz")
+        every { fileSystem.getDirectorySnapshot(work, fresh = false) } returns
+            LocalSourceFileSystem.DirectorySnapshot(work, listOf(first), isAccessible = true)
+        every { fileSystem.getDirectorySnapshot(work, fresh = true) } returns
+            LocalSourceFileSystem.DirectorySnapshot(work, listOf(first, second), isAccessible = true)
+        every { fileSystem.createChapterEntryStateLookup(work) } returns { LocalSourceDirectoryEntryState.EXISTS }
+
+        val result = source.observeChapterFolder(work, 5L, setOf("First.cbz", "Second.cbz"), true, fresh = false)
+        assertEquals(setOf("First.cbz", "Second.cbz"), result?.state?.chapterFileNames)
+    }
+
+    @Test
+    fun `a confirmed disappearance of the last archive produces an empty work`() = runBlocking {
+        val work = mockk<UniFile>(relaxed = true)
+        every { fileSystem.getDirectorySnapshot(work, any()) } returns
+            LocalSourceFileSystem.DirectorySnapshot(work, emptyList(), isAccessible = true)
+        every { fileSystem.createChapterEntryStateLookup(work) } returns { LocalSourceDirectoryEntryState.MISSING }
+
+        val result = source.observeChapterFolder(work, 5L, setOf("Story.cbz"), true, fresh = false)
+        assertEquals(emptySet<String>(), result?.state?.chapterFileNames)
+        assertTrue(result?.snapshot?.isConfirmedEmpty == true)
+    }
+
+    @Test
+    fun `manual observation detects a same-name replacement without opening the archive`() = runBlocking {
+        val work = mockk<UniFile>(relaxed = true)
+        val chapter = chapterFile("Story.cbz")
+        every { chapter.length() } returnsMany listOf(100L, 200L)
+        every { fileSystem.getDirectorySnapshot(work, any()) } returns
+            LocalSourceFileSystem.DirectorySnapshot(work, listOf(chapter), isAccessible = true)
+
+        val before = source.observeChapterFolder(work, 5L, setOf("Story.cbz"), true, fresh = false)
+        val after = source.observeChapterFolder(work, 5L, setOf("Story.cbz"), true, fresh = false)
+
+        assertNotNull(before)
+        assertNotNull(after)
+        assertEquals(before?.state?.chapterFileNames, after?.state?.chapterFileNames)
+        assertNotEquals(before?.state?.fingerprint, after?.state?.fingerprint)
+        verify(exactly = 0) { context.contentResolver.openFileDescriptor(any(), any()) }
     }
 
     private fun pageFile(name: String, lastModified: Long): UniFile = mockk(relaxed = true) {

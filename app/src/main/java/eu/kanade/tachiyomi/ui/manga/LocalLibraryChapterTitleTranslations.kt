@@ -201,7 +201,7 @@ internal class LocalLibraryChapterTitleTranslations(
 
     private suspend fun confirmedScan(source: LocalSource): LocalChapterSyncScan {
         val scan = source.scanChapterChanges()
-        check(scan.isReliable) { "Local library storage is unavailable" }
+        check(scan.isReliable && scan.unavailableMangaUrls.isEmpty()) { "Local library storage is unavailable" }
         return scan
     }
 
