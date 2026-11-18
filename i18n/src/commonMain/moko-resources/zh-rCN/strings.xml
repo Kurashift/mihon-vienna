@@ -1290,7 +1290,6 @@
     <string name="local_delete_chapter_title">删除篇目本地文件？</string>
     <string name="local_delete_empty_folders">同时删除空文件夹</string>
     <string name="local_delete_folders_kept">未删除以下文件夹：\n%1$s</string>
-    <string name="local_empty_work">0 篇</string>
     <string name="local_delete_marked_chapters_title">删除已标记的 %1$d 个篇目？</string>
     <string name="local_delete_unmarked_safe">未标记的篇目不会受影响。</string>
     <string name="local_delete_group_remains">该漫画下仍有非本地条目，删除后仍会留在清单中。</string>

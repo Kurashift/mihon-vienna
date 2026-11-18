@@ -103,7 +103,7 @@ internal fun ProgressBadge(
     showEmpty: Boolean = false,
 ) {
     if (totalChapters > 0 || showEmpty) {
-        val text = if (showEmpty) stringResource(MR.strings.local_empty_work) else "$finishedCount/$totalChapters"
+        val text = "$finishedCount/$totalChapters"
         if (filled) {
             // Corner badge on covers: dark rectangular chip, flush with the edge.
             Text(
@@ -171,6 +171,7 @@ private fun BadgePreview() {
             DownloadsBadge(count = 10)
             UnreadBadge(count = 10)
             ProgressBadge(finishedCount = 3, totalChapters = 12)
+            ProgressBadge(finishedCount = 0, totalChapters = 0, showEmpty = true)
             ReadStatusBadge(hasFinished = true)
             LanguageBadge(isLocal = true, sourceLanguage = "EN")
             LanguageBadge(isLocal = false, sourceLanguage = "EN")
