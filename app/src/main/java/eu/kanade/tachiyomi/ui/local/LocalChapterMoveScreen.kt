@@ -39,7 +39,6 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.source.local.LocalSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -61,13 +60,10 @@ data class LocalChapterMoveScreen(
         val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
             .collectAsStateWithLifecycle(initialValue = null)
         LaunchedEffect(Unit) {
-            val localIds = mangaRepository.getLocalMangaIds()
-            val nonEmptyIds = mangaRepository.getMangaProgressBySource(LocalSource.ID)
-                .mapTo(hashSetOf()) { it.mangaId }
-            mangas = localIds.filter { it in nonEmptyIds }.mapNotNull {
-                runCatching { mangaRepository.getMangaById(it) }.getOrNull()
-            }.filter { it.id != sourceMangaId }
-                .sortedBy { it.title.lowercase() }
+            val localMangas = mangaRepository.getLocalMangaIds().mapNotNull {
+                mangaRepository.getMangaByIdOrNull(it)
+            }
+            mangas = mangaRepository.getLocalCollectionTargets(localMangas, excludedId = sourceMangaId)
             chapters = chapterIds.mapNotNull { chapterRepository.getChapterById(it) }
         }
         fun enqueueMove() {

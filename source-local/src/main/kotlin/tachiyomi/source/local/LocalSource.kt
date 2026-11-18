@@ -215,6 +215,15 @@ class LocalSource(
         .distinctUntilChanged()
         .flowOn(Dispatchers.IO)
 
+    /** Directory membership only; selecting a transfer target doesn't need chapter metadata. */
+    suspend fun getCachedCollectionUrls(): Set<String>? = withIOContext {
+        val baseUri = fileSystem.getCachedBaseDirectoryIdentityUri() ?: return@withIOContext null
+        val urls = cachedListing?.takeIf { cachedListingBaseUri == baseUri }
+            ?.mapTo(hashSetOf(), LocalMangaEntry::url)
+            ?: loadListingIndex(baseUri)?.entries?.keys
+        urls.takeIf { fileSystem.getCachedBaseDirectoryIdentityUri() == baseUri }
+    }
+
     suspend fun getCachedLibrarySnapshot(): LocalLibrarySnapshot = withIOContext {
         val baseUri = fileSystem.getCachedBaseDirectoryIdentityUri()
             ?: return@withIOContext LocalLibrarySnapshot(null, null, emptyMap())
