@@ -531,12 +531,12 @@
     <string name="pref_incognito_mode">无痕模式</string>
     <string name="history_incognito_note">无痕模式已开启，不记录阅读历史和进度</string>
     <string name="pref_clear_history">清空阅读历史</string>
-    <string name="action_clear_reading_history">清空观看进度</string>
-    <string name="action_clear_current_list_history">清空当前列表观看进度</string>
-    <string name="clear_reading_history_completed">观看进度已清空</string>
-    <string name="clear_manga_history_confirmation">重置该作品的当前观看进度，并移出最近阅读列表。累计阅读统计与时长会保留。</string>
-    <string name="clear_source_history_confirmation">重置该图源所有作品的当前观看进度，并移出最近阅读列表。累计阅读统计与时长会保留。</string>
-    <string name="clear_current_list_history_confirmation">重置当前列表内作品的观看进度，并移出最近阅读列表。累计阅读统计与时长会保留。</string>
+    <string name="action_clear_reading_history">清空阅读进度</string>
+    <string name="action_clear_current_list_history">清空阅读进度</string>
+    <string name="clear_reading_history_completed">阅读进度已清空</string>
+    <string name="clear_manga_history_confirmation">重置该作品的当前阅读进度，并移出最近阅读列表。累计阅读统计与时长会保留。</string>
+    <string name="clear_source_history_confirmation">重置该图源所有作品的当前阅读进度，并移出最近阅读列表。累计阅读统计与时长会保留。</string>
+    <string name="clear_current_list_history_confirmation">重置当前列表内作品的阅读进度，并移出最近阅读列表。累计阅读统计与时长会保留。</string>
     <string name="clear_history_completed">阅读历史列表已清空</string>
     <string name="spen_next_page">下一页</string>
     <string name="spen_previous_page">上一页</string>
@@ -747,7 +747,7 @@
     <string name="remove_manga">即将从书架中删除「%s」</string>
     <string name="popular">热门</string>
     <string name="missing_storage_permission">未授予存储权限</string>
-    <string name="local_source_refresh_unavailable">无法读取本库文件夹，请检查访问权限</string>
+    <string name="local_source_refresh_unavailable">读不到本地库文件夹</string>
     <string name="skipped_reason_not_always_update">已跳过，因为作品无需更新</string>
     <string name="action_search_hint">搜索…</string>
     <string name="crash_screen_title">哦豁！</string>
@@ -922,8 +922,7 @@
     <string name="manga_interval_expected_update_soon">即将更新</string>
     <string name="ext_revoke_trust">撤销已信任的未知插件</string>
     <string name="action_open_repo">打开插件仓库</string>
-    <string name="pref_webtoon_disable_zoom_out">不允许缩得比默认更小</string>
-    <string name="pref_webtoon_disable_zoom_out_summary">放大后的图片仍可缩回默认大小。</string>
+    <string name="pref_webtoon_disable_zoom_out">禁用缩小</string>
     <string name="action_add_anyway">依然添加</string>
     <string name="pref_display_profile">自定义校色文件</string>
     <string name="action_view_upcoming">查看即将到来的更新</string>
@@ -1365,7 +1364,7 @@
     <string name="settings_import_local_chapters_summary">从本地文件夹或压缩包导入本子</string>
     <string name="track_original_title">作品原名：%1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_未译名</string>
-    <string name="confirm_clear_reading_history_title">清空观看进度？</string>
+    <string name="confirm_clear_reading_history_title">清空阅读进度？</string>
     <string name="confirm_mark_unread_title">标记为未读？</string>
     <string name="confirm_mark_read_title">标记为已读？</string>
     <string name="undo_removed_from_library">已移出书架 %1$d 部，下载与阅读进度保留</string>
