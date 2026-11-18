@@ -129,9 +129,7 @@ internal fun PermissionList(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val permissionRequester = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission(),
-                onResult = {
-                    // no-op. resulting checks is being done on resume
-                },
+                onResult = { refreshKey++ },
             )
             PermissionToggleRow(
                 title = stringResource(MR.strings.onboarding_permission_notifications),
@@ -159,7 +157,11 @@ internal fun PermissionList(
                     val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                         data = "package:${context.packageName}".toUri()
                     }
-                    context.startActivity(intent)
+                    try {
+                        context.startActivity(intent)
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        context.launchAppPermissionSettings()
+                    }
                 }
             },
         )
@@ -168,7 +170,7 @@ internal fun PermissionList(
             val appListRequester = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission(),
             ) {
-                // no-op. resulting checks is being done on resume
+                refreshKey++
             }
             PermissionToggleRow(
                 title = stringResource(MR.strings.onboarding_permission_app_list),

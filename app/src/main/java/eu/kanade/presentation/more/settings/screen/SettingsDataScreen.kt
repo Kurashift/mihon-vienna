@@ -1,6 +1,5 @@
 package eu.kanade.presentation.more.settings.screen
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -45,7 +44,7 @@ object SettingsDataScreen : SearchableSettings {
         IconButton(onClick = { uriHandler.openUri(HELP_URL) }) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                contentDescription = stringResource(MR.strings.tracking_guide),
+                contentDescription = stringResource(MR.strings.label_help),
             )
         }
     }
@@ -55,30 +54,19 @@ object SettingsDataScreen : SearchableSettings {
         val navigator = LocalNavigator.currentOrThrow
 
         return listOf(
-            Preference.PreferenceGroup(
-                title = stringResource(MR.strings.settings_data_management),
-                preferenceItems = listOf(
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(MR.strings.settings_backup_restore),
-                        subtitle = stringResource(MR.strings.settings_backup_restore_summary),
-                        onClick = { navigator.push(SettingsBackupScreen) },
-                    ),
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(MR.strings.settings_storage),
-                        subtitle = stringResource(MR.strings.settings_storage_summary),
-                        onClick = { navigator.push(SettingsStorageScreen) },
-                    ),
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(MR.strings.settings_import_export),
-                        subtitle = stringResource(MR.strings.settings_import_export_summary),
-                        onClick = { navigator.push(SettingsImportExportScreen) },
-                    ),
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(MR.strings.action_import_local_chapters),
-                        subtitle = stringResource(MR.strings.settings_import_local_chapters_summary),
-                        onClick = { navigator.push(LocalImportScreen()) },
-                    ),
-                ),
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(MR.strings.import_local_works),
+                onClick = { navigator.push(LocalImportScreen()) },
+            ),
+            DataExportActions.chapterTitles(),
+            DataExportActions.libraryList(),
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(MR.strings.settings_backup_restore),
+                onClick = { navigator.push(SettingsBackupScreen) },
+            ),
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(MR.strings.settings_storage),
+                onClick = { navigator.push(SettingsStorageScreen) },
             ),
         )
     }

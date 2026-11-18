@@ -101,7 +101,14 @@
     <string name="pref_category_general">常规</string>
     <string name="pref_category_reader">阅读</string>
     <string name="pref_category_downloads">下载</string>
-    <string name="pref_category_tracking">进度记录</string>
+    <string name="pref_category_tracking">进度同步</string>
+    <string name="online_help">在线帮助</string>
+    <string name="background_help">后台运行帮助</string>
+    <string name="support_mihon">支持 Mihon</string>
+    <string name="copy_debug_info">复制诊断信息</string>
+    <string name="import_local_works">导入本地作品</string>
+    <string name="export_library_list">导出书架清单</string>
+    <string name="local_works_settings">本地作品</string>
     <string name="pref_category_advanced">高级</string>
     <string name="pref_category_about">关于</string>
     <string name="pref_library_columns">每行数目</string>
@@ -1114,11 +1121,11 @@
     <string name="marks_list_title">标记清单</string>
     <string name="marks_list_empty">暂无标记篇目。在篇目列表标记加入吧</string>
     <string name="marks_list_share">分享</string>
-    <string name="pref_marks_list_summary">查看并导出已标记的篇目，可从这里直接跳回对应漫画。</string>
+    <string name="pref_marks_list_summary">在作品的篇目列表中添加标记</string>
     <string name="marks_list_open_manga">打开漫画</string>
     <string name="marks_list_manga_missing">该漫画已不在库中</string>
     <string name="marks_list_clear">清空清单</string>
-    <string name="marks_list_remove">移除</string>
+    <string name="marks_list_remove">移出清单</string>
     <string name="marks_list_remove_entry_confirm">从清单中移除「%1$s」？不会删除本地漫画。</string>
     <string name="marks_list_remove_selected_confirm">从清单中移除选中的 %1$d 部漫画及其全部记录？不会删除本地文件。</string>
     <string name="marks_list_chapter_count">已标记 %1$d 个篇目</string>
@@ -1126,7 +1133,7 @@
     <string name="marks_list_search_hint">按漫画名或篇目名搜索</string>
     <string name="marks_list_open_chapter">进入篇目阅读</string>
     <string name="marks_list_clear_manga_confirm">将该漫画的全部标记从清单中移除，不会删除本地文件。</string>
-    <string name="pref_good_doujin_list_summary">查看和管理标记为好本子的篇目，左滑篇目条目即可加入。</string>
+    <string name="pref_good_doujin_list_summary">在篇目列表中加入好本子</string>
     <string name="good_doujin_list_title">好本子清单</string>
     <string name="good_doujin_list_empty">暂无好本子。在篇目条目上左滑加入吧</string>
     <string name="good_doujin_list_no_others">没有其他好本子</string>
@@ -1281,7 +1288,7 @@
     <string name="local_chapter_covers_clear_confirm">删除全部已生成的缩略图？不会改动 CBZ 文件、本地库数据和阅读进度。</string>
     <string name="local_chapter_covers_cleared">已清理 %1$d 张封面</string>
     <string name="local_read_review_action">已读完篇目</string>
-    <string name="local_read_review_summary">按漫画汇总全部已读完的本地篇目，可跳回原漫画、重新翻阅，也能把误标的改回未读。</string>
+    <string name="local_read_review_summary">显示本地作品中已读完的篇目</string>
     <string name="local_read_review_title">已读完篇目</string>
     <string name="local_read_review_count">共有 %1$d 个本地篇目被标为已读完</string>
     <string name="local_read_review_empty">还没有标为已读完的本地篇目</string>

@@ -79,9 +79,10 @@ fun PreferenceScreen(
     }
 }
 
-private fun List<Preference>.findHighlightedIndex(highlightKey: String): Int {
+internal fun List<Preference>.findHighlightedIndex(highlightKey: String): Int {
     return flatMap {
         if (it is Preference.PreferenceGroup) {
+            if (!it.enabled) return@flatMap emptyList()
             buildList<String?> {
                 add(null) // Header
                 addAll(it.preferenceItems.map { groupItem -> groupItem.title })

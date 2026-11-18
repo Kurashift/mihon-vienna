@@ -1,20 +1,14 @@
 package eu.kanade.presentation.more.settings.screen
 
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.RemoveDone
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
@@ -39,7 +33,6 @@ import uy.kohesive.injekt.api.get
 
 /**
  * 个人清单的入口页。三个子清单各自的条目数在这里实时汇总，
- * 空的清单整行置灰但仍可点进去看空态说明。
  */
 class MyListsScreen : Screen() {
 
@@ -109,20 +102,6 @@ class MyListsScreen : Screen() {
                         onClick = { navigator.push(LocalReadReviewScreen()) },
                     )
                 }
-                // 三个清单都空时给出一句引导，而不是让页面干瘪地留三行灰字。
-                if (markCount.first == 0 && goodDoujinCount.first == 0 && localReadCount?.first == 0) {
-                    item {
-                        Text(
-                            text = stringResource(MR.strings.my_lists_empty_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(
-                                horizontal = 16.dp,
-                                vertical = 8.dp,
-                            ),
-                        )
-                    }
-                }
             }
         }
     }
@@ -142,19 +121,14 @@ private fun MyListEntryRow(
     mangaCount: Int?,
     onClick: () -> Unit,
 ) {
-    val isEmpty = entryCount == 0
     TextPreferenceWidget(
-        modifier = if (isEmpty) Modifier.alpha(EMPTY_ENTRY_ALPHA) else Modifier,
         title = title,
-        subtitle = if (entryCount != null && entryCount > 0) {
-            stringResource(MR.strings.my_lists_entry_count, entryCount, mangaCount ?: 0)
-        } else {
-            summary
+        subtitle = when (entryCount) {
+            null -> null
+            0 -> summary
+            else -> stringResource(MR.strings.my_lists_entry_count, entryCount, mangaCount ?: 0)
         },
         icon = icon,
         onPreferenceClick = onClick,
     )
 }
-
-/** 空清单行的透明度：压暗但仍可点击，避免被误读成禁用。 */
-private const val EMPTY_ENTRY_ALPHA = 0.38f

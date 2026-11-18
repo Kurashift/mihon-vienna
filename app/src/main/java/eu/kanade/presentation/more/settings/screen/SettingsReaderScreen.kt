@@ -1,16 +1,33 @@
 package eu.kanade.presentation.more.settings.screen
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.presentation.more.settings.PreferenceScreen
+import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.util.system.hasDisplayCutout
 import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
@@ -18,7 +35,48 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.text.NumberFormat
 
-object SettingsReaderScreen : SearchableSettings {
+class SettingsReaderScreen(private val initialWebtoon: Boolean? = null) : SearchableSettings {
+
+    @Composable
+    override fun Content() {
+        val preferences = remember { Injekt.get<ReaderPreferences>() }
+        var webtoon by rememberSaveable {
+            mutableStateOf(initialWebtoon ?: !ReadingMode.isPagerType(preferences.defaultReadingMode.get()))
+        }
+        val back = LocalBackPress.current
+        Scaffold(topBar = { behavior ->
+            AppBar(
+                title = stringResource(getTitleRes()),
+                navigateUp = back?.let { { it.invoke() } },
+                scrollBehavior = behavior,
+            )
+        }) { padding ->
+            Column(Modifier.padding(padding)) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    listOf(MR.strings.pager_viewer, MR.strings.webtoon_viewer).forEachIndexed { index, title ->
+                        SegmentedButton(
+                            selected = webtoon == (index == 1),
+                            onClick = { webtoon = index == 1 },
+                            shape = SegmentedButtonDefaults.itemShape(index, 2),
+                        ) { Text(stringResource(title)) }
+                    }
+                }
+                key(webtoon) {
+                    PreferenceScreen(items = modePreferences(webtoon) + getPreferences())
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun modePreferences(webtoon: Boolean): List<Preference> {
+        val preferences = remember { Injekt.get<ReaderPreferences>() }
+        return if (webtoon) {
+            listOf(getWebtoonGroup(preferences), getWebtoonZoomGroup(preferences))
+        } else {
+            listOf(getPagedGroup(preferences))
+        }
+    }
 
     @ReadOnlyComposable
     @Composable
@@ -28,7 +86,7 @@ object SettingsReaderScreen : SearchableSettings {
     override fun getPreferences(): List<Preference> {
         val readerPref = remember { Injekt.get<ReaderPreferences>() }
 
-        return listOf(
+        val general = listOf(
             Preference.PreferenceItem.ListPreference(
                 preference = readerPref.defaultReadingMode,
                 entries = ReadingMode.entries.drop(1)
@@ -53,12 +111,12 @@ object SettingsReaderScreen : SearchableSettings {
                 preference = readerPref.pageTransitions,
                 title = stringResource(MR.strings.pref_page_transitions),
             ),
+        )
+        return listOf(
+            Preference.PreferenceGroup(stringResource(MR.strings.pref_category_general), preferenceItems = general),
             getDisplayGroup(readerPreferences = readerPref),
             getEInkGroup(readerPreferences = readerPref),
             getReadingGroup(readerPreferences = readerPref),
-            getPagedGroup(readerPreferences = readerPref),
-            getWebtoonGroup(readerPreferences = readerPref),
-            getWebtoonZoomGroup(readerPreferences = readerPref),
             getNavigationGroup(readerPreferences = readerPref),
             getActionsGroup(readerPreferences = readerPref),
         )
