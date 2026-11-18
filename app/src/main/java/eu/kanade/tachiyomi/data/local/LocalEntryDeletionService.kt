@@ -24,12 +24,14 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCoverManager
-import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.LocalSourceFileSystem
 import tachiyomi.source.local.io.isSingleChapterChapterUrl
 import tachiyomi.source.local.io.isSingleChapterEntryName
+import tachiyomi.source.local.io.loosePages
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -84,18 +86,39 @@ class LocalEntryDeletionService(
     data class Result(
         val deleted: Int,
         val failed: List<String>,
-        /**
-         * Manga rows dropped as a side effect of this deletion: a work that lost its last chapter
-         * loses its row with the directory. Callers holding those ids have nothing left to show.
-         */
         val deletedMangaIds: Set<Long> = emptySet(),
     )
 
     /** Starts a chapter deletion and returns immediately. Ignored while another run is active. */
-    fun startDeleteChapters(targets: List<ChapterTarget>) {
+    fun startDeleteChapters(targets: List<ChapterTarget>, folders: List<EmptyFolderCleanup> = emptyList()) {
         if (targets.isEmpty()) return
-        launchTask { deleteChapters(targets) }
+        launchTask { deleteChapters(targets, folders) }
     }
+
+    /** Authorization for a particular directory and the metadata shown in the confirmation. */
+    data class EmptyFolderCleanup(val mangaId: Long, val url: String, val metadata: Set<String>)
+
+    suspend fun previewEmptyFolders(targets: List<ChapterTarget>): List<EmptyFolderCleanup> =
+        withContext(Dispatchers.IO) {
+            targets.groupBy { it.mangaId }.mapNotNull { (mangaId, selected) ->
+                val chapters = chapterRepository.getChapterByMangaId(mangaId)
+                if (chapters.isEmpty() || chapters.map { it.id }.toSet() != selected.map { it.id }.toSet()) {
+                    return@mapNotNull null
+                }
+                val url = chapters.first().url.substringBefore('/')
+                val directory = fileSystem.getMangaDirectory(url) ?: return@mapNotNull null
+                val snapshot = fileSystem.getDirectorySnapshot(directory, fresh = true)
+                if (!snapshot.isAccessible) return@mapNotNull null
+                val namesToDelete = if (chapters.singleOrNull()?.url?.isSingleChapterChapterUrl() == true) {
+                    loosePages(snapshot.files).mapNotNull { it.name }.toSet()
+                } else {
+                    chapters.map { it.url.substringAfter('/') }.toSet()
+                }
+                val remaining = snapshot.files.filterNot { it.name in namesToDelete }
+                if (remaining.any { !it.isFile || it.name !in GENERATED_FILE_NAMES }) return@mapNotNull null
+                EmptyFolderCleanup(mangaId, url, remaining.mapNotNull { it.name }.toSet())
+            }
+        }
 
     /** Starts a whole-directory deletion and returns immediately. Ignored while a run is active. */
     fun startDeleteMangas(entries: List<MangaEntry>) {
@@ -148,8 +171,11 @@ class LocalEntryDeletionService(
      * Chapter urls are looked up here rather than passed in, so a caller can never hand over a
      * stale or empty path.
      */
-    suspend fun deleteChapters(targets: List<ChapterTarget>): Result = withContext(Dispatchers.IO) {
-        mutex.withLock { runChapters(targets) }
+    suspend fun deleteChapters(
+        targets: List<ChapterTarget>,
+        folders: List<EmptyFolderCleanup> = emptyList(),
+    ): Result = withContext(Dispatchers.IO) {
+        mutex.withLock { runChapters(targets, folders) }
     }
 
     /**
@@ -177,7 +203,7 @@ class LocalEntryDeletionService(
         mutex.withLock { runMangas(entries) }
     }
 
-    private suspend fun runChapters(targets: List<ChapterTarget>): Result {
+    private suspend fun runChapters(targets: List<ChapterTarget>, folders: List<EmptyFolderCleanup>): Result {
         try {
             val base = fileSystem.getBaseDirectory()
             if (base == null) {
@@ -218,7 +244,16 @@ class LocalEntryDeletionService(
             var total = 0
             plans.forEach { plan ->
                 val file = plan.file ?: return@forEach
-                val (count, size) = measure(file)
+                if (plan.singleChapter) {
+                    val snapshot = fileSystem.getDirectorySnapshot(file, fresh = true)
+                    if (!snapshot.isAccessible) return@forEach
+                    plan.pages = loosePages(snapshot.files)
+                }
+                val (count, size) = if (plan.singleChapter) {
+                    plan.pages.size to plan.pages.sumOf { it.length().coerceAtLeast(0) }
+                } else {
+                    measure(file)
+                }
                 plan.fileCount = count
                 plan.sizeBytes = size
                 total += count
@@ -241,14 +276,18 @@ class LocalEntryDeletionService(
                     entries += plan.toEntry(LocalDeletionOutcome.FAILED)
                     return@forEach
                 }
-                val outcome = deleteTree(file) {
+                val onFileDeleted = {
                     done++
                     _progress.value = Progress(Progress.Phase.DELETING, done = done, total = total)
+                }
+                val outcome = if (plan.singleChapter) {
+                    deleteLoosePages(plan.pages, onFileDeleted)
+                } else {
+                    deleteTree(file, onFileDeleted)
                 }
                 entries += plan.toEntry(outcome)
                 if (outcome == LocalDeletionOutcome.DELETED) {
                     deleted += plan.target to plan.chapterUrl
-                    plan.deleted = true
                 } else {
                     failed += plan.target.name
                 }
@@ -270,47 +309,34 @@ class LocalEntryDeletionService(
                 cleanupChapters(deleted)
             }
 
-            // Works that just lost their last chapter: drop the directory too so it disappears
-            // from the library immediately instead of lingering until the next full refresh.
-            val removedMangaIds = mutableSetOf<Long>()
-            // A folder-level single chapter *is* the work: its directory is gone with the chapter,
-            // so there is nothing left for the check below to look at, and the row has to go the
-            // same way it does when the last chapter of a two-level work is deleted.
-            plans.filter { it.deleted && it.singleChapter }
-                .map { it.target.mangaId }
-                .distinct()
-                .forEach { mangaId ->
-                    cleanupEmptiedManga(mangaId)
-                    removedMangaIds += mangaId
-                }
-            deleted.map { (target, _) -> target.mangaId }
-                .distinct()
-                .filterNot { it in removedMangaIds }
-                .forEach { mangaId ->
-                    val dirName = resolved.firstOrNull { (target, _) -> target.mangaId == mangaId }
-                        ?.second?.url?.substringBefore('/')
-                    when (dirName?.let { removeDirectoryIfEmptied(base, it) }) {
-                        true -> {
-                            cleanupEmptiedManga(mangaId)
-                            removedMangaIds += mangaId
-                        }
-                        false -> logcat(LogPriority.INFO) {
-                            "Kept non-empty directory $dirName; it still holds unrelated files"
-                        }
-                        null -> Unit
+            val changedWorks = deleted.mapTo(mutableSetOf()) { (_, url) -> url.substringBefore('/') }
+            val keptFolders = folders.mapNotNull { folder ->
+                val removed = folder.url in changedWorks && !stopRequested.get() &&
+                    withLocalChapterMutationLock(folder.url) {
+                        runCatching {
+                            chapterRepository.getChapterByMangaId(folder.mangaId).isEmpty() &&
+                                removeEmptyDirectory(base.findFile(folder.url), folder.metadata)
+                        }.getOrDefault(false)
                     }
+                if (removed) {
+                    localSource()?.removeListingEntry(folder.url)
+                    changedWorks.remove(folder.url)
+                    null
+                } else {
+                    folder.url
                 }
+            }
+            localSource()?.refreshMutatedWorks(changedWorks)
 
             publishReport(
                 unit = LocalDeletionUnit.CHAPTER,
                 entries = entries,
                 skippedCount = plans.count { it.skipped },
-                deletedMangaIds = removedMangaIds,
+                keptFolders = keptFolders,
             )
             return Result(
                 deleted = deleted.size,
                 failed = failed,
-                deletedMangaIds = removedMangaIds,
             )
         } finally {
             _progress.value = null
@@ -389,6 +415,7 @@ class LocalEntryDeletionService(
         entries: List<LocalDeletionEntry>,
         skippedCount: Int,
         deletedMangaIds: Set<Long> = emptySet(),
+        keptFolders: List<String> = emptyList(),
     ) {
         // Clear the progress first: the result dialog and the progress dialog must never be on
         // screen in the same frame.
@@ -401,6 +428,7 @@ class LocalEntryDeletionService(
             skippedCount = skippedCount,
             deletedMangaIds = deletedMangaIds,
             finishedAt = System.currentTimeMillis(),
+            keptFolders = keptFolders,
         )
     }
 
@@ -440,51 +468,31 @@ class LocalEntryDeletionService(
         }
     }
 
-    /**
-     * Deletes a manga directory that no longer holds a single chapter.
-     *
-     * Returns true when the directory is gone, false when it was kept because it still contains
-     * something the app did not create, and null when there was nothing to decide.
-     */
-    private fun removeDirectoryIfEmptied(base: UniFile, dirName: String): Boolean? {
-        val dir = base.findFile(dirName) ?: return null
-        if (!dir.isDirectory) return null
-
-        val leftover = dir.listFiles().orEmpty()
-        if (leftover.any { Archive.isChapterEntry(it) }) return false
-        // Anything not generated by the app is the user's business; keep the directory.
-        if (leftover.any { it.name !in GENERATED_FILE_NAMES }) {
-            logcat(LogPriority.INFO) { "Directory $dirName holds unrelated files; keeping it" }
-            return false
-        }
-
-        val removed = leftover.all { it.delete() } && dir.delete()
-        if (!removed) {
-            logcat(LogPriority.ERROR) { "Failed to remove emptied directory $dirName" }
-        }
-        return removed
+    private fun removeEmptyDirectory(dir: UniFile?, approvedMetadata: Set<String>): Boolean {
+        // A SAF directory delete can recurse even if the provider's preceding listing was empty.
+        val path = dir?.filePath?.let(::File)?.toPath() ?: return false
+        val snapshot = fileSystem.getDirectorySnapshot(dir, fresh = true)
+        if (!snapshot.isAccessible || snapshot.files.any { !it.isFile || it.name !in approvedMetadata }) return false
+        return runCatching {
+            snapshot.files.forEach { Files.delete(path.resolve(requireNotNull(it.name))) }
+            Files.delete(path)
+        }.isSuccess
     }
 
-    /** Drops the database row of a manga whose directory was just removed. */
-    private suspend fun cleanupEmptiedManga(mangaId: Long) {
-        val manga = runCatching { mangaRepository.getMangaById(mangaId) }
-            .onFailure { logcat(LogPriority.ERROR, it) { "Failed to load manga $mangaId" } }
-            .getOrNull() ?: return
-        cleanupManga(
-            MangaEntry(
-                id = manga.id,
-                url = manga.url,
-                title = manga.title,
-                manga = manga,
-            ),
-        )
+    private fun deleteLoosePages(pages: List<UniFile>, onFileDeleted: () -> Unit): LocalDeletionOutcome {
+        if (pages.isEmpty()) return LocalDeletionOutcome.FAILED
+        var failed = false
+        for (page in pages) {
+            if (stopRequested.get()) return LocalDeletionOutcome.PARTIAL
+            if (deleteFile(page)) onFileDeleted() else failed = true
+        }
+        return if (failed) LocalDeletionOutcome.PARTIAL else LocalDeletionOutcome.DELETED
     }
 
     private fun resolveChapterFile(base: UniFile, chapterUrl: String): UniFile? {
         val parts = chapterUrl.split('/', limit = 2)
         if (parts.size < 2) return null
-        // A folder-level single chapter is the work directory itself, so erasing it erases every
-        // page of the work - the same outcome as deleting the last chapter of a two-level work.
+        // Flat chapters share the work directory but only their loose pages are selected.
         if (isSingleChapterEntryName(parts[1])) return base.findFile(parts[0])
         return base.findFile(parts[0])?.findFile(parts[1])
     }
@@ -607,7 +615,7 @@ class LocalEntryDeletionService(
         var fileCount: Int = 0,
         var sizeBytes: Long = 0,
         var skipped: Boolean = false,
-        var deleted: Boolean = false,
+        var pages: List<UniFile> = emptyList(),
     ) {
         fun toEntry(outcome: LocalDeletionOutcome) = LocalDeletionEntry(
             mangaTitle = target.mangaTitle,
@@ -637,11 +645,8 @@ class LocalEntryDeletionService(
     }
 
     companion object {
-        /**
-         * Files the app itself writes next to the chapters. A directory holding only these counts
-         * as empty once its chapters are gone and may be removed.
-         */
-        private val GENERATED_FILE_NAMES = setOf("cover.jpg", "ComicInfo.xml", ".nomedia")
+        /** Only these metadata files can be listed for optional empty-folder cleanup. */
+        private val GENERATED_FILE_NAMES = setOf("cover.jpg", "ComicInfo.xml", ".nomedia", ".noxml")
 
         /**
          * How often an absent directory is re-checked before its removal is treated as confirmed.

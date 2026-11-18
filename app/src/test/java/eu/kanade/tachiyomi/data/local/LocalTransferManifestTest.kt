@@ -27,6 +27,16 @@ class LocalTransferManifestTest {
                 PersistedTransferGroup(12L, listOf("content://tree/author-a/book-1")),
                 PersistedTransferGroup(34L, listOf("content://tree/author-b/book-3")),
             ),
+            replacements = listOf(
+                LocalArchiveReplacement(
+                    "author-a",
+                    "content://tree/author-a/book-1",
+                    "book-1.cbz",
+                    "/local/a/book-1.cbz",
+                    "stamp",
+                ),
+            ),
+            replaceConflicts = true,
         )
 
         assertEquals(request, LocalTransferManifest.decode(LocalTransferManifest.encode(request)))

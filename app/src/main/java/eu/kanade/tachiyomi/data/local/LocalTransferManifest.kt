@@ -28,6 +28,8 @@ internal data class PersistedTransferRequest(
     val groups: List<PersistedTransferGroup> = emptyList(),
     val folderOutput: String = LocalChapterTransferService.FolderOutput.DIRECTORY.name,
     val deleteSource: Boolean = false,
+    val replacements: List<LocalArchiveReplacement> = emptyList(),
+    val replaceConflicts: Boolean = false,
 )
 
 internal object LocalTransferManifest {

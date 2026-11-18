@@ -707,6 +707,7 @@ class BrowseSourceViewModel(
                     local.getSearchMangaUrls(listing.query.orEmpty())
                 }
                 urls.mapNotNull { url ->
+                    if (args.context.fsChapterCounts[url] == 0L) return@mapNotNull null
                     if (!matchesListingFilters(
                             url = url,
                             context = args.context,
@@ -1783,7 +1784,12 @@ class BrowseSourceViewModel(
             MarkFilter.GOOD_DOUJIN -> goodDoujinUrls.keys
             MarkFilter.NOT_IN_LIBRARY -> null
         }
-        return CountContext(startedUrls, finishedUrls, markedUrls, favoriteUrls)
+        val emptyUrls = if (readingFilter == ReadingFilter.ALL) {
+            emptySet()
+        } else {
+            fsChapterCounts.filterValues { it == 0L }.keys
+        }
+        return CountContext(startedUrls, finishedUrls, markedUrls, favoriteUrls, emptyUrls)
     }
 
     fun setFilters(filters: FilterList) {
@@ -2552,7 +2558,7 @@ class BrowseSourceViewModel(
      */
     suspend fun getRandomLocalMangaId(): Long? {
         val local = source as? LocalSource ?: return null
-        val filteredUrls = currentFilteredMangaUrls(local)
+        val filteredUrls = currentFilteredMangaUrls(local).filter { localListingSnapshot.value.chapterCounts[it] != 0L }
         if (filteredUrls.isEmpty()) return null
 
         // Resolve ids on the IO dispatcher: every lookup is a database query, so the
@@ -2620,6 +2626,7 @@ class BrowseSourceViewModel(
         markFilter: MarkFilter,
         favoriteUrls: Set<String>,
     ): Boolean {
+        if (readingFilter != ReadingFilter.ALL && context.fsChapterCounts[url] == 0L) return false
         val progress = context.progressByUrl[url]
             ?: context.fsChapterCounts[url]
                 ?.takeIf { it > 0 }
@@ -2729,8 +2736,9 @@ class BrowseSourceViewModel(
         val finishedUrls: Set<String>,
         val markedUrls: Set<String>?,
         val favoriteUrls: Set<String>,
+        val emptyUrls: Set<String>,
     ) {
-        fun matchesReadingFilter(filter: ReadingFilter, url: String): Boolean = when (filter) {
+        fun matchesReadingFilter(filter: ReadingFilter, url: String): Boolean = url !in emptyUrls && when (filter) {
             ReadingFilter.ALL -> true
             ReadingFilter.UNREAD -> url !in finishedUrls
             ReadingFilter.IN_PROGRESS -> url in startedUrls && url !in finishedUrls
@@ -2759,6 +2767,7 @@ class BrowseSourceViewModel(
         val goodDoujinUrls: Map<String, Long> = emptyMap(),
     ) {
         fun progressFor(mangaId: Long, url: String): MangaProgress {
+            if (fsChapterCounts[url] == 0L) return MangaProgress.EMPTY
             return progressByMangaId[mangaId] ?: fsChapterCounts[url]?.takeIf { it > 0 }?.let {
                 MangaProgress(it, 0, 0, 0)
             } ?: MangaProgress.EMPTY

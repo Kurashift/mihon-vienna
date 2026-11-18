@@ -1141,6 +1141,9 @@
     <string name="local_delete_warning">檔案會從磁碟上直接刪除，不會進入資源回收筒，無法復原。</string>
     <string name="local_delete_collection_title">刪除合集本機檔案？</string>
     <string name="local_delete_chapter_title">刪除篇目本機檔案？</string>
+    <string name="local_delete_empty_folders">一併刪除空資料夾</string>
+    <string name="local_delete_folders_kept">未刪除下列資料夾：\n%1$s</string>
+    <string name="local_empty_work">0 篇</string>
     <string name="local_delete_marked_chapters_title">刪除已標示的 %1$d 個篇目？</string>
     <string name="local_delete_scope_marked">涉及 %1$d 部作品：%2$s</string>
     <string name="local_delete_unmarked_safe">未標示的篇目不會受影響。</string>
@@ -1161,8 +1164,11 @@
     <string name="action_export_list">匯出清單</string>
     <string name="action_done">完成</string>
     <string name="local_transfer_conflict_title">發現同名篇目</string>
-    <string name="local_transfer_conflict_message">%1$d 個同名篇目將略過，不會覆蓋原檔案。</string>
+    <string name="local_transfer_conflict_message">發現 %1$d 個同名項目。</string>
     <string name="local_transfer_continue">略過同名項目</string>
+    <string name="local_transfer_replace">取代現有檔案</string>
+    <string name="local_transfer_replace_scope">最多取代 %1$d 個檔案，其餘同名項目略過。</string>
+    <string name="local_transfer_not_replaced">未取代：\n%1$s</string>
     <string name="settings_data_management">資料管理</string>
     <string name="settings_backup_restore">備份與還原</string>
     <string name="settings_backup_restore_summary">建立、還原與自動備份</string>

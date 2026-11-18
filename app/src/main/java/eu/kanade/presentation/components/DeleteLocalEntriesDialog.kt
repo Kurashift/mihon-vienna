@@ -6,22 +6,84 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+
+@Composable
+fun DeleteLocalChaptersDialog(
+    title: String,
+    targets: List<LocalEntryDeletionService.ChapterTarget>,
+    subtitle: String? = null,
+    notices: List<String> = emptyList(),
+    onDismissRequest: () -> Unit,
+    onConfirm: (List<LocalEntryDeletionService.EmptyFolderCleanup>) -> Unit,
+) {
+    val deletionService = remember { Injekt.get<LocalEntryDeletionService>() }
+    var cleanup by remember(targets) { mutableStateOf(false) }
+    val folders by produceState(emptyList(), targets) {
+        value = deletionService.previewEmptyFolders(targets)
+    }
+    DeleteLocalEntriesDialog(
+        title = title,
+        entryNames = targets.map { it.name },
+        subtitle = subtitle,
+        notices = notices,
+        onDismissRequest = onDismissRequest,
+        onConfirm = { onConfirm(if (cleanup) folders else emptyList()) },
+        options = {
+            if (folders.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().toggleable(
+                        value = cleanup,
+                        role = Role.Checkbox,
+                        onValueChange = { cleanup = it },
+                    ).padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = cleanup, onCheckedChange = null)
+                    Text(stringResource(MR.strings.local_delete_empty_folders))
+                }
+                if (cleanup) {
+                    Text(
+                        text = condensedBulletList(
+                            folders.map { folder ->
+                                listOf(folder.url, folder.metadata.sorted().joinToString(", "))
+                                    .filter(String::isNotEmpty).joinToString(": ")
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+    )
+}
 
 /**
  * Confirmation shown before local files are erased from disk.
@@ -42,6 +104,7 @@ fun DeleteLocalEntriesDialog(
     notices: List<String> = emptyList(),
     onDismissRequest: () -> Unit,
     onConfirm: () -> Unit,
+    options: @Composable () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -141,6 +204,7 @@ fun DeleteLocalEntriesDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                options()
             }
         },
     )

@@ -199,6 +199,7 @@ fun BrowseSourceCompactGrid(
                             favoriteIds = favoriteIds,
                             loadCover = !isLoadingPaused,
                             progress = progressContext.progressFor(manga.id, manga.url),
+                            isEmptyWork = progressContext.fsChapterCounts[manga.url] == 0L,
                             isLastRead = progressContext.lastReadMangaId == manga.id,
                             coverUpdates = coverUpdates,
                             highlightedMangaId = highlightedMangaId,
@@ -289,6 +290,7 @@ private fun BrowseSourceCompactGridItem(
     dimInLibraryCovers: Boolean = true,
     loadCover: Boolean = true,
     progress: MangaProgress = MangaProgress.EMPTY,
+    isEmptyWork: Boolean = false,
     isLastRead: Boolean = false,
     coverUpdates: Map<Long, MangaCoverUpdate> = emptyMap(),
     highlightedMangaId: Long? = null,
@@ -336,6 +338,7 @@ private fun BrowseSourceCompactGridItem(
                     ProgressBadge(
                         finishedCount = progress.finishedCount,
                         totalChapters = progress.totalChapters,
+                        showEmpty = isEmptyWork,
                     )
                 }
             },

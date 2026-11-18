@@ -6,13 +6,17 @@ import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.manga.MangaMarkStore
+import eu.kanade.tachiyomi.ui.reader.loader.LocalPageListCache
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import mihon.core.archive.ZipWriter
+import mihon.core.archive.archiveReader
 import tachiyomi.core.common.storage.extension
+import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.PageImageName
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
@@ -29,8 +33,10 @@ import tachiyomi.source.local.io.isSingleChapterEntryName
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 
@@ -49,6 +55,8 @@ class LocalChapterTransferService(
     data class Options(
         val folderOutput: FolderOutput = FolderOutput.DIRECTORY,
         val deleteSourceAfterSuccess: Boolean = false,
+        val replacements: List<LocalArchiveReplacement> = emptyList(),
+        val replaceConflicts: Boolean = false,
     )
 
     data class Progress(
@@ -63,11 +71,13 @@ class LocalChapterTransferService(
         val imported: Int,
         val skipped: Int,
         val failed: Int,
+        val conflicts: List<String> = emptyList(),
     )
 
     data class ImportPreview(
         val candidateNames: List<String>,
         val conflicts: List<String>,
+        val replacements: List<LocalArchiveReplacement> = emptyList(),
     )
 
     data class SourcePreview(
@@ -249,110 +259,112 @@ class LocalChapterTransferService(
         var moved = 0
         var skipped = 0
         var failed = 0
-        chapters.forEachIndexed { index, chapter ->
-            val source = mangaRepository.getMangaByIdOrNull(chapter.mangaId)
-            if (source == null) {
-                // The source directory of this chapter is gone; the rest of the batch still moves.
-                failed++
-                onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
-                return@forEachIndexed
-            }
-            if (source.id == target.id) {
-                skipped++
-                onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
-                return@forEachIndexed
-            }
-            val fileName = chapter.url.substringAfterLast('/')
-            if (isSingleChapterEntryName(fileName)) {
-                // The work directory is its own chapter: moving it would move the whole work, and
-                // there is no chapter file to carry over.
-                skipped++
-                onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
-                return@forEachIndexed
-            }
-            val sourceDir = fileSystem.getBaseDirectory()?.findFile(source.url)
-            val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
-                ?: fileSystem.getBaseDirectory()?.createDirectory(target.url)
-            val sourceFile = sourceDir?.findFile(fileName)
-            if (sourceFile == null || targetDir == null) {
-                failed++
-                onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
-                return@forEachIndexed
-            }
-            val normalized = normalizeName(fileName.substringBeforeLast('.'))
-            if (targetDir.listFiles().orEmpty().any {
-                    normalizeName(it.name.orEmpty().substringBeforeLast('.')) == normalized
+        val changedWorks = mutableSetOf<String>()
+        try {
+            chapters.forEachIndexed { index, chapter ->
+                val source = mangaRepository.getMangaByIdOrNull(chapter.mangaId)
+                if (source == null) {
+                    // The source directory of this chapter is gone; the rest of the batch still moves.
+                    failed++
+                    onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
+                    return@forEachIndexed
                 }
-            ) {
-                skipped++
-                onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
-                return@forEachIndexed
-            }
-            var temp: UniFile? = null
-            var movedDirectly = false
-            var databaseRelocated = false
-            try {
-                movedDirectly = moveEntryDirect(sourceFile, sourceDir, targetDir, fileName)
-                if (!movedDirectly) {
-                    temp = if (sourceFile.isDirectory) {
-                        targetDir.createDirectory(".mihon-move-${UUID.randomUUID()}")
-                    } else {
-                        targetDir.createFile(".mihon-move-${UUID.randomUUID()}.tmp")
-                    } ?: error("Cannot create temporary move target")
-                    copyEntry(sourceFile, temp) { copied ->
-                        onProgress(Progress(index, chapters.size, fileName, copied, sourceFile.length()))
+                if (source.id == target.id) {
+                    skipped++
+                    onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
+                    return@forEachIndexed
+                }
+                val fileName = chapter.url.substringAfterLast('/')
+                if (isSingleChapterEntryName(fileName)) {
+                    // The work directory is its own chapter: moving it would move the whole work, and
+                    // there is no chapter file to carry over.
+                    skipped++
+                    onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
+                    return@forEachIndexed
+                }
+                val sourceDir = fileSystem.getBaseDirectory()?.findFile(source.url)
+                val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
+                    ?: fileSystem.getBaseDirectory()?.createDirectory(target.url)
+                val sourceFile = sourceDir?.findFile(fileName)
+                if (sourceFile == null || targetDir == null) {
+                    failed++
+                    onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
+                    return@forEachIndexed
+                }
+                val normalized = normalizeName(fileName.substringBeforeLast('.'))
+                if (targetDir.listFiles().orEmpty().any {
+                        normalizeName(it.name.orEmpty().substringBeforeLast('.')) == normalized
                     }
-                    if (!temp.renameTo(fileName)) error("Cannot commit move target")
+                ) {
+                    skipped++
+                    onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
+                    return@forEachIndexed
                 }
-                val newUrl = "${target.url}/$fileName"
-                coverManager.migrateLegacyCover(chapter.id, chapter.url, newUrl)
-                chapterRepository.relocateAll(
-                    listOf(ChapterUpdate(id = chapter.id, mangaId = target.id, url = newUrl)),
-                )
-                databaseRelocated = true
-                mangaMarkStore.relocate(chapter.id, target.id, target.title)
-                if (!movedDirectly) {
-                    // Local chapters are commonly directories. Delete recursively so a successful
-                    // copy-based move does not leave a second source copy to be rediscovered.
-                    deleteRecursively(sourceFile)
+                var temp: UniFile? = null
+                var movedDirectly = false
+                var databaseRelocated = false
+                try {
+                    movedDirectly = moveEntryDirect(sourceFile, sourceDir, targetDir, fileName)
+                    if (!movedDirectly) {
+                        temp = if (sourceFile.isDirectory) {
+                            targetDir.createDirectory(".mihon-move-${UUID.randomUUID()}")
+                        } else {
+                            targetDir.createFile(".mihon-move-${UUID.randomUUID()}.tmp")
+                        } ?: error("Cannot create temporary move target")
+                        copyEntry(sourceFile, temp) { copied ->
+                            onProgress(Progress(index, chapters.size, fileName, copied, sourceFile.length()))
+                        }
+                        if (!temp.renameTo(fileName)) error("Cannot commit move target")
+                    }
+                    val newUrl = "${target.url}/$fileName"
+                    coverManager.migrateLegacyCover(chapter.id, chapter.url, newUrl)
+                    chapterRepository.relocateAll(
+                        listOf(ChapterUpdate(id = chapter.id, mangaId = target.id, url = newUrl)),
+                    )
+                    databaseRelocated = true
+                    mangaMarkStore.relocate(chapter.id, target.id, target.title)
+                    if (!movedDirectly) {
+                        // Local chapters are commonly directories. Delete recursively so a successful
+                        // copy-based move does not leave a second source copy to be rediscovered.
+                        deleteRecursively(sourceFile)
+                    }
+                    moved++
+                    changedWorks += source.url
+                    changedWorks += target.url
+                } catch (e: CancellationException) {
+                    temp?.delete()
+                    rollbackMove(
+                        chapter = chapter,
+                        source = source,
+                        target = target,
+                        sourceDir = sourceDir,
+                        targetDir = targetDir,
+                        fileName = fileName,
+                        movedDirectly = movedDirectly,
+                        databaseRelocated = databaseRelocated,
+                    )
+                    throw e
+                } catch (_: Throwable) {
+                    temp?.delete()
+                    rollbackMove(
+                        chapter = chapter,
+                        source = source,
+                        target = target,
+                        sourceDir = sourceDir,
+                        targetDir = targetDir,
+                        fileName = fileName,
+                        movedDirectly = movedDirectly,
+                        databaseRelocated = databaseRelocated,
+                    )
+                    failed++
                 }
-                moved++
-            } catch (e: CancellationException) {
-                temp?.delete()
-                rollbackMove(
-                    chapter = chapter,
-                    source = source,
-                    target = target,
-                    sourceDir = sourceDir,
-                    targetDir = targetDir,
-                    fileName = fileName,
-                    movedDirectly = movedDirectly,
-                    databaseRelocated = databaseRelocated,
-                )
-                throw e
-            } catch (_: Throwable) {
-                temp?.delete()
-                rollbackMove(
-                    chapter = chapter,
-                    source = source,
-                    target = target,
-                    sourceDir = sourceDir,
-                    targetDir = targetDir,
-                    fileName = fileName,
-                    movedDirectly = movedDirectly,
-                    databaseRelocated = databaseRelocated,
-                )
-                failed++
+                onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
             }
-            onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
+        } finally {
+            withContext(NonCancellable) {
+                localSource()?.refreshMutatedWorks(changedWorks)
+            }
         }
-        chapters.asSequence()
-            .map { it.mangaId }
-            .distinct()
-            .forEach { sourceMangaId ->
-                cleanupEmptySourceDirectory(sourceMangaId)
-            }
-        Injekt.get<SourceManager>().get(LocalSource.ID)?.let { (it as? LocalSource)?.invalidateListing() }
         MoveResult(moved, skipped, failed)
     }
 
@@ -423,28 +435,6 @@ class LocalChapterTransferService(
         }.getOrDefault(false)
     }
 
-    /**
-     * Removes only a truly empty local manga directory after all of its chapters moved.
-     *
-     * The listing entry goes with the directory. Leaving it behind is how a moved-away work comes
-     * back as a card whose folder no longer exists: the persisted indexes outlive the folder, and
-     * the chapter-name index alone is enough to rebuild the listing from on a later cold start.
-     * Such a card cannot even be deleted, because the deletion path treats the absent directory as
-     * a failure. The database row is deliberately kept - it is what a re-created folder of the same
-     * name would find again.
-     */
-    private suspend fun cleanupEmptySourceDirectory(mangaId: Long) {
-        val manga = runCatching { mangaRepository.getMangaById(mangaId) }.getOrNull() ?: return
-        val chapters = runCatching { chapterRepository.getChapterByMangaId(mangaId) }.getOrNull() ?: return
-        if (chapters.isNotEmpty()) return
-        val directory = fileSystem.getBaseDirectory()?.findFile(manga.url) ?: return
-        val remaining = directory.listFiles().orEmpty()
-            .filterNot { it.name.orEmpty().equals(".nomedia", ignoreCase = true) }
-        if (remaining.isEmpty() && directory.delete()) {
-            localSource()?.removeListingEntry(manga.url)
-        }
-    }
-
     private fun localSource(): LocalSource? =
         Injekt.get<SourceManager>().get(LocalSource.ID) as? LocalSource
 
@@ -457,22 +447,7 @@ class LocalChapterTransferService(
         val target = mangaRepository.getMangaByIdOrNull(targetMangaId)
             ?: error("Target manga $targetMangaId no longer exists")
         require(target.source == LocalSource.ID) { "Target manga is not local" }
-        val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
-        val existingNames = targetDir?.listFiles().orEmpty()
-            .map { normalizeName(it.name.orEmpty().substringBeforeLast('.')) }
-            .toHashSet()
-        val candidates = uris
-            .flatMap { expand(UniFile.fromUri(context, it) ?: return@flatMap emptyList()) }
-            .distinctBy { it.file.uri.toString() }
-        val seen = hashSetOf<String>()
-        val conflicts = candidates.mapNotNull { candidate ->
-            val normalized = normalizeName(chapterDestinationName(candidate.name).substringBeforeLast('.'))
-            if (normalized in existingNames || !seen.add(normalized)) candidate.name else null
-        }
-        ImportPreview(
-            candidateNames = candidates.map { it.name },
-            conflicts = conflicts.distinct(),
-        )
+        previewImportForTargetUrl(uris, target.url)
     }
 
     suspend fun importUris(
@@ -480,20 +455,21 @@ class LocalChapterTransferService(
         targetMangaId: Long,
         options: Options = Options(),
         onProgress: (Progress) -> Unit = {},
-    ): Result = importUrisInternal(
-        uris = uris,
-        targetMangaId = targetMangaId,
-        options = options,
-        onProgress = onProgress,
-        invalidateListing = true,
-    )
+    ): Result {
+        val changedWorks = mutableSetOf<String>()
+        return try {
+            importUrisInternal(uris, targetMangaId, options, onProgress, changedWorks)
+        } finally {
+            withContext(NonCancellable) { localSource()?.refreshMutatedWorks(changedWorks) }
+        }
+    }
 
     private suspend fun importUrisInternal(
         uris: List<Uri>,
         targetMangaId: Long,
         options: Options,
         onProgress: (Progress) -> Unit,
-        invalidateListing: Boolean,
+        changedWorks: MutableSet<String>,
     ): Result = withContext(kotlinx.coroutines.Dispatchers.IO) {
         val target = mangaRepository.getMangaByIdOrNull(targetMangaId)
             ?: error("Target manga $targetMangaId no longer exists")
@@ -515,6 +491,12 @@ class LocalChapterTransferService(
         var skipped = 0
         var failed = 0
         var firstImportedChapterFileName: String? = null
+        val conflicts = mutableListOf<String>()
+        val replacements = options.replacements.filter { it.targetUrl == target.url }.associateBy { it.sourceUri }
+        val candidateCounts = candidates.groupingBy { destinationKey(it.name) }.eachCount()
+        val destination = fileSystem.getDirectorySnapshot(targetDir, fresh = true)
+        check(destination.isAccessible) { "Cannot read the import destination" }
+        val existing = destination.files.groupBy(::entryKey)
         // Names this batch has already committed. Cleaning can map two different source names onto
         // one destination, and re-listing the directory is not enough to catch that: a document
         // provider may still serve a cached listing, and the second rename would then fail.
@@ -522,13 +504,54 @@ class LocalChapterTransferService(
         candidates.forEachIndexed { index, candidate ->
             coroutineContext.ensureActive()
             val destinationName = chapterDestinationName(candidate.name)
+            val key = destinationKey(candidate.name)
+            val matching = existing[key].orEmpty()
+            val approval = replacements[candidate.file.uri.toString()]
+            if (options.replaceConflicts &&
+                (approval != null || matching.isNotEmpty() || candidateCounts.getValue(key) > 1)
+            ) {
+                val label = "${target.url} / ${candidate.name}"
+                val original = matching.singleOrNull()?.takeIf {
+                    approval != null && it.name == approval.fileName && it.filePath == approval.targetPath &&
+                        candidateCounts.getValue(key) == 1 && sameArchiveFormat(candidate.file, it)
+                }
+                if (original == null || approval == null) {
+                    skipped++
+                    conflicts += label
+                } else {
+                    try {
+                        if (replaceArchive(
+                                target,
+                                targetDir,
+                                candidate.file,
+                                original,
+                                approval,
+                                changedWorks,
+                            ) { bytes ->
+                                copiedBytes += bytes
+                                onProgress(Progress(index, candidates.size, candidate.name, copiedBytes, totalBytes))
+                            }
+                        ) {
+                            if (options.deleteSourceAfterSuccess && !overlapsLocalLibrary(candidate.file)) {
+                                deleteRecursively(candidate.file)
+                            }
+                            imported++
+                        } else {
+                            skipped++
+                            conflicts += label
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        failed++
+                        conflicts += label
+                    }
+                }
+                onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
+                return@forEachIndexed
+            }
             if (targetDir.findFile(destinationName) != null ||
-                normalizeName(destinationName.substringBeforeLast('.')) in committedNames ||
-                targetDir.listFiles()?.any {
-                    normalizeName(it.name.orEmpty().substringBeforeLast('.')) ==
-                        normalizeName(destinationName.substringBeforeLast('.'))
-                } ==
-                true
+                key in committedNames || matching.isNotEmpty()
             ) {
                 skipped++
                 onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
@@ -577,8 +600,10 @@ class LocalChapterTransferService(
                     "$destinationName.$extension"
                 }
                 withLocalChapterMutationLock(target.url) {
+                    check(targetDir.findFile(committedName) == null) { "Import destination already exists" }
                     if (!staged.renameTo(committedName)) error("Cannot commit imported chapter")
-                    committedNames += normalizeName(destinationName.substringBeforeLast('.'))
+                    committedNames += key
+                    changedWorks += target.url
                     firstImportedChapterFileName = firstImportedChapterFileName ?: committedName
                     val chapterUrl = "${target.url}/$committedName"
                     if (chapterRepository.getChapterByUrlAndMangaId(chapterUrl, target.id) == null) {
@@ -613,7 +638,7 @@ class LocalChapterTransferService(
             }
             onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
         }
-        if (imported > 0) {
+        if (firstImportedChapterFileName != null) {
             // New chapters are the work growing, so it re-enters the library at this moment and the
             // import date says so: a work that gained chapters is as new as one that just arrived,
             // and under the import-date order it belongs at the top with the rest of today's
@@ -651,40 +676,53 @@ class LocalChapterTransferService(
                 // A cover can be regenerated later; it must not turn a completed import into a failure.
             }
         }
-        if (invalidateListing) {
-            Injekt.get<SourceManager>().get(LocalSource.ID)?.let { (it as? LocalSource)?.invalidateListing() }
-        }
-        Result(imported, skipped, failed)
+        Result(imported, skipped, failed, conflicts)
     }
 
     suspend fun previewGroupedImport(
         groups: List<GroupPreviewRequest>,
     ): ImportPreview = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val previews = groups.map { group ->
-            previewImportForTargetUrl(group.uris, group.targetUrl)
+        val previews = groups.groupBy { it.targetUrl }.map { (targetUrl, requests) ->
+            previewImportForTargetUrl(requests.flatMap { it.uris }, targetUrl)
         }
         ImportPreview(
             candidateNames = previews.flatMap { it.candidateNames },
             conflicts = previews.flatMap { it.conflicts }.distinct(),
+            replacements = previews.flatMap { it.replacements },
         )
     }
 
     private fun previewImportForTargetUrl(uris: List<Uri>, targetUrl: String): ImportPreview {
         val targetDir = fileSystem.getBaseDirectory()?.findFile(targetUrl)
-        val existingNames = targetDir?.listFiles().orEmpty()
-            .map { normalizeName(it.name.orEmpty().substringBeforeLast('.')) }
-            .toHashSet()
+        val existing = targetDir?.let {
+            fileSystem.getDirectorySnapshot(it, fresh = true).also { snapshot -> check(snapshot.isAccessible) }.files
+        }.orEmpty().groupBy(::entryKey)
         val candidates = uris
             .flatMap { expand(UniFile.fromUri(context, it) ?: return@flatMap emptyList()) }
             .distinctBy { it.file.uri.toString() }
-        val seen = hashSetOf<String>()
-        val conflicts = candidates.mapNotNull { candidate ->
-            val normalized = normalizeName(chapterDestinationName(candidate.name).substringBeforeLast('.'))
-            if (normalized in existingNames || !seen.add(normalized)) candidate.name else null
+        val conflicts = mutableListOf<String>()
+        val replacements = mutableListOf<LocalArchiveReplacement>()
+        for ((key, incoming) in candidates.groupBy { destinationKey(it.name) }) {
+            val originals = existing[key].orEmpty()
+            if (incoming.size == 1 && originals.isEmpty()) continue
+            conflicts += incoming.map { "$targetUrl / ${it.name}" }
+            val candidate = incoming.singleOrNull() ?: continue
+            val original = originals.singleOrNull() ?: continue
+            if (!sameArchiveFormat(candidate.file, original)) continue
+            val path = original.filePath ?: continue
+            val digest = archiveReplacementDigest(File(path).toPath()) ?: continue
+            replacements += LocalArchiveReplacement(
+                targetUrl,
+                candidate.file.uri.toString(),
+                original.name ?: continue,
+                path,
+                digest,
+            )
         }
         return ImportPreview(
             candidateNames = candidates.map { it.name },
             conflicts = conflicts.distinct(),
+            replacements = replacements,
         )
     }
 
@@ -693,53 +731,163 @@ class LocalChapterTransferService(
         options: Options = Options(),
         onProgress: (Progress) -> Unit = {},
     ): Result = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        if (groups.isEmpty()) return@withContext Result(0, 0, 0)
-        val expanded = groups.flatMap { group ->
-            group.uris.flatMap { uri ->
-                expand(UniFile.fromUri(context, uri) ?: return@flatMap emptyList())
+        runGroupedImport(mergeImportGroups(groups), options, onProgress)
+    }
+
+    private fun mergeImportGroups(groups: List<GroupImport>): List<GroupImport> =
+        groups.groupBy { it.targetMangaId }.map { (targetId, requests) ->
+            GroupImport(targetId, requests.flatMap { it.uris }.distinct())
+        }
+
+    private fun groupedImportProgress(
+        groups: List<GroupImport>,
+        options: Options,
+        onProgress: (Progress) -> Unit,
+    ): GroupedImportProgress {
+        val seen = hashSetOf<Uri>()
+        var bytes = 0L
+        for (group in groups) {
+            for (uri in group.uris) {
+                val source = UniFile.fromUri(context, uri) ?: continue
+                for (candidate in expand(source)) {
+                    if (seen.add(candidate.file.uri)) {
+                        bytes += sizeOfForTransfer(candidate.file, options)
+                    }
+                }
             }
-        }.distinctBy { it.file.uri.toString() }
-        val total = expanded.size
-        val totalBytes = expanded.sumOf { sizeOfForTransfer(it.file, options) }
-        var completed = 0
-        var copiedBytes = 0L
-        var imported = 0
-        var skipped = 0
-        var failed = 0
+        }
+        return GroupedImportProgress(seen.size, bytes, onProgress)
+    }
+
+    private suspend fun runGroupedImport(
+        groups: List<GroupImport>,
+        options: Options,
+        onProgress: (Progress) -> Unit,
+    ): Result {
+        if (groups.isEmpty()) return Result(0, 0, 0)
+        val progress = groupedImportProgress(groups, options, onProgress)
+        val changedWorks = mutableSetOf<String>()
         try {
             for (group in groups) {
                 coroutineContext.ensureActive()
-                var groupCopiedBytes = 0L
-                val result = importUrisInternal(
-                    uris = group.uris,
-                    targetMangaId = group.targetMangaId,
-                    options = options,
-                    onProgress = { progress ->
-                        groupCopiedBytes = progress.copiedBytes
-                        onProgress(
-                            Progress(
-                                completed = completed + progress.completed,
-                                total = total,
-                                currentName = progress.currentName,
-                                copiedBytes = copiedBytes + progress.copiedBytes,
-                                totalBytes = totalBytes,
-                            ),
-                        )
-                    },
-                    invalidateListing = false,
+                progress.finishGroup(
+                    importUrisInternal(group.uris, group.targetMangaId, options, progress::update, changedWorks),
                 )
-                imported += result.imported
-                skipped += result.skipped
-                failed += result.failed
-                val groupCandidates = group.uris.flatMap { uri ->
-                    expand(UniFile.fromUri(context, uri) ?: return@flatMap emptyList())
-                }
-                completed += groupCandidates.size
-                copiedBytes += groupCopiedBytes
             }
-            Result(imported, skipped, failed)
+            return progress.result()
         } finally {
-            Injekt.get<SourceManager>().get(LocalSource.ID)?.let { (it as? LocalSource)?.invalidateListing() }
+            withContext(NonCancellable) { localSource()?.refreshMutatedWorks(changedWorks) }
+        }
+    }
+
+    // Keep counters out of the suspend state machine; ART rejected the larger generated method.
+    private class GroupedImportProgress(
+        private val total: Int,
+        private val totalBytes: Long,
+        private val onProgress: (Progress) -> Unit,
+    ) {
+        private var imported = 0
+        private var skipped = 0
+        private var failed = 0
+        private var copiedBytes = 0L
+        private var groupCopiedBytes = 0L
+        private val conflicts = mutableListOf<String>()
+
+        fun update(progress: Progress) {
+            groupCopiedBytes = progress.copiedBytes
+            onProgress(
+                progress.copy(
+                    completed = imported + skipped + failed + progress.completed,
+                    total = total,
+                    copiedBytes = copiedBytes + progress.copiedBytes,
+                    totalBytes = totalBytes,
+                ),
+            )
+        }
+
+        fun finishGroup(result: Result) {
+            imported += result.imported
+            skipped += result.skipped
+            failed += result.failed
+            conflicts += result.conflicts
+            copiedBytes += groupCopiedBytes
+            groupCopiedBytes = 0L
+        }
+
+        fun result() = Result(imported, skipped, failed, conflicts)
+    }
+
+    private fun destinationKey(name: String): String = chapterImportKey(chapterDestinationName(name), isFile = false)
+
+    private fun entryKey(file: UniFile): String = chapterImportKey(file.name.orEmpty(), isFile = !file.isDirectory)
+
+    private fun sameArchiveFormat(source: UniFile, target: UniFile): Boolean =
+        source.isFile && target.isFile && source.uri != target.uri && !overlapsLocalLibrary(source) &&
+            Archive.isSupported(source) &&
+            Archive.isSupported(target) && source.extension.equals(target.extension, ignoreCase = true)
+
+    private suspend fun replaceArchive(
+        target: Manga,
+        parent: UniFile,
+        source: UniFile,
+        original: UniFile,
+        approval: LocalArchiveReplacement,
+        changedWorks: MutableSet<String>,
+        onBytes: (Long) -> Unit,
+    ): Boolean {
+        val path = File(approval.targetPath).toPath()
+        if (source.filePath?.let { Files.isSameFile(File(it).toPath(), path) } == true) return false
+        val staged = Files.createTempFile(path.parent, ".mihon-import-", ".tmp")
+        try {
+            val stagedFile = checkNotNull(UniFile.fromFile(staged.toFile()))
+            copyEntry(source, stagedFile, onBytes)
+            FileChannel.open(staged, StandardOpenOption.WRITE).use { it.force(true) }
+            val activeContext = coroutineContext
+            var pageCount = 0
+            stagedFile.archiveReader(context).use { archive ->
+                archive.forEachEntry { entry, input ->
+                    activeContext.ensureActive()
+                    if (Archive.isPageEntry(entry.name, entry.isFile) && PageImageName.isPage(entry.name) { true }) {
+                        val image = ImageUtil.findImageType(input)
+                        if (PageImageName.hasImageExtension(entry.name)) {
+                            require(image != null) { "Unreadable archive page" }
+                        }
+                        if (image != null) pageCount++
+                    }
+                }
+            }
+            require(pageCount > 0) { "No readable archive pages" }
+            activeContext.ensureActive()
+            return withLocalChapterMutationLock(target.url) {
+                val snapshot = fileSystem.getDirectorySnapshot(parent, fresh = true)
+                val current = snapshot.files.filter { entryKey(it) == entryKey(original) }.singleOrNull()
+                if (!snapshot.isAccessible || current?.filePath != approval.targetPath) {
+                    return@withLocalChapterMutationLock false
+                }
+                val chapterUrl = "${target.url}/${approval.fileName}"
+                val chapter = chapterRepository.getChapterByUrlAndMangaId(chapterUrl, target.id)
+                if (!commitArchiveReplacement(approval, staged)) return@withLocalChapterMutationLock false
+                changedWorks += target.url
+                withContext(NonCancellable) {
+                    LocalPageListCache.invalidateArchive(original.uri.toString())
+                    runCatching { coverManager.invalidateGeneratedCover(chapterUrl) }
+                    runCatching { localSource()?.invalidateChapterMetadata(target.url, approval.fileName) }
+                    if (chapter != null) {
+                        runCatching {
+                            chapterRepository.update(
+                                ChapterUpdate(
+                                    id = chapter.id,
+                                    totalPages = pageCount.toLong(),
+                                    dateUpload = maxOf(System.currentTimeMillis(), chapter.dateUpload + 1),
+                                ),
+                            )
+                        }
+                    }
+                }
+                true
+            }
+        } finally {
+            runCatching { Files.deleteIfExists(staged) }
         }
     }
 
@@ -766,7 +914,10 @@ class LocalChapterTransferService(
         } else {
             (childFolders + directArchives)
                 .sortedBy { it.name.orEmpty() }
-                .map { Candidate(it, it.name.orEmpty().substringBeforeLast('.')) }
+                .map {
+                    val name = it.name.orEmpty()
+                    Candidate(it, if (it.isDirectory) name else name.substringBeforeLast('.'))
+                }
         }
     }
 
@@ -876,3 +1027,6 @@ internal fun chapterDestinationName(rawName: String): String {
 }
 
 private const val CHAPTER_NAME_RESERVED_BYTES = 11
+
+internal fun chapterImportKey(name: String, isFile: Boolean): String =
+    (if (isFile) name.substringBeforeLast('.') else name).trim().lowercase()

@@ -62,23 +62,30 @@ class LocalChapterTransferNotifier(
         context.cancelNotification(Notifications.ID_LOCAL_TRANSFER_PROGRESS)
     }
 
-    fun showResult(imported: Int, skipped: Int, failed: Int, isMove: Boolean) {
+    fun showResult(result: LocalChapterTransferService.Result, isMove: Boolean) {
         context.notificationBuilder(Notifications.CHANNEL_LOCAL_TRANSFER_PROGRESS) {
             setContentTitle(context.stringResource(MR.strings.action_import_local_chapters))
             setSmallIcon(R.drawable.ic_mihon)
             setAutoCancel(true)
-            setContentText(
-                context.stringResource(
-                    if (isMove) {
-                        MR.strings.notification_local_move_complete
-                    } else {
-                        MR.strings.notification_local_transfer_complete
-                    },
-                    imported,
-                    skipped,
-                    failed,
-                ),
+            val summaryId = if (isMove) {
+                MR.strings.notification_local_move_complete
+            } else {
+                MR.strings.notification_local_transfer_complete
+            }
+            val summary = context.stringResource(
+                summaryId,
+                result.imported,
+                result.skipped,
+                result.failed,
             )
+            setContentText(summary)
+            if (!securityPreferences.hideNotificationContent.get() && result.conflicts.isNotEmpty()) {
+                val detail = context.stringResource(
+                    MR.strings.local_transfer_not_replaced,
+                    result.conflicts.take(8).joinToString("\n"),
+                )
+                setStyle(NotificationCompat.BigTextStyle().bigText("$summary\n$detail"))
+            }
         }.also { context.notify(Notifications.ID_LOCAL_TRANSFER_COMPLETE, it.build()) }
     }
 

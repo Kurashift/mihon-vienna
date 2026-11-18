@@ -28,6 +28,7 @@ import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.presentation.audio.AudioQuickPlaySheet
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.ClearHistoryDialog
+import eu.kanade.presentation.components.DeleteLocalChaptersDialog
 import eu.kanade.presentation.components.DeleteLocalEntriesDialog
 import eu.kanade.presentation.components.NavigatorAdaptiveSheet
 import eu.kanade.presentation.manga.ChapterSettingsDialog
@@ -466,11 +467,11 @@ class MangaScreen(
                 )
             }
             is MangaViewModel.Dialog.DeleteLocalChapters -> {
-                DeleteLocalEntriesDialog(
+                DeleteLocalChaptersDialog(
                     title = context.stringResource(MR.strings.local_delete_chapter_title),
-                    entryNames = dialog.chapters.map { it.name },
+                    targets = viewModel.localChapterDeletionTargets(dialog.chapters),
                     onDismissRequest = onDismissRequest,
-                    onConfirm = { viewModel.deleteLocalChapters(dialog.chapters) },
+                    onConfirm = { folders -> viewModel.deleteLocalChapters(dialog.chapters, folders) },
                 )
             }
             is MangaViewModel.Dialog.DeleteLocalManga -> {

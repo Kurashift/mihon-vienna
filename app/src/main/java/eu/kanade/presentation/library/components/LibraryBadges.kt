@@ -100,9 +100,10 @@ internal fun ProgressBadge(
     finishedCount: Long,
     totalChapters: Long,
     filled: Boolean = true,
+    showEmpty: Boolean = false,
 ) {
-    if (totalChapters > 0) {
-        val text = "$finishedCount/$totalChapters"
+    if (totalChapters > 0 || showEmpty) {
+        val text = if (showEmpty) stringResource(MR.strings.local_empty_work) else "$finishedCount/$totalChapters"
         if (filled) {
             // Corner badge on covers: dark rectangular chip, flush with the edge.
             Text(

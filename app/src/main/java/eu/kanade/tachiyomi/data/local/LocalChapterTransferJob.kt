@@ -21,6 +21,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.await
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -66,6 +68,12 @@ class LocalChapterTransferJob(
             LocalChapterTransferService.FolderOutput.valueOf(request.folderOutput)
         }.getOrDefault(LocalChapterTransferService.FolderOutput.DIRECTORY)
         val deleteSource = request.deleteSource
+        val options = LocalChapterTransferService.Options(
+            output,
+            deleteSource,
+            request.replacements,
+            request.replaceConflicts,
+        )
 
         return try {
             var lastProgressUpdate: ListenableFuture<Void>? = null
@@ -82,7 +90,7 @@ class LocalChapterTransferJob(
                     targetMangaId = targetMangaId,
                     onProgress = onProgress,
                 ).let {
-                    Triple(it.moved, it.skipped, it.failed)
+                    LocalChapterTransferService.Result(it.moved, it.skipped, it.failed)
                 }
             } else if (isGroupedImport) {
                 val groups = request.groups.map { group ->
@@ -93,28 +101,25 @@ class LocalChapterTransferJob(
                 }
                 service.importGroupedUris(
                     groups = groups,
-                    options = LocalChapterTransferService.Options(output, deleteSource),
+                    options = options,
                     onProgress = onProgress,
-                ).let {
-                    Triple(it.imported, it.skipped, it.failed)
-                }
+                )
             } else {
                 service.importUris(
                     uris = uris,
                     targetMangaId = targetMangaId,
-                    options = LocalChapterTransferService.Options(output, deleteSource),
+                    options = options,
                     onProgress = onProgress,
-                ).let {
-                    Triple(it.imported, it.skipped, it.failed)
-                }
+                )
             }
             progressThrottler.flush()
             lastProgressUpdate?.await()
-            notifier.showResult(result.first, result.second, result.third, isMove)
+            notifier.showResult(result, isMove)
             Result.success()
         } catch (_: CancellationException) {
             Result.success()
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) { "Local chapter transfer failed" }
             Result.failure()
         } finally {
             manifestFile?.delete()
@@ -180,6 +185,8 @@ class LocalChapterTransferJob(
                     uris = uris.map(Uri::toString),
                     folderOutput = options.folderOutput.name,
                     deleteSource = options.deleteSourceAfterSuccess,
+                    replacements = options.replacements,
+                    replaceConflicts = options.replaceConflicts,
                 ),
             )
         }
@@ -216,6 +223,8 @@ class LocalChapterTransferJob(
                     },
                     folderOutput = options.folderOutput.name,
                     deleteSource = options.deleteSourceAfterSuccess,
+                    replacements = options.replacements,
+                    replaceConflicts = options.replaceConflicts,
                 ),
             )
         }

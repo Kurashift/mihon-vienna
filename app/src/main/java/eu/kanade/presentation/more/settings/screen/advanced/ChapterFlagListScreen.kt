@@ -46,7 +46,7 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
-import eu.kanade.presentation.components.DeleteLocalEntriesDialog
+import eu.kanade.presentation.components.DeleteLocalChaptersDialog
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.mylists.MY_LIST_COVER_ASPECT_RATIO
 import eu.kanade.presentation.mylists.MyListChapterTitle
@@ -430,10 +430,13 @@ class ChapterFlagListScreen(
             val groupRemains = affectedGroups.any { (mangaId, groupMarks) ->
                 groupMarks.size < (grouped.firstOrNull { it.mangaId == mangaId }?.marks?.size ?: 0)
             }
-            DeleteLocalEntriesDialog(
+            val targets = marks.map { mark ->
+                LocalEntryDeletionService.ChapterTarget(mark.chapterId, mark.mangaId, mark.mangaTitle, mark.chapterName)
+            }
+            DeleteLocalChaptersDialog(
                 // 标题只报数量：受影响的作品名可能横跨多部，塞进标题会折行并撑大弹窗。
                 title = stringResource(MR.strings.local_delete_marked_chapters_title, marks.size),
-                entryNames = marks.map { it.chapterName },
+                targets = targets,
                 subtitle = stringResource(
                     MR.strings.local_delete_scope_marked,
                     affectedGroups.size,
@@ -448,21 +451,12 @@ class ChapterFlagListScreen(
                     if (groupRemains) add(stringResource(MR.strings.local_delete_group_remains))
                 },
                 onDismissRequest = { pendingDeletion = null },
-                onConfirm = {
+                onConfirm = { folders ->
                     pendingDeletion = null
                     // 删掉的篇目其标记已一并清除，marks 流更新后 LaunchedEffect 会自动
                     // 把失效 id 从选中集合里剔除，这里只需退出多选态。
                     selectedChapterIds = emptySet()
-                    deletionService.startDeleteChapters(
-                        marks.map { mark ->
-                            LocalEntryDeletionService.ChapterTarget(
-                                id = mark.chapterId,
-                                mangaId = mark.mangaId,
-                                mangaTitle = mark.mangaTitle,
-                                name = mark.chapterName,
-                            )
-                        },
-                    )
+                    deletionService.startDeleteChapters(targets, folders)
                 },
             )
         }

@@ -47,6 +47,7 @@ data class LocalDeletionReport(
     val skippedCount: Int,
     val deletedMangaIds: Set<Long>,
     val finishedAt: Long,
+    val keptFolders: List<String> = emptyList(),
 ) {
     val deletedCount: Int get() = entries.count { it.outcome == LocalDeletionOutcome.DELETED }
 
