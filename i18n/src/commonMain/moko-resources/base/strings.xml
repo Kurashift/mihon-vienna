@@ -44,6 +44,13 @@
     <string name="label_extensions">Extensions</string>
     <string name="label_extension_info">Extension info</string>
     <string name="label_help">Help</string>
+    <string name="online_help">Online help</string>
+    <string name="background_help">Background activity help</string>
+    <string name="support_mihon">Support Mihon</string>
+    <string name="copy_debug_info">Copy diagnostic information</string>
+    <string name="import_local_works">Import local works</string>
+    <string name="export_library_list">Export library list</string>
+    <string name="local_works_settings">Local works</string>
     <string name="label_support_us">Support Mihon</string>
     <string name="more_section_reading_mode">Reading mode</string>
     <string name="more_section_library">Library &amp; lists</string>
@@ -1263,11 +1270,11 @@
     <string name="marks_list_title">Marked works</string>
     <string name="marks_list_empty">No marked works yet. Flag a few from the work list.</string>
     <string name="marks_list_share">Share</string>
-    <string name="pref_marks_list_summary">View and export your marked works. Jump back to any manga from here.</string>
+    <string name="pref_marks_list_summary">Mark chapters in the chapter list.</string>
     <string name="marks_list_open_manga">Open manga</string>
     <string name="marks_list_manga_missing">This manga is no longer in the library</string>
     <string name="marks_list_clear">Clear list</string>
-    <string name="marks_list_remove">Remove</string>
+    <string name="marks_list_remove">Remove from list</string>
     <string name="marks_list_remove_entry_confirm">Remove “%1$s” from this list? The local manga will not be deleted.</string>
     <string name="marks_list_remove_selected_confirm">Remove the selected %1$d manga and all of their list entries? Your local files will not be touched.</string>
     <string name="marks_list_chapter_count">%1$d marked works</string>
@@ -1275,7 +1282,7 @@
     <string name="marks_list_search_hint">Search by work or chapter name</string>
     <string name="marks_list_open_chapter">Open work</string>
     <string name="marks_list_clear_manga_confirm">Removes all marks for this manga from the list. Your local files are not touched.</string>
-    <string name="pref_good_doujin_list_summary">View and manage works kept as good doujins. Swipe left on a work to add it.</string>
+    <string name="pref_good_doujin_list_summary">Add a chapter to your good doujins.</string>
     <string name="good_doujin_list_title">Good doujin list</string>
     <string name="good_doujin_list_empty">No good doujins yet. Swipe left on a work.</string>
     <string name="good_doujin_list_no_others">No other good doujins available</string>
@@ -1431,7 +1438,7 @@
     <string name="local_chapter_covers_clear_confirm">Delete all generated thumbnails? Your CBZ files, library data, and reading progress will not be changed.</string>
     <string name="local_chapter_covers_cleared">Cleared %1$d covers</string>
     <string name="local_read_review_action">Completed local chapters</string>
-    <string name="local_read_review_summary">All completed local chapters, grouped by manga. Jump back to the manga, read it again, or undo a wrong read status.</string>
+    <string name="local_read_review_summary">Local chapters marked as read appear here.</string>
     <string name="local_read_review_title">Completed local chapters</string>
     <string name="local_read_review_count">%1$d local chapters are marked as read</string>
     <string name="local_read_review_empty">No local chapters are marked as read</string>

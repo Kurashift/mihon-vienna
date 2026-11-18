@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.Label
-import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Flag
@@ -21,7 +19,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.more.settings.widget.PreferenceGroupHeader
@@ -29,7 +26,6 @@ import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.more.DownloadQueueState
-import tachiyomi.core.common.Constants
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -50,12 +46,9 @@ fun MoreScreen(
     onClickDataAndStorage: () -> Unit,
     onClickPermissions: () -> Unit,
     onClickSettings: () -> Unit,
-    onClickSupport: () -> Unit,
     onClickAbout: () -> Unit,
     hasAppUpdate: Boolean,
 ) {
-    val uriHandler = LocalUriHandler.current
-
     Scaffold { contentPadding ->
         ScrollbarLazyColumn(contentPadding = contentPadding) {
             item {
@@ -71,7 +64,6 @@ fun MoreScreen(
             item {
                 SwitchPreferenceWidget(
                     title = stringResource(MR.strings.label_downloaded_only),
-                    subtitle = stringResource(MR.strings.downloaded_only_summary),
                     icon = Icons.Outlined.CloudOff,
                     checked = downloadedOnly,
                     onCheckedChanged = onDownloadedOnlyChange,
@@ -167,16 +159,6 @@ fun MoreScreen(
             }
 
             item {
-                PreferenceGroupHeader(title = stringResource(MR.strings.more_section_about))
-            }
-            item {
-                TextPreferenceWidget(
-                    title = stringResource(MR.strings.label_support_us),
-                    icon = Icons.Default.VolunteerActivism,
-                    onPreferenceClick = onClickSupport,
-                )
-            }
-            item {
                 TextPreferenceWidget(
                     title = stringResource(MR.strings.pref_category_about),
                     icon = Icons.Outlined.Info,
@@ -186,13 +168,6 @@ fun MoreScreen(
                         }
                     },
                     onPreferenceClick = onClickAbout,
-                )
-            }
-            item {
-                TextPreferenceWidget(
-                    title = stringResource(MR.strings.label_help),
-                    icon = Icons.AutoMirrored.Outlined.HelpOutline,
-                    onPreferenceClick = { uriHandler.openUri(Constants.URL_HELP) },
                 )
             }
         }

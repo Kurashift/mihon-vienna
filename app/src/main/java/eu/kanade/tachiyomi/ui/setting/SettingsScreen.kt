@@ -13,6 +13,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.more.settings.screen.SettingsAppearanceScreen
+import eu.kanade.presentation.more.settings.screen.SettingsBackupScreen
 import eu.kanade.presentation.more.settings.screen.SettingsDataScreen
 import eu.kanade.presentation.more.settings.screen.SettingsMainScreen
 import eu.kanade.presentation.more.settings.screen.SettingsTrackingScreen
@@ -37,6 +38,7 @@ class SettingsScreen(
                 screen = when (destination) {
                     Destination.About.id -> AboutScreen
                     Destination.DataAndStorage.id -> SettingsDataScreen
+                    Destination.Backup.id -> SettingsBackupScreen
                     Destination.Tracking.id -> SettingsTrackingScreen
                     else -> SettingsMainScreen
                 },
@@ -58,6 +60,7 @@ class SettingsScreen(
                 screen = when (destination) {
                     Destination.About.id -> AboutScreen
                     Destination.DataAndStorage.id -> SettingsDataScreen
+                    Destination.Backup.id -> SettingsBackupScreen
                     Destination.Tracking.id -> SettingsTrackingScreen
                     else -> SettingsAppearanceScreen
                 },
@@ -83,5 +86,6 @@ class SettingsScreen(
         data object About : Destination(0)
         data object DataAndStorage : Destination(1)
         data object Tracking : Destination(2)
+        data object Backup : Destination(3)
     }
 }

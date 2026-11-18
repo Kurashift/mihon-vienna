@@ -4,20 +4,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.manga.LocalLibraryChapterTitleTranslationsHost
 import eu.kanade.presentation.more.settings.Preference
@@ -27,48 +23,30 @@ import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import tachiyomi.domain.manga.interactor.GetFavorites
-import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.TextButton
 import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-object SettingsImportExportScreen : SearchableSettings {
-
-    @ReadOnlyComposable
-    @Composable
-    override fun getTitleRes() = MR.strings.settings_import_export
+internal object DataExportActions {
 
     @Composable
-    override fun getPreferences(): List<Preference> {
-        return listOf(
-            getExportGroup(),
-            getChapterTitleTranslationsGroup(),
-        )
-    }
-
-    @Composable
-    private fun getChapterTitleTranslationsGroup(): Preference.PreferenceGroup {
+    fun chapterTitles(): Preference.PreferenceItem.TextPreference {
         var showDialog by remember { mutableStateOf(false) }
         LocalLibraryChapterTitleTranslationsHost(
             visible = showDialog,
             onDismissRequest = { showDialog = false },
         )
 
-        return Preference.PreferenceGroup(
-            title = stringResource(MR.strings.chapter_title_translations),
-            preferenceItems = listOf(
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.local_library_chapter_title_translations),
-                    onClick = { showDialog = true },
-                ),
-            ),
+        return Preference.PreferenceItem.TextPreference(
+            title = stringResource(MR.strings.local_library_chapter_title_translations),
+            onClick = { showDialog = true },
         )
     }
 
     @Composable
-    private fun getExportGroup(): Preference.PreferenceGroup {
+    fun libraryList(): Preference.PreferenceItem.TextPreference {
         var showDialog by remember { mutableStateOf(false) }
         var exportOptions by remember {
             mutableStateOf(
@@ -83,10 +61,6 @@ object SettingsImportExportScreen : SearchableSettings {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         val getFavorites = remember { Injekt.get<GetFavorites>() }
-        var favorites by remember { mutableStateOf<List<Manga>>(emptyList()) }
-        LaunchedEffect(Unit) {
-            favorites = getFavorites.await()
-        }
 
         val saveFileLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("text/csv"),
@@ -96,7 +70,7 @@ object SettingsImportExportScreen : SearchableSettings {
                     LibraryExporter.exportToCsv(
                         context = context,
                         uri = it,
-                        favorites = favorites,
+                        favorites = getFavorites.await(),
                         options = exportOptions,
                         onExportComplete = {
                             scope.launch(Dispatchers.Main) {
@@ -119,14 +93,9 @@ object SettingsImportExportScreen : SearchableSettings {
             )
         }
 
-        return Preference.PreferenceGroup(
-            title = stringResource(MR.strings.export),
-            preferenceItems = listOf(
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.library_list),
-                    onClick = { showDialog = true },
-                ),
-            ),
+        return Preference.PreferenceItem.TextPreference(
+            title = stringResource(MR.strings.export_library_list),
+            onClick = { showDialog = true },
         )
     }
 

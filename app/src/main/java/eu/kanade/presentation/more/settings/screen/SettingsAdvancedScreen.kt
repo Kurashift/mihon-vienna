@@ -1,22 +1,14 @@
 package eu.kanade.presentation.more.settings.screen
 
-import android.annotation.SuppressLint
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.provider.Settings
-import android.text.format.Formatter
 import android.webkit.WebStorage
 import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,19 +17,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.extension.interactor.TrustExtension
-import eu.kanade.presentation.components.TransientNoticeHost
-import eu.kanade.presentation.components.TransientNoticeState
-import eu.kanade.presentation.components.rememberTransientNoticeState
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.advanced.ClearDatabaseScreen
 import eu.kanade.presentation.more.settings.screen.debug.DebugInfoScreen
@@ -57,13 +42,10 @@ import eu.kanade.tachiyomi.network.PREF_DOH_NJALLA
 import eu.kanade.tachiyomi.network.PREF_DOH_QUAD101
 import eu.kanade.tachiyomi.network.PREF_DOH_QUAD9
 import eu.kanade.tachiyomi.network.PREF_DOH_SHECAN
-import eu.kanade.tachiyomi.ui.more.OnboardingScreen
-import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.isReleaseBuildType
 import eu.kanade.tachiyomi.util.system.isShizukuInstalled
-import eu.kanade.tachiyomi.util.system.powerManager
 import eu.kanade.tachiyomi.util.system.setDefaultSettings
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.launch
@@ -71,7 +53,6 @@ import logcat.LogPriority
 import okhttp3.Headers
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchNonCancellable
-import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
@@ -80,39 +61,11 @@ import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
-import tachiyomi.source.local.image.LocalChapterCoverGenerationState
-import tachiyomi.source.local.image.LocalChapterCoverManager
-import tachiyomi.source.local.image.LocalChapterCoverStats
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
 
 object SettingsAdvancedScreen : SearchableSettings {
-
-    /**
-     * The one-shot feedback for the coach-mark reset entry. The state is remembered by the
-     * overridden [Content] below and read from [getPreferences]'s click handler — the same
-     * reach-around as [SearchableSettings.highlightKey].
-     */
-    private var resetNoticeState: TransientNoticeState? = null
-
-    @Composable
-    override fun Content() {
-        val state = rememberTransientNoticeState()
-        resetNoticeState = state
-        DisposableEffect(Unit) {
-            onDispose { resetNoticeState = null }
-        }
-        Box {
-            super.Content()
-            TransientNoticeHost(
-                state = state,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 48.dp),
-            )
-        }
-    }
 
     @ReadOnlyComposable
     @Composable
@@ -127,8 +80,6 @@ object SettingsAdvancedScreen : SearchableSettings {
         val basePreferences = remember { Injekt.get<BasePreferences>() }
         val networkPreferences = remember { Injekt.get<NetworkPreferences>() }
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
-        val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
-        val resetDoneText = stringResource(MR.strings.coach_reset_done)
 
         return listOf(
             Preference.PreferenceItem.TextPreference(
@@ -153,72 +104,11 @@ object SettingsAdvancedScreen : SearchableSettings {
                 title = stringResource(MR.strings.pref_debug_info),
                 onClick = { navigator.push(DebugInfoScreen()) },
             ),
-            Preference.PreferenceItem.TextPreference(
-                title = stringResource(MR.strings.pref_onboarding_guide),
-                onClick = { navigator.push(OnboardingScreen()) },
-            ),
-            Preference.PreferenceItem.TextPreference(
-                title = stringResource(MR.strings.pref_show_coach_marks),
-                onClick = {
-                    basePreferences.coachLocalFabShown.set(false)
-                    readerPreferences.showNavigationOverlayNewUser.set(true)
-                    resetNoticeState?.show(resetDoneText)
-                },
-            ),
-            Preference.PreferenceItem.TextPreference(
-                title = stringResource(MR.strings.pref_manage_notifications),
-                onClick = {
-                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                    }
-                    context.startActivity(intent)
-                },
-            ),
-            getBackgroundActivityGroup(),
             getDataGroup(),
             getNetworkGroup(networkPreferences = networkPreferences),
             getLibraryGroup(libraryPreferences = libraryPreferences),
             getReaderGroup(basePreferences = basePreferences),
             getExtensionsGroup(basePreferences = basePreferences),
-        )
-    }
-
-    @Composable
-    private fun getBackgroundActivityGroup(): Preference.PreferenceGroup {
-        val context = LocalContext.current
-        val uriHandler = LocalUriHandler.current
-
-        return Preference.PreferenceGroup(
-            title = stringResource(MR.strings.label_background_activity),
-            preferenceItems = listOf(
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.pref_disable_battery_optimization),
-                    subtitle = stringResource(MR.strings.pref_disable_battery_optimization_summary),
-                    onClick = {
-                        val packageName: String = context.packageName
-                        if (!context.powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                            try {
-                                @SuppressLint("BatteryLife")
-                                val intent = Intent().apply {
-                                    action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                                    data = "package:$packageName".toUri()
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(intent)
-                            } catch (e: ActivityNotFoundException) {
-                                context.toast(MR.strings.battery_optimization_setting_activity_not_found)
-                            }
-                        } else {
-                            context.toast(MR.strings.battery_optimization_disabled)
-                        }
-                    },
-                ),
-                Preference.PreferenceItem.TextPreference(
-                    title = "Don't kill my app!",
-                    subtitle = stringResource(MR.strings.about_dont_kill_my_app),
-                    onClick = { uriHandler.openUri("https://dontkillmyapp.com/") },
-                ),
-            ),
         )
     }
 
@@ -338,116 +228,12 @@ object SettingsAdvancedScreen : SearchableSettings {
     }
 
     @Composable
-    private fun getLibraryGroup(
-        libraryPreferences: LibraryPreferences,
-    ): Preference.PreferenceGroup {
-        val scope = rememberCoroutineScope()
+    private fun getLibraryGroup(libraryPreferences: LibraryPreferences): Preference.PreferenceGroup {
         val context = LocalContext.current
-        val basePreferences = remember { Injekt.get<BasePreferences>() }
-        val chapterCoversEnabled by basePreferences.localChapterCoversEnabled.collectAsState()
-        val chapterCoverManager = remember { Injekt.get<LocalChapterCoverManager>() }
-        val generationState by chapterCoverManager.generationState.collectAsState()
-        var coverStats by remember { mutableStateOf(LocalChapterCoverStats(0, 0L)) }
-        var showClearCoversDialog by rememberSaveable { mutableStateOf(false) }
-        LaunchedEffect(generationState) {
-            if (generationState !is LocalChapterCoverGenerationState.Running) {
-                coverStats = withIOContext { chapterCoverManager.stats() }
-            }
-        }
-
-        val coverStatus = when (val state = generationState) {
-            LocalChapterCoverGenerationState.Idle -> stringResource(
-                MR.strings.local_chapter_covers_idle,
-                coverStats.count,
-                Formatter.formatFileSize(context, coverStats.size),
-            )
-            is LocalChapterCoverGenerationState.Running -> stringResource(
-                MR.strings.local_chapter_covers_progress,
-                state.completed,
-                state.total,
-            )
-            is LocalChapterCoverGenerationState.Finished -> stringResource(
-                MR.strings.local_chapter_covers_finished,
-                state.result.generated,
-                state.result.skipped,
-                state.result.failed,
-                state.result.removed,
-            )
-            LocalChapterCoverGenerationState.Failed -> stringResource(MR.strings.local_chapter_covers_failed)
-        }
-        val isGenerating = generationState is LocalChapterCoverGenerationState.Running
-
-        if (showClearCoversDialog) {
-            val dismiss = { showClearCoversDialog = false }
-            AlertDialog(
-                onDismissRequest = dismiss,
-                title = { Text(text = stringResource(MR.strings.local_chapter_covers_clear)) },
-                text = { Text(text = stringResource(MR.strings.local_chapter_covers_clear_confirm)) },
-                dismissButton = {
-                    TextButton(onClick = dismiss) {
-                        Text(text = stringResource(MR.strings.action_cancel))
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            dismiss()
-                            scope.launch {
-                                val cleared = withIOContext { chapterCoverManager.clear() }
-                                coverStats = withIOContext { chapterCoverManager.stats() }
-                                context.toast(
-                                    context.stringResource(MR.strings.local_chapter_covers_cleared, cleared),
-                                )
-                            }
-                        },
-                    ) {
-                        Text(text = stringResource(MR.strings.action_delete))
-                    }
-                },
-            )
-        }
-
+        val scope = rememberCoroutineScope()
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.label_library),
             preferenceItems = buildList {
-                add(
-                    Preference.PreferenceItem.SwitchPreference(
-                        preference = basePreferences.localChapterCoversEnabled,
-                        title = stringResource(MR.strings.local_chapter_covers),
-                        subtitle = stringResource(MR.strings.local_chapter_covers_summary),
-                    ),
-                )
-                add(
-                    Preference.PreferenceItem.SwitchPreference(
-                        preference = basePreferences.localChapterCoverGridEnabled,
-                        title = stringResource(MR.strings.local_chapter_covers_grid),
-                        subtitle = stringResource(MR.strings.local_chapter_covers_grid_summary),
-                        enabled = chapterCoversEnabled,
-                    ),
-                )
-                add(
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(MR.strings.local_chapter_covers_generate),
-                        subtitle = coverStatus,
-                        enabled = !isGenerating,
-                        onClick = chapterCoverManager::startGenerateAll,
-                    ),
-                )
-                if (isGenerating) {
-                    add(
-                        Preference.PreferenceItem.TextPreference(
-                            title = stringResource(MR.strings.local_chapter_covers_cancel),
-                            onClick = chapterCoverManager::cancelGeneration,
-                        ),
-                    )
-                }
-                add(
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(MR.strings.local_chapter_covers_clear),
-                        enabled = !isGenerating && coverStats.count > 0,
-                        onClick = { showClearCoversDialog = true },
-                    ),
-                )
                 add(
                     Preference.PreferenceItem.TextPreference(
                         title = stringResource(MR.strings.pref_refresh_library_covers),

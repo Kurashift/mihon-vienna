@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +56,7 @@ import eu.kanade.presentation.components.SearchHistoryDropdown
 import eu.kanade.presentation.components.UpIcon
 import eu.kanade.presentation.components.rememberSearchHistoryStore
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.presentation.more.settings.screen.about.HelpScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.search.SearchHistoryScope
 import tachiyomi.i18n.MR
@@ -90,9 +92,12 @@ class SettingsSearchScreen : Screen() {
             }
         }
 
-        // Request text field focus on launch
+        var requestedFocus by rememberSaveable { mutableStateOf(false) }
         LaunchedEffect(focusRequester) {
-            focusRequester.requestFocus()
+            if (!requestedFocus) {
+                focusRequester.requestFocus()
+                requestedFocus = true
+            }
         }
 
         val textFieldState = rememberTextFieldState()
@@ -165,7 +170,7 @@ class SettingsSearchScreen : Screen() {
                                 IconButton(onClick = { textFieldState.clearText() }) {
                                     Icon(
                                         imageVector = Icons.Outlined.Close,
-                                        contentDescription = null,
+                                        contentDescription = stringResource(MR.strings.action_reset),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -181,8 +186,9 @@ class SettingsSearchScreen : Screen() {
                 listState = listState,
                 contentPadding = contentPadding,
             ) { result ->
+                focusManager.clearFocus()
                 SearchableSettings.highlightKey = result.highlightKey
-                navigator.replace(result.route)
+                navigator.push(result.route)
             }
         }
     }
@@ -244,7 +250,6 @@ private fun SearchResult(
                         )
                     }
             }
-            .take(10) // Just take top 10 result for quicker result
             .toList()
     }
 
@@ -299,12 +304,19 @@ private fun SearchResult(
 @Composable
 @NonRestartableComposable
 private fun getIndex() = settingScreens
-    .map { screen ->
-        SettingsData(
+    .flatMap { screen ->
+        val common = SettingsData(
             title = stringResource(screen.getTitleRes()),
             route = screen,
             contents = screen.getPreferences(),
         )
+        if (screen is SettingsReaderScreen) {
+            listOf(common) + listOf(false, true).map { webtoon ->
+                common.copy(route = SettingsReaderScreen(webtoon), contents = screen.modePreferences(webtoon))
+            }
+        } else {
+            listOf(common)
+        }
     }
 
 private fun getLocalizedBreadcrumb(path: String, node: String?, isLtr: Boolean): String {
@@ -324,16 +336,16 @@ private fun getLocalizedBreadcrumb(path: String, node: String?, isLtr: Boolean):
 private val settingScreens = listOf(
     SettingsAppearanceScreen,
     SettingsLibraryScreen,
-    SettingsReaderScreen,
+    SettingsReaderScreen(),
     SettingsDownloadScreen,
     SettingsTrackingScreen,
     SettingsBrowseScreen,
     SettingsDataScreen,
     SettingsBackupScreen,
     SettingsStorageScreen,
-    SettingsImportExportScreen,
     SettingsSecurityScreen,
     SettingsAdvancedScreen,
+    HelpScreen,
 )
 
 private data class SettingsData(

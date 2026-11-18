@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import logcat.LogPriority
+import mihon.feature.support.SupportUsScreen
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
@@ -101,6 +102,12 @@ object AboutScreen : Screen() {
                     TextPreferenceWidget(
                         title = stringResource(MR.strings.version),
                         subtitle = getVersionName(withBuildDate = true),
+                    )
+                }
+
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(MR.strings.copy_debug_info),
                         onPreferenceClick = {
                             val deviceInfo = CrashLogUtil(context).getDebugInfo()
                             context.copyToClipboard("Debug information", deviceInfo)
@@ -164,6 +171,19 @@ object AboutScreen : Screen() {
                             onPreferenceClick = { uriHandler.openUri(PROJECT_RELEASES_URL) },
                         )
                     }
+                }
+
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(MR.strings.label_help),
+                        onPreferenceClick = { navigator.push(HelpScreen) },
+                    )
+                }
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(MR.strings.support_mihon),
+                        onPreferenceClick = { navigator.push(SupportUsScreen()) },
+                    )
                 }
 
                 item {

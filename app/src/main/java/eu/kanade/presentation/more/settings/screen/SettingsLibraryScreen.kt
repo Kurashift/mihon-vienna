@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.category.visualName
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.widget.TriStateListDialog
@@ -52,9 +53,27 @@ object SettingsLibraryScreen : SearchableSettings {
         val getCategories = remember { Injekt.get<GetCategories>() }
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
         val allCategories by getCategories.subscribe().collectAsState(initial = emptyList())
+        val base = remember { Injekt.get<BasePreferences>() }
+        val coversEnabled by base.localChapterCoversEnabled.collectAsState()
 
         return listOf(
             getCategoriesGroup(LocalNavigator.currentOrThrow, allCategories, libraryPreferences),
+            Preference.PreferenceGroup(
+                title = stringResource(MR.strings.local_works_settings),
+                preferenceItems = listOf(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = base.localChapterCoversEnabled,
+                        title = stringResource(MR.strings.local_chapter_covers),
+                        subtitle = stringResource(MR.strings.local_chapter_covers_summary),
+                    ),
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = base.localChapterCoverGridEnabled,
+                        title = stringResource(MR.strings.local_chapter_covers_grid),
+                        subtitle = stringResource(MR.strings.local_chapter_covers_grid_summary),
+                        enabled = coversEnabled,
+                    ),
+                ),
+            ),
             getGlobalUpdateGroup(allCategories, libraryPreferences),
             getBehaviorGroup(libraryPreferences),
         )
