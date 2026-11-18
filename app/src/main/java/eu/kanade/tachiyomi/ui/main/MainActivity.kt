@@ -292,7 +292,13 @@ class MainActivity : BaseActivity() {
                         // Local deletes run on a scope that outlives the page, so their progress
                         // and receipt are hosted here rather than inside the screen that started
                         // them.
-                        LocalDeletionHost()
+                        LocalDeletionHost { removedFolders ->
+                            val details = navigator.lastItem as? MangaScreen
+                            if (details != null && details.mangaId in removedFolders) {
+                                navigator.popUntilRoot()
+                                HomeScreen.openTab(HomeScreen.Tab.Local)
+                            }
+                        }
                         ReaderPageDeletionHost(modifier = Modifier.align(Alignment.BottomCenter))
                         UndoPillHost(modifier = Modifier.align(Alignment.BottomCenter))
                     }

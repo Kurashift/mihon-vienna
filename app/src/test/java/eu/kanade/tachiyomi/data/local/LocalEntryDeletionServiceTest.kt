@@ -138,6 +138,7 @@ class LocalEntryDeletionServiceTest {
         assertEquals(1, result.deleted)
         assertTrue(result.failed.isEmpty())
         assertTrue(result.deletedMangaIds.isEmpty())
+        assertEquals(emptySet<Long>(), service.lastReport.value?.removedFolderMangaIds)
         verify(exactly = 1) { page.delete() }
         verify(exactly = 0) { cover.delete() }
         verify(exactly = 0) { notes.delete() }
@@ -162,6 +163,39 @@ class LocalEntryDeletionServiceTest {
         // The lookup is only needed when the directory is absent; a real deletion must not wait
         // on it.
         verify(exactly = 0) { fileSystem.createMangaDirectoryEntryStateLookup() }
+    }
+
+    @Test
+    fun `optional cleanup reports the removed directory without deleting the manga row`() = runBlocking {
+        val work = Files.createDirectory(directory.resolve("Work"))
+        Files.writeString(work.resolve("cover.jpg"), "cover")
+        val chapterFile = mockk<UniFile>(relaxed = true) { every { delete() } returns true }
+        val workDirectory = mockk<UniFile> {
+            every { filePath } returns work.toString()
+            every { findFile("one.cbz") } returns chapterFile
+        }
+        val coverEntry = mockk<UniFile> {
+            every { isFile } returns true
+            every { name } returns "cover.jpg"
+        }
+        every { fileSystem.getDirectorySnapshot(workDirectory, fresh = true) } returns
+            LocalSourceFileSystem.DirectorySnapshot(workDirectory, listOf(coverEntry), isAccessible = true)
+        every { fileSystem.getBaseDirectory() } returns mockk<UniFile> {
+            every { findFile("Work") } returns workDirectory
+        }
+        val chapter = Chapter.create().copy(id = 3L, mangaId = 7L, url = "Work/one.cbz")
+        coEvery { chapterRepository.getChapterByMangaId(7L) } returnsMany listOf(listOf(chapter), emptyList())
+
+        val result = service.deleteChapters(
+            listOf(LocalEntryDeletionService.ChapterTarget(3L, 7L, "Work", "one")),
+            listOf(LocalEntryDeletionService.EmptyFolderCleanup(7L, "Work", setOf("cover.jpg"))),
+        )
+
+        assertEquals(1, result.deleted)
+        assertEquals(setOf(7L), service.lastReport.value?.removedFolderMangaIds)
+        assertEquals(emptySet<Long>(), service.lastReport.value?.deletedMangaIds)
+        assertTrue(Files.notExists(work))
+        coVerify(exactly = 0) { mangaRepository.deleteMangaById(7L) }
     }
 
     @Test
@@ -197,6 +231,7 @@ class LocalEntryDeletionServiceTest {
 
         assertEquals(1, result.deleted)
         assertEquals(listOf("Work"), service.lastReport.value?.keptFolders)
+        assertEquals(emptySet<Long>(), service.lastReport.value?.removedFolderMangaIds)
         assertTrue(Files.exists(cover))
         assertTrue(Files.exists(notes))
         coVerify(exactly = 0) { mangaRepository.deleteMangaById(7L) }
