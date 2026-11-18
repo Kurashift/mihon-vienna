@@ -39,6 +39,10 @@
     <plurals name="next_unread_chapters">
         <item quantity="other">接下來未讀的 %d 篇</item>
     </plurals>
+    <plurals name="stats_downloaded_chapter_count">
+        <item quantity="other">%1$d 篇</item>
+    </plurals>
+
     <plurals name="download_amount">
         <item quantity="other">後續 %d 篇</item>
     </plurals>

@@ -1550,7 +1550,6 @@
     <string name="stats_online_favorites">Online</string>
     <string name="stats_read_chapters">Read chapters</string>
     <string name="stats_online_downloads">Online downloads</string>
-    <string name="stats_downloaded_chapters">Downloaded chapters</string>
     <string name="stats_logged_in_trackers">Signed-in services</string>
     <string name="backup_history_and_statistics">Reading history and statistics</string>
 </resources>
