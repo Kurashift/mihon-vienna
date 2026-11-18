@@ -1,8 +1,49 @@
 package eu.kanade.tachiyomi.ui.local
 
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferService
+import java.io.Serializable
 import java.text.Normalizer
 import java.util.Locale
+
+internal data class LocalImportDraft(
+    val typedName: String? = null,
+    val pickedId: Long? = null,
+    val packFolders: Boolean = false,
+    val deleteOriginals: Boolean = false,
+    val expanded: Boolean = false,
+    val renames: Map<String, String> = emptyMap(),
+) : Serializable {
+    fun afterCollectionPicker(id: Long?) = if (id == null) this else copy(pickedId = id)
+
+    fun afterRemoval(remaining: List<LocalImportSourceShape>): LocalImportDraft {
+        if (remaining.isEmpty()) return LocalImportDraft()
+        val keys = remaining.flatMap { it.collectionKeys() }.toSet()
+        return copy(
+            packFolders = packFolders && remaining.any { it.isDirectory },
+            renames = renames.filterKeys { it in keys },
+        )
+    }
+}
+
+internal sealed interface LocalImportDestination {
+    data object Grouped : LocalImportDestination
+    data class Existing(val id: Long) : LocalImportDestination
+    data class Named(val name: String) : LocalImportDestination
+}
+
+internal fun localImportDestination(
+    hasSources: Boolean,
+    grouped: Boolean,
+    groupsReady: Boolean,
+    targetId: Long?,
+    name: String,
+): LocalImportDestination? = when {
+    !hasSources -> null
+    grouped -> LocalImportDestination.Grouped.takeIf { groupsReady }
+    targetId != null -> LocalImportDestination.Existing(targetId)
+    name.isNotBlank() -> LocalImportDestination.Named(localMangaDirectoryName(name))
+    else -> null
+}
 
 /** One picked source that contributed nothing, with the reason it was turned away. */
 internal typealias LocalImportRejection = Pair<String, LocalChapterTransferService.SourceRejection>
@@ -32,9 +73,9 @@ internal fun localMangaDirectoryIdentity(value: String): String {
         .lowercase(Locale.ROOT)
 }
 
-internal fun localGroupedImportNameCollisionCount(names: List<String>): Int {
+internal fun localGroupedImportNameCollisionCount(names: List<String>, renames: Map<String, String> = emptyMap()): Int {
     return names
-        .groupBy(::localMangaDirectoryIdentity)
+        .groupBy { localMangaDirectoryIdentity(renames[it] ?: it) }
         .count { (_, groupedNames) ->
             groupedNames
                 .map { Normalizer.normalize(it.trim(), Normalizer.Form.NFKC).lowercase(Locale.ROOT) }
@@ -82,7 +123,9 @@ internal data class LocalImportSourceShape(
     val displayName: String,
     val isDirectory: Boolean,
     val groupNames: List<String>,
-)
+) {
+    fun collectionKeys(): List<String> = if (isDirectory) groupNames.ifEmpty { listOf(displayName) } else emptyList()
+}
 
 /**
  * The collections a picked batch contributes, by the names they are to be created or reused under,
@@ -104,8 +147,7 @@ internal data class LocalImportSourceShape(
 internal fun localImportCollectionNames(sources: List<LocalImportSourceShape>): List<String> {
     if (!isLocalCollectionImport(sources)) return emptyList()
     return sources
-        .flatMap { source -> source.groupNames.ifEmpty { listOf(source.displayName) } }
-        .map(::localMangaDirectoryName)
+        .flatMap { it.collectionKeys() }
         .distinct()
 }
 
