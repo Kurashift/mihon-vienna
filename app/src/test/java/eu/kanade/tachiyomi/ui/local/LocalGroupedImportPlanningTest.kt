@@ -146,15 +146,46 @@ class LocalGroupedImportPlanningTest {
     }
 
     @Test
-    fun `collection names are sanitized for the target directory`() {
+    fun `folder keys stay distinct until name collisions can be resolved`() {
         assertEquals(
-            listOf("A_B_C"),
+            listOf("A:B/C", "A_B_C"),
             localImportCollectionNames(
                 listOf(
                     LocalImportSourceShape("A:B/C", isDirectory = true, groupNames = emptyList()),
+                    LocalImportSourceShape("A_B_C", isDirectory = true, groupNames = emptyList()),
                 ),
             ),
         )
+    }
+
+    @Test
+    fun `unusable groups never fall back to a valid manual destination`() {
+        val originals = listOf("Alpha", "Beta")
+        assertEquals(1, localGroupedImportNameCollisionCount(originals, mapOf("Beta" to "Alpha")))
+        assertEquals(0, localGroupedImportNameCollisionCount(originals, mapOf("Beta" to "Gamma")))
+        assertEquals(null, localImportDestination(true, true, false, 42L, "Previous"))
+        assertEquals(LocalImportDestination.Grouped, localImportDestination(true, true, true, 42L, "Previous"))
+        assertEquals(null, localImportDestination(false, false, false, 42L, "Previous"))
+        assertEquals(null, localImportDestination(true, false, false, null, " "))
+        assertEquals(LocalImportDestination.Existing(42L), localImportDestination(true, false, false, 42L, ""))
+        assertEquals(LocalImportDestination.Named("A_B"), localImportDestination(true, false, false, null, "A:B"))
+    }
+
+    @Test
+    fun `canceling a collection pick preserves either kind of target`() {
+        val typed = LocalImportDraft(typedName = "Draft")
+        assertEquals(typed, typed.afterCollectionPicker(null))
+        val picked = typed.afterCollectionPicker(42L)
+        assertEquals(typed.copy(pickedId = 42L), picked)
+        assertEquals(picked, picked.afterCollectionPicker(null))
+    }
+
+    @Test
+    fun `removing the last folder clears packing and an empty batch resets all options`() {
+        val draft = LocalImportDraft("Draft", 42L, packFolders = true, deleteOriginals = true, expanded = true)
+        val file = LocalImportSourceShape("chapter.cbz", false, emptyList())
+        assertEquals(draft.copy(packFolders = false), draft.afterRemoval(listOf(file)))
+        assertEquals(LocalImportDraft(), draft.afterRemoval(emptyList()))
     }
 
     @Test

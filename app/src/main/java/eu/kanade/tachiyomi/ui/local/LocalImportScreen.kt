@@ -6,34 +6,32 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,9 +55,12 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.condensedBulletList
+import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferJob
 import eu.kanade.tachiyomi.data.local.LocalChapterTransferService
+import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.launch
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
@@ -70,12 +70,6 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.source.local.LocalSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import eu.kanade.presentation.manga.components.MangaCover as MangaCoverView
-
-private enum class ImportTargetMode {
-    EXISTING,
-    NEW,
-}
 
 /**
  * One collection a batch will create or reuse, as the target list shows it.
@@ -145,27 +139,17 @@ private val sourcePreviewListSaver = listSaver<List<LocalChapterTransferService.
     },
 )
 
-private val uriListSaver = listSaver<List<Uri>, String>(
-    save = { uris -> uris.mapTo(arrayListOf()) { it.toString() } },
-    restore = { saved -> saved.map { Uri.parse(it) } },
-)
+private fun LocalChapterTransferService.SourcePreview.shape() =
+    LocalImportSourceShape(displayName, isDirectory, groups.map { it.name })
 
 @Composable
-private fun SourceButton(
-    icon: ImageVector,
-    label: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier.fillMaxWidth(),
-) {
-    Button(
-        modifier = modifier,
-        onClick = onClick,
-        enabled = enabled,
-    ) {
-        Icon(icon, contentDescription = null)
-        Text(label, modifier = Modifier.padding(start = 8.dp))
-    }
+private fun ImportNotice(message: String) {
+    Text(
+        text = message,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
 }
 
 data class LocalImportScreen(
@@ -179,26 +163,25 @@ data class LocalImportScreen(
         val mangaRepository = remember { Injekt.get<MangaRepository>() }
         val transferService = remember { Injekt.get<LocalChapterTransferService>() }
         val networkToLocal = remember { Injekt.get<NetworkToLocalManga>() }
-        var selectedUris by rememberSaveable(stateSaver = uriListSaver) {
-            mutableStateOf<List<Uri>>(emptyList())
-        }
         var sourcePreviews by rememberSaveable(stateSaver = sourcePreviewListSaver) {
             mutableStateOf<List<LocalChapterTransferService.SourcePreview>>(emptyList())
         }
         var rejectedSources by remember {
             mutableStateOf<List<LocalImportRejection>>(emptyList())
         }
-        var targetId by rememberSaveable { mutableStateOf(fixedTargetMangaId ?: -1L) }
+        var draft by rememberSaveable { mutableStateOf(LocalImportDraft()) }
         var mangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
         var allLocalMangas by remember { mutableStateOf<List<Manga>>(emptyList()) }
-        var newTitle by rememberSaveable { mutableStateOf("") }
-        var targetMode by rememberSaveable {
-            mutableStateOf(if (fixedTargetMangaId != null) ImportTargetMode.EXISTING else ImportTargetMode.NEW)
-        }
+        var libraryLoaded by remember { mutableStateOf(false) }
+        var inspecting by remember { mutableStateOf(false) }
         var showMangaPicker by rememberSaveable { mutableStateOf(false) }
         var showCollectionList by rememberSaveable { mutableStateOf(false) }
-        var output by remember { mutableStateOf(LocalChapterTransferService.FolderOutput.DIRECTORY) }
-        var deleteSource by remember { mutableStateOf(false) }
+        val output = if (draft.packFolders) {
+            LocalChapterTransferService.FolderOutput.CBZ
+        } else {
+            LocalChapterTransferService.FolderOutput.DIRECTORY
+        }
+        val deleteSource = draft.deleteOriginals
         var importing by remember { mutableStateOf(false) }
         var conflictPreview by remember { mutableStateOf<LocalChapterTransferService.ImportPreview?>(null) }
         var pendingTargetId by remember { mutableLongStateOf(-1L) }
@@ -207,35 +190,27 @@ data class LocalImportScreen(
         }
         val transferStatus by remember(context) { LocalChapterTransferJob.statusFlow(context) }
             .collectAsStateWithLifecycle(initialValue = null)
-        // A batch of folders is imported as collections, one per folder, named after it. A batch
-        // that includes a file keeps the manual target it always had: a file is one chapter of a
-        // collection the reader names, and the folders picked alongside it join that same target.
-        val sourceShapes = sourcePreviews.map {
-            LocalImportSourceShape(
-                displayName = it.displayName,
-                isDirectory = it.isDirectory,
-                groupNames = it.groups.map { group -> group.name },
-            )
+        val sourceShapes = remember(sourcePreviews) { sourcePreviews.map { it.shape() } }
+        val selectedUris = remember(sourcePreviews, fixedTargetMangaId) {
+            sourcePreviews.flatMap { source ->
+                if (fixedTargetMangaId != null && source.groups.isNotEmpty()) {
+                    source.groups.flatMap { it.candidateUris }
+                } else {
+                    listOf(source.uri)
+                }
+            }.distinct()
         }
         val isCollectionImport = fixedTargetMangaId == null && isLocalCollectionImport(sourceShapes)
-        // Names as the folders give them, before any renaming, de-duplicated.
         val derivedCollectionNames = localImportCollectionNames(sourceShapes)
-        // One collection is named in the field the manual target has always used, so its name is the
-        // reader's to edit there and the batch is imported through the ordinary single-target path -
-        // which reuses an existing collection of that name by itself. Several collections have names
-        // the folders own: they are listed to be checked, and renamed one by one from the list.
         val isSingleCollection = isCollectionImport && derivedCollectionNames.size == 1
         val isMultiCollection = isCollectionImport && derivedCollectionNames.size > 1
-        // Renames made from the collection list, keyed by the name the folder gave. A map rather than
-        // a rewritten source list: the source keeps naming its own folder, so removing a folder from
-        // the batch cannot leave a rename pointing at nothing.
-        var collectionRenames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-        // The collections this batch contributes. A folder that is itself the collection - its
-        // contents are directly the works - has no first-level containers of its own, so it stands in
-        // as one collection over itself: `importUrisInternal` expands a picked folder anyway, so
-        // handing it the folder is exactly what already happened for a folder picked as a chapter
-        // source. Everything downstream (name collision, target reuse, the import itself) then works
-        // on one shape instead of two.
+        val collectionRenames = draft.renames
+        val derivedName = derivedCollectionNames.singleOrNull()?.takeIf { isSingleCollection }
+        val newTitle =
+            draft.typedName ?: derivedName?.let { collectionRenames[it] ?: localMangaDirectoryName(it) }.orEmpty()
+        val targetId = fixedTargetMangaId ?: draft.pickedId
+        val selectedManga = allLocalMangas.firstOrNull { it.id == targetId }
+        val existingUrls = remember(allLocalMangas) { allLocalMangas.map(Manga::url) }
         val sourceGroups = sourcePreviews.flatMap { preview ->
             when {
                 preview.groups.isNotEmpty() -> preview.groups
@@ -251,17 +226,11 @@ data class LocalImportScreen(
             }
         }
         val renamedSourceGroups = sourceGroups.map { group ->
-            val derived = localMangaDirectoryName(group.name)
-            collectionRenames[derived]?.let { group.copy(name = it) } ?: group
+            collectionRenames[group.name]?.let { group.copy(name = it) } ?: group
         }
-        // The name a single collection is created or reused under comes from the target controls: the
-        // text field, or the collection picked instead. The group is what carries the chapter URIs - a
-        // 根目录/作者/本子 folder holds its works one level down, and only the group knows that - so a
-        // single collection still travels the grouped path with a group of one.
         val singleCollectionName = when {
             !isSingleCollection -> null
-            targetMode == ImportTargetMode.EXISTING && targetId >= 0 ->
-                mangas.firstOrNull { it.id == targetId }?.url
+            targetId != null -> selectedManga?.url.orEmpty()
             else -> newTitle
         }
         val effectiveGroups = if (singleCollectionName != null) {
@@ -269,7 +238,11 @@ data class LocalImportScreen(
         } else {
             renamedSourceGroups
         }
-        val groupedNameCollisions = localGroupedImportNameCollisionCount(effectiveGroups.map { it.name })
+        val groupedNameCollisions = if (isMultiCollection) {
+            localGroupedImportNameCollisionCount(derivedCollectionNames, collectionRenames)
+        } else {
+            0
+        }
         val hasInvalidGroupedName = hasInvalidLocalGroupedImportName(effectiveGroups.map { it.name })
         val groupedTargetResolutions = effectiveGroups
             .groupBy { localMangaDirectoryIdentity(it.name) }
@@ -277,7 +250,7 @@ data class LocalImportScreen(
             .map { groups ->
                 groups to resolveLocalGroupedImportTarget(
                     proposedName = groups.first().name,
-                    existingUrls = allLocalMangas.map(Manga::url),
+                    existingUrls = existingUrls,
                 )
             }
         val ambiguousExistingGroupedTargetCount = groupedTargetResolutions.count { (_, target) -> target == null }
@@ -303,7 +276,7 @@ data class LocalImportScreen(
             val renamed = collectionRenames[derived] ?: derived
             val target = resolveLocalGroupedImportTarget(
                 proposedName = renamed,
-                existingUrls = allLocalMangas.map(Manga::url),
+                existingUrls = existingUrls,
             )
             CollectionListItem(
                 key = derived,
@@ -313,21 +286,15 @@ data class LocalImportScreen(
         }
         val existingCollectionCount = collectionList.count { it.exists == true }
         val newCollectionCount = collectionList.count { it.exists == false }
-        val ambiguousCollectionCount = collectionList.count { it.exists == null }
-        // The folder's own name is the pre-filled answer, not a decision made for the reader. Tracked
-        // against the value this effect last wrote, so a name the reader typed is never overwritten
-        // while picking another folder still fills the field in.
-        var lastPrefilledTitle by rememberSaveable { mutableStateOf<String?>(null) }
-        LaunchedEffect(isSingleCollection, derivedCollectionNames) {
-            val derived = derivedCollectionNames.singleOrNull()
-                ?.takeIf { isSingleCollection }
-                ?: return@LaunchedEffect
-            if (newTitle.isBlank() || newTitle == lastPrefilledTitle) {
-                newTitle = derived
-                lastPrefilledTitle = derived
-            }
-        }
-
+        val destination = localImportDestination(
+            hasSources =
+            selectedUris.isNotEmpty() && libraryLoaded &&
+                (targetId == null || selectedManga != null || isMultiCollection),
+            grouped = isCollectionImport,
+            groupsReady = collectionNamesUsable,
+            targetId = targetId,
+            name = newTitle,
+        )
         fun groupedPlans(): List<LocalChapterTransferService.GroupPreviewRequest> {
             return groupedTargetResolutions.mapNotNull { (groups, target) ->
                 target?.let {
@@ -380,44 +347,43 @@ data class LocalImportScreen(
             )
         }
 
-        fun addSelectedUris(uris: List<android.net.Uri>) {
+        fun addSelectedUris(uris: List<Uri>) {
+            if (uris.isEmpty()) return
+            inspecting = true
             scope.launch {
-                val knownUris = sourcePreviews.mapTo(hashSetOf()) { it.uri }
-                val uniqueUris = uris.distinct().filterNot { it in knownUris }
-                uniqueUris.forEach { uri ->
-                    runCatching {
-                        context.contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
+                try {
+                    val knownUris = sourcePreviews.mapTo(hashSetOf()) { it.uri }
+                    val uniqueUris = uris.distinct().filterNot { it in knownUris }
+                    uniqueUris.forEach { uri ->
+                        runCatching {
+                            context.contentResolver.takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                            )
+                        }
                     }
-                }
-                val inspected = uniqueUris.map { transferService.inspectSource(it) }
-                // Every readable pick joins the batch. There used to be a second filter here that
-                // dropped a source whose layout differed from the ones already picked, because a
-                // batch was imported through one target and a 根目录/作者/本子 folder could not share
-                // that with a folder holding the works directly. A folder now names its own
-                // collection, so the two layouts no longer conflict - and the filter is what used to
-                // refuse exactly that combination.
-                val usable = inspected.mapNotNull { it.preview }
-                val rejected = inspected.mapNotNull { inspection ->
-                    inspection.rejection?.let { rejection -> inspection.displayName to rejection }
-                }
-                rejectedSources = localImportRejectionsAfterPick(
-                    previous = rejectedSources,
-                    picked = rejected,
-                    usableSourceCount = usable.size,
-                )
-                val mergedPreviews = (sourcePreviews + usable).distinctBy { it.uri }
-                sourcePreviews = mergedPreviews
-                selectedUris = if (fixedTargetMangaId != null) {
-                    mergedPreviews.flatMap { preview ->
-                        preview.groups.takeIf { it.isNotEmpty() }
-                            ?.flatMap { it.candidateUris }
-                            ?: listOf(preview.uri)
-                    }.distinct()
-                } else {
-                    mergedPreviews.map { it.uri }
+                    val inspected = uniqueUris.map { uri ->
+                        try {
+                            transferService.inspectSource(uri)
+                        } catch (e: SecurityException) {
+                            LocalChapterTransferService.SourceInspection(
+                                uri.lastPathSegment.orEmpty(),
+                                rejection = LocalChapterTransferService.SourceRejection.Unreadable,
+                            )
+                        }
+                    }
+                    val usable = inspected.mapNotNull { it.preview }
+                    val rejected = inspected.mapNotNull { inspection ->
+                        inspection.rejection?.let { rejection -> inspection.displayName to rejection }
+                    }
+                    rejectedSources = localImportRejectionsAfterPick(
+                        previous = rejectedSources,
+                        picked = rejected,
+                        usableSourceCount = usable.size,
+                    )
+                    sourcePreviews = (sourcePreviews + usable).distinctBy { it.uri }
+                } finally {
+                    inspecting = false
                 }
             }
         }
@@ -427,7 +393,7 @@ data class LocalImportScreen(
                 mangaRepository.getMangaByIdOrNull(it)
             }
             mangas = mangaRepository.getLocalCollectionTargets(allLocalMangas)
-            if (targetId < 0 && mangas.size == 1) targetId = mangas.first().id
+            libraryLoaded = true
         }
         // OpenDocument grants persistable read access when the provider supports it, which lets
         // WorkManager continue a long import after the screen or app process is recreated.
@@ -438,454 +404,265 @@ data class LocalImportScreen(
             it?.let { uri -> addSelectedUris(listOf(uri)) }
         }
 
+        val editable = !inspecting && !importing
+        fun submit() {
+            if (!editable || destination == null) return
+            importing = true
+            scope.launch {
+                try {
+                    val plans = if (destination == LocalImportDestination.Grouped) groupedPlans() else emptyList()
+                    val id = when (destination) {
+                        LocalImportDestination.Grouped -> -1L
+                        is LocalImportDestination.Existing -> destination.id
+                        is LocalImportDestination.Named -> networkToLocal(
+                            Manga.create().copy(
+                                source = LocalSource.ID,
+                                url = destination.name,
+                                title = destination.name,
+                            ),
+                        ).id
+                    }
+                    val preview = if (destination == LocalImportDestination.Grouped) {
+                        transferService.previewGroupedImport(plans)
+                    } else {
+                        transferService.previewImport(selectedUris, id)
+                    }
+                    if (preview.conflicts.isNotEmpty()) {
+                        pendingTargetId = id
+                        pendingGroupedPlans = plans
+                        conflictPreview = preview
+                    } else {
+                        val started = if (destination == LocalImportDestination.Grouped) {
+                            startGroupedImport(plans)
+                        } else {
+                            LocalChapterTransferJob.start(
+                                context,
+                                selectedUris,
+                                id,
+                                LocalChapterTransferService.Options(output, deleteSource),
+                            )
+                        }
+                        if (started) navigator.pop() else context.toast(MR.strings.local_import_start_failed)
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    context.toast(MR.strings.local_import_start_failed)
+                } finally {
+                    importing = conflictPreview != null
+                }
+            }
+        }
+
         Scaffold(
             topBar = {
                 AppBar(
-                    title = stringResource(MR.strings.action_import_local_chapters),
+                    title = stringResource(MR.strings.action_import_local_chapters_short),
                     navigateUp = navigator::pop,
                 )
             },
         ) { padding ->
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                item {
-                    ImportSection(title = stringResource(MR.strings.local_import_section_source)) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            if (maxWidth >= 520.dp) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    SourceButton(
-                                        modifier = Modifier.weight(1f),
-                                        icon = Icons.Outlined.FolderOpen,
-                                        label = stringResource(MR.strings.local_import_select_folder),
-                                        enabled = !importing,
-                                        onClick = { folderPicker.launch(null) },
-                                    )
-                                    SourceButton(
-                                        modifier = Modifier.weight(1f),
-                                        icon = Icons.Outlined.InsertDriveFile,
-                                        label = stringResource(MR.strings.local_import_select_file),
-                                        enabled = !importing,
-                                        onClick = { filePicker.launch(arrayOf("*/*")) },
-                                    )
-                                }
-                            } else {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    SourceButton(
-                                        icon = Icons.Outlined.FolderOpen,
-                                        label = stringResource(MR.strings.local_import_select_folder),
-                                        enabled = !importing,
-                                        onClick = { folderPicker.launch(null) },
-                                    )
-                                    SourceButton(
-                                        icon = Icons.Outlined.InsertDriveFile,
-                                        label = stringResource(MR.strings.local_import_select_file),
-                                        enabled = !importing,
-                                        onClick = { filePicker.launch(arrayOf("*/*")) },
-                                    )
-                                }
-                            }
-                        }
-                        if (selectedUris.isEmpty()) {
-                            Text(
-                                text = stringResource(MR.strings.local_import_source_help),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 8.dp),
-                            )
-                        } else {
-                            Text(
-                                // The collection count belongs to the target card, which is where the
-                                // names are; repeating it here only said the same thing twice.
-                                text = if (isCollectionImport) {
-                                    stringResource(
-                                        MR.strings.local_import_work_count,
-                                        sourcePreviews.sumOf { it.candidateNames.size },
-                                    )
-                                } else {
-                                    stringResource(
-                                        MR.strings.local_import_added_sources,
-                                        sourcePreviews.size,
-                                        sourcePreviews.sumOf { it.candidateNames.size },
-                                    )
-                                },
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(top = 8.dp),
-                            )
-                            sourcePreviews.forEach { preview ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(preview.displayName, maxLines = 1)
-                                        Text(
-                                            // The name a folder gives its collection is stated once, on
-                                            // the target card. Here it is only what the source holds.
-                                            if (isCollectionImport && preview.groups.isNotEmpty()) {
-                                                stringResource(
-                                                    MR.strings.local_import_source_collections,
-                                                    preview.groups.size,
-                                                    preview.candidateNames.size,
-                                                )
-                                            } else {
-                                                stringResource(
-                                                    MR.strings.local_import_source_works,
-                                                    preview.candidateNames.size,
-                                                    preview.candidateNames.take(3).joinToString("、"),
-                                                )
-                                            },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 2,
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            val remaining = sourcePreviews.filterNot { it.uri == preview.uri }
-                                            sourcePreviews = remaining
-                                            selectedUris = if (fixedTargetMangaId != null) {
-                                                remaining.flatMap { source ->
-                                                    source.groups.takeIf { it.isNotEmpty() }
-                                                        ?.flatMap { it.candidateUris }
-                                                        ?: listOf(source.uri)
-                                                }.distinct()
-                                            } else {
-                                                remaining.map { it.uri }
-                                            }
-                                        },
-                                        enabled = !importing,
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.Close,
-                                            contentDescription = stringResource(MR.strings.action_remove),
-                                        )
-                                    }
-                                }
-                                if (preview.ignoredGroupCount > 0) {
-                                    Text(
-                                        text = stringResource(
-                                            MR.strings.local_import_ignored_groups,
-                                            preview.ignoredGroupCount,
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                        // Rendered outside the branches above: when every pick is rejected nothing
-                        // else on screen changes, so this is the only thing telling the user their
-                        // pick was seen and why it produced nothing.
-                        if (rejectedSources.isNotEmpty()) {
-                            Text(
-                                text = stringResource(
-                                    MR.strings.local_import_rejected_header,
-                                    rejectedSources.size,
-                                ),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(top = 8.dp),
-                            )
-                            rejectedSources.forEach { (name, rejection) ->
-                                Text(
-                                    text = stringResource(
-                                        MR.strings.local_import_rejected_entry,
-                                        name,
-                                        rejection.reasonText(),
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        }
-                    }
-                }
-                item {
-                    ImportSection(title = stringResource(MR.strings.local_import_section_target)) {
-                        if (isMultiCollection) {
-                            Text(
-                                stringResource(MR.strings.local_import_target_multi, collectionList.size),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                stringResource(
-                                    MR.strings.local_import_target_counts,
-                                    existingCollectionCount,
-                                    newCollectionCount,
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            // The names in full, on one line each and clickable, rather than run
-                            // together into a paragraph that has to be truncated: with a batch this
-                            // is the one thing worth reading, and the list is where a name can be
-                            // fixed. Long names ellipsize instead of wrapping, so the rows stay one
-                            // height and the list stays scannable.
-                            CollectionNameList(
-                                items = collectionList,
-                                onClick = { showCollectionList = true },
-                            )
-                            if (groupedNameCollisions > 0) {
-                                Text(
-                                    stringResource(
-                                        MR.strings.local_import_name_collision,
-                                        groupedNameCollisions,
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                            if (hasInvalidGroupedName) {
-                                Text(
-                                    stringResource(MR.strings.local_import_blank_name),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                            if (ambiguousCollectionCount > 0) {
-                                Text(
-                                    stringResource(MR.strings.local_import_ambiguous_name),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        } else if (fixedTargetMangaId == null) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(
-                                    selected = targetMode == ImportTargetMode.NEW,
-                                    onClick = { targetMode = ImportTargetMode.NEW },
-                                    label = { Text(stringResource(MR.strings.local_import_target_new)) },
-                                )
-                                FilterChip(
-                                    selected = targetMode == ImportTargetMode.EXISTING,
-                                    onClick = {
-                                        targetMode = ImportTargetMode.EXISTING
-                                        showMangaPicker = true
-                                    },
-                                    label = { Text(stringResource(MR.strings.local_import_target_existing)) },
-                                )
-                            }
-                            if (targetMode == ImportTargetMode.EXISTING) {
-                                val selectedManga = mangas.firstOrNull { it.id == targetId }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    if (selectedManga != null) {
-                                        MangaCoverView.Book(
-                                            modifier = Modifier
-                                                .padding(end = 10.dp)
-                                                .width(44.dp),
-                                            data = tachiyomi.domain.manga.model.MangaCover(
-                                                mangaId = selectedManga.id,
-                                                sourceId = selectedManga.source,
-                                                isMangaFavorite = selectedManga.favorite,
-                                                url = selectedManga.thumbnailUrl,
-                                                lastModified = selectedManga.coverLastModified,
-                                            ),
-                                        )
-                                        Text(
-                                            text = selectedManga.title,
-                                            modifier = Modifier.weight(1f),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    } else {
-                                        Text(
-                                            text = stringResource(MR.strings.local_import_no_target_selected),
-                                            modifier = Modifier.weight(1f),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                        )
-                                    }
-                                    TextButton(onClick = { showMangaPicker = true }) {
-                                        Text(stringResource(MR.strings.local_import_select_collection))
-                                    }
-                                }
-                            } else {
-                                // Pre-filled with the picked folder's name when there is exactly one
-                                // collection, and plain empty otherwise. It is an ordinary text field
-                                // either way: the folder's name is the answer to type over, not a
-                                // decision made for the reader - and a name that already exists is
-                                // reused by the import path itself, so reuse needs no separate case.
-                                OutlinedTextField(
-                                    value = newTitle,
-                                    onValueChange = { newTitle = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = { Text(stringResource(MR.strings.local_import_new_collection_name)) },
-                                    singleLine = true,
-                                )
-                            }
-                        } else {
-                            Text(
-                                text = stringResource(
-                                    MR.strings.local_import_current_collection,
-                                    allLocalMangas.firstOrNull { it.id == fixedTargetMangaId }?.title.orEmpty(),
-                                ),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                    }
-                }
-                item {
-                    ImportSection(title = stringResource(MR.strings.local_import_section_settings)) {
-                        Text(
-                            stringResource(MR.strings.local_import_output_mode),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = output == LocalChapterTransferService.FolderOutput.DIRECTORY,
-                                onClick = { output = LocalChapterTransferService.FolderOutput.DIRECTORY },
-                            )
-                            Text(stringResource(MR.strings.local_import_output_keep_folders))
-                            RadioButton(
-                                selected = output == LocalChapterTransferService.FolderOutput.CBZ,
-                                onClick = { output = LocalChapterTransferService.FolderOutput.CBZ },
-                            )
-                            Text(stringResource(MR.strings.local_import_output_cbz))
-                        }
-                        Text(
-                            text = if (output == LocalChapterTransferService.FolderOutput.CBZ) {
-                                stringResource(MR.strings.local_import_output_cbz_help)
-                            } else {
-                                stringResource(MR.strings.local_import_output_folder_help)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Switch(checked = deleteSource, onCheckedChange = { deleteSource = it })
-                            Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text(stringResource(MR.strings.local_import_delete_source))
-                                Text(
-                                    stringResource(MR.strings.local_import_delete_source_help),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-                transferStatus?.takeUnless { it.state.isFinished }?.let { status ->
+            Column(modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     item {
-                        ImportSection(title = stringResource(MR.strings.local_import_section_progress)) {
-                            LinearProgressIndicator(
-                                progress = {
-                                    if (status.totalBytes > 0) {
-                                        status.copiedBytes.toFloat() / status.totalBytes
-                                    } else if (status.total > 0) {
-                                        status.completed.toFloat() / status.total
-                                    } else {
-                                        0f
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Text(
-                                stringResource(
-                                    MR.strings.local_import_progress,
-                                    status.completed,
-                                    status.total,
-                                    status.currentName,
-                                ),
+                        TextPreferenceWidget(
+                            title = stringResource(MR.strings.local_import_select_folder),
+                            icon = Icons.Outlined.FolderOpen,
+                            onPreferenceClick = if (editable) ({ folderPicker.launch(null) }) else null,
+                        )
+                        TextPreferenceWidget(
+                            title = stringResource(MR.strings.local_import_select_file),
+                            icon = Icons.Outlined.InsertDriveFile,
+                            onPreferenceClick = if (editable) ({ filePicker.launch(arrayOf("*/*")) }) else null,
+                        )
+                    }
+                    items(sourcePreviews, key = { it.uri.toString() }) { source ->
+                        TextPreferenceWidget(
+                            title = source.displayName,
+                            subtitle = if (source.isDirectory) {
+                                stringResource(MR.strings.local_import_work_count, source.candidateNames.size)
+                            } else {
+                                null
+                            },
+                            widget = {
+                                IconButton(
+                                    enabled = editable,
+                                    onClick = {
+                                        val remaining = sourcePreviews - source
+                                        draft = draft.afterRemoval(remaining.map { it.shape() })
+                                        sourcePreviews = remaining
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Close,
+                                        stringResource(MR.strings.local_import_remove, source.displayName),
+                                    )
+                                }
+                            },
+                        )
+                        if (source.ignoredGroupCount > 0) {
+                            ImportNotice(
+                                stringResource(MR.strings.local_import_ignored_groups, source.ignoredGroupCount),
                             )
                         }
                     }
-                }
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(onClick = navigator::pop, enabled = !importing) {
-                            Text(stringResource(MR.strings.action_cancel))
-                        }
-                        Button(
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                scope.launch {
-                                    importing = true
-                                    val resolvedTarget = if (fixedTargetMangaId !=
-                                        null
-                                    ) {
-                                        fixedTargetMangaId
-                                    } else if (targetMode == ImportTargetMode.EXISTING &&
-                                        targetId >= 0
-                                    ) {
-                                        targetId
-                                    } else if (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank()) {
-                                        val safeTitle = localMangaDirectoryName(newTitle)
-                                        networkToLocal(
-                                            Manga.create().copy(
-                                                source = LocalSource.ID,
-                                                url = safeTitle,
-                                                title = safeTitle,
+                    items(rejectedSources) { (name, reason) ->
+                        ImportNotice(stringResource(MR.strings.local_import_rejected_entry, name, reason.reasonText()))
+                    }
+                    if (sourcePreviews.isNotEmpty()) {
+                        item {
+                            HorizontalDivider()
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                when {
+                                    fixedTargetMangaId != null -> {
+                                        Text(
+                                            stringResource(
+                                                MR.strings.local_import_current_collection,
+                                                selectedManga?.title.orEmpty(),
                                             ),
-                                        ).id
-                                    } else {
-                                        -1L
+                                        )
                                     }
-                                    if (isCollectionImport && collectionNamesUsable) {
-                                        val plans = groupedPlans()
-                                        val preview = runCatching {
-                                            transferService.previewGroupedImport(plans)
-                                        }.getOrNull()
-                                        if (preview == null) {
-                                            importing = false
-                                        } else if (preview.conflicts.isNotEmpty()) {
-                                            pendingTargetId = -1L
-                                            pendingGroupedPlans = plans
-                                            conflictPreview = preview
-                                        } else if (startGroupedImport(plans)) {
-                                            importing = false
-                                            navigator.pop()
-                                        } else {
-                                            importing = false
-                                        }
-                                    } else if (resolvedTarget >= 0 && selectedUris.isNotEmpty()) {
-                                        val preview = runCatching {
-                                            transferService.previewImport(selectedUris, resolvedTarget)
-                                        }.getOrNull()
-                                        if (preview == null) {
-                                            importing = false
-                                        } else if (preview.conflicts.isNotEmpty()) {
-                                            pendingTargetId = resolvedTarget
-                                            conflictPreview = preview
-                                        } else if (LocalChapterTransferJob.start(
-                                                context = context,
-                                                uris = selectedUris,
-                                                targetMangaId = resolvedTarget,
-                                                options = LocalChapterTransferService.Options(output, deleteSource),
+                                    isMultiCollection -> {
+                                        Text(
+                                            stringResource(
+                                                MR.strings.local_import_summary,
+                                                collectionList.size,
+                                                newCollectionCount,
+                                                existingCollectionCount,
+                                            ),
+                                            style = MaterialTheme.typography.titleSmall,
+                                        )
+                                        CollectionNameList(items = collectionList, onClick = {
+                                            if (editable) {
+                                                showCollectionList =
+                                                    true
+                                            }
+                                        })
+                                    }
+                                    else -> {
+                                        if (targetId == null) {
+                                            OutlinedTextField(
+                                                value = newTitle,
+                                                onValueChange = { draft = draft.copy(typedName = it) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                label = {
+                                                    Text(stringResource(MR.strings.local_import_collection_name))
+                                                },
+                                                enabled = editable,
+                                                singleLine = true,
                                             )
-                                        ) {
-                                            importing = false
-                                            navigator.pop()
                                         } else {
-                                            importing = false
+                                            Text(
+                                                stringResource(
+                                                    MR.strings.local_import_current_collection,
+                                                    selectedManga?.title.orEmpty(),
+                                                ),
+                                            )
                                         }
-                                    } else {
-                                        importing = false
+                                        TextButton(
+                                            onClick = { showMangaPicker = true },
+                                            enabled = editable && mangas.isNotEmpty(),
+                                        ) { Text(stringResource(MR.strings.local_import_pick_collection_title)) }
+                                        if (targetId != null) {
+                                            TextButton(onClick = {
+                                                draft = draft.copy(pickedId = null)
+                                            }, enabled = editable) {
+                                                Text(stringResource(MR.strings.local_import_enter_name))
+                                            }
+                                        }
                                     }
                                 }
-                            },
-                            enabled = !importing && selectedUris.isNotEmpty() &&
-                                (
-                                    (isCollectionImport && collectionNamesUsable) ||
-                                        (
-                                            fixedTargetMangaId != null ||
-                                                (targetMode == ImportTargetMode.EXISTING && targetId >= 0) ||
-                                                (targetMode == ImportTargetMode.NEW && newTitle.isNotBlank())
-                                            )
+                                if (isCollectionImport && groupedNameCollisions > 0) {
+                                    Text(
+                                        stringResource(MR.strings.local_import_name_collision, groupedNameCollisions),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                if (isMultiCollection && hasInvalidGroupedName) {
+                                    Text(
+                                        stringResource(MR.strings.local_import_blank_name),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                } else if (isCollectionImport && !hasInvalidGroupedName &&
+                                    ambiguousExistingGroupedTargetCount > 0
+                                ) {
+                                    Text(
+                                        stringResource(MR.strings.local_import_ambiguous_name),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                            HorizontalDivider()
+                            TextPreferenceWidget(
+                                title = stringResource(MR.strings.local_import_section_settings),
+                                widget = {
+                                    Icon(
+                                        if (draft.expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                        null,
+                                    )
+                                },
+                                onPreferenceClick = if (!editable) {
+                                    null
+                                } else {
+                                    { draft = draft.copy(expanded = !draft.expanded) }
+                                },
+                            )
+                            if (draft.expanded) {
+                                if (sourceShapes.any { it.isDirectory }) {
+                                    SwitchPreferenceWidget(
+                                        title = stringResource(MR.strings.local_import_output_cbz),
+                                        checked = draft.packFolders,
+                                        onCheckedChanged = { if (editable) draft = draft.copy(packFolders = it) },
+                                    )
+                                }
+                                SwitchPreferenceWidget(
+                                    title = stringResource(MR.strings.local_import_delete_source),
+                                    checked = deleteSource,
+                                    onCheckedChanged = { if (editable) draft = draft.copy(deleteOriginals = it) },
+                                )
+                            }
+                        }
+                    }
+                    transferStatus?.takeUnless { it.state.isFinished }?.let { status ->
+                        item {
+                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                                LinearProgressIndicator(
+                                    progress = {
+                                        when {
+                                            status.totalBytes > 0 -> status.copiedBytes.toFloat() / status.totalBytes
+                                            status.total > 0 -> status.completed.toFloat() / status.total
+                                            else -> 0f
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Text(
+                                    stringResource(
+                                        MR.strings.local_import_progress,
+                                        status.completed,
+                                        status.total,
+                                        status.currentName,
                                     ),
-                        ) { Text(stringResource(MR.strings.action_import_start)) }
+                                )
+                            }
+                        }
+                    }
+                }
+                if (sourcePreviews.isNotEmpty()) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        enabled = editable && destination != null && transferStatus?.state?.isFinished != false,
+                        onClick = ::submit,
+                    ) {
+                        val label = if (deleteSource) {
+                            MR.strings.local_import_and_delete
+                        } else {
+                            MR.strings.action_import_start
+                        }
+                        Text(stringResource(label))
                     }
                 }
             }
@@ -893,10 +670,9 @@ data class LocalImportScreen(
         if (showMangaPicker) {
             LocalMangaPickerDialog(
                 mangas = mangas,
-                selectedMangaId = targetId,
+                selectedMangaId = targetId ?: -1L,
                 onSelected = {
-                    targetId = it
-                    targetMode = ImportTargetMode.EXISTING
+                    draft = draft.afterCollectionPicker(it)
                 },
                 onDismissRequest = { showMangaPicker = false },
             )
@@ -909,11 +685,13 @@ data class LocalImportScreen(
                     // first rename rather than stacking a second on a name that no longer exists -
                     // and a name edited back to the folder's own drops the entry instead of leaving
                     // a rename that says nothing.
-                    collectionRenames = if (renamed == key || renamed.isBlank()) {
-                        collectionRenames - key
-                    } else {
-                        collectionRenames + (key to renamed)
-                    }
+                    draft = draft.copy(
+                        renames = if (renamed == key || renamed.isBlank()) {
+                            collectionRenames - key
+                        } else {
+                            collectionRenames + (key to renamed)
+                        },
+                    )
                 },
                 onDismissRequest = { showCollectionList = false },
             )
@@ -923,6 +701,8 @@ data class LocalImportScreen(
             AlertDialog(
                 onDismissRequest = {
                     conflictPreview = null
+                    pendingGroupedPlans = emptyList()
+                    pendingTargetId = -1L
                     importing = false
                 },
                 title = { Text(stringResource(MR.strings.local_transfer_conflict_title)) },
@@ -1168,25 +948,6 @@ private fun CollectionStateLabel(exists: Boolean?) {
 
 /** How many names the target card lists before deferring to [CollectionNameDialog]. */
 private const val COLLECTION_LIST_PREVIEW_LIMIT = 5
-
-@Composable
-private fun ImportSection(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
-        }
-    }
-}
 
 /**
  * What to tell the user about a rejected source.
