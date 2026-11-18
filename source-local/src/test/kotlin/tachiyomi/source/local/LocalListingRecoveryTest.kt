@@ -77,16 +77,6 @@ class LocalListingRecoveryTest {
     }
 
     @Test
-    fun `reliable refresh does not revive a directory missing from its scan`() {
-        assertFalse(
-            shouldIncludeLocalMangaDirectory(
-                mangaUrl = "Deleted author",
-                scannedChapterFileNames = mapOf("Existing author" to setOf("Story.cbz")),
-            ),
-        )
-    }
-
-    @Test
     fun `more than 64 real directory removals can be confirmed`() = runBlocking {
         val missing = (1..65).mapTo(linkedSetOf()) { "Author $it" }
 

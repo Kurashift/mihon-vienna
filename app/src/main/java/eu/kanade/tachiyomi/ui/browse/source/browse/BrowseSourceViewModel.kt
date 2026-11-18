@@ -32,6 +32,7 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.presentation.category.components.writableCategoryIds
 import eu.kanade.tachiyomi.data.cache.CoverCache
+import eu.kanade.tachiyomi.data.local.LocalChapterTransferJob
 import eu.kanade.tachiyomi.data.local.LocalDeletionReport
 import eu.kanade.tachiyomi.data.local.LocalDeletionUnit
 import eu.kanade.tachiyomi.data.local.LocalEntryDeletionService
@@ -112,12 +113,11 @@ import tachiyomi.domain.source.repository.SourcePagingSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.LocalListingSnapshot
 import tachiyomi.source.local.LocalSource
+import tachiyomi.source.local.chapterBaseName
 import tachiyomi.source.local.image.LocalChapterCoverManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Clock
 import eu.kanade.tachiyomi.source.model.Filter as SourceModelFilter
 
@@ -155,14 +155,8 @@ class BrowseSourceViewModel(
 
     companion object {
         private const val CLEAR_HISTORY_BATCH_SIZE = 500
-        private const val LOCAL_DIRECTORY_POLL_MILLIS = 30_000L
         private const val LOCAL_REFRESH_CONCURRENCY = 6
-
-        /**
-         * How often a visible local source may quietly rescan the library on its own. The scan runs
-         * in the background while the shelf is already drawn from the cached listing, but it still
-         * reads the whole tree, so returning to the shelf a few times in a row must not repeat it.
-         */
+        private const val LOCAL_AUTO_REFRESH_ENABLED = false
         private const val LOCAL_QUIET_SYNC_COOLDOWN_MILLIS = 5 * 60_000L
 
         /**
@@ -255,12 +249,12 @@ class BrowseSourceViewModel(
      * Flow of Pager flow tied to [State.listing]
      */
     private val hideInLibraryItems = sourcePreferences.hideInLibraryItems.get()
+    val listingHidesFavorites: Boolean get() = hideInLibraryItems
 
-    private var lastLocalDirectoryCheckAt = Long.MIN_VALUE
     private var visibleSnapshotRefreshJob: Job? = null
-    private var quietChapterSyncJob: Job? = null
-    private var lastQuietChapterSyncAt = Long.MIN_VALUE
-    private val chapterSyncRunning = AtomicBoolean(false)
+    private var chapterSyncJob: Job? = null
+    private var lastQuietChapterSyncAt: Long? = null
+    private val chapterSyncRunning = MutableStateFlow(false)
     private val screenVisible = MutableStateFlow(false)
 
     /**
@@ -276,7 +270,7 @@ class BrowseSourceViewModel(
     @Volatile
     private var servedListingUrls: Set<String>? = null
     private val progressSnapshot = MutableStateFlow<List<MangaProgressByMangaId>>(emptyList())
-    private val localChapterCounts = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val localListingSnapshot = (source as? LocalSource)?.listingSnapshot ?: MutableStateFlow(LocalListingSnapshot())
     private val readingFilterPreference = preferenceStore.getString(
         "browse_reading_filter_$sourceId",
         ReadingFilter.ALL.name,
@@ -482,27 +476,18 @@ class BrowseSourceViewModel(
             ),
         )
 
-    /** Live phase of the local chapter refresh, null when no pass is running. */
-    sealed interface ChapterRefreshProgress {
-        data class Checking(val completed: Int, val total: Int) : ChapterRefreshProgress
-        data class Updating(val completed: Int, val total: Int) : ChapterRefreshProgress
+    enum class ChapterRefreshResult {
+        UPDATED,
+        NO_CHANGES,
+        PARTIAL,
+        STORAGE_UNAVAILABLE,
+        BUSY,
     }
 
-    data class ChapterRefreshResult(
-        val changedManga: Int,
-        val newChapters: Int,
-        val storageUnavailable: Boolean = false,
-    )
-
-    /**
-     * Whether a manual "refresh all chapters" pass is currently running for the local source,
-     * together with its live progress. Guards against double taps; also freezes progress-driven
-     * list refreshes while it runs so the screen doesn't flicker for every manga that gets synced.
-     */
-    val isRefreshingChapters = MutableStateFlow<ChapterRefreshProgress?>(null)
-
-    /** True when the local base directory changed since the last rescan, prompting a refresh. */
-    val localSourceChanged = MutableStateFlow(false)
+    private val manualRefreshRequested = MutableStateFlow(false)
+    val isRefreshingChapters: StateFlow<Boolean> = manualRefreshRequested
+    private val localStorageUnavailableInternal = MutableStateFlow(false)
+    val localStorageUnavailable: StateFlow<Boolean> = localStorageUnavailableInternal
 
     /**
      * Refreshes expensive library-wide data once when this screen becomes visible. Cached values
@@ -517,7 +502,6 @@ class BrowseSourceViewModel(
             // never reloaded behind an open detail page.
             rebuildIfListingChanged()
             refreshVisibleSnapshots()
-            maybeSyncLocalChaptersQuietly()
         }
     }
 
@@ -526,29 +510,16 @@ class BrowseSourceViewModel(
         visibleSnapshotRefreshJob?.cancel()
     }
 
-    /**
-     * Catches up with chapter files that were copied into the library outside the app.
-     *
-     * The import screen dates a work it adds chapters to, so a work imported there moves to the top
-     * of the import-date order on its own. A file dropped into an existing folder through a file
-     * manager or a sync script only becomes known when the folders are read, and waiting for the
-     * reader to remember the refresh button meant those works kept the date they first appeared at.
-     * Running the same scan on entry closes that gap without a prompt: the shelf is already drawn
-     * from the cached listing, and every folder is read the same way, so an added, removed or
-     * replaced chapter file all become known at the same moment.
-     */
     private fun maybeSyncLocalChaptersQuietly() {
-        if (source !is LocalSource) return
-        if (quietChapterSyncJob?.isActive == true) return
-        val now = System.currentTimeMillis()
-        if (now - lastQuietChapterSyncAt < LOCAL_QUIET_SYNC_COOLDOWN_MILLIS) return
+        if (!screenVisible.value || chapterSyncJob?.isActive == true) return
+        val now = SystemClock.elapsedRealtime()
+        val last = lastQuietChapterSyncAt
+        if (last != null && now - last < LOCAL_QUIET_SYNC_COOLDOWN_MILLIS) return
         lastQuietChapterSyncAt = now
-        quietChapterSyncJob = viewModelScope.launchIO {
-            refreshAllChaptersInternal(quiet = true)
-        }
+        startChapterRefresh()
     }
 
-    private suspend fun refreshVisibleSnapshots(forceDirectoryCheck: Boolean = false) = coroutineScope {
+    private suspend fun refreshVisibleSnapshots() = coroutineScope {
         val progress = async { getMangaProgress.awaitForSource(sourceId) }
         val favorites = async { mangaRepository.getFavoriteIdsBySourceId(sourceId).toHashSet() }
         // Needed both to exclude in-library entries from the count when that setting is on, and
@@ -566,11 +537,6 @@ class BrowseSourceViewModel(
         } else {
             null
         }
-        val local = source as? LocalSource
-        val directory = local?.let {
-            async { refreshLocalDirectorySnapshot(it, forceDirectoryCheck) }
-        }
-
         progressSnapshot.value = progress.await()
         mangaIdsByUrl?.await()?.let { mangaIdsByUrlInternal.value = it }
         val favoriteIds = favorites.await()
@@ -585,77 +551,6 @@ class BrowseSourceViewModel(
         ) {
             invalidatePagingSources()
         }
-        directory?.await()
-    }
-
-    private suspend fun refreshLocalDirectorySnapshot(local: LocalSource, force: Boolean) {
-        // Ordinary tab entry only needs the last confirmed listing. Walking the tree here
-        // (find -maxdepth 2) stalls the shelf and can invalidate pages on a partial SAF
-        // read. Confirmed scans stay on pull-to-refresh / refresh-all-chapters.
-        if (!force) {
-            if (localChapterCounts.value.isEmpty()) {
-                localChapterCounts.value = local.getChapterCounts()
-            }
-            return
-        }
-        val now = SystemClock.elapsedRealtime()
-        if (lastLocalDirectoryCheckAt != Long.MIN_VALUE &&
-            now - lastLocalDirectoryCheckAt < LOCAL_DIRECTORY_POLL_MILLIS
-        ) {
-            return
-        }
-        lastLocalDirectoryCheckAt = now
-
-        var directorySnapshot = local.getMangaDirectorySnapshot() ?: return
-        // The signature a completed refresh committed is the only record of what the shelf was last
-        // confirmed to be. The previous read is not a second one - see
-        // [localDirectoryDiffersFromBaseline].
-        val committed = basePreferences.localSourceDirectorySignature.get()
-        val listingUrls = local.listingSnapshot.value.allUrls.toSet()
-        var matchesListing = listingUrls.isNotEmpty() && directorySnapshot.urls == listingUrls
-        var differsFromBaseline = localDirectoryDiffersFromBaseline(
-            signature = directorySnapshot.signature,
-            committedSignature = committed,
-            fromListingFallback = directorySnapshot.fromListingFallback,
-            matchesListing = matchesListing,
-        )
-
-        if (differsFromBaseline) {
-            if (!localDirectoryChangeCanApplyImmediately(directorySnapshot.urls, listingUrls)) {
-                // A partial provider result can repeat identically. Confirm every missing folder
-                // before letting it invalidate the last known-good shelf snapshot.
-                directorySnapshot = local.getConfirmedMangaDirectorySnapshot() ?: return
-                // The confirmed read is the one that counts, so the verdict is taken again: a
-                // result that confirms to the committed baseline is not a change at all.
-                matchesListing = listingUrls.isNotEmpty() && directorySnapshot.urls == listingUrls
-                differsFromBaseline = localDirectoryDiffersFromBaseline(
-                    signature = directorySnapshot.signature,
-                    committedSignature = committed,
-                    fromListingFallback = directorySnapshot.fromListingFallback,
-                    matchesListing = matchesListing,
-                )
-            }
-            if (differsFromBaseline) {
-                val currentListingUrls = local.listingSnapshot.value.allUrls.toSet()
-                if (currentListingUrls.isEmpty() || directorySnapshot.urls != currentListingUrls) {
-                    // The rebuild is not requested here: invalidating the listing is what raises the
-                    // revision, and the collector in `init` is the single place that turns it into
-                    // one. Asking for it here as well derived the listing twice for one change.
-                    local.invalidateListing()
-                    localSourceChanged.value = true
-                    logcat(LogPriority.DEBUG) {
-                        "Local directory changed: dirs=${directorySnapshot.urls.size} " +
-                            "listed=${currentListingUrls.size} committed=$committed"
-                    }
-                } else {
-                    basePreferences.localSourceDirectorySignature.set(directorySnapshot.signature)
-                }
-            }
-        }
-        if (!differsFromBaseline && (committed.isBlank() || matchesListing)) {
-            basePreferences.localSourceDirectorySignature.set(directorySnapshot.signature)
-        }
-        localChapterCounts.value = local.getChapterCounts()
     }
 
     /**
@@ -691,7 +586,7 @@ class BrowseSourceViewModel(
 
     private val progressContext: StateFlow<ProgressContext> = combine(
         progressSnapshot,
-        localChapterCounts,
+        localListingSnapshot.map { it.chapterCounts }.distinctUntilChanged(),
         mangaMarkStore.marks,
         goodDoujinStore.marks,
         markUrlById,
@@ -723,7 +618,7 @@ class BrowseSourceViewModel(
         // would re-emit the progress flow, causing the whole list to reload on every single
         // manga. Drop those intermediate updates and only let the final state through once the
         // pass finishes, so the screen refreshes exactly once instead of flickering constantly.
-        .combine(isRefreshingChapters) { context, progress -> (progress != null) to context }
+        .combine(chapterSyncRunning) { context, refreshing -> refreshing to context }
         .filter { (refreshing, _) -> !refreshing }
         .map { (_, context) -> context }
         .distinctUntilChanged()
@@ -1441,10 +1336,18 @@ class BrowseSourceViewModel(
      * until they went looking. The moment the app is in front is the moment they expect the change
      * to be there, so the catch-up hangs off that instead of off a page they have to remember.
      */
-    private val foregroundSyncObserver: DefaultLifecycleObserver? = if (source is LocalSource) {
+    private val foregroundSyncObserver: DefaultLifecycleObserver? = if (LOCAL_AUTO_REFRESH_ENABLED &&
+        source is LocalSource
+    ) {
         object : DefaultLifecycleObserver {
+            private var returning = false
+
             override fun onStart(owner: LifecycleOwner) {
-                maybeSyncLocalChaptersQuietly()
+                if (returning) maybeSyncLocalChaptersQuietly()
+            }
+
+            override fun onStop(owner: LifecycleOwner) {
+                returning = true
             }
         }.also { ProcessLifecycleOwner.get().lifecycle.addObserver(it) }
     } else {
@@ -2392,126 +2295,115 @@ class BrowseSourceViewModel(
         }
     }
 
-    /** Emits a concise result after a local incremental refresh finishes. */
-    val chapterRefreshEvents = Channel<ChapterRefreshResult>()
+    private val chapterRefreshEventsInternal = MutableSharedFlow<ChapterRefreshResult>(extraBufferCapacity = 1)
+    val chapterRefreshEvents = chapterRefreshEventsInternal.asSharedFlow()
 
-    /**
-     * Incrementally syncs the chapter list of local manga that changed on disk into the database
-     * (new folders, or folders whose mtime changed). Unchanged manga are skipped.
-     */
-    fun refreshAllChapters() = refreshAllChaptersInternal(quiet = false)
+    fun refreshAllChapters() {
+        if (source !is LocalSource || manualRefreshRequested.value) return
+        manualRefreshRequested.value = true
+        startChapterRefresh()
+    }
 
-    /**
-     * [quiet] runs the same scan without the progress state and result notice, for the catch-up on
-     * entry. Both share one guard so a manual refresh and the quiet one can never scan at once.
-     */
-    private fun refreshAllChaptersInternal(quiet: Boolean) {
+    private fun startChapterRefresh() {
         val local = source as? LocalSource ?: return
-        if (!chapterSyncRunning.compareAndSet(false, true)) return
-        if (!quiet) isRefreshingChapters.value = ChapterRefreshProgress.Checking(0, 0)
-        viewModelScope.launchIO {
+        if (chapterSyncJob?.isActive == true) return
+        chapterSyncRunning.value = true
+        chapterSyncJob = viewModelScope.launch {
             try {
-                val scan = local.scanChapterChanges(
-                    lastSuccessfulBaseDirectoryLastModified = basePreferences.localSourceSyncMtime.get(),
-                    // The catch-up on entry only has to see chapters that appeared, which always
-                    // moves the folder's own mtime. A manual refresh reads every folder so it can
-                    // also settle a chapter file swapped under the same name.
-                    reuseUnchangedFolders = quiet,
-                ) { completed, total ->
-                    if (!quiet) isRefreshingChapters.value = ChapterRefreshProgress.Checking(completed, total)
-                }
-                if (!scan.isReliable) {
-                    // Nothing was confirmed about the directory, so this is not evidence that the
-                    // shelf changed - only that it could not be read. Raising the banner here made
-                    // it claim there were updates to refresh for, in the same breath as the notice
-                    // saying the refresh had just failed.
-                    if (!quiet) {
-                        chapterRefreshEvents.send(
-                            ChapterRefreshResult(
-                                changedManga = 0,
-                                newChapters = 0,
-                                storageUnavailable = true,
-                            ),
-                        )
+                if (!manualRefreshRequested.value) runChapterRefresh(local, quiet = true)
+                if (manualRefreshRequested.value) {
+                    val result = runChapterRefresh(local, quiet = false)
+                    if (result != ChapterRefreshResult.BUSY) {
+                        localStorageUnavailableInternal.value = result == ChapterRefreshResult.STORAGE_UNAVAILABLE
                     }
-                    return@launchIO
-                }
-                relocateMovedLocalChapters(scan)
-                val unsynced = scan.changedMangaUrls
-                val total = unsynced.size
-                if (total > 0 && !quiet) {
-                    isRefreshingChapters.value = ChapterRefreshProgress.Updating(0, total)
-                }
-                val semaphore = Semaphore(LOCAL_REFRESH_CONCURRENCY)
-                val completed = AtomicInteger(0)
-                val successful = ConcurrentHashMap.newKeySet<String>()
-                val totalNew = if (total == 0) {
-                    0
-                } else {
-                    coroutineScope {
-                        unsynced.map { url ->
-                            async {
-                                try {
-                                    semaphore.withPermit {
-                                        val dbManga = mangaRepository.getMangaByUrlAndSourceId(url, sourceId)
-                                        if (dbManga == null) {
-                                            successful += url
-                                            0
-                                        } else {
-                                            val result = updateMangaFromRemote(
-                                                source = local,
-                                                manga = dbManga,
-                                                fetchDetails = false,
-                                                fetchChapters = true,
-                                            )
-                                            if (result.isSuccess) successful += url
-                                            result.getOrNull()?.newChapters?.size ?: 0
-                                        }
-                                    }
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    logcat(LogPriority.ERROR, e) { "Failed to refresh local manga: $url" }
-                                    0
-                                } finally {
-                                    if (!quiet) {
-                                        isRefreshingChapters.value = ChapterRefreshProgress.Updating(
-                                            completed = completed.incrementAndGet(),
-                                            total = total,
-                                        )
-                                    }
-                                }
-                            }
-                        }.awaitAll().sum()
+                    if (screenVisible.value && result != ChapterRefreshResult.UPDATED) {
+                        chapterRefreshEventsInternal.tryEmit(result)
                     }
-                }
-                local.markChaptersSynced(scan, successful)
-                val listingRefreshed = local.refreshListing(scan)
-                if (listingRefreshed) {
-                    invalidatePagingSources()
-                }
-                val hasFailures = successful.size < total || !listingRefreshed
-                if (!hasFailures) {
-                    basePreferences.localSourceSyncMtime.set(local.getBaseDirectoryLastModified())
-                    local.getMangaDirectorySignature()?.let(basePreferences.localSourceDirectorySignature::set)
-                    // A completed refresh is exactly what the banner was asking for, so it goes.
-                    localSourceChanged.value = false
-                }
-                val changedDirectoryCount = (scan.changedMangaUrls + scan.removedMangaUrls).size
-                if (!quiet) {
-                    chapterRefreshEvents.send(
-                        ChapterRefreshResult(
-                            changedManga = changedDirectoryCount,
-                            newChapters = totalNew,
-                            storageUnavailable = !listingRefreshed,
-                        ),
-                    )
                 }
             } finally {
-                if (!quiet) isRefreshingChapters.value = null
-                chapterSyncRunning.set(false)
-                refreshVisibleSnapshots(forceDirectoryCheck = true)
+                chapterSyncRunning.value = false
+                manualRefreshRequested.value = false
             }
+        }
+    }
+
+    private suspend fun runChapterRefresh(local: LocalSource, quiet: Boolean): ChapterRefreshResult = withIOContext {
+        try {
+            if (deletionService.progress.value != null || LocalChapterTransferJob.isRunning(context)) {
+                return@withIOContext ChapterRefreshResult.BUSY
+            }
+            val scan = local.scanChapterChanges(
+                lastSuccessfulBaseDirectoryLastModified = basePreferences.localSourceSyncMtime.get(),
+                reuseUnchangedFolders = quiet,
+            )
+            if (!scan.isRootReadable) return@withIOContext ChapterRefreshResult.STORAGE_UNAVAILABLE
+            if (!scan.isReliable) return@withIOContext ChapterRefreshResult.PARTIAL
+            if (!local.isCurrentChapterScan(scan) || deletionService.progress.value != null ||
+                LocalChapterTransferJob.isRunning(context)
+            ) {
+                return@withIOContext ChapterRefreshResult.PARTIAL
+            }
+            val complete = scan.unavailableMangaUrls.isEmpty()
+            if (complete && (scan.changedMangaUrls.isNotEmpty() || scan.removedMangaUrls.isNotEmpty())) {
+                relocateMovedLocalChapters(scan)
+            }
+            val unconfirmedNames = if (complete) {
+                emptySet()
+            } else {
+                (scan.unavailableMangaUrls + scan.removedMangaUrls).flatMapTo(hashSetOf()) {
+                    scan.previousChapterFileNamesByMangaUrl[it].orEmpty().map(::chapterBaseName)
+                }
+            }
+            val candidates = scan.changedMangaUrls.filter { url ->
+                // A missing chapter may have moved into one of the unreadable works.
+                complete || canRefreshLocalWorkDuringPartialScan(
+                    previous = scan.previousChapterFileNamesByMangaUrl[url].orEmpty(),
+                    current = scan.chapterFileNamesByMangaUrl[url].orEmpty(),
+                    unconfirmedNames = unconfirmedNames,
+                )
+            }
+            val semaphore = Semaphore(LOCAL_REFRESH_CONCURRENCY)
+            val successful = coroutineScope {
+                candidates.map { url ->
+                    async {
+                        semaphore.withPermit {
+                            val manga = mangaRepository.getMangaByUrlAndSourceId(url, sourceId)
+                            if (manga == null || updateMangaFromRemote(
+                                    source = local,
+                                    manga = manga,
+                                    fetchChapters = true,
+                                    localScan = scan,
+                                ).isSuccess
+                            ) {
+                                url
+                            } else {
+                                null
+                            }
+                        }
+                    }
+                }.awaitAll().filterNotNull().toSet()
+            }
+            val removed = if (complete) scan.removedMangaUrls else emptySet()
+            if (deletionService.progress.value != null || LocalChapterTransferJob.isRunning(context)) {
+                return@withIOContext ChapterRefreshResult.PARTIAL
+            }
+            val commit = local.commitChapterRefresh(scan, successful, removed)
+                ?: return@withIOContext ChapterRefreshResult.PARTIAL
+            if (commit.changed) {
+                refreshVisibleSnapshots()
+                invalidatePagingSources()
+            }
+            when {
+                !commit.indexSaved || !complete || successful.size != scan.changedMangaUrls.size ->
+                    ChapterRefreshResult.PARTIAL
+                commit.changed -> ChapterRefreshResult.UPDATED
+                else -> ChapterRefreshResult.NO_CHANGES
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Local library refresh failed" }
+            ChapterRefreshResult.PARTIAL
         }
     }
 
@@ -2573,13 +2465,11 @@ class BrowseSourceViewModel(
                     fileName = chapter.url.substringAfter('/', chapter.url),
                 )
             }
-        val currentChangedFiles = scan.chapterFileNamesByMangaUrl
-            .filterKeys(scan.changedMangaUrls::contains)
         val candidates = (
             detectLocalChapterMoves(
                 storedChapters = storedChapters,
                 previousFileNamesByMangaUrl = scan.previousChapterFileNamesByMangaUrl,
-                currentFileNamesByMangaUrl = currentChangedFiles,
+                currentFileNamesByMangaUrl = scan.chapterFileNamesByMangaUrl,
             ) + detectStaleLocalChapterMoves(
                 storedChapters = storedChapters,
                 currentFileNamesByMangaUrl = scan.chapterFileNamesByMangaUrl,
@@ -2885,33 +2775,17 @@ class BrowseSourceViewModel(
     }
 }
 
-internal fun localDirectoryChangeCanApplyImmediately(
-    observedUrls: Set<String>,
-    listingUrls: Set<String>,
-): Boolean = listingUrls.isNotEmpty() && observedUrls.containsAll(listingUrls)
-
-/**
- * Whether the directories read now differ from the state the shelf was last confirmed to be in.
- *
- * The baseline is the signature a completed refresh committed, not the previous read kept in
- * memory: after a refresh commits the new state, a copy of the earlier read still holds the state
- * from before that change, so comparing against it reports the change that refresh had just applied
- * as a new one - and the banner asks for a refresh that already happened.
- *
- * A listing that equals the directories in full is up to date whatever the baseline says, since the
- * rebuild that produced it read those same directories. A snapshot rebuilt from the listing index
- * confirms nothing about the directory, so it is not a change either.
- */
-internal fun localDirectoryDiffersFromBaseline(
-    signature: String,
-    committedSignature: String,
-    fromListingFallback: Boolean,
-    matchesListing: Boolean,
-): Boolean = when {
-    matchesListing || fromListingFallback -> false
-    committedSignature.isNotBlank() -> signature != committedSignature
-    else -> false
+internal fun hasMissingLocalChapterNames(previous: Set<String>, current: Set<String>): Boolean {
+    val baseNames = current.mapTo(hashSetOf(), ::chapterBaseName)
+    return previous.any { name -> name !in current && (chapterBaseName(name) != name || name !in baseNames) }
 }
+
+internal fun canRefreshLocalWorkDuringPartialScan(
+    previous: Set<String>,
+    current: Set<String>,
+    unconfirmedNames: Set<String>,
+): Boolean = !hasMissingLocalChapterNames(previous, current) &&
+    (current - previous).none { chapterBaseName(it) in unconfirmedNames }
 
 /**
  * Urls of the works carrying a mark, valued by the newest mark time on each.

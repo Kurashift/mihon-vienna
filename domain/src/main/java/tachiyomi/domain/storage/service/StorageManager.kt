@@ -147,32 +147,39 @@ class StorageManager(
      * A failed query remains unknown so it can never be mistaken for a confirmed deletion.
      */
     fun createLocalSourceDirectoryEntryStateLookup(): (String) -> LocalSourceDirectoryEntryState {
-        val directDirectory = getDirectLocalSourceDirectory()
-        if (directDirectory != null) {
-            val directFile = directDirectory.filePath?.let(::File)
-                ?: return { LocalSourceDirectoryEntryState.UNKNOWN }
+        val directory = getDirectLocalSourceDirectory() ?: baseDir?.findFile(LOCAL_SOURCE_PATH)
+            ?: return { LocalSourceDirectoryEntryState.UNKNOWN }
+        return createLocalSourceChildStateLookup(directory, directoryOnly = true)
+    }
+
+    fun createLocalSourceChildStateLookup(
+        directory: UniFile,
+        directoryOnly: Boolean = false,
+    ): (String) -> LocalSourceDirectoryEntryState {
+        val directFile = directory.filePath?.let(::File)
+        if (directFile != null) {
             return { name ->
                 val child = directFile.resolve(name)
-                if (child.exists() && child.isDirectory) {
+                if (child.exists() && (!directoryOnly || child.isDirectory)) {
                     LocalSourceDirectoryEntryState.EXISTS
-                } else {
+                } else if (directFile.canRead()) {
                     LocalSourceDirectoryEntryState.MISSING
+                } else {
+                    LocalSourceDirectoryEntryState.UNKNOWN
                 }
             }
         }
 
-        val directory = baseDir?.findFile(LOCAL_SOURCE_PATH)
-            ?: return { LocalSourceDirectoryEntryState.UNKNOWN }
         val directoryUri = directory.uri
         if (directoryUri.authority != EXTERNAL_STORAGE_PROVIDER_AUTHORITY) {
             return { name ->
                 val child = runCatching { directory.findFile(name) }.getOrNull()
-                if (child == null) {
-                    LocalSourceDirectoryEntryState.MISSING
-                } else if (runCatching { child.exists() && child.isDirectory }.getOrDefault(false)) {
+                if (child != null &&
+                    runCatching { child.exists() && (!directoryOnly || child.isDirectory) }.getOrDefault(false)
+                ) {
                     LocalSourceDirectoryEntryState.EXISTS
                 } else {
-                    LocalSourceDirectoryEntryState.MISSING
+                    LocalSourceDirectoryEntryState.UNKNOWN
                 }
             }
         }
@@ -196,7 +203,7 @@ class StorageManager(
                         if (!cursor.moveToFirst()) {
                             LocalSourceDirectoryEntryState.MISSING
                         } else if (
-                            cursor.getString(0) == DocumentsContract.Document.MIME_TYPE_DIR
+                            !directoryOnly || cursor.getString(0) == DocumentsContract.Document.MIME_TYPE_DIR
                         ) {
                             LocalSourceDirectoryEntryState.EXISTS
                         } else {

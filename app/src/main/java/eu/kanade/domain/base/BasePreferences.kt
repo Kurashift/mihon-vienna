@@ -204,12 +204,6 @@ class BasePreferences(
     /** Base-directory mtime of the last local-source chapter rescan, used to detect disk changes. */
     val localSourceSyncMtime: Preference<Long> = preferenceStore.getLong("local_source_sync_mtime", 0L)
 
-    /** Stable top-level manga directory signature committed after a successful local refresh. */
-    val localSourceDirectorySignature: Preference<String> = preferenceStore.getString(
-        Preference.appStateKey("local_source_directory_signature"),
-        "",
-    )
-
     /**
      * The home tab the user was last on, as a stable id (see `HomeTabKey` in the ui.home package).
      *
