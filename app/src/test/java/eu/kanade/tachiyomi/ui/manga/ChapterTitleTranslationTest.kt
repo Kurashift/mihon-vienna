@@ -2,10 +2,42 @@ package eu.kanade.tachiyomi.ui.manga
 
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 
 class ChapterTitleTranslationTest {
+
+    @Test
+    fun `library picker imports one or more single manga and full library exports`() {
+        val first = Manga.create().copy(id = 1, title = "First", url = "First")
+        val second = Manga.create().copy(id = 2, title = "Second", url = "Second")
+        val firstChapter = chapter(10, "First/One.cbz", "One").copy(translatedName = "甲")
+        val secondChapter = chapter(20, "Second/Two.cbz", "Two").copy(mangaId = second.id, translatedName = "乙")
+        val codec = ChapterTitleTranslationCodec
+        for (format in ChapterTitleTranslationFormat.entries) {
+            val single = codec.encode(first, listOf(firstChapter), format, exportInstanceId = "device-a")
+            val full = codec.encodeLocalLibrary(
+                listOf(first to listOf(firstChapter), second to listOf(secondChapter)),
+                format,
+                exportInstanceId = "device-b",
+            )
+
+            codec.decodeLibraryImport(sequenceOf(single)).mangas shouldBe listOf(codec.decode(single))
+            codec.decodeLibraryImport(sequenceOf(full)) shouldBe codec.decodeLocalLibrary(full)
+            val mixed = codec.decodeLibraryImport(sequenceOf(single, full))
+            mixed.mangas.map { it.mangaUrl to it.exportInstanceId } shouldBe
+                listOf("First" to "device-a", "First" to "device-b", "Second" to "device-b")
+            mixed.mangas.flatMap { it.chapters }.map { it.translatedTitle } shouldBe listOf("甲", "甲", "乙")
+        }
+    }
+
+    @Test
+    fun `library picker rejects unsupported versions before merging exports`() {
+        assertThrows<IllegalArgumentException> {
+            ChapterTitleTranslationCodec.decodeLibraryImport(sequenceOf("""{"formatVersion":2,"mangas":[]}"""))
+        }
+    }
 
     @Test
     fun `translation follows a moved chapter with the same name`() {

@@ -83,18 +83,9 @@ internal class LocalLibraryChapterTitleTranslations(
         count
     }
 
-    suspend fun importLibrary(uri: Uri): LocalLibraryChapterTitleImportPlan = withIOContext {
-        val document = readDocument(uri) { ChapterTitleTranslationCodec.decodeLocalLibrary(it) }
+    suspend fun importFiles(uris: List<Uri>): LocalLibraryChapterTitleImportPlan = withIOContext {
+        val document = ChapterTitleTranslationCodec.decodeLibraryImport(uris.asSequence().map(::readText))
         import(document)
-    }
-
-    suspend fun importMangaFiles(uris: List<Uri>): LocalLibraryChapterTitleImportPlan = withIOContext {
-        val documents = uris.flatMap { uri ->
-            val content = readText(uri)
-            runCatching { ChapterTitleTranslationCodec.decodeLocalLibrary(content).mangas }
-                .getOrElse { listOf(ChapterTitleTranslationCodec.decode(content)) }
-        }
-        import(LocalLibraryChapterTitleTranslationDocument(mangas = documents))
     }
 
     private suspend fun import(
@@ -203,10 +194,6 @@ internal class LocalLibraryChapterTitleTranslations(
         val scan = source.scanChapterChanges()
         check(scan.isReliable && scan.unavailableMangaUrls.isEmpty()) { "Local library storage is unavailable" }
         return scan
-    }
-
-    private inline fun <T> readDocument(uri: Uri, decode: (String) -> T): T {
-        return decode(readText(uri))
     }
 
     private fun readText(uri: Uri): String {
