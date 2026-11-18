@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.LocalLibrary
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.MaterialTheme
@@ -37,7 +38,7 @@ fun StatsScreenContent(state: StatsScreenState.Success, paddingValues: PaddingVa
         item { OverviewSection(state.overview) }
         item { LocalLibrarySection(state.localLibrary) }
         item { LibrarySection(state.library) }
-        item { ChapterSection(state.overview, state.downloads) }
+        item { DownloadsSection(state.downloads) }
         item { TrackerSection(state.trackers) }
     }
 }
@@ -61,14 +62,19 @@ private fun LazyItemScope.OverviewSection(data: StatsData.Overview) {
                 Icons.Outlined.LocalLibrary,
             )
             StatsOverviewItem(
-                duration,
-                stringResource(MR.strings.stats_total_read_duration),
-                Icons.Outlined.Schedule,
-            )
-            StatsOverviewItem(
                 data.completedWorkCount.statText(),
                 stringResource(MR.strings.stats_completed_works),
                 Icons.Outlined.CollectionsBookmark,
+            )
+            StatsOverviewItem(
+                data.readChapterCount.statText(),
+                stringResource(MR.strings.stats_read_chapters),
+                Icons.Outlined.DoneAll,
+            )
+            StatsOverviewItem(
+                duration,
+                stringResource(MR.strings.stats_total_read_duration),
+                Icons.Outlined.Schedule,
             )
         }
     }
@@ -97,11 +103,10 @@ private fun LazyItemScope.LibrarySection(data: StatsData.Library) {
 }
 
 @Composable
-private fun LazyItemScope.ChapterSection(overview: StatsData.Overview, downloads: StatsData.Downloads) {
-    SectionCard(MR.strings.chapters) {
+private fun LazyItemScope.DownloadsSection(data: StatsData.Downloads) {
+    SectionCard(MR.strings.stats_online_downloads) {
         Row {
-            StatsItem(overview.readChapterCount.statText(), stringResource(MR.strings.stats_read_chapters))
-            StatsItem(downloads.chapterCount.statText(), stringResource(MR.strings.stats_online_downloads))
+            StatsItem(data.chapterCount.statText(), stringResource(MR.strings.stats_downloaded_chapters))
         }
     }
 }

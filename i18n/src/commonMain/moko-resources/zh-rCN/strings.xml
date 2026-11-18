@@ -1385,9 +1385,9 @@
     <string name="undo_history_cleared">已清除 %1$d 条历史记录</string>
     <string name="undo_category_deleted">已删除分类「%1$s」</string>
     <string name="stats_reading_overview">阅读概览</string>
-    <string name="stats_read_works">阅读过的作品</string>
-    <string name="stats_completed_works">全部读完的作品</string>
-    <string name="stats_total_read_duration">累计阅读时长</string>
+    <string name="stats_read_works">读过作品</string>
+    <string name="stats_completed_works">全部读完</string>
+    <string name="stats_total_read_duration">累计时长</string>
     <string name="stats_local_library">本库</string>
     <string name="stats_current_works">当前作品</string>
     <string name="stats_current_chapters">当前篇目</string>
@@ -1398,6 +1398,7 @@
     <string name="stats_online_favorites">其中在线</string>
     <string name="stats_read_chapters">已读篇目</string>
     <string name="stats_online_downloads">在线下载</string>
+    <string name="stats_downloaded_chapters">已下载篇目</string>
     <string name="stats_logged_in_trackers">已登录服务</string>
     <string name="backup_history_and_statistics">阅读历史与统计</string>
 </resources>
