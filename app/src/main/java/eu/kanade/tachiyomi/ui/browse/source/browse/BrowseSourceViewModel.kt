@@ -2350,9 +2350,10 @@ class BrowseSourceViewModel(
             val unconfirmedNames = if (complete) {
                 emptySet()
             } else {
-                (scan.unavailableMangaUrls + scan.removedMangaUrls).flatMapTo(hashSetOf()) {
-                    scan.previousChapterFileNamesByMangaUrl[it].orEmpty().map(::chapterBaseName)
-                }
+                pendingLocalMoveNames(
+                    scan.previousChapterFileNamesByMangaUrl,
+                    scan.chapterFileNamesByMangaUrl,
+                )
             }
             val candidates = scan.changedMangaUrls.filter { url ->
                 // A missing chapter may have moved into one of the unreadable works.
@@ -2408,8 +2409,8 @@ class BrowseSourceViewModel(
     }
 
     private suspend fun relocateMovedLocalChapters(scan: tachiyomi.source.local.LocalChapterSyncScan) {
-        val storedMangas = mangaRepository.getMangaProgressBySource(sourceId)
-        val mangaUrlById = storedMangas.associate { it.mangaId to it.url }
+        val mangaUrlById = mangaRepository.getMangaIdsBySourceId(sourceId)
+            .entries.associate { (url, id) -> id to url }
         if (mangaUrlById.isEmpty()) return
         val mangaByUrl = mutableMapOf<String, Manga>()
         val allStoredChapters = chapterRepository
@@ -2786,6 +2787,13 @@ internal fun canRefreshLocalWorkDuringPartialScan(
     unconfirmedNames: Set<String>,
 ): Boolean = !hasMissingLocalChapterNames(previous, current) &&
     (current - previous).none { chapterBaseName(it) in unconfirmedNames }
+
+internal fun pendingLocalMoveNames(
+    previous: Map<String, Set<String>>,
+    current: Map<String, Set<String>>,
+): Set<String> = previous.flatMapTo(hashSetOf()) { (url, names) ->
+    (names - current[url].orEmpty()).map(::chapterBaseName)
+}
 
 /**
  * Urls of the works carrying a mark, valued by the newest mark time on each.

@@ -115,7 +115,7 @@ class UpdateMangaFromRemote(
             source = source,
             manualFetch = manualFetch,
             fetchWindow = fetchWindow,
-            allowEmptyLocalSource = source is tachiyomi.source.local.LocalSource && fetchChapters,
+            allowLocalChapterRemoval = localScan != null,
         )
         // A chapter that did not exist in this work before is the work entering the library again,
         // and the local source's date sort reads date_added as exactly that moment (see LocalSource's
