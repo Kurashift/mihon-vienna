@@ -36,8 +36,7 @@ data class LocalDeletionEntry(
 /**
  * Receipt of one delete run.
  *
- * Lives in memory only: the dialog that shows it is the only consumer, and it is cleared as soon
- * as the reader closes that dialog or exports the list.
+ * Lives in memory until the reader closes the result dialog or exports the list.
  */
 data class LocalDeletionReport(
     val id: Long,
@@ -48,6 +47,7 @@ data class LocalDeletionReport(
     val deletedMangaIds: Set<Long>,
     val finishedAt: Long,
     val keptFolders: List<String> = emptyList(),
+    val removedFolderMangaIds: Set<Long> = emptySet(),
 ) {
     val deletedCount: Int get() = entries.count { it.outcome == LocalDeletionOutcome.DELETED }
 

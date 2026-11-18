@@ -46,7 +46,7 @@ import java.util.Locale
  * milliseconds, and a dialog that appears and vanishes in the same breath is worse than none.
  */
 @Composable
-fun LocalDeletionHost() {
+fun LocalDeletionHost(onFoldersRemoved: suspend (Set<Long>) -> Unit) {
     val context = LocalContext.current
     val service = remember { Injekt.get<LocalEntryDeletionService>() }
     val progress by service.progress.collectAsStateWithLifecycle()
@@ -93,11 +93,21 @@ fun LocalDeletionHost() {
     // toast would take it away before it could be used.
     val currentReport = report
     if (currentReport != null) {
-        LocalDeletionResultDialog(
-            report = currentReport,
-            onExport = { exportLauncher.launch(exportFileName()) },
-            onDismiss = service::clearReport,
-        )
+        val removedFolders = currentReport.removedFolderMangaIds
+        var ready by remember(currentReport.id) { mutableStateOf(removedFolders.isEmpty()) }
+        if (removedFolders.isNotEmpty()) {
+            LaunchedEffect(currentReport.id) {
+                onFoldersRemoved(removedFolders)
+                ready = true
+            }
+        }
+        if (ready) {
+            LocalDeletionResultDialog(
+                report = currentReport,
+                onExport = { exportLauncher.launch(exportFileName()) },
+                onDismiss = service::clearReport,
+            )
+        }
     }
 }
 
