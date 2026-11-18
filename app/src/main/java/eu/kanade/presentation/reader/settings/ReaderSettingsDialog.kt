@@ -9,6 +9,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -27,11 +29,13 @@ fun ReaderSettingsDialog(
     viewModel: ReaderSettingsViewModel,
 ) {
     val tabTitles = listOf(
-        stringResource(MR.strings.pref_category_reading_mode),
-        stringResource(MR.strings.pref_category_general),
-        stringResource(MR.strings.custom_filter),
+        stringResource(MR.strings.pref_category_reading),
+        stringResource(MR.strings.reader_group_display),
+        stringResource(MR.strings.reader_panel_controls),
     )
     val pagerState = rememberPagerState { tabTitles.size }
+    val showMenus by rememberUpdatedState(onShowMenus)
+    val hideMenus by rememberUpdatedState(onHideMenus)
 
     BoxWithConstraints {
         TabbedDialog(
@@ -43,30 +47,29 @@ fun ReaderSettingsDialog(
             tabTitles = tabTitles,
             pagerState = pagerState,
         ) { page ->
-            val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-
-            LaunchedEffect(pagerState.currentPage) {
-                if (pagerState.currentPage == 2) {
-                    window?.setDimAmount(0f)
-                    onHideMenus()
-                } else {
-                    window?.setDimAmount(0.5f)
-                    onShowMenus()
+            val currentPage = pagerState.settledPage
+            if (page == currentPage) {
+                val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+                LaunchedEffect(currentPage, window) {
+                    val preview = currentPage == DISPLAY_TAB
+                    window?.setDimAmount(if (preview) 0f else 0.5f)
+                    if (preview) hideMenus() else showMenus()
                 }
             }
 
             Column(
                 modifier = Modifier
-                    // 底部留一点空：最后一排滚动到底时不会贴着面板边缘。
                     .padding(top = TabbedDialogPaddings.Vertical, bottom = 16.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
                 when (page) {
                     0 -> ReadingModePage(viewModel)
-                    1 -> GeneralPage(viewModel)
-                    2 -> ColorFilterPage(viewModel)
+                    DISPLAY_TAB -> DisplaySettingsPage(viewModel.preferences)
+                    2 -> ControlSettingsPage(viewModel)
                 }
             }
         }
     }
 }
+
+private const val DISPLAY_TAB = 1
