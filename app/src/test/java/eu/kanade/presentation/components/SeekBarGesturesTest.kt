@@ -1,11 +1,34 @@
 package eu.kanade.presentation.components
 
+import androidx.compose.ui.geometry.Offset
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class SeekBarGesturesTest {
+
+    @Test
+    fun `horizontal progress runs rightward and fine adjustment lifts upward`() {
+        val down = Offset(50f, 100f)
+        val moved = Offset(80f, 60f)
+        assertEquals(80f, SeekDirection.Horizontal.position(moved))
+        assertEquals(40f, SeekDirection.Horizontal.lift(down, moved))
+        assertEquals(0f, SeekDirection.Horizontal.lift(down, Offset(80f, 140f)))
+    }
+
+    @Test
+    fun `both rails advance downward and fine adjustment moves toward the page`() {
+        val down = Offset(100f, 50f)
+        val inwardFromLeft = Offset(140f, 80f)
+        val inwardFromRight = Offset(60f, 80f)
+        assertEquals(80f, SeekDirection.LeftRail.position(inwardFromLeft))
+        assertEquals(80f, SeekDirection.RightRail.position(inwardFromRight))
+        assertEquals(40f, SeekDirection.LeftRail.lift(down, inwardFromLeft))
+        assertEquals(40f, SeekDirection.RightRail.lift(down, inwardFromRight))
+        assertEquals(0f, SeekDirection.LeftRail.lift(down, inwardFromRight))
+        assertEquals(0f, SeekDirection.RightRail.lift(down, inwardFromLeft))
+    }
 
     @Test
     fun `a drag on the bar moves one unit per width of travel`() {

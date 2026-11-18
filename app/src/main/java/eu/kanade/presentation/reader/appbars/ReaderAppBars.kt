@@ -8,7 +8,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -19,14 +18,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,27 +42,32 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.components.seekBarGestures
+import eu.kanade.presentation.reader.components.ChapterArrow
 import eu.kanade.presentation.reader.components.ChapterNavigator
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
+import eu.kanade.presentation.reader.components.ReaderPageSeekBar
+import eu.kanade.presentation.reader.components.chapterArrowSize
+import eu.kanade.presentation.reader.components.sideRailEndPadding
+import eu.kanade.presentation.reader.components.sideRailHeight
+import eu.kanade.presentation.reader.components.sideRailMinimumTrack
+import eu.kanade.presentation.reader.components.sideRailTrackPadding
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
@@ -69,8 +75,6 @@ import kotlin.math.roundToInt
 
 private val readerBarsSlideAnimationSpec = tween<IntOffset>(200)
 private val readerBarsFadeAnimationSpec = tween<Float>(150)
-
-private val FINE_THUMB_RADIUS = 7.dp
 
 @Composable
 fun ReaderAppBars(
@@ -110,6 +114,48 @@ fun ReaderAppBars(
     val backgroundColor = MaterialTheme.colorScheme
         .surfaceColorAtElevation(3.dp)
         .copy(alpha = if (isSystemInDarkTheme()) 0.9f else 0.95f)
+    val wantsSideRail = !chapterNavigatorType.isHorizontal()
+    var measuredRailSpace by remember { mutableStateOf(IntSize.Zero) }
+    var reservedFooterHeight by remember { mutableStateOf(0) }
+    val hasTrack = totalPages > 1
+    val labelSize = if (wantsSideRail && hasTrack) {
+        rememberTextMeasurer().measure(
+            "8".repeat(totalPages.toString().length),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+        ).size
+    } else {
+        null
+    }
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val navigationInsets = WindowInsets.navigationBars
+    val railHeight = with(density) {
+        val buttons = 2 * (chapterArrowSize.roundToPx() + sideRailEndPadding.roundToPx())
+        val track = if (labelSize != null) {
+            sideRailMinimumTrack.roundToPx() + 2 * (labelSize.height + sideRailTrackPadding.roundToPx())
+        } else {
+            0
+        }
+        sideRailHeight(
+            measuredRailSpace.height + reservedFooterHeight,
+            verticalNavigatorHeight,
+            buttons + track,
+            hasTrack,
+        ).toDp()
+    }
+    val railWidth = with(density) {
+        ((labelSize?.width ?: 0).toDp() + 8.dp).coerceAtLeast(chapterArrowSize)
+    }
+    val showSideRail = wantsSideRail && railHeight > 0.dp
+    val footerPadding = MaterialTheme.padding.small
+    val splitFallback = wantsSideRail && !showSideRail && measuredRailSpace.width > 0 && with(density) {
+        val insets = navigationInsets.getLeft(density, layoutDirection) +
+            navigationInsets.getRight(density, layoutDirection)
+        val tools = if (audioAvailable) 80.dp else 40.dp
+        val fixedWidth = (chapterArrowSize * 2 + tools + footerPadding * 2 + 40.dp + 48.dp).roundToPx()
+        measuredRailSpace.width < insets + fixedWidth + (labelSize?.width ?: 0) * 2
+    }
 
     Column(modifier = Modifier.fillMaxHeight()) {
         AnimatedVisibility(
@@ -132,40 +178,44 @@ fun ReaderAppBars(
             )
         }
 
-        if (!chapterNavigatorType.isHorizontal()) {
+        if (wantsSideRail) {
             val sliderOnLeft = chapterNavigatorType == ChapterNavigatorType.VERTICAL_LEFT
-            CompositionLocalProvider(
-                LocalLayoutDirection provides if (sliderOnLeft) LayoutDirection.Ltr else LayoutDirection.Rtl,
+            // Measure the space remaining after both bars (including the audio volume panel).
+            // The wrapped footer's extra row is measured separately and added back to this budget.
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .onSizeChanged { measuredRailSpace = it }
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    .padding(horizontal = MaterialTheme.padding.small),
             ) {
-                Row(modifier = Modifier.weight(1f)) {
-                    AnimatedVisibility(
+                if (showSideRail) {
+                    this@Column.AnimatedVisibility(
                         visible = visible,
+                        modifier = Modifier.align(
+                            if (sliderOnLeft) AbsoluteAlignment.BottomLeft else AbsoluteAlignment.BottomRight,
+                        ),
                         enter = slideInHorizontally(readerBarsSlideAnimationSpec) { if (sliderOnLeft) -it else it } +
                             fadeIn(readerBarsFadeAnimationSpec),
                         exit = slideOutHorizontally(readerBarsSlideAnimationSpec) { if (sliderOnLeft) -it else it } +
                             fadeOut(readerBarsFadeAnimationSpec),
                     ) {
-                        Row {
-                            Spacer(modifier = Modifier.width(MaterialTheme.padding.small))
-                            Box(
-                                modifier = Modifier.fillMaxHeight(),
-                                contentAlignment = Alignment.BottomCenter,
-                            ) {
-                                ChapterNavigator(
-                                    modifier = Modifier.fillMaxHeight(verticalNavigatorHeight),
-                                    onNextChapter = onNextChapter,
-                                    enabledNext = enabledNext,
-                                    onPreviousChapter = onPreviousChapter,
-                                    enabledPrevious = enabledPrevious,
-                                    currentPage = currentPage,
-                                    totalPages = totalPages,
-                                    onPageIndexChange = onPageIndexChange,
-                                    onPageIndexChangeFinished = onPageIndexChangeFinished,
-                                )
-                            }
-                        }
+                        ChapterNavigator(
+                            sliderOnLeft = sliderOnLeft,
+                            modifier = Modifier.height(railHeight),
+                            onNextChapter = onNextChapter,
+                            enabledNext = enabledNext,
+                            onPreviousChapter = onPreviousChapter,
+                            enabledPrevious = enabledPrevious,
+                            currentPage = currentPage,
+                            totalPages = totalPages,
+                            onPageIndexChange = onPageIndexChange,
+                            onPageIndexChangeFinished = onPageIndexChangeFinished,
+                            backgroundColor = backgroundColor,
+                            railWidth = railWidth,
+                        )
                     }
-                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         } else {
@@ -186,7 +236,7 @@ fun ReaderAppBars(
                 // The pad lives in this column rather than as a floating overlay: as an overlay it
                 // was drawn on top of the audio bar and covered its controls, which read as the
                 // audio bar disappearing.
-                if (chapterNavigatorType.isHorizontal()) {
+                if (!wantsSideRail) {
                     ChapterPadRow(
                         isRtl = chapterNavigatorType == ChapterNavigatorType.HORIZONTAL_RTL,
                         onNextChapter = onNextChapter,
@@ -199,28 +249,56 @@ fun ReaderAppBars(
                     )
                 }
                 audioControls?.invoke()
-                if (chapterNavigatorType.isHorizontal()) {
-                    MinimalChapterSlider(
-                        currentPage = currentPage,
-                        totalPages = totalPages,
-                        onPageIndexChange = onPageIndexChange,
-                        onPageIndexChangeFinished = onPageIndexChangeFinished,
-                        onClickAudio = onClickAudio,
-                        audioAvailable = audioAvailable,
-                        audioVisible = audioVisible,
-                        onClickSettings = onClickSettings,
-                        backgroundColor = backgroundColor,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                val fallbackArrows: (@Composable () -> Unit)? = if (wantsSideRail && !showSideRail) {
+                    {
+                        Row {
+                            ChapterArrow(previous = true, enabled = enabledPrevious, onClick = onPreviousChapter)
+                            ChapterArrow(previous = false, enabled = enabledNext, onClick = onNextChapter)
+                        }
+                    }
                 } else {
-                    SettingsGearBar(
-                        onClickAudio = onClickAudio,
-                        audioAvailable = audioAvailable,
-                        audioVisible = audioVisible,
-                        onClickSettings = onClickSettings,
-                        backgroundColor = backgroundColor,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    null
+                }
+                Column {
+                    if (wantsSideRail) {
+                        Box(Modifier.onSizeChanged { reservedFooterHeight = it.height }) {
+                            if (splitFallback) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(backgroundColor)
+                                        .windowInsetsPadding(navigationInsets.only(WindowInsetsSides.Horizontal))
+                                        .padding(horizontal = footerPadding),
+                                ) {
+                                    fallbackArrows?.invoke()
+                                }
+                            }
+                        }
+                    }
+                    if (!showSideRail) {
+                        MinimalChapterSlider(
+                            currentPage = currentPage,
+                            totalPages = totalPages,
+                            onPageIndexChange = onPageIndexChange,
+                            onPageIndexChangeFinished = onPageIndexChangeFinished,
+                            onClickAudio = onClickAudio,
+                            audioAvailable = audioAvailable,
+                            audioVisible = audioVisible,
+                            onClickSettings = onClickSettings,
+                            backgroundColor = backgroundColor,
+                            modifier = Modifier.fillMaxWidth(),
+                            chapterArrows = fallbackArrows.takeUnless { splitFallback },
+                        )
+                    } else {
+                        SettingsGearBar(
+                            onClickAudio = onClickAudio,
+                            audioAvailable = audioAvailable,
+                            audioVisible = audioVisible,
+                            onClickSettings = onClickSettings,
+                            backgroundColor = backgroundColor,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }
@@ -350,6 +428,7 @@ private fun MinimalChapterSlider(
     onClickSettings: () -> Unit,
     backgroundColor: Color,
     modifier: Modifier = Modifier,
+    chapterArrows: (@Composable () -> Unit)? = null,
 ) {
     val contentColor = MaterialTheme.colorScheme.onSurface
     // The page number follows the finger during a drag, for the same reason the thumb does: the
@@ -358,13 +437,14 @@ private fun MinimalChapterSlider(
 
     Row(
         modifier = modifier
-            .height(48.dp)
             .background(backgroundColor)
-            .padding(horizontal = MaterialTheme.padding.small)
-            .windowInsetsPadding(WindowInsets.navigationBars),
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .height(48.dp)
+            .padding(horizontal = MaterialTheme.padding.small),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        chapterArrows?.invoke()
         // The label is padded to the width of the largest page number, so its width never changes
         // while scrubbing. Without that, crossing a digit boundary ("999" → "1000") widened the
         // label, which moved the seek bar — and because the drag reads touch positions relative to
@@ -384,7 +464,7 @@ private fun MinimalChapterSlider(
             )
         }
 
-        SlimSeekBar(
+        ReaderPageSeekBar(
             currentPage = currentPage,
             totalPages = totalPages,
             onPageIndexChange = { index ->
@@ -398,8 +478,6 @@ private fun MinimalChapterSlider(
                 dragPage = null
                 onPageIndexChangeFinished()
             },
-            progressColor = MaterialTheme.colorScheme.primary,
-            trackColor = contentColor.copy(alpha = 0.24f),
             modifier = Modifier.weight(1f),
         )
 
@@ -441,91 +519,6 @@ private fun MinimalChapterSlider(
 }
 
 @Composable
-private fun SlimSeekBar(
-    currentPage: Int,
-    totalPages: Int,
-    onPageIndexChange: (Int) -> Unit,
-    onPageIndexChangeFinished: () -> Unit,
-    progressColor: Color,
-    trackColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    // Declared before the single-page early return so the remember slots do not shift if the
-    // page count ever crosses one.
-    val latestPage by rememberUpdatedState(currentPage)
-    val latestTotal by rememberUpdatedState(totalPages)
-    val latestOnChange by rememberUpdatedState(onPageIndexChange)
-    val latestOnFinished by rememberUpdatedState(onPageIndexChangeFinished)
-    var fineSeek by remember { mutableStateOf(false) }
-    // While a drag is in flight the thumb follows the finger. Acting on a seek is asynchronous, so
-    // a thousand-page chapter reports pages faster than the reader settles on them; drawing from
-    // the reported page made the thumb snap back to a stale position and fight the finger, which
-    // is what read as the thumb and page number shaking.
-    var dragFraction by remember { mutableStateOf<Float?>(null) }
-
-    if (totalPages <= 1) {
-        Spacer(modifier = modifier)
-        return
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .seekBarGestures(
-                thumbFraction = { latestPage.toFloat() / latestTotal.toFloat().coerceAtLeast(1f) },
-                valueAt = { fraction ->
-                    (fraction * latestTotal).roundToInt().coerceIn(1, latestTotal)
-                },
-                onValue = { page -> latestOnChange(page - 1) },
-                // Read through the state as well: the gesture captures its callbacks once, when the
-                // bar is first composed.
-                onFinished = { latestOnFinished() },
-                onFineSeekChange = { fineSeek = it },
-                onDragFraction = { dragFraction = it },
-            ),
-    ) {
-        val fraction = dragFraction ?: (currentPage.toFloat() / totalPages)
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.CenterStart),
-        ) {
-            val trackHeight = 4.dp.toPx()
-            val y = size.height / 2f
-            val corner = CornerRadius(trackHeight / 2f)
-            drawRoundRect(
-                color = trackColor,
-                topLeft = Offset(0f, y - trackHeight / 2f),
-                size = Size(size.width, trackHeight),
-                cornerRadius = corner,
-            )
-            if (fraction > 0f) {
-                drawRoundRect(
-                    color = progressColor,
-                    topLeft = Offset(0f, y - trackHeight / 2f),
-                    size = Size(size.width * fraction, trackHeight),
-                    cornerRadius = corner,
-                )
-                val center = Offset(size.width * fraction, y)
-                // A larger thumb plus a halo marks fine seeking, which is otherwise invisible.
-                if (fineSeek) {
-                    drawCircle(
-                        color = progressColor.copy(alpha = 0.25f),
-                        radius = 11.dp.toPx(),
-                        center = center,
-                    )
-                }
-                drawCircle(
-                    color = progressColor,
-                    radius = (if (fineSeek) FINE_THUMB_RADIUS else 4.5.dp).toPx(),
-                    center = center,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun SettingsGearBar(
     onClickAudio: () -> Unit,
     audioAvailable: Boolean,
@@ -536,10 +529,10 @@ private fun SettingsGearBar(
 ) {
     Row(
         modifier = modifier
-            .height(48.dp)
             .background(backgroundColor)
-            .padding(horizontal = MaterialTheme.padding.small)
-            .windowInsetsPadding(WindowInsets.navigationBars),
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .height(48.dp)
+            .padding(horizontal = MaterialTheme.padding.small),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {

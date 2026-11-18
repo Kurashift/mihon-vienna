@@ -70,6 +70,7 @@ internal fun ReadingModePage(viewModel: ReaderSettingsViewModel) {
         )
     } else {
         PanelChoice(MR.strings.reader_panel_image_fit, prefs.imageScaleType, imageScaleTypes)
+        PanelSwitch(MR.strings.reader_panel_always_transition, prefs.alwaysShowChapterTransition)
     }
 
     WidePageSettings(

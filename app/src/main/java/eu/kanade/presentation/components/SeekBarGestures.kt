@@ -2,12 +2,13 @@ package eu.kanade.presentation.components
 
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
 /**
- * Vertical travel that halves fine-seek speed; deeper lifts slow it further, down to the floor.
+ * Travel away from the bar that halves fine-seek speed.
  */
 private val FINE_SEEK_LIFT = 48.dp
 
@@ -15,7 +16,7 @@ private val FINE_SEEK_LIFT = 48.dp
 internal const val MIN_FINE_SEEK_GAIN = 0.08f
 
 /**
- * Vertical travel, in dp, a finger must clear before fine seeking engages.
+ * Travel away from the bar, in dp, before fine seeking engages.
  *
  * A bare `lift > 0` test flickers: horizontal drags always wobble a pixel or two vertically, so
  * the flag toggled every frame and the thumb visibly pulsed between its two sizes. Engaging only
@@ -25,7 +26,7 @@ internal const val MIN_FINE_SEEK_GAIN = 0.08f
 private const val FINE_SEEK_ENGAGE_DP = 12f
 
 /**
- * Horizontal travel, in dp, before a press counts as a drag rather than a tap.
+ * Travel along the bar, in dp, before a press counts as a drag rather than a tap.
  *
  * Only one gesture lives on a seek bar, so the first movement has to pick which it is: a press
  * that never travels this far is still a tap and jumps to the touched position, while crossing it
@@ -77,6 +78,21 @@ internal fun tapFraction(xPx: Float, widthPx: Float): Float {
     return (xPx / widthPx).coerceIn(0f, 1f)
 }
 
+internal enum class SeekDirection {
+    Horizontal,
+    LeftRail,
+    RightRail,
+    ;
+
+    fun position(point: Offset): Float = if (this == Horizontal) point.x else point.y
+
+    fun lift(down: Offset, point: Offset): Float = when (this) {
+        Horizontal -> down.y - point.y
+        LeftRail -> point.x - down.x
+        RightRail -> down.x - point.x
+    }.coerceAtLeast(0f)
+}
+
 /**
  * The seek gesture shared by the reader's page bar and the audio progress bar.
  *
@@ -90,16 +106,16 @@ internal fun tapFraction(xPx: Float, widthPx: Float): Float {
  *   finger clear of the bar slows the travel down for fine adjustment.
  *
  * [valueAt] quantises a fraction into the caller's unit and [onValue] receives only changes, so a
- * drag does not report the same page or millisecond twice. [onFinished] always runs, including on
- * cancellation, which is what lets callers commit a single write at the end of a drag.
+ * drag does not report the same page or millisecond twice. [onFinished] runs on release, or on
+ * cancellation after a value was reported if [finishOnCancel] is enabled.
  *
  * [onDragFraction] reports the gesture's own position while a drag is in flight, and null when it
  * ends. A caller that draws a thumb should follow this rather than the value it reported: acting on
  * a seek is asynchronous, so a long chapter can report a page, have the bar redraw from a stale
  * value, and fight the finger for the rest of the drag.
  *
- * Every callback here is captured **once**, when the bar is first composed: the gesture lives in a
- * `pointerInput(Unit)` block, and restarting it on each new callback would cancel a press in
+ * Callbacks are captured when [direction] changes or the bar is first composed. Restarting the
+ * gesture on each new callback would cancel a press in
  * progress. A callback that closes over a value read during composition therefore keeps that first
  * value for the life of the bar. Pass a lambda that reads the current state instead —
  * `{ latestOnChange(it) }` against a `rememberUpdatedState`, not `latestOnChange` — or the bar will
@@ -113,7 +129,9 @@ internal fun <T> Modifier.seekBarGestures(
     enabled: () -> Boolean = { true },
     onFineSeekChange: (Boolean) -> Unit = {},
     onDragFraction: (Float?) -> Unit = {},
-): Modifier = pointerInput(Unit) {
+    direction: SeekDirection = SeekDirection.Horizontal,
+    finishOnCancel: Boolean = false,
+): Modifier = pointerInput(direction) {
     val fineRampPx = FINE_SEEK_LIFT.toPx()
     val fineEngagePx = FINE_SEEK_ENGAGE_DP.dp.toPx()
     val dragThresholdPx = SEEK_DRAG_THRESHOLD_DP.dp.toPx()
@@ -128,65 +146,66 @@ internal fun <T> Modifier.seekBarGestures(
             // behind the bar, and an unconsumed drag would be stolen by a parent that pans.
             down.consume()
 
-            val widthPx = size.width.toFloat().coerceAtLeast(1f)
-            val downX = down.position.x
-            val downY = down.position.y
+            val lengthPx = (if (direction == SeekDirection.Horizontal) size.width else size.height)
+                .toFloat().coerceAtLeast(1f)
+            val downPosition = direction.position(down.position)
 
             // Seed the drag from the thumb, not the touch point.
             var fraction = thumbFraction().coerceIn(0f, 1f)
             var dragging = false
-            var lastX = downX
+            var lastPosition = downPosition
             var lastReported: T? = null
             var fineSeekOn = false
+            var finished = false
 
-            while (true) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) {
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) {
+                        change.consume()
+                        if (!dragging) onValue(valueAt(tapFraction(downPosition, lengthPx)))
+                        finished = true
+                        break
+                    }
+
+                    val position = direction.position(change.position)
+                    if (!dragging && abs(position - downPosition) > dragThresholdPx) {
+                        dragging = true
+                        lastPosition = position
+                        change.consume()
+                        continue
+                    }
+                    if (!dragging) continue
+
+                    val delta = position - lastPosition
+                    lastPosition = position
                     change.consume()
-                    break
-                }
 
-                if (!dragging && abs(change.position.x - downX) > dragThresholdPx) {
-                    dragging = true
-                    lastX = change.position.x
-                    change.consume()
-                    continue
-                }
-                if (!dragging) continue
+                    val lift = direction.lift(down.position, change.position)
+                    val fine = fineSeekEngaged(alreadyEngaged = fineSeekOn, liftPx = lift, engagePx = fineEngagePx)
+                    if (fine != fineSeekOn) {
+                        fineSeekOn = fine
+                        onFineSeekChange(fine)
+                    }
 
-                val dx = change.position.x - lastX
-                lastX = change.position.x
-                change.consume()
-
-                val lift = (downY - change.position.y).coerceAtLeast(0f)
-                // Hysteresis, so wobble inside the band cannot toggle the mode.
-                val fine = fineSeekEngaged(alreadyEngaged = fineSeekOn, liftPx = lift, engagePx = fineEngagePx)
-                if (fine != fineSeekOn) {
-                    fineSeekOn = fine
-                    onFineSeekChange(fine)
-                }
-
-                if (dx != 0f) {
-                    fraction = advanceFraction(fraction, dx, widthPx, fineSeekGain(lift, fineRampPx))
-                    onDragFraction(fraction)
-                    val value = valueAt(fraction)
-                    if (value != lastReported) {
-                        lastReported = value
-                        onValue(value)
+                    if (delta != 0f) {
+                        fraction = advanceFraction(fraction, delta, lengthPx, fineSeekGain(lift, fineRampPx))
+                        onDragFraction(fraction)
+                        val value = valueAt(fraction)
+                        if (value != lastReported) {
+                            lastReported = value
+                            onValue(value)
+                        }
                     }
                 }
+            } finally {
+                if (fineSeekOn) onFineSeekChange(false)
+                onDragFraction(null)
+                // The reader can move the bar while a finger is still down. Settle pages already
+                // shown in the viewer without committing an interrupted audio seek.
+                if (finished || (finishOnCancel && lastReported != null)) onFinished()
             }
-
-            if (!dragging) {
-                onValue(valueAt(tapFraction(downX, widthPx)))
-            }
-
-            // Only report a release when the mode was actually on, so a plain drag does not emit a
-            // redundant state change.
-            if (fineSeekOn) onFineSeekChange(false)
-            onDragFraction(null)
-            onFinished()
         }
     }
 }
