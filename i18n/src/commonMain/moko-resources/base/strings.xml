@@ -1540,21 +1540,16 @@
     <string name="stats_read_works">Works read</string>
     <string name="stats_completed_works">Works fully read</string>
     <string name="stats_total_read_duration">Total reading time</string>
-    <string name="stats_reading_scope">Includes local and online reading, even after removal. Marking unread removes a chapter from the read count.</string>
     <string name="stats_local_library">Local library</string>
     <string name="stats_current_works">Current works</string>
     <string name="stats_current_chapters">Current chapters</string>
     <string name="stats_current_read_chapters">Currently read</string>
-    <string name="stats_local_scope">Based on the last confirmed local library refresh.</string>
-    <string name="stats_local_unknown">Some counts are unavailable. Refresh the local library to update them.</string>
     <string name="stats_library">Bookshelf</string>
     <string name="stats_favorite_works">Favorites</string>
     <string name="stats_local_favorites">Local</string>
     <string name="stats_online_favorites">Online</string>
+    <string name="stats_read_chapters">Read chapters</string>
     <string name="stats_online_downloads">Online downloads</string>
-    <string name="stats_downloaded_chapters">Downloaded chapters</string>
-    <string name="stats_download_scope">Online downloads only. Imported local files are counted in the local library.</string>
     <string name="stats_logged_in_trackers">Signed-in services</string>
-    <string name="stats_tracker_scope">Bookshelf works tracked with signed-in services.</string>
     <string name="backup_history_and_statistics">Reading history and statistics</string>
 </resources>

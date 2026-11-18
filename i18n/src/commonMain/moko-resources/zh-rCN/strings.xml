@@ -1388,21 +1388,16 @@
     <string name="stats_read_works">阅读过的作品</string>
     <string name="stats_completed_works">全部读完的作品</string>
     <string name="stats_total_read_duration">累计阅读时长</string>
-    <string name="stats_reading_scope">包含本地、在线及已移走内容的阅读。标为未读会撤回已读数量。</string>
     <string name="stats_local_library">本库</string>
     <string name="stats_current_works">当前作品</string>
     <string name="stats_current_chapters">当前篇目</string>
     <string name="stats_current_read_chapters">当前已读</string>
-    <string name="stats_local_scope">按最近一次确认的本库刷新结果统计。</string>
-    <string name="stats_local_unknown">部分数量尚无法确认，请在本库刷新后查看。</string>
     <string name="stats_library">书架</string>
     <string name="stats_favorite_works">收藏作品</string>
     <string name="stats_local_favorites">其中本地</string>
     <string name="stats_online_favorites">其中在线</string>
+    <string name="stats_read_chapters">已读篇目</string>
     <string name="stats_online_downloads">在线下载</string>
-    <string name="stats_downloaded_chapters">已下载篇目</string>
-    <string name="stats_download_scope">只统计在线下载，本地导入文件计入本库。</string>
     <string name="stats_logged_in_trackers">已登录服务</string>
-    <string name="stats_tracker_scope">统计书架作品在已登录服务中的追踪。</string>
     <string name="backup_history_and_statistics">阅读历史与统计</string>
 </resources>
