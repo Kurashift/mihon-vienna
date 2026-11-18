@@ -62,7 +62,7 @@
     <string name="chapter_title_translations_short">匯入匯出譯名</string>
     <string name="local_source_refresh_checking">正在重新整理本庫</string>
     <string name="local_source_refresh_no_changes">本庫沒有變化</string>
-    <string name="local_source_refresh_unavailable">無法讀取本庫資料夾，請檢查存取權限</string>
+    <string name="local_source_refresh_unavailable">讀不到本庫資料夾</string>
     <string name="local_source_refresh_partial">部分作品未能重新整理</string>
     <string name="local_source_empty">本庫還沒有作品</string>
     <string name="local_source_no_match">沒有符合的作品</string>
@@ -986,8 +986,7 @@
     <string name="ext_revoke_trust">復原對不明擴充套件的信任</string>
     <string name="manga_interval_expected_update_soon">即將</string>
     <string name="action_open_repo">開啟來源儲存庫</string>
-    <string name="pref_webtoon_disable_zoom_out">不允許縮得比預設更小</string>
-    <string name="pref_webtoon_disable_zoom_out_summary">放大後的圖片仍可縮回預設大小。</string>
+    <string name="pref_webtoon_disable_zoom_out">停用縮小</string>
     <string name="pref_display_profile">自訂顯示設定檔</string>
     <string name="action_add_anyway">仍要新增</string>
     <string name="upcoming_guide">即將到來指南</string>
@@ -1239,12 +1238,12 @@
     <string name="pref_category_global">全域</string>
     <string name="pref_filter_update_categories_details">同時屬於包含與排除類別的作品更新將不予顯示。</string>
     <string name="pref_filter_upcoming_categories_details">同時屬於包含與排除類別的標題將不予顯示。</string>
-    <string name="action_clear_reading_history">清空觀看進度</string>
-    <string name="action_clear_current_list_history">清空目前清單觀看進度</string>
-    <string name="clear_reading_history_completed">觀看進度已清空</string>
-    <string name="clear_manga_history_confirmation">重設這部作品目前的觀看進度，並移出最近閱讀清單。累計閱讀統計與時長會保留。</string>
-    <string name="clear_source_history_confirmation">重設這個來源所有作品目前的觀看進度，並移出最近閱讀清單。累計閱讀統計與時長會保留。</string>
-    <string name="clear_current_list_history_confirmation">重設目前清單內作品的觀看進度，並移出最近閱讀清單。累計閱讀統計與時長會保留。</string>
+    <string name="action_clear_reading_history">清空閱讀進度</string>
+    <string name="action_clear_current_list_history">清空閱讀進度</string>
+    <string name="clear_reading_history_completed">閱讀進度已清空</string>
+    <string name="clear_manga_history_confirmation">重設這部作品目前的閱讀進度，並移出最近閱讀清單。累計閱讀統計與時長會保留。</string>
+    <string name="clear_source_history_confirmation">重設這個來源所有作品目前的閱讀進度，並移出最近閱讀清單。累計閱讀統計與時長會保留。</string>
+    <string name="clear_current_list_history_confirmation">重設目前清單內作品的閱讀進度，並移出最近閱讀清單。累計閱讀統計與時長會保留。</string>
     <string name="label_manga_count">共 %1$d 部</string>
     <string name="label_read">在讀</string>
     <string name="label_finished">讀完</string>
@@ -1361,7 +1360,7 @@
     <string name="settings_import_local_chapters_summary">從本機資料夾或壓縮檔匯入本子</string>
     <string name="track_original_title">作品原名：%1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_未譯名</string>
-    <string name="confirm_clear_reading_history_title">清空觀看進度？</string>
+    <string name="confirm_clear_reading_history_title">清空閱讀進度？</string>
     <string name="confirm_mark_unread_title">標記為未讀？</string>
     <string name="confirm_mark_read_title">標記為已讀？</string>
     <string name="undo_removed_from_library">已移出書櫃 %1$d 部，下載與閱讀進度保留</string>

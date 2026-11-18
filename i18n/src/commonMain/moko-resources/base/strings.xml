@@ -574,8 +574,7 @@
     <string name="pref_high">High</string>
     <string name="pref_low">Low</string>
     <string name="pref_lowest">Lowest</string>
-    <string name="pref_webtoon_disable_zoom_out">Keep images at least their default size</string>
-    <string name="pref_webtoon_disable_zoom_out_summary">Enlarged images can still return to their default size.</string>
+    <string name="pref_webtoon_disable_zoom_out">Disable zoom out</string>
 
       <!-- Downloads section -->
     <string name="pref_category_delete_chapters">Delete works</string>
@@ -655,7 +654,7 @@
     <string name="creating_backup">Creating backup</string>
     <string name="creating_backup_error">Backup failed</string>
     <string name="missing_storage_permission">Storage permissions not granted</string>
-    <string name="local_source_refresh_unavailable">Can’t read the local library folder. Check access permissions.</string>
+    <string name="local_source_refresh_unavailable">Couldn\'t read the local library folder.</string>
     <string name="empty_backup_error">No library entries to back up</string>
     <string name="create_backup_file_error">Couldn\'t create a backup file</string>
     <string name="restore_miui_warning">Backup/restore may not function properly if MIUI Optimization is disabled.</string>
@@ -1016,7 +1015,7 @@
     <string name="pref_clear_history">Clear reading history</string>
     <string name="clear_history_completed">Reading history list cleared</string>
     <string name="action_clear_reading_history">Clear reading progress</string>
-    <string name="action_clear_current_list_history">Clear current list reading progress</string>
+    <string name="action_clear_current_list_history">Clear reading progress</string>
     <string name="clear_reading_history_completed">Reading progress cleared</string>
     <string name="clear_manga_history_confirmation">Reset current progress for this work and remove it from recently read. Reading statistics and accumulated time will be kept.</string>
     <string name="clear_source_history_confirmation">Reset current progress for all works in this source and remove them from recently read. Reading statistics and accumulated time will be kept.</string>
