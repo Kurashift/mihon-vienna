@@ -1143,7 +1143,6 @@
     <string name="local_delete_chapter_title">刪除篇目本機檔案？</string>
     <string name="local_delete_empty_folders">一併刪除空資料夾</string>
     <string name="local_delete_folders_kept">未刪除下列資料夾：\n%1$s</string>
-    <string name="local_empty_work">0 篇</string>
     <string name="local_delete_marked_chapters_title">刪除已標示的 %1$d 個篇目？</string>
     <string name="local_delete_scope_marked">涉及 %1$d 部作品：%2$s</string>
     <string name="local_delete_unmarked_safe">未標示的篇目不會受影響。</string>

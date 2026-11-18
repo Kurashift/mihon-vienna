@@ -1440,7 +1440,6 @@
     <string name="local_delete_chapter_title">Delete chapter files?</string>
     <string name="local_delete_empty_folders">Also delete empty folders</string>
     <string name="local_delete_folders_kept">Folders not removed:\n%1$s</string>
-    <string name="local_empty_work">0 chapters</string>
     <string name="local_delete_marked_chapters_title">Delete %1$d marked chapters?</string>
     <string name="local_delete_unmarked_safe">Unmarked chapters will not be affected.</string>
     <string name="local_delete_group_remains">This manga still has non-local entries and will remain in the list after deletion.</string>
