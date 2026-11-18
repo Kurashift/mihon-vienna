@@ -1398,7 +1398,6 @@
     <string name="stats_online_favorites">其中在线</string>
     <string name="stats_read_chapters">已读篇目</string>
     <string name="stats_online_downloads">在线下载</string>
-    <string name="stats_downloaded_chapters">已下载篇目</string>
     <string name="stats_logged_in_trackers">已登录服务</string>
     <string name="backup_history_and_statistics">阅读历史与统计</string>
 </resources>

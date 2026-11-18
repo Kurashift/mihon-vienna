@@ -1394,7 +1394,6 @@
     <string name="stats_online_favorites">其中線上</string>
     <string name="stats_read_chapters">已讀篇目</string>
     <string name="stats_online_downloads">線上下載</string>
-    <string name="stats_downloaded_chapters">已下載篇目</string>
     <string name="stats_logged_in_trackers">已登入服務</string>
     <string name="backup_history_and_statistics">閱讀歷史與統計</string>
 </resources>

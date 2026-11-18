@@ -52,6 +52,11 @@
         <item quantity="other">%1$s works</item>
     </plurals>
 
+    <plurals name="stats_downloaded_chapter_count">
+        <item quantity="one">%1$d chapter</item>
+        <item quantity="other">%1$d chapters</item>
+    </plurals>
+
     <plurals name="download_amount">
         <item quantity="one">Next work</item>
         <item quantity="other">Next %d works</item>
