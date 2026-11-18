@@ -21,6 +21,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.await
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -116,7 +118,8 @@ class LocalChapterTransferJob(
             Result.success()
         } catch (_: CancellationException) {
             Result.success()
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) { "Local chapter transfer failed" }
             Result.failure()
         } finally {
             manifestFile?.delete()

@@ -731,55 +731,90 @@ class LocalChapterTransferService(
         options: Options = Options(),
         onProgress: (Progress) -> Unit = {},
     ): Result = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        if (groups.isEmpty()) return@withContext Result(0, 0, 0)
-        val expanded = groups.flatMap { group ->
-            group.uris.flatMap { uri ->
-                expand(UniFile.fromUri(context, uri) ?: return@flatMap emptyList())
+        runGroupedImport(mergeImportGroups(groups), options, onProgress)
+    }
+
+    private fun mergeImportGroups(groups: List<GroupImport>): List<GroupImport> =
+        groups.groupBy { it.targetMangaId }.map { (targetId, requests) ->
+            GroupImport(targetId, requests.flatMap { it.uris }.distinct())
+        }
+
+    private fun groupedImportProgress(
+        groups: List<GroupImport>,
+        options: Options,
+        onProgress: (Progress) -> Unit,
+    ): GroupedImportProgress {
+        val seen = hashSetOf<Uri>()
+        var bytes = 0L
+        for (group in groups) {
+            for (uri in group.uris) {
+                val source = UniFile.fromUri(context, uri) ?: continue
+                for (candidate in expand(source)) {
+                    if (seen.add(candidate.file.uri)) {
+                        bytes += sizeOfForTransfer(candidate.file, options)
+                    }
+                }
             }
-        }.distinctBy { it.file.uri.toString() }
-        val total = expanded.size
-        val totalBytes = expanded.sumOf { sizeOfForTransfer(it.file, options) }
-        var completed = 0
-        var copiedBytes = 0L
-        var imported = 0
-        var skipped = 0
-        var failed = 0
+        }
+        return GroupedImportProgress(seen.size, bytes, onProgress)
+    }
+
+    private suspend fun runGroupedImport(
+        groups: List<GroupImport>,
+        options: Options,
+        onProgress: (Progress) -> Unit,
+    ): Result {
+        if (groups.isEmpty()) return Result(0, 0, 0)
+        val progress = groupedImportProgress(groups, options, onProgress)
         val changedWorks = mutableSetOf<String>()
-        val conflicts = mutableListOf<String>()
         try {
-            for ((targetId, requests) in groups.groupBy { it.targetMangaId }) {
+            for (group in groups) {
                 coroutineContext.ensureActive()
-                val uris = requests.flatMap { it.uris }.distinct()
-                var groupCopiedBytes = 0L
-                val result = importUrisInternal(
-                    uris = uris,
-                    targetMangaId = targetId,
-                    options = options,
-                    onProgress = { progress ->
-                        groupCopiedBytes = progress.copiedBytes
-                        onProgress(
-                            Progress(
-                                completed = completed + progress.completed,
-                                total = total,
-                                currentName = progress.currentName,
-                                copiedBytes = copiedBytes + progress.copiedBytes,
-                                totalBytes = totalBytes,
-                            ),
-                        )
-                    },
-                    changedWorks = changedWorks,
+                progress.finishGroup(
+                    importUrisInternal(group.uris, group.targetMangaId, options, progress::update, changedWorks),
                 )
-                imported += result.imported
-                skipped += result.skipped
-                failed += result.failed
-                conflicts += result.conflicts
-                completed += result.imported + result.skipped + result.failed
-                copiedBytes += groupCopiedBytes
             }
-            Result(imported, skipped, failed, conflicts)
+            return progress.result()
         } finally {
             withContext(NonCancellable) { localSource()?.refreshMutatedWorks(changedWorks) }
         }
+    }
+
+    // Keep counters out of the suspend state machine; ART rejected the larger generated method.
+    private class GroupedImportProgress(
+        private val total: Int,
+        private val totalBytes: Long,
+        private val onProgress: (Progress) -> Unit,
+    ) {
+        private var imported = 0
+        private var skipped = 0
+        private var failed = 0
+        private var copiedBytes = 0L
+        private var groupCopiedBytes = 0L
+        private val conflicts = mutableListOf<String>()
+
+        fun update(progress: Progress) {
+            groupCopiedBytes = progress.copiedBytes
+            onProgress(
+                progress.copy(
+                    completed = imported + skipped + failed + progress.completed,
+                    total = total,
+                    copiedBytes = copiedBytes + progress.copiedBytes,
+                    totalBytes = totalBytes,
+                ),
+            )
+        }
+
+        fun finishGroup(result: Result) {
+            imported += result.imported
+            skipped += result.skipped
+            failed += result.failed
+            conflicts += result.conflicts
+            copiedBytes += groupCopiedBytes
+            groupCopiedBytes = 0L
+        }
+
+        fun result() = Result(imported, skipped, failed, conflicts)
     }
 
     private fun destinationKey(name: String): String = chapterImportKey(chapterDestinationName(name), isFile = false)
