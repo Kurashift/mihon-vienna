@@ -423,13 +423,10 @@ data class LocalImportScreen(
         }
 
         LaunchedEffect(Unit) {
-            val localIds = mangaRepository.getLocalMangaIds()
-            val nonEmptyIds = mangaRepository.getMangaProgressBySource(LocalSource.ID)
-                .mapTo(hashSetOf()) { it.mangaId }
-            allLocalMangas = localIds.mapNotNull { id ->
-                runCatching { mangaRepository.getMangaById(id) }.getOrNull()
+            allLocalMangas = mangaRepository.getLocalMangaIds().mapNotNull {
+                mangaRepository.getMangaByIdOrNull(it)
             }
-            mangas = allLocalMangas.filter { it.id in nonEmptyIds }.sortedBy { it.title.lowercase() }
+            mangas = mangaRepository.getLocalCollectionTargets(allLocalMangas)
             if (targetId < 0 && mangas.size == 1) targetId = mangas.first().id
         }
         // OpenDocument grants persistable read access when the provider supports it, which lets
@@ -729,7 +726,7 @@ data class LocalImportScreen(
                             Text(
                                 text = stringResource(
                                     MR.strings.local_import_current_collection,
-                                    mangas.firstOrNull { it.id == fixedTargetMangaId }?.title.orEmpty(),
+                                    allLocalMangas.firstOrNull { it.id == fixedTargetMangaId }?.title.orEmpty(),
                                 ),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
