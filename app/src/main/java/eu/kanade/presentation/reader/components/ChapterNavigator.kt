@@ -1,44 +1,30 @@
 package eu.kanade.presentation.reader.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SkipNext
-import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material3.FilledIconButton
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowDown
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowUp
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonColors
-import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SliderState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalSlider
-import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.theme.TachiyomiPreviewTheme
-import eu.kanade.presentation.util.isTabletUi
+import eu.kanade.presentation.components.SeekDirection
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.math.roundToInt
@@ -50,11 +36,46 @@ enum class ChapterNavigatorType {
     VERTICAL_RIGHT,
     ;
 
-    fun isHorizontal() = this in setOf(HORIZONTAL_LTR, HORIZONTAL_RTL)
+    fun isHorizontal() = this == HORIZONTAL_LTR || this == HORIZONTAL_RTL
+}
+
+internal val chapterArrowSize = 48.dp
+internal val sideRailEndPadding = 4.dp
+internal val sideRailMinimumTrack = 72.dp
+internal val sideRailTrackPadding = 11.dp
+
+internal fun sideRailHeight(
+    availableHeight: Int,
+    heightFraction: Float,
+    minimumHeight: Int,
+    hasTrack: Boolean,
+): Int {
+    if (availableHeight < minimumHeight) return 0
+    if (!hasTrack) return minimumHeight
+    return (availableHeight * heightFraction.coerceIn(0f, 1f)).roundToInt().coerceAtLeast(minimumHeight)
 }
 
 @Composable
-fun ChapterNavigator(
+internal fun ChapterArrow(previous: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val icon = if (previous) Icons.Outlined.KeyboardDoubleArrowUp else Icons.Outlined.KeyboardDoubleArrowDown
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(chapterArrowSize),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = stringResource(
+                if (previous) MR.strings.action_previous_chapter else MR.strings.action_next_chapter,
+            ),
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+@Composable
+internal fun ChapterNavigator(
+    sliderOnLeft: Boolean,
     onNextChapter: () -> Unit,
     enabledNext: Boolean,
     onPreviousChapter: () -> Unit,
@@ -63,149 +84,58 @@ fun ChapterNavigator(
     totalPages: Int,
     onPageIndexChange: (Int) -> Unit,
     onPageIndexChangeFinished: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val haptic = LocalHapticFeedback.current
-
-    val state = remember(totalPages) {
-        SliderState(
-            value = currentPage.toFloat(),
-            steps = totalPages - 2,
-            valueRange = 1f..totalPages.toFloat(),
-        )
-    }
-    state.value = currentPage.toFloat()
-    state.onValueChange = { onPageIndexChange(it.roundToInt() - 1) }
-    state.onValueChangeFinished = onPageIndexChangeFinished
-
-    val interactionSource = remember { MutableInteractionSource() }
-    val sliderDragged by interactionSource.collectIsDraggedAsState()
-    var lastHapticPage by remember { mutableIntStateOf(currentPage) }
-    LaunchedEffect(currentPage, sliderDragged) {
-        if (!sliderDragged) {
-            lastHapticPage = currentPage
-            return@LaunchedEffect
-        }
-        if (currentPage != lastHapticPage) {
-            lastHapticPage = currentPage
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
-    }
-
-    val isTabletUi = isTabletUi()
-    val mainAxisPadding = if (isTabletUi) 24.dp else 8.dp
-
-    // Match with toolbar background color set in ReaderActivity
-    val backgroundColor = MaterialTheme.colorScheme
-        .surfaceColorAtElevation(3.dp)
-        .copy(alpha = if (isSystemInDarkTheme()) 0.9f else 0.95f)
-    val buttonColor = IconButtonDefaults.filledIconButtonColors(
-        containerColor = backgroundColor,
-        disabledContainerColor = backgroundColor,
-    )
-
-    VerticalChapterNavigator(
-        state = state,
-        onNextChapter = onNextChapter,
-        enabledNext = enabledNext,
-        onPreviousChapter = onPreviousChapter,
-        enabledPrevious = enabledPrevious,
-        currentPage = currentPage,
-        totalPages = totalPages,
-        interactionSource = interactionSource,
-        mainAxisPadding = mainAxisPadding,
-        backgroundColor = backgroundColor,
-        buttonColor = buttonColor,
-        modifier = modifier,
-    )
-}
-
-@Composable
-fun VerticalChapterNavigator(
-    state: SliderState,
-    onNextChapter: () -> Unit,
-    enabledNext: Boolean,
-    onPreviousChapter: () -> Unit,
-    enabledPrevious: Boolean,
-    currentPage: Int,
-    totalPages: Int,
-    interactionSource: MutableInteractionSource,
-    mainAxisPadding: Dp,
     backgroundColor: Color,
-    buttonColor: IconButtonColors,
+    railWidth: Dp,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .padding(vertical = mainAxisPadding),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    var dragPage by remember { mutableStateOf<Int?>(null) }
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val labelStyle = MaterialTheme.typography.labelLarge
+
+    Surface(
+        modifier = modifier.width(railWidth),
+        shape = RoundedCornerShape(8.dp),
+        color = backgroundColor,
     ) {
-        FilledIconButton(
-            enabled = enabledPrevious,
-            onClick = onPreviousChapter,
-            colors = buttonColor,
+        Column(
+            modifier = Modifier.padding(vertical = sideRailEndPadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(
-                imageVector = Icons.Outlined.SkipPrevious,
-                contentDescription = stringResource(MR.strings.action_previous_chapter),
-                modifier = Modifier.rotate(90f),
-            )
-        }
-
-        if (totalPages > 1) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(backgroundColor)
-                    .padding(vertical = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(text = currentPage.toString())
-
-                VerticalSlider(
-                    state = state,
+            ChapterArrow(previous = true, enabled = enabledPrevious, onClick = onPreviousChapter)
+            if (totalPages > 1) {
+                Text(
+                    text = (dragPage ?: currentPage).toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = textColor,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    maxLines = 1,
+                )
+                ReaderPageSeekBar(
+                    currentPage = currentPage,
+                    totalPages = totalPages,
+                    onPageIndexChange = { index ->
+                        dragPage = index + 1
+                        onPageIndexChange(index)
+                    },
+                    onPageIndexChangeFinished = {
+                        dragPage = null
+                        onPageIndexChangeFinished()
+                    },
+                    direction = if (sliderOnLeft) SeekDirection.LeftRail else SeekDirection.RightRail,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(vertical = 8.dp),
-                    interactionSource = interactionSource,
+                        .fillMaxWidth()
+                        .padding(vertical = sideRailTrackPadding),
                 )
-
-                Text(text = totalPages.toString())
+                Text(
+                    text = totalPages.toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = textColor,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    maxLines = 1,
+                )
             }
-        } else {
-            Spacer(Modifier.weight(1f))
+            ChapterArrow(previous = false, enabled = enabledNext, onClick = onNextChapter)
         }
-
-        FilledIconButton(
-            enabled = enabledNext,
-            onClick = onNextChapter,
-            colors = buttonColor,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.SkipNext,
-                contentDescription = stringResource(MR.strings.action_next_chapter),
-                modifier = Modifier.rotate(90f),
-            )
-        }
-    }
-}
-
-@Preview
-@Composable
-private fun ChapterNavigatorPreview() {
-    var currentPage by remember { mutableIntStateOf(1) }
-    TachiyomiPreviewTheme {
-        ChapterNavigator(
-            onNextChapter = {},
-            enabledNext = true,
-            onPreviousChapter = {},
-            enabledPrevious = true,
-            currentPage = currentPage,
-            totalPages = 10,
-            onPageIndexChange = { currentPage = (it + 1) },
-            onPageIndexChangeFinished = {},
-        )
     }
 }

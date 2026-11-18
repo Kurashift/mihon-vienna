@@ -42,7 +42,6 @@ internal fun ControlSettingsPage(viewModel: ReaderSettingsViewModel) {
     )
     PanelSwitch(MR.strings.reader_panel_long_press, prefs.readWithLongTap)
     PanelSwitch(MR.strings.pref_page_transitions, prefs.pageTransitions)
-    PanelSwitch(MR.strings.reader_panel_always_transition, prefs.alwaysShowChapterTransition)
 
     if (tapZone != ReaderPreferences.DISABLED_NAV_MODE) {
         PanelGroup(MR.strings.reader_panel_tap_invert) {
