@@ -157,6 +157,16 @@ internal object ChapterTitleTranslationCodec {
         }
     }
 
+    fun decodeLibraryImport(files: Sequence<String>): LocalLibraryChapterTitleTranslationDocument {
+        val mangas = files.flatMap { value ->
+            val document = runCatching { decodeLocalLibrary(value) }
+                .getOrElse { LocalLibraryChapterTitleTranslationDocument(mangas = listOf(decode(value))) }
+            require(document.formatVersion == 1) { "Unsupported local library title translation format" }
+            document.mangas
+        }.toList()
+        return LocalLibraryChapterTitleTranslationDocument(mangas = mangas)
+    }
+
     /**
      * Chapters to export for one confirmed folder: the database rows that still match a file on
      * disk, plus an entry per file the database has never seen. A work the user never opened has

@@ -88,17 +88,11 @@ fun LocalLibraryChapterTitleTranslationsHost(
             )
         }
     }
-    val importLibraryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch { showImportResult(runCatching { translations.importLibrary(uri) }) }
-    }
-    val importMangaFilesLauncher = rememberLauncherForActivityResult(
+    val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents(),
     ) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        scope.launch { showImportResult(runCatching { translations.importMangaFiles(uris) }) }
+        scope.launch { showImportResult(runCatching { translations.importFiles(uris) }) }
     }
 
     if (!visible) return
@@ -128,11 +122,7 @@ fun LocalLibraryChapterTitleTranslationsHost(
         },
         onImport = {
             onDismissRequest()
-            importLibraryLauncher.launch("*/*")
-        },
-        onImportMangaFiles = {
-            onDismissRequest()
-            importMangaFilesLauncher.launch("*/*")
+            importLauncher.launch("*/*")
         },
     )
 }

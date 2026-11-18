@@ -72,7 +72,6 @@ fun LocalLibraryChapterTitleTranslationDialog(
     onDismissRequest: () -> Unit,
     onExport: (ChapterTitleTranslationFormat, Boolean) -> Unit,
     onImport: () -> Unit,
-    onImportMangaFiles: () -> Unit,
 ) {
     var showExportFormatDialog by remember { mutableStateOf(false) }
     if (showExportFormatDialog) {
@@ -98,11 +97,6 @@ fun LocalLibraryChapterTitleTranslationDialog(
                     label = stringResource(MR.strings.import_local_library_chapter_titles),
                     icon = Icons.Outlined.FileUpload,
                     onClick = onImport,
-                )
-                TranslationAction(
-                    label = stringResource(MR.strings.import_multiple_manga_chapter_titles),
-                    icon = Icons.Outlined.FileUpload,
-                    onClick = onImportMangaFiles,
                 )
             }
         },
