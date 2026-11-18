@@ -892,11 +892,22 @@ class MangaViewModel(
             return if (markedIds == null) this else filter { it in markedIds }
         }
 
+        val emptyIds = withIOContext {
+            val local = Injekt.get<SourceManager>().get(LocalSource.ID) as? LocalSource
+            val emptyUrls = local?.listingSnapshot?.value?.chapterCounts.orEmpty().filterValues { it == 0L }.keys
+            if (emptyUrls.isEmpty()) {
+                emptySet()
+            } else {
+                mangaRepository.getMangaIdsBySourceId(LocalSource.ID).filterKeys { it in emptyUrls }.values.toSet()
+            }
+        }
+        fun List<Long>.withChapters() = filterNot { it in emptyIds }
+
         // Prefer the filtered list the user came from (local source browse page), so
         // random keeps opening manga within the same search/filter result.
         if (randomCandidates.isNotEmpty()) {
             randomSelectionCooldown
-                .pickManga(randomCandidates.withinScope().withinMark(), manga.id)
+                .pickManga(randomCandidates.withChapters().withinScope().withinMark(), manga.id)
                 ?.let { return it }
         }
 
@@ -918,7 +929,7 @@ class MangaViewModel(
                 }
                 .withinScope()
         }
-        return randomSelectionCooldown.pickManga(ids.withinMark(), manga.id)
+        return randomSelectionCooldown.pickManga(ids.withChapters().withinMark(), manga.id)
     }
 
     /**
@@ -1239,24 +1250,23 @@ class MangaViewModel(
      * Erases the local files behind the given chapters and drops their database rows.
      *
      * The run belongs to the deletion service, not to this screen: leaving the page or rotating
-     * must not interrupt it, and only the stop button in the progress dialog ends it early. The
-     * receipt drives the toast or the result dialog, and [mangaMissing] takes the screen away when
-     * the last chapter took the row with it.
+     * must not interrupt it, and only the stop button in the progress dialog ends it early.
      */
-    fun deleteLocalChapters(chapters: List<Chapter>) {
-        val state = successState ?: return
+    fun deleteLocalChapters(
+        chapters: List<Chapter>,
+        folders: List<LocalEntryDeletionService.EmptyFolderCleanup>,
+    ) {
+        val targets = localChapterDeletionTargets(chapters)
         dismissDialog()
         toggleAllSelection(false)
-        deletionService.startDeleteChapters(
-            chapters.map { chapter ->
-                LocalEntryDeletionService.ChapterTarget(
-                    id = chapter.id,
-                    mangaId = state.manga.id,
-                    mangaTitle = state.manga.title,
-                    name = chapter.name,
-                )
-            },
-        )
+        deletionService.startDeleteChapters(targets, folders)
+    }
+
+    fun localChapterDeletionTargets(chapters: List<Chapter>): List<LocalEntryDeletionService.ChapterTarget> {
+        val manga = successState?.manga ?: return emptyList()
+        return chapters.map { chapter ->
+            LocalEntryDeletionService.ChapterTarget(chapter.id, manga.id, manga.title, chapter.name)
+        }
     }
 
     /**

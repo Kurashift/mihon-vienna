@@ -235,6 +235,10 @@ class LocalChapterCoverManager(
         deleteGenerated(chapterUrl)
     }
 
+    suspend fun invalidateGeneratedCover(chapterUrl: String) = withContext(Dispatchers.IO) {
+        deleteGenerated(chapterUrl)
+    }
+
     suspend fun generateAll(
         onProgress: suspend (completed: Int, total: Int) -> Unit = { _, _ -> },
     ): LocalChapterCoverGenerationResult = withContext(Dispatchers.IO) {

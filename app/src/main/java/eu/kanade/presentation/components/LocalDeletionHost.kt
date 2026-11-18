@@ -171,15 +171,14 @@ private fun LocalDeletionResultDialog(
         else -> stringResource(MR.strings.local_delete_done_chapters, report.deletedCount)
     }
 
-    val summary = if (report.cancelled) {
-        stringResource(
-            MR.strings.local_delete_stopped_summary,
-            report.deletedCount,
-            report.skippedCount,
-        )
-    } else {
-        null
-    }
+    val summary = buildList {
+        if (report.cancelled) {
+            add(stringResource(MR.strings.local_delete_stopped_summary, report.deletedCount, report.skippedCount))
+        }
+        if (report.keptFolders.isNotEmpty()) {
+            add(stringResource(MR.strings.local_delete_folders_kept, condensedBulletList(report.keptFolders)))
+        }
+    }.joinToString("\n").ifEmpty { null }
 
     AlertDialog(
         onDismissRequest = onDismiss,

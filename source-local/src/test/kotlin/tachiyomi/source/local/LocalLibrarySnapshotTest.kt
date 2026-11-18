@@ -37,4 +37,13 @@ class LocalLibrarySnapshotTest {
         assertEquals(2L, snapshot.workCount)
         assertNull(snapshot.chapterCount)
     }
+
+    @Test
+    fun `confirmed empty works count as works without adding chapters`() {
+        val counts = (1..500).associate { "Work $it" to 6L } + mapOf("Emptied" to 0L, "New folder" to 0L)
+        val snapshot = LocalLibrarySnapshot("root", counts, emptyMap())
+        assertEquals(502L, snapshot.workCount)
+        assertEquals(3000L, snapshot.chapterCount)
+        assertEquals(emptySet<String>(), localLibraryChapterUrls("Emptied", 0, 100, 100, emptySet()))
+    }
 }

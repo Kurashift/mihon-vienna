@@ -341,6 +341,7 @@ data class LocalImportScreen(
 
         suspend fun startGroupedImport(
             plans: List<LocalChapterTransferService.GroupPreviewRequest>,
+            options: LocalChapterTransferService.Options = LocalChapterTransferService.Options(output, deleteSource),
         ): Boolean {
             if (LocalChapterTransferJob.isRunning(context)) return false
             val currentLocalMangas = mangaRepository.getLocalMangaIds().mapNotNull { id ->
@@ -375,7 +376,7 @@ data class LocalImportScreen(
             return LocalChapterTransferJob.startGrouped(
                 context = context,
                 groups = groups,
-                options = LocalChapterTransferService.Options(output, deleteSource),
+                options = options,
             )
         }
 
@@ -921,6 +922,7 @@ data class LocalImportScreen(
             )
         }
         conflictPreview?.let { preview ->
+            var replace by remember(preview) { mutableStateOf(false) }
             AlertDialog(
                 onDismissRequest = {
                     conflictPreview = null
@@ -945,21 +947,45 @@ data class LocalImportScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (preview.replacements.isNotEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = replace,
+                                    onCheckedChange = { replace = it },
+                                )
+                                Text(stringResource(MR.strings.local_transfer_replace))
+                            }
+                            if (replace) {
+                                Text(
+                                    stringResource(
+                                        MR.strings.local_transfer_replace_scope,
+                                        preview.replacements.size,
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
                     }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
                             scope.launch {
+                                val options = LocalChapterTransferService.Options(
+                                    folderOutput = output,
+                                    deleteSourceAfterSuccess = deleteSource,
+                                    replacements = if (replace) preview.replacements else emptyList(),
+                                    replaceConflicts = replace,
+                                )
                                 val started = if (pendingGroupedPlans.isNotEmpty()) {
-                                    startGroupedImport(pendingGroupedPlans)
+                                    startGroupedImport(pendingGroupedPlans, options)
                                 } else {
                                     val target = pendingTargetId
                                     target >= 0 && LocalChapterTransferJob.start(
                                         context = context,
                                         uris = selectedUris,
                                         targetMangaId = target,
-                                        options = LocalChapterTransferService.Options(output, deleteSource),
+                                        options = options,
                                     )
                                 }
                                 if (started) {
@@ -973,7 +999,14 @@ data class LocalImportScreen(
                                 }
                             }
                         },
-                    ) { Text(stringResource(MR.strings.local_transfer_continue)) }
+                    ) {
+                        val action = if (replace) {
+                            MR.strings.local_transfer_replace
+                        } else {
+                            MR.strings.local_transfer_continue
+                        }
+                        Text(stringResource(action))
+                    }
                 },
                 dismissButton = {
                     TextButton(
