@@ -30,12 +30,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -92,6 +95,7 @@ import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.DefaultNavigatorScreenTransition
+import eu.kanade.tachiyomi.App
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import eu.kanade.tachiyomi.data.cache.ChapterCache
@@ -132,7 +136,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import logcat.LogPriority
-import mihon.core.migration.Migrator
 import mihon.feature.support.SupportUsScreen
 import tachiyomi.core.common.Constants
 import tachiyomi.core.common.util.lang.launchIO
@@ -157,6 +160,8 @@ class MainActivity : BaseActivity() {
 
     private val downloadCache: DownloadCache by injectLazy()
     private val chapterCache: ChapterCache by injectLazy()
+    private val startupState = (application as App).startupState
+    private var startupIndicatorVisible = false
 
     // To be checked by splash screen. If true then splash screen will be removed.
     var ready = false
@@ -209,8 +214,6 @@ class MainActivity : BaseActivity() {
             }
         }
 
-        Migrator.awaitAndRelease()
-
         // Ignore only duplicate launcher starts. App-internal actions may legitimately open this
         // activity above the reader when the original main activity is no longer in the task.
         if (!isTaskRoot && isLauncherStart) {
@@ -219,114 +222,145 @@ class MainActivity : BaseActivity() {
         }
 
         setComposeContent {
-            val context = LocalContext.current
-
-            val downloadOnly by preferences.downloadedOnly.collectAsState()
-            val indexing by downloadCache.isInitializing.collectAsState()
-
-            val isSystemInDarkTheme = isSystemInDarkTheme()
-            val statusBarBackgroundColor = when {
-                indexing -> IndexingBannerBackgroundColor
-                downloadOnly -> DownloadedOnlyBannerBackgroundColor
-                else -> MaterialTheme.colorScheme.surface
-            }
-            LaunchedEffect(isSystemInDarkTheme, statusBarBackgroundColor) {
-                // Draw edge-to-edge and set system bars color to transparent
-                val lightStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.BLACK)
-                val darkStyle = SystemBarStyle.dark(Color.TRANSPARENT)
-                enableEdgeToEdge(
-                    statusBarStyle = if (statusBarBackgroundColor.luminance() > 0.5) lightStyle else darkStyle,
-                    navigationBarStyle = if (isSystemInDarkTheme) darkStyle else lightStyle,
-                )
+            val startupStatus by startupState.status.collectAsState()
+            var showMigrationSpinner by remember { mutableStateOf(false) }
+            LaunchedEffect(startupStatus.databaseMigrationInProgress, startupStatus.ready) {
+                if (startupStatus.databaseMigrationInProgress && !startupStatus.ready) {
+                    delay(STARTUP_SPINNER_DELAY_MS)
+                    if (startupState.status.value.databaseMigrationInProgress) {
+                        startupIndicatorVisible = true
+                        showMigrationSpinner = true
+                    }
+                } else if (startupStatus.ready) {
+                    startupIndicatorVisible = false
+                    showMigrationSpinner = false
+                }
             }
 
-            Navigator(
-                screen = HomeScreen,
-                disposeBehavior = NavigatorDisposeBehavior(disposeNestedNavigators = false, disposeSteps = true),
-            ) { navigator ->
-                LaunchedEffect(navigator) {
-                    this@MainActivity.navigator = navigator
-
-                    if (isLaunch) {
-                        // Set start screen
-                        handleIntentAction(intent, navigator)
+            if (!startupStatus.ready) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (showMigrationSpinner) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp,
+                        )
                     }
                 }
-                val scaffoldInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
-                Scaffold(
-                    snackbarHost = {
-                        ExitHintPill(visible = exitHintVisible.value)
-                    },
-                    topBar = {
-                        AppStateBanners(
-                            downloadedOnlyMode = downloadOnly,
-                            indexing = indexing,
-                            modifier = Modifier.windowInsetsPadding(scaffoldInsets),
-                        )
-                    },
-                    contentWindowInsets = scaffoldInsets,
-                ) { contentPadding ->
-                    // Consume insets already used by app state banners
-                    Box {
-                        // Shows current screen
-                        DefaultNavigatorScreenTransition(
-                            navigator = navigator,
-                            instantScreenKey = instantScreenKey.value,
-                            modifier = Modifier
-                                .padding(contentPadding)
-                                .consumeWindowInsets(contentPadding),
-                        )
+            } else {
+                val context = LocalContext.current
 
-                        // Draw navigation bar scrim when needed
-                        if (remember { isNavigationBarNeedsScrim() }) {
-                            Spacer(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .windowInsetsBottomHeight(WindowInsets.navigationBars)
-                                    .alpha(0.8f)
-                                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                val downloadOnly by preferences.downloadedOnly.collectAsState()
+                val indexing by downloadCache.isInitializing.collectAsState()
+
+                val isSystemInDarkTheme = isSystemInDarkTheme()
+                val statusBarBackgroundColor = when {
+                    indexing -> IndexingBannerBackgroundColor
+                    downloadOnly -> DownloadedOnlyBannerBackgroundColor
+                    else -> MaterialTheme.colorScheme.surface
+                }
+                LaunchedEffect(isSystemInDarkTheme, statusBarBackgroundColor) {
+                    // Draw edge-to-edge and set system bars color to transparent
+                    val lightStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.BLACK)
+                    val darkStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+                    enableEdgeToEdge(
+                        statusBarStyle = if (statusBarBackgroundColor.luminance() > 0.5) lightStyle else darkStyle,
+                        navigationBarStyle = if (isSystemInDarkTheme) darkStyle else lightStyle,
+                    )
+                }
+
+                Navigator(
+                    screen = HomeScreen,
+                    disposeBehavior = NavigatorDisposeBehavior(disposeNestedNavigators = false, disposeSteps = true),
+                ) { navigator ->
+                    LaunchedEffect(navigator) {
+                        this@MainActivity.navigator = navigator
+
+                        if (isLaunch) {
+                            // Set start screen
+                            handleIntentAction(intent, navigator)
+                        }
+                    }
+                    val scaffoldInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
+                    Scaffold(
+                        snackbarHost = {
+                            ExitHintPill(visible = exitHintVisible.value)
+                        },
+                        topBar = {
+                            AppStateBanners(
+                                downloadedOnlyMode = downloadOnly,
+                                indexing = indexing,
+                                modifier = Modifier.windowInsetsPadding(scaffoldInsets),
                             )
-                        }
+                        },
+                        contentWindowInsets = scaffoldInsets,
+                    ) { contentPadding ->
+                        // Consume insets already used by app state banners
+                        Box {
+                            // Shows current screen
+                            DefaultNavigatorScreenTransition(
+                                navigator = navigator,
+                                instantScreenKey = instantScreenKey.value,
+                                modifier = Modifier
+                                    .padding(contentPadding)
+                                    .consumeWindowInsets(contentPadding),
+                            )
 
-                        // Local deletes run on a scope that outlives the page, so their progress
-                        // and receipt are hosted here rather than inside the screen that started
-                        // them.
-                        LocalDeletionHost { removedFolders ->
-                            val details = navigator.lastItem as? MangaScreen
-                            if (details != null && details.mangaId in removedFolders) {
-                                navigator.popUntilRoot()
-                                HomeScreen.openTab(HomeScreen.Tab.Local)
+                            // Draw navigation bar scrim when needed
+                            if (remember { isNavigationBarNeedsScrim() }) {
+                                Spacer(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                                        .alpha(0.8f)
+                                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                                )
                             }
+
+                            // Local deletes run on a scope that outlives the page, so their progress
+                            // and receipt are hosted here rather than inside the screen that started
+                            // them.
+                            LocalDeletionHost { removedFolders ->
+                                val details = navigator.lastItem as? MangaScreen
+                                if (details != null && details.mangaId in removedFolders) {
+                                    navigator.popUntilRoot()
+                                    HomeScreen.openTab(HomeScreen.Tab.Local)
+                                }
+                            }
+                            ReaderPageDeletionHost(modifier = Modifier.align(Alignment.BottomCenter))
+                            UndoPillHost(modifier = Modifier.align(Alignment.BottomCenter))
                         }
-                        ReaderPageDeletionHost(modifier = Modifier.align(Alignment.BottomCenter))
-                        UndoPillHost(modifier = Modifier.align(Alignment.BottomCenter))
                     }
-                }
 
-                // Pop source-related screens when incognito mode is turned off
-                LaunchedEffect(Unit) {
-                    preferences.incognitoMode.changes()
-                        .drop(1)
-                        .filter { !it }
-                        .onEach {
-                            val currentScreen = navigator.lastItem
-                            if (currentScreen is BrowseSourceScreen ||
-                                (currentScreen is MangaScreen && currentScreen.fromSource)
-                            ) {
-                                navigator.popUntilRoot()
+                    // Pop source-related screens when incognito mode is turned off
+                    LaunchedEffect(Unit) {
+                        preferences.incognitoMode.changes()
+                            .drop(1)
+                            .filter { !it }
+                            .onEach {
+                                val currentScreen = navigator.lastItem
+                                if (currentScreen is BrowseSourceScreen ||
+                                    (currentScreen is MangaScreen && currentScreen.fromSource)
+                                ) {
+                                    navigator.popUntilRoot()
+                                }
                             }
-                        }
-                        .launchIn(this)
-                }
+                            .launchIn(this)
+                    }
 
-                HandleOnNewIntent(context = context, navigator = navigator)
+                    HandleOnNewIntent(context = context, navigator = navigator)
 
-                if (!isBenchmarkBuildType) {
-                    if (isLaunch) CheckForUpdates()
-                    ShowUpdatePrompt(navigator)
-                    ShowOnboarding()
-                    ShowDonationCampaign()
+                    if (!isBenchmarkBuildType) {
+                        if (isLaunch) CheckForUpdates()
+                        ShowUpdatePrompt(navigator)
+                        ShowOnboarding()
+                        ShowDonationCampaign()
+                    }
                 }
             }
         }
@@ -338,7 +372,7 @@ class MainActivity : BaseActivity() {
             // navigation (for example returning from the reader to manga details) may create a
             // fresh MainActivity above the reader; it must not be held back by the same minimum.
             elapsed <= (if (isLauncherStart) SPLASH_MIN_DURATION.toLong() else 0L) ||
-                (!ready && elapsed <= SPLASH_MAX_DURATION)
+                (!ready && !startupIndicatorVisible && elapsed <= SPLASH_MAX_DURATION)
         }
         setSplashScreenExitAnimation(splashScreen)
 
@@ -853,6 +887,7 @@ class MainActivity : BaseActivity() {
 }
 
 // Splash screen
+private const val STARTUP_SPINNER_DELAY_MS = 650L
 private const val SPLASH_MIN_DURATION = 500 // ms
 private const val SPLASH_MAX_DURATION = 5000 // ms
 private const val SPLASH_EXIT_ANIM_DURATION = 400L // ms
