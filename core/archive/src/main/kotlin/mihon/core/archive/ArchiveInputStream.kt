@@ -40,7 +40,8 @@ internal class ArchiveInputStream(
     }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
-        val buffer = ByteBuffer.wrap(b, off, len)
+        val buffer = ByteBuffer.wrap(b, off, len).slice()
+        if (len == 0) return 0
         read(buffer)
         return if (buffer.hasRemaining()) buffer.remaining() else -1
     }

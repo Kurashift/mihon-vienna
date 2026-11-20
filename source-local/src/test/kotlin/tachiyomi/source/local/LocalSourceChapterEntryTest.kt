@@ -9,9 +9,13 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
 import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
+import mihon.core.archive.ArchiveEntry
+import mihon.core.archive.ArchiveReader
+import mihon.core.archive.archiveReader
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -32,6 +36,7 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.addSingleton
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.InputStream
 
 class LocalSourceChapterEntryTest {
 
@@ -65,6 +70,36 @@ class LocalSourceChapterEntryTest {
         assertEquals("Chapter 1", entry.displayName)
         assertEquals(0, entry.pageCount)
         assertFalse(entry.hasComicInfo)
+    }
+
+    @Test
+    fun `archive metadata and pages use one reader and one header pass`() {
+        val chapter = chapterFile("Chapter 1.cbz")
+        val reader = mockk<ArchiveReader>(relaxed = true)
+        val unreadableInfo = object : InputStream() {
+            override fun read(): Int = throw IOException("unreadable ComicInfo")
+        }
+        every { reader.visitEntryHeaders(any()) } answers {
+            val visit = firstArg<(ArchiveEntry, InputStream) -> Unit>()
+            visit(ArchiveEntry("01.JPG", true), unreadableInfo)
+            visit(ArchiveEntry("ComicInfo.xml", true), unreadableInfo)
+            visit(ArchiveEntry("02.webp", true), unreadableInfo)
+            visit(ArchiveEntry(".thumb/03.png", true), unreadableInfo)
+            visit(ArchiveEntry("04.png", false), unreadableInfo)
+        }
+        mockkStatic(UniFile::archiveReader) {
+            every { chapter.archiveReader(context) } returns reader
+
+            val entry = source.buildChapterEntry(manga, chapter)
+
+            assertEquals(2, entry.pageCount)
+            assertEquals("Chapter 1", entry.displayName)
+            assertFalse(entry.hasComicInfo)
+            verify(exactly = 1) { chapter.archiveReader(context) }
+            verify(exactly = 1) { reader.visitEntryHeaders(any()) }
+            verify(exactly = 0) { reader.getInputStream(any()) }
+            verify(exactly = 1) { reader.close() }
+        }
     }
 
     @Test

@@ -2495,7 +2495,7 @@ class LocalSource(
                 // A PDF has no ComicInfo.xml, so the only thing worth the open is the page count.
                 pageCount = format.file.pdfReader(context).use { it.pageCount }
             } else {
-                getComicInfoForChapter(chapterFile) { stream ->
+                val readComicInfo: (InputStream) -> Unit = { stream ->
                     val chapter = SChapter.create().apply {
                         name = displayName
                         chapter_number = chapterNumber
@@ -2510,14 +2510,24 @@ class LocalSource(
                     }
                 }
                 pageCount = when (format) {
-                    is Format.Directory -> fileSystem.getFilesInDirectory(chapterFile)
-                        .count { !it.isDirectory && ImageUtil.isImagePage(it.name) }
+                    is Format.Directory -> {
+                        getComicInfoForChapter(chapterFile, readComicInfo)
+                        fileSystem.getFilesInDirectory(chapterFile)
+                            .count { !it.isDirectory && ImageUtil.isImagePage(it.name) }
+                    }
                     is Format.Archive -> chapterFile.archiveReader(context).use { reader ->
-                        reader.useEntries { entries ->
-                            entries.count {
-                                Archive.isPageEntry(it.name, it.isFile) && ImageUtil.isImagePage(it.name)
+                        var pages = 0
+                        var sawComicInfo = false
+                        reader.visitEntryHeaders { entry, stream ->
+                            if (!sawComicInfo && entry.name == COMIC_INFO_FILE) {
+                                sawComicInfo = true
+                                readComicInfo(stream)
+                            }
+                            if (Archive.isPageEntry(entry.name, entry.isFile) && PageImageName.isPage(entry.name)) {
+                                pages++
                             }
                         }
+                        pages
                     }
                 }
             }
