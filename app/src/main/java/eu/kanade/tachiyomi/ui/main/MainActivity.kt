@@ -96,6 +96,7 @@ import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.DefaultNavigatorScreenTransition
 import eu.kanade.tachiyomi.App
+import eu.kanade.tachiyomi.AppStartupState
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.toWorkSnapshot
 import eu.kanade.tachiyomi.data.cache.ChapterCache
@@ -160,7 +161,8 @@ class MainActivity : BaseActivity() {
 
     private val downloadCache: DownloadCache by injectLazy()
     private val chapterCache: ChapterCache by injectLazy()
-    private val startupState = (application as App).startupState
+    private val startupState: AppStartupState
+        get() = (application as App).startupState
     private var startupIndicatorVisible = false
 
     // To be checked by splash screen. If true then splash screen will be removed.
