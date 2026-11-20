@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalPageOrder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1049,9 +1050,7 @@ class LocalSource(
      * there brings a deleted card back on a later cold start - the removal looks like it worked
      * until the app is reopened. Both copies go, so "deleted" stays deleted.
      *
-     * Taken after the listing lock has been released, never inside it: the chapter-name lookup
-     * holds this lock while it reads the listing, so nesting them the other way round would
-     * deadlock the two.
+     * The chapter-name lookup receives its listing before taking the chapter-name lock.
      */
     private suspend fun forgetChapterNamesEntry(mangaUrl: String) {
         val baseUri = fileSystem.getBaseDirectoryIdentityUri() ?: return
@@ -1219,6 +1218,8 @@ class LocalSource(
         val ascending: Boolean,
         val latestWindow: Boolean,
         val urlFilter: Set<String>?,
+        val chapterNames: Map<String, List<String>>,
+        val translatedNames: Map<String, List<String>>,
         val mangas: List<SManga>,
     )
 
@@ -1285,8 +1286,9 @@ class LocalSource(
      * Used to find a manga by searching for a chapter name. Cached like the
      * listing so repeated paging loads don't rescan directories.
      */
-    private suspend fun getChapterNamesIndex(): Map<String, List<String>> = withIOContext {
-        ensureBaseDirectoryIdentity()
+    private suspend fun getChapterNamesIndex(
+        listing: List<LocalMangaEntry>,
+    ): Map<String, List<String>> = withIOContext {
         val now = System.currentTimeMillis()
         val cached = cachedChapterNames
         if (cached != null && chapterNamesIndexFresh(now)) {
@@ -1315,40 +1317,55 @@ class LocalSource(
                 return@withLock persisted
             }
 
-            val listing = getListing()
-            val confirmedEmptyUrls = listing.filter { it.chapterCount == 0 }.mapTo(hashSetOf()) { it.url }
+            val previous = lockedCached?.takeIf { cachedChapterNamesBaseUri == baseUri }
+                ?: loadPersistedChapterNamesIndex().mapValues { (_, names) -> names.toList() }
+            val sync = loadSyncIndex(requireCurrentVersion = true)?.takeIf {
+                baseUri != null && it.baseUri == baseUri &&
+                    baseDirLastModified >= 0 && it.baseDirectoryLastModified == baseDirLastModified
+            }
             val semaphore = Semaphore(MAX_CONCURRENT_CHAPTER_NAME_LOOKUPS)
             val scanned = coroutineScope {
                 listing.map { entry ->
                     async {
-                        semaphore.withPermit {
-                            val url = entry.url
-                            try {
-                                val names = fileSystem.getFilesInMangaDirectory(url)
-                                    .filter(Archive::isChapterEntry)
-                                    .mapNotNull { file ->
-                                        val base = if (file.isDirectory) {
-                                            file.name.orEmpty()
-                                        } else {
-                                            file.nameWithoutExtension.orEmpty()
-                                        }
-                                        base.takeIf { it.isNotEmpty() }
+                        val url = entry.url
+                        val folder = sync?.folders?.get(url)?.takeUnless { url in sync.pending }
+                        val indexedNames = localLibraryChapterFileNames(
+                            chapterCount = entry.chapterCount.toLong(),
+                            listingModifiedAt = entry.lastModified,
+                            indexedModifiedAt = folder?.directoryLastModified,
+                            fileNames = folder?.chapterFileNames,
+                        )
+                        val names = if (indexedNames != null) {
+                            indexedNames.filterNot(::isSingleChapterEntryName).map(::chapterBaseName)
+                        } else if (baseDirLastModified < 0) {
+                            previous[url]
+                        } else {
+                            semaphore.withPermit {
+                                val snapshot = try {
+                                    fileSystem.getMangaDirectorySnapshot(url)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                    return@withPermit previous[url]
+                                }
+                                val files = snapshot.files.filter(Archive::isChapterEntry)
+                                if (snapshot.isAccessible && files.isNotEmpty() && files.size >= entry.chapterCount) {
+                                    files.mapNotNull { file ->
+                                        val name = if (file.isDirectory) file.name else file.nameWithoutExtension
+                                        name?.takeIf(String::isNotEmpty)
                                     }
-                                url to names
-                            } catch (e: Exception) {
-                                url to emptyList()
+                                } else {
+                                    // A transient empty or partial provider response cannot erase known names.
+                                    previous[url]?.takeUnless { snapshot.isConfirmedEmpty && entry.chapterCount == 0 }
+                                }
                             }
                         }
+                        names?.let { url to it }
                     }
-                }.awaitAll()
+                }.awaitAll().filterNotNull()
             }
-            val index = buildMap {
-                scanned.forEach { (url, names) ->
-                    if (names.isNotEmpty() || url in confirmedEmptyUrls) {
-                        put(url, names)
-                    }
-                }
-            }
+            val index = scanned.toMap()
+            if (baseUri != activeBaseUri || listing !== cachedListing) return@withLock index
             cachedChapterNames = index
             cachedChapterNamesTime = lockedNow
             cachedChapterNamesBaseDirLastModified = baseDirLastModified
@@ -1367,12 +1384,14 @@ class LocalSource(
      * from the file system, so a failed lookup degrades to matching on file names alone rather than
      * failing the search.
      */
-    private suspend fun getTranslatedNamesIndex(): Map<String, List<String>> {
+    private suspend fun getTranslatedNamesIndex(): Map<String, List<String>>? {
         return try {
             chapterRepository.getTranslatedNamesBySourceId(ID)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Failed to load local source translated names" }
-            emptyMap()
+            null
         }
     }
 
@@ -1493,6 +1512,8 @@ class LocalSource(
         val urlFilter = listingUrlFilter
             ?.takeIf { narrowToFilter && query.isBlank() }
         val allEntries = getListing()
+        val chapterNames = if (query.isBlank()) emptyMap() else getChapterNamesIndex(allEntries)
+        val translatedNames = if (query.isBlank()) emptyMap() else getTranslatedNamesIndex()
 
         // Reuse the previously derived page when nothing that feeds it changed. The listing
         // instance is compared by identity on purpose: `getListing()` keeps returning the same
@@ -1506,7 +1527,9 @@ class LocalSource(
             cachedPage.orderByIndex == orderByIndex &&
             cachedPage.ascending == ascending &&
             cachedPage.latestWindow == latestWindow &&
-            cachedPage.urlFilter == urlFilter
+            cachedPage.urlFilter == urlFilter &&
+            cachedPage.chapterNames == chapterNames &&
+            cachedPage.translatedNames == translatedNames
         ) {
             return@withIOContext cachedPage.mangas
         }
@@ -1521,15 +1544,13 @@ class LocalSource(
         }
 
         if (query.isNotBlank()) {
-            val chapterNames = getChapterNamesIndex()
-            val translatedNames = getTranslatedNamesIndex()
             val matched = linkedMapOf<String, LocalMangaEntry>()
             mangaEntries.forEach { entry ->
                 val match = localSearchMatch(
                     query = query,
                     title = entry.title,
                     chapterNames = chapterNames[entry.url].orEmpty(),
-                    translatedNames = translatedNames[entry.url].orEmpty(),
+                    translatedNames = translatedNames?.get(entry.url).orEmpty(),
                 )
                 if (match != null) {
                     matched[entry.url] = entry
@@ -1619,7 +1640,7 @@ class LocalSource(
             }
         }
 
-        mangas.also { derived ->
+        if (translatedNames != null) {
             cachedDerivedListing = CachedDerivedListing(
                 listing = allEntries,
                 query = query,
@@ -1627,9 +1648,12 @@ class LocalSource(
                 ascending = ascending,
                 latestWindow = latestWindow,
                 urlFilter = urlFilter,
-                mangas = derived,
+                chapterNames = chapterNames,
+                translatedNames = translatedNames,
+                mangas = mangas,
             )
         }
+        mangas
     }
 
     override suspend fun getMangaUpdate(
