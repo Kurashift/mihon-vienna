@@ -5,6 +5,7 @@ import android.system.Os
 import android.system.OsConstants
 import me.zhanghai.android.libarchive.ArchiveException
 import java.io.Closeable
+import java.io.FilterInputStream
 import java.io.InputStream
 
 class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
@@ -27,18 +28,29 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
 
     /** Visits every entry with one archive scan. The input stream is valid only during the callback. */
     fun forEachEntry(block: (ArchiveEntry, InputStream) -> Unit) {
-        val stream = openStream()
-        val buffer = ByteArray(8192)
-        try {
+        visitEntries(drain = true, block = block)
+    }
+
+    /** Walks entry headers once. Read entry data only within its callback. */
+    fun visitEntryHeaders(block: (ArchiveEntry, InputStream) -> Unit) {
+        visitEntries(drain = false, block = block)
+    }
+
+    private fun visitEntries(drain: Boolean, block: (ArchiveEntry, InputStream) -> Unit) {
+        openStream().use { stream ->
+            val buffer = if (drain) ByteArray(8192) else null
+            val entryStream = object : FilterInputStream(stream) {
+                override fun close() = Unit
+            }
             while (true) {
                 val entry = stream.getNextEntry() ?: break
-                block(entry, stream)
-                while (stream.read(buffer) != -1) {
-                    // Drain the entry before moving to the next archive header.
+                block(entry, if (drain) stream else entryStream)
+                if (buffer != null) {
+                    while (stream.read(buffer) != -1) {
+                        // Validate the remaining entry data before moving to the next header.
+                    }
                 }
             }
-        } finally {
-            stream.close()
         }
     }
 
