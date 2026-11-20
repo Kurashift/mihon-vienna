@@ -34,20 +34,30 @@ object DatabaseSnapshot {
      * 每个新版本第一次启动才复制，之后启动读到的是当前版本，直接返回。失败不抛出：
      * 备份失败不能挡住启动，迁移本身才是这次启动要做的事。
      */
-    fun beforeMigration(app: Application, versionCode: Int) {
+    fun beforeMigration(
+        app: Application,
+        versionCode: Int,
+        onMigrationRequired: () -> Unit = {},
+    ) {
         try {
-            snapshot(app, versionCode)
+            snapshot(app, versionCode, onMigrationRequired)
         } catch (e: Exception) {
             Log.w(TAG, "迁移前快照失败，继续启动", e)
         }
     }
 
-    private fun snapshot(app: Application, versionCode: Int) {
+    private fun snapshot(
+        app: Application,
+        versionCode: Int,
+        onMigrationRequired: () -> Unit,
+    ) {
         val database = app.getDatabasePath(DATABASE_NAME)
         if (!database.exists()) return
 
         val userVersion = readUserVersion(database) ?: return
         if (userVersion >= Database.Schema.version) return
+
+        onMigrationRequired()
 
         val directory = File(app.filesDir, BACKUP_DIR)
         val target = File(directory, "$BACKUP_PREFIX$versionCode.db")

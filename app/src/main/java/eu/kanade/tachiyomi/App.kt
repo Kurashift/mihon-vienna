@@ -30,6 +30,7 @@ import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher
 import eu.kanade.tachiyomi.data.coil.MangaCoverKeyer
 import eu.kanade.tachiyomi.data.coil.MangaKeyer
 import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
+import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.data.updater.AppUpdateState
 import eu.kanade.tachiyomi.di.AppModule
@@ -41,9 +42,12 @@ import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.WebViewUtil
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
 import logcat.LogcatLogger
@@ -55,6 +59,8 @@ import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.data.Database
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -66,6 +72,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     private val basePreferences: BasePreferences by injectLazy()
     private val privacyPreferences: PrivacyPreferences by injectLazy()
     private val networkPreferences: NetworkPreferences by injectLazy()
+    val startupState = AppStartupState()
+    private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super<Application>.onCreate()
@@ -86,7 +94,12 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         }
 
         Injekt.importModule(PreferenceModule(this))
-        Injekt.importModule(AppModule(this))
+        Injekt.importModule(
+            AppModule(
+                app = this,
+                onDatabaseMigrationRequired = startupState::markDatabaseMigrationRequired,
+            ),
+        )
         Injekt.importModule(DomainModule())
 
         setupNotificationChannels()
@@ -115,9 +128,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
         setAppCompatDelegateThemeMode(Injekt.get<UiPreferences>().themeMode.get())
 
-        // Updates widget update
-        WidgetManager(Injekt.get(), Injekt.get()).apply { init(scope) }
-
         if (!LogcatLogger.isInstalled) {
             val minLogPriority = when {
                 networkPreferences.verboseLogging.get() -> LogPriority.VERBOSE
@@ -128,7 +138,23 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             LogcatLogger.loggers += AndroidLogcatLogger(minLogPriority)
         }
 
-        initializeMigrator()
+        initializeStartup()
+    }
+
+    private fun initializeStartup() {
+        startupScope.launch {
+            Injekt.get<Database>()
+            initializeMigrator()
+            Migrator.awaitAndRelease()
+            startupState.markReady()
+
+            Injekt.get<NetworkHelper>()
+            Injekt.get<SourceManager>()
+            Injekt.get<DownloadManager>()
+            WidgetManager(Injekt.get(), Injekt.get()).apply {
+                init(ProcessLifecycleOwner.get().lifecycleScope)
+            }
+        }
     }
 
     private fun initializeMigrator() {

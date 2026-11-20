@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.di
 
 import android.app.Application
 import android.content.Context
-import androidx.core.content.ContextCompat
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import app.cash.sqldelight.db.SqlDriver
 import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConfiguration
@@ -78,7 +77,10 @@ private val lock = Any()
 /** Sized for the full tag/VA/circle dictionaries plus a few pages of work results. */
 private const val AUDIO_CACHE_BYTES = 20L * 1024 * 1024
 
-class AppModule(val app: Application) : InjektModule {
+class AppModule(
+    val app: Application,
+    private val onDatabaseMigrationRequired: () -> Unit = {},
+) : InjektModule {
 
     private var sqlDriverRef: WeakReference<SqlDriver>? = null
 
@@ -91,7 +93,11 @@ class AppModule(val app: Application) : InjektModule {
                 sqlDriverRef?.get()?.let { return@synchronized it }
 
                 // 迁移写坏了没有第二条路可以回来：动手之前先把数据库整份留一份。
-                DatabaseSnapshot.beforeMigration(app, BuildConfig.VERSION_CODE)
+                DatabaseSnapshot.beforeMigration(
+                    app,
+                    BuildConfig.VERSION_CODE,
+                    onDatabaseMigrationRequired,
+                )
 
                 AndroidxSqliteDriver(
                     driver = BundledSQLiteDriver(),
@@ -209,16 +215,5 @@ class AppModule(val app: Application) : InjektModule {
         }
         addSingletonFactory { StorageManager(app, get()) }
         addSingletonFactory { LocalRandomScope(get(), get()) }
-
-        // Asynchronously init expensive components for a faster cold start
-        ContextCompat.getMainExecutor(app).execute {
-            get<NetworkHelper>()
-
-            get<SourceManager>()
-
-            get<Database>()
-
-            get<DownloadManager>()
-        }
     }
 }
