@@ -19,8 +19,18 @@ internal fun localLibraryChapterUrls(
     indexedModifiedAt: Long?,
     fileNames: Set<String>?,
 ): Set<String>? {
+    return localLibraryChapterFileNames(chapterCount, listingModifiedAt, indexedModifiedAt, fileNames)
+        ?.mapTo(linkedSetOf()) { name -> "$mangaUrl/$name" }
+}
+
+internal fun localLibraryChapterFileNames(
+    chapterCount: Long,
+    listingModifiedAt: Long,
+    indexedModifiedAt: Long?,
+    fileNames: Set<String>?,
+): Set<String>? {
     if (fileNames == null || chapterCount < 0 || fileNames.size.toLong() != chapterCount) return null
     if (listingModifiedAt < 0 || listingModifiedAt != indexedModifiedAt) return null
     if (fileNames.any { it.isEmpty() || '/' in it }) return null
-    return fileNames.mapTo(linkedSetOf()) { name -> "$mangaUrl/$name" }
+    return fileNames
 }

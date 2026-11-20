@@ -7,6 +7,8 @@ import android.net.Uri
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -20,8 +22,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.storage.service.LocalSourceDirectoryEntryState
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.io.Archive
@@ -30,6 +34,7 @@ import tachiyomi.source.local.io.LOCAL_SINGLE_CHAPTER_NAME
 import tachiyomi.source.local.io.LocalSourceFileSystem
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.addSingleton
+import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 
@@ -50,6 +55,47 @@ class LocalSourceChapterEntryTest {
     )
 
     private val manga = SManga.create().apply { title = "Test Manga" }
+
+    @Test
+    fun `same search follows translation edits and recovers from a failed query`(
+        @TempDir privateFiles: File,
+    ) = runBlocking {
+        val repository = mockk<ChapterRepository>()
+        Injekt.addSingleton<ChapterRepository>(repository)
+        val root = mockk<UniFile> { every { lastModified() } returns 100L }
+        val work = mockk<UniFile> {
+            every { name } returns "Work"
+            every { isDirectory } returns true
+            every { lastModified() } returns 99L
+        }
+        val chapter = chapterFile("Original.cbz")
+        val snapshot = LocalSourceFileSystem.DirectorySnapshot(work, listOf(chapter), isAccessible = true)
+        every { context.filesDir } returns privateFiles
+        every { fileSystem.getBaseDirectoryIdentityUri() } returns "root"
+        every { fileSystem.getCachedBaseDirectoryIdentityUri() } returns "root"
+        every { fileSystem.getBaseDirectory() } returns root
+        every { fileSystem.getBaseDirectorySnapshot(any()) } returns
+            LocalSourceFileSystem.DirectorySnapshot(root, listOf(work), isAccessible = true)
+        every { fileSystem.getDirectorySnapshot(work, any()) } returns snapshot
+        every { fileSystem.getMangaDirectorySnapshot("Work") } returns snapshot
+        every { coverManager.find("Work") } returns null
+        val translations = mapOf("Work" to listOf("Translated title"))
+
+        coEvery { repository.getTranslatedNamesBySourceId(LocalSource.ID) } returns emptyMap()
+        assertEquals(listOf("Work"), source.getPopularMangaUrls())
+        coVerify(exactly = 0) { repository.getTranslatedNamesBySourceId(LocalSource.ID) }
+        assertEquals(emptyList<String>(), source.getSearchMangaUrls("Translated"))
+        coEvery { repository.getTranslatedNamesBySourceId(LocalSource.ID) } returns translations
+        assertEquals(listOf("Work"), source.getSearchMangaUrls("Translated"))
+        coEvery { repository.getTranslatedNamesBySourceId(LocalSource.ID) } throws IOException("temporary failure")
+        assertEquals(emptyList<String>(), source.getSearchMangaUrls("Translated"))
+        coEvery { repository.getTranslatedNamesBySourceId(LocalSource.ID) } returns translations
+        assertEquals(listOf("Work"), source.getSearchMangaUrls("Translated"))
+        coEvery { repository.getTranslatedNamesBySourceId(LocalSource.ID) } returns emptyMap()
+        assertEquals(emptyList<String>(), source.getSearchMangaUrls("Translated"))
+        assertEquals(listOf("Work"), source.getSearchMangaUrls("Original"))
+        verify(exactly = 1) { fileSystem.getMangaDirectorySnapshot("Work") }
+    }
 
     @Test
     fun `an unreadable archive keeps its file-name entry instead of failing the scan`() {
