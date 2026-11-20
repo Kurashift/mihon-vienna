@@ -21,7 +21,7 @@ class StartupProfileGenerator {
     fun generate() {
         rule.collect(
             packageName = TARGET_PACKAGE_NAME,
-            includeInStartupProfile = true
+            includeInStartupProfile = true,
         ) {
             pressHome()
             startActivityAndWait()
