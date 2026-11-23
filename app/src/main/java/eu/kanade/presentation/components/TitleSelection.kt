@@ -2,6 +2,7 @@ package eu.kanade.presentation.components
 
 import android.text.Selection
 import android.text.Spannable
+import android.text.TextUtils
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
@@ -67,6 +68,13 @@ class TitleSelectionController internal constructor() {
         } else {
             clearAction?.invoke()
         }
+    }
+}
+
+internal fun TextView.updateSelectableTitle(title: String) {
+    // Replacing the text also replaces the buffer that holds the active selection.
+    if (!TextUtils.equals(text, title)) {
+        text = title
     }
 }
 

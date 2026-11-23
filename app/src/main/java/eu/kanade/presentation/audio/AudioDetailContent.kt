@@ -82,6 +82,7 @@ import eu.kanade.presentation.components.TitleSelectionAction
 import eu.kanade.presentation.components.TitleSelectionCallback
 import eu.kanade.presentation.components.TitleSelectionController
 import eu.kanade.presentation.components.clearTextSelection
+import eu.kanade.presentation.components.updateSelectableTitle
 import eu.kanade.tachiyomi.data.audio.AudioPlayItem
 import eu.kanade.tachiyomi.data.audio.TagRef
 import eu.kanade.tachiyomi.data.audio.TrackNode
@@ -716,7 +717,7 @@ private fun SelectableWorkTitle(
             }
         },
         update = { titleView ->
-            titleView.text = title
+            titleView.updateSelectableTitle(title)
             titleView.setTextColor(titleColor)
             titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, titleStyle.fontSize.value)
             // 选区还在（ActionMode 挂着）时不跳搜索：这一下点击只是用来收掉选区的。
