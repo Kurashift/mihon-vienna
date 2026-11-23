@@ -106,6 +106,7 @@ import eu.kanade.presentation.components.TitleSelectionAction
 import eu.kanade.presentation.components.TitleSelectionCallback
 import eu.kanade.presentation.components.TitleSelectionController
 import eu.kanade.presentation.components.clearTextSelection
+import eu.kanade.presentation.components.updateSelectableTitle
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.util.system.copyToClipboard
@@ -648,7 +649,7 @@ private fun ColumnScope.MangaContentInfo(
             }
         },
         update = { titleView ->
-            titleView.text = displayedTitle
+            titleView.updateSelectableTitle(displayedTitle)
             titleView.setTextColor(titleColor)
             titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, titleStyle.fontSize.value)
             titleView.gravity = when (textAlign) {
