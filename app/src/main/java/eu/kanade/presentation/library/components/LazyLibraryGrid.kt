@@ -25,6 +25,7 @@ internal fun LazyLibraryGrid(
         columns = if (columns == 0) GridCells.Adaptive(ADAPTIVE_MIN_CELL_WIDTH) else GridCells.Fixed(columns),
         modifier = modifier,
         state = state,
+        proportionalThumb = true,
         contentPadding = contentPadding + PaddingValues(GRID_CONTENT_PADDING),
         verticalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridVerticalSpacer),
         horizontalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridHorizontalSpacer),

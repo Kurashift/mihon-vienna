@@ -80,6 +80,7 @@ fun VerticalFastScroller(
     alwaysVisible: Boolean = false,
     showEndMarker: Boolean = false,
     stickyThumb: Boolean = false,
+    proportionalThumb: Boolean = false,
     listKey: Any? = null,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     topContentPadding: Dp = Dp.Hairline,
@@ -134,7 +135,22 @@ fun VerticalFastScroller(
                 thumbTopPadding -
                 thumbBottomPadding -
                 listState.layoutInfo.afterContentPadding
-            val thumbHeightPx = with(LocalDensity.current) { ThumbLength.toPx() }
+            val minThumbHeightPx = with(LocalDensity.current) { ThumbLength.toPx() }
+            if (heightPx <= minThumbHeightPx) return@subcompose
+            val thumbHeightPx = if (proportionalThumb) {
+                if (!listState.canScrollBackward && !listState.canScrollForward) return@subcompose
+                rememberProportionalThumbHeight(
+                    listKey = listKey,
+                    heightPx = heightPx,
+                    restingViewportPx = restingHeightPx,
+                    minThumbHeightPx = minThumbHeightPx,
+                    isThumbDragged = isThumbDragged,
+                    contentHeightPx = { listState.scrollIndicatorState?.contentSize },
+                )
+            } else {
+                minThumbHeightPx
+            }
+            val thumbHeight = with(LocalDensity.current) { thumbHeightPx.toDp() }
             val trackHeightPx = heightPx - thumbHeightPx
             val endMarkerGapPx = with(LocalDensity.current) { EndMarkerGap.toPx() }
             val scrollHeightPx = restingHeightPx -
@@ -181,10 +197,11 @@ fun VerticalFastScroller(
 
             val estimateConfidence = remember(listKey) { MutableData(remainingSections) }
             if (layoutChanged) estimateConfidence.value = remainingSections
-            val maxRemainingSections = remember(estimateConfidence.value) { scrollableSections }
+            val estimatedSections = remember(estimateConfidence.value) { scrollableSections }
             estimateConfidence.value = max(estimateConfidence.value, remainingSections)
 
-            if (maxRemainingSections < 0.5) return@subcompose
+            if (!proportionalThumb && estimatedSections < 0.5f) return@subcompose
+            val maxRemainingSections = estimatedSections.coerceAtLeast(0.001f)
 
             // When thumb dragged
             LaunchedEffect(thumbOffsetY) {
@@ -193,6 +210,11 @@ fun VerticalFastScroller(
                 if (thumbProportion <= 0.001f) {
                     estimateConfidence.value = -1f
                     listState.scrollToItem(index = 0, scrollOffset = 0)
+                    scrolled.tryEmit(Unit)
+                    return@LaunchedEffect
+                }
+                if (proportionalThumb && thumbProportion >= 0.999f) {
+                    listState.scrollToItem(index = layoutInfo.totalItemsCount - 1)
                     scrolled.tryEmit(Unit)
                     return@LaunchedEffect
                 }
@@ -209,7 +231,11 @@ fun VerticalFastScroller(
             }
 
             // Where the list really sits on the track, before the anchor has its say.
-            val measuredProgress = (1f - remainingSections / maxRemainingSections).coerceIn(0f, 1f)
+            val measuredProgress = when {
+                proportionalThumb && !listState.canScrollBackward -> 0f
+                proportionalThumb && !listState.canScrollForward -> 1f
+                else -> (1f - remainingSections / maxRemainingSections).coerceIn(0f, 1f)
+            }
             val thumbProgress = ((thumbOffsetY - thumbTopPadding) / trackHeightPx.coerceAtLeast(1f))
                 .coerceIn(0f, 1f)
 
@@ -251,6 +277,7 @@ fun VerticalFastScroller(
             // Thumb alpha
             val alpha = remember(alwaysVisible) { Animatable(if (alwaysVisible) 1f else 0f) }
             val isThumbVisible = alpha.value > 0f
+            val keepThumbVisible = proportionalThumb && isThumbDragged
             LaunchedEffect(scrolled, alpha, alwaysVisible) {
                 if (alwaysVisible) {
                     alpha.snapTo(if (thumbAllowed()) 1f else 0f)
@@ -274,7 +301,7 @@ fun VerticalFastScroller(
                     .offset { IntOffset(0, thumbOffsetY.roundToInt()) }
                     .then(
                         // Recompose opts
-                        if (isThumbVisible && !listState.isScrollInProgress) {
+                        if (keepThumbVisible || (isThumbVisible && !listState.isScrollInProgress)) {
                             Modifier.draggable(
                                 interactionSource = dragInteractionSource,
                                 orientation = Orientation.Vertical,
@@ -298,11 +325,11 @@ fun VerticalFastScroller(
                             Modifier
                         },
                     )
-                    .height(ThumbLength)
+                    .height(thumbHeight)
                     .padding(start = ThumbStartPadding, end = ThumbEndMargin)
                     .padding(end = endContentPadding)
                     .width(ThumbThickness)
-                    .alpha(alpha.value)
+                    .alpha(if (keepThumbVisible) 1f else alpha.value)
                     .background(color = thumbColor, shape = ThumbShape),
             )
 
@@ -418,6 +445,7 @@ fun VerticalGridFastScroller(
     alwaysVisible: Boolean = false,
     showEndMarker: Boolean = false,
     stickyThumb: Boolean = false,
+    proportionalThumb: Boolean = false,
     listKey: Any? = null,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     topContentPadding: Dp = Dp.Hairline,
@@ -439,10 +467,14 @@ fun VerticalGridFastScroller(
         val scrollerConstraints = constraints.copy(minWidth = 0, minHeight = 0)
         val scrollerPlaceable = subcompose("scroller") {
             val layoutInfo = state.layoutInfo
-            val showScroller = remember(columns, layoutInfo.totalItemsCount) {
-                layoutInfo.visibleItemsInfo.size < layoutInfo.totalItemsCount
+            val showScroller = if (proportionalThumb) {
+                state.canScrollBackward || state.canScrollForward
+            } else {
+                remember(columns, layoutInfo.totalItemsCount) {
+                    layoutInfo.visibleItemsInfo.size < layoutInfo.totalItemsCount
+                }
             }
-            if (!showScroller) return@subcompose
+            if (!showScroller || layoutInfo.visibleItemsInfo.isEmpty()) return@subcompose
             val thumbTopPadding = with(LocalDensity.current) { topContentPadding.toPx() }
             var thumbOffsetY by remember(listKey, thumbTopPadding) { mutableFloatStateOf(thumbTopPadding) }
             val thumbAnchor = remember(listKey) { ThumbAnchor() }
@@ -482,7 +514,21 @@ fun VerticalGridFastScroller(
             val heightPx = restingHeightPx -
                 thumbTopPadding -
                 thumbBottomPadding
-            val thumbHeightPx = with(LocalDensity.current) { ThumbLength.toPx() }
+            val minThumbHeightPx = with(LocalDensity.current) { ThumbLength.toPx() }
+            if (heightPx <= minThumbHeightPx) return@subcompose
+            val thumbHeightPx = if (proportionalThumb) {
+                rememberProportionalThumbHeight(
+                    listKey = listKey,
+                    heightPx = heightPx,
+                    restingViewportPx = restingHeightPx,
+                    minThumbHeightPx = minThumbHeightPx,
+                    isThumbDragged = isThumbDragged,
+                    contentHeightPx = { state.scrollIndicatorState?.contentSize },
+                )
+            } else {
+                minThumbHeightPx
+            }
+            val thumbHeight = with(LocalDensity.current) { thumbHeightPx.toDp() }
             val trackHeightPx = heightPx - thumbHeightPx
             val endMarkerGapPx = with(LocalDensity.current) { EndMarkerGap.toPx() }
 
@@ -491,6 +537,13 @@ fun VerticalGridFastScroller(
             // When thumb dragged
             LaunchedEffect(thumbOffsetY) {
                 if (layoutInfo.totalItemsCount == 0 || !isThumbDragged) return@LaunchedEffect
+                val scrollRatio = (thumbOffsetY - thumbTopPadding) / trackHeightPx
+                if (proportionalThumb && (scrollRatio <= 0.001f || scrollRatio >= 0.999f)) {
+                    val index = if (scrollRatio <= 0.001f) 0 else layoutInfo.totalItemsCount - 1
+                    state.scrollToItem(index)
+                    scrolled.tryEmit(Unit)
+                    return@LaunchedEffect
+                }
                 val visibleItems = state.layoutInfo.visibleItemsInfo
                 if (visibleItems.isEmpty()) return@LaunchedEffect
                 val startChild = visibleItems.first()
@@ -501,7 +554,6 @@ fun VerticalGridFastScroller(
 
                 // Recomputed live, never cached: see the matching note below.
                 val scrollRange = computeGridScrollRange(state = state, columnCount = columnCount)
-                val scrollRatio = (thumbOffsetY - thumbTopPadding) / trackHeightPx
                 val scrollAmt = scrollRatio * (scrollRange.toFloat() - heightPx).coerceAtLeast(1f)
                 val rowNumber = (scrollAmt / avgSizePerRow).toInt()
                 val rowOffset = scrollAmt - rowNumber * avgSizePerRow
@@ -511,23 +563,17 @@ fun VerticalGridFastScroller(
             }
 
             // Where the list really sits on the track, before the anchor has its say.
-            val measuredProgress = if (layoutInfo.totalItemsCount == 0) {
-                0f
-            } else {
-                // Both sides have to come from the same measurement. Caching the range against
-                // the column count froze it at whatever rows happened to be visible when it was
-                // built, while the offset kept tracking the live rows; pages streaming in swap
-                // filled items for loading placeholders, which are not the same height, so the
-                // stale range no longer matches the live offset and the thumb stops short of the
-                // end. Sharing one average row height cancels it out of the ratio.
-                val scrollOffset = computeGridScrollOffset(state = state, columnCount = columnCount)
-                val scrollRange = computeGridScrollRange(state = state, columnCount = columnCount)
-                /*
-                    LazyGridItemInfo doesn't always give the accurate height of the object, so we clamp the proportion
-                    at 1 to ensure that there are no issues due to this -- ideally we would correctly compute the value
-                 */
-                val extraScrollRange = (scrollRange.toFloat() - heightPx).coerceAtLeast(1f)
-                (scrollOffset.toFloat() / extraScrollRange).coerceIn(0f, 1f)
+            val measuredProgress = when {
+                layoutInfo.totalItemsCount == 0 || (proportionalThumb && !state.canScrollBackward) -> 0f
+                proportionalThumb && !state.canScrollForward -> 1f
+                else -> {
+                    // Use the same live row estimate for offset and range, including when
+                    // loading placeholders are replaced by full-size rows.
+                    val scrollOffset = computeGridScrollOffset(state = state, columnCount = columnCount)
+                    val scrollRange = computeGridScrollRange(state = state, columnCount = columnCount)
+                    val extraScrollRange = (scrollRange.toFloat() - heightPx).coerceAtLeast(1f)
+                    (scrollOffset.toFloat() / extraScrollRange).coerceIn(0f, 1f)
+                }
             }
             val thumbProgress = ((thumbOffsetY - thumbTopPadding) / trackHeightPx.coerceAtLeast(1f))
                 .coerceIn(0f, 1f)
@@ -571,6 +617,7 @@ fun VerticalGridFastScroller(
             // Thumb alpha
             val alpha = remember(alwaysVisible) { Animatable(if (alwaysVisible) 1f else 0f) }
             val isThumbVisible = alpha.value > 0f
+            val keepThumbVisible = proportionalThumb && isThumbDragged
             LaunchedEffect(scrolled, alpha, alwaysVisible) {
                 if (alwaysVisible) {
                     alpha.snapTo(if (thumbAllowed()) 1f else 0f)
@@ -594,7 +641,7 @@ fun VerticalGridFastScroller(
                     .offset { IntOffset(0, thumbOffsetY.roundToInt()) }
                     .then(
                         // Recompose opts
-                        if (isThumbVisible && !state.isScrollInProgress) {
+                        if (keepThumbVisible || (isThumbVisible && !state.isScrollInProgress)) {
                             Modifier.draggable(
                                 interactionSource = dragInteractionSource,
                                 orientation = Orientation.Vertical,
@@ -618,11 +665,11 @@ fun VerticalGridFastScroller(
                             Modifier
                         },
                     )
-                    .height(ThumbLength)
+                    .height(thumbHeight)
                     .padding(start = ThumbStartPadding, end = ThumbEndMargin)
                     .padding(end = endContentPadding)
                     .width(ThumbThickness)
-                    .alpha(alpha.value)
+                    .alpha(if (keepThumbVisible) 1f else alpha.value)
                     .background(color = thumbColor, shape = ThumbShape),
             )
 
@@ -652,6 +699,33 @@ fun VerticalGridFastScroller(
             }
         }
     }
+}
+
+@Composable
+private inline fun rememberProportionalThumbHeight(
+    listKey: Any?,
+    heightPx: Float,
+    restingViewportPx: Float,
+    minThumbHeightPx: Float,
+    isThumbDragged: Boolean,
+    contentHeightPx: () -> Int?,
+): Float {
+    val heldHeight = remember(listKey) { MutableData(minThumbHeightPx) }
+    // Leave room to move even when only a sliver of content is outside the viewport.
+    val maxThumbHeightPx = (heightPx - minThumbHeightPx).coerceAtLeast(minThumbHeightPx)
+
+    // Lazy layouts can revise their estimate as different rows enter view. Keep the
+    // length used for both drawing and drag travel fixed while the finger is down.
+    if (isThumbDragged) return heldHeight.value.coerceIn(minThumbHeightPx, maxThumbHeightPx)
+
+    val estimatedHeightPx = contentHeightPx()
+    val thumbHeight = if (estimatedHeightPx != null && estimatedHeightPx > 0) {
+        (heightPx * (restingViewportPx / estimatedHeightPx)).coerceIn(minThumbHeightPx, maxThumbHeightPx)
+    } else {
+        minThumbHeightPx
+    }
+    heldHeight.value = thumbHeight
+    return thumbHeight
 }
 
 // TODO: not sure why abs corrections are in the following functions; these can probably be removed

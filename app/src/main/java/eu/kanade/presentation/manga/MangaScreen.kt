@@ -658,6 +658,7 @@ private fun MangaScreenSmallImpl(
             ) {
                 VerticalFastScroller(
                     listState = chapterListState,
+                    proportionalThumb = true,
                     topContentPadding = topPadding,
                     endContentPadding = contentPadding.calculateEndPadding(layoutDirection),
                 ) {
@@ -1167,6 +1168,7 @@ fun MangaScreenLargeImpl(
                     }
                     VerticalFastScroller(
                         listState = chapterListState,
+                        proportionalThumb = true,
                         topContentPadding = contentPadding.calculateTopPadding(),
                     ) {
                         LazyColumn(
