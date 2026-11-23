@@ -29,6 +29,7 @@ internal fun LibraryList(
     FastScrollLazyColumn(
         modifier = Modifier.fillMaxSize(),
         state = state,
+        proportionalThumb = true,
         contentPadding = contentPadding + PaddingValues(vertical = 8.dp),
     ) {
         item {
