@@ -681,7 +681,6 @@ private fun MyListReadActionMenu(
                         Icon(
                             imageVector = Icons.Outlined.RemoveDone,
                             contentDescription = stringResource(MR.strings.action_mark_as_unread),
-                            tint = MaterialTheme.colorScheme.error,
                         )
                         AnimatedVisibility(
                             visible = toConfirm,

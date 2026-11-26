@@ -214,8 +214,8 @@ fun MangaBottomActionMenu(
                     Button(
                         title = stringResource(MR.strings.action_move_to),
                         icon = Icons.Outlined.DriveFileMove,
-                        toConfirm = false,
-                        onLongClick = {},
+                        toConfirm = confirm.isShowing(ChapterBottomAction.MOVE),
+                        onLongClick = { onLongClickItem(ChapterBottomAction.MOVE) },
                         onClick = onMoveClicked,
                     )
                 }
@@ -243,8 +243,8 @@ fun MangaBottomActionMenu(
                     Button(
                         title = stringResource(MR.strings.action_delete_local_files),
                         icon = Icons.Filled.Delete,
-                        toConfirm = false,
-                        onLongClick = {},
+                        toConfirm = confirm.isShowing(ChapterBottomAction.DELETE_LOCAL),
+                        onLongClick = { onLongClickItem(ChapterBottomAction.DELETE_LOCAL) },
                         onClick = onDeleteLocalFilesClicked,
                         tint = MaterialTheme.colorScheme.error,
                         fill = false,

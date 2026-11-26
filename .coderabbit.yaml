@@ -20,9 +20,10 @@ reviews:
     - "!config/detekt/baseline.xml"
     - "!baseline-profile/**"
     - "!docs/release-post-*.md"
-    - "!i18n/src/commonMain/moko-resources/values-*/**"
-    - "i18n/src/commonMain/moko-resources/values-zh-rCN/**"
-    - "i18n/src/commonMain/moko-resources/values-zh-rTW/**"
+    - "!i18n/src/commonMain/moko-resources/*/**"
+    - "i18n/src/commonMain/moko-resources/base/**"
+    - "i18n/src/commonMain/moko-resources/zh-rCN/**"
+    - "i18n/src/commonMain/moko-resources/zh-rTW/**"
 
   # 按模块补充 Mihon Vienna 的审查重点（与 AGENTS.md 保持一致）
   path_instructions:

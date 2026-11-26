@@ -1002,7 +1002,7 @@ internal fun LoginDialog(
                                 } else {
                                     Icons.Outlined.Visibility
                                 },
-                                contentDescription = null,
+                                contentDescription = stringResource(MR.strings.audio_password),
                             )
                         }
                     },
@@ -1094,16 +1094,17 @@ internal fun AudioBackendSheet(
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(bottom = 12.dp)) {
+        Column(Modifier.selectableGroup().padding(bottom = 24.dp)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 8.dp),
+                    .padding(start = 24.dp, end = 12.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = stringResource(MR.strings.audio_backend),
                     style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onRemeasure, enabled = !state.measuring) {
@@ -1116,9 +1117,22 @@ internal fun AudioBackendSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .selectable(selected = selected, onClick = { onSelect(backend.apiBaseUrl) })
+                        .padding(horizontal = 12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (selected) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                            } else {
+                                Color.Transparent
+                            },
+                        )
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(backend.apiBaseUrl) },
+                        )
                         .height(SORT_OPTION_HEIGHT)
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(selected = selected, onClick = null)

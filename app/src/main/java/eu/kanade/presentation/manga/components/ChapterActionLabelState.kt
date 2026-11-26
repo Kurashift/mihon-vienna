@@ -15,8 +15,10 @@ internal enum class ChapterBottomAction {
     MARK,
     READ,
     DOWNLOAD,
+    MOVE,
     TITLE,
     DELETE,
+    DELETE_LOCAL,
 }
 
 internal class ChapterActionLabelState(private val scope: CoroutineScope) {
