@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
@@ -40,69 +41,68 @@ fun ReaderPageActionsDialog(
     var showSetCoverDialog by remember { mutableStateOf(false) }
     var showSetChapterCoverDialog by remember { mutableStateOf(false) }
 
-    // Compact single-row action bar: every action gets an equal slice, so labels stay short
-    // and the sheet stays one line tall even with five actions.
     val rowLabelStyle = MaterialTheme.typography.labelSmall
-    val rowContentPadding = PaddingValues(horizontal = 2.dp, vertical = 10.dp)
+    val rowContentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)
+    val splitIntoTwoRows = onSetAsChapterCover != null && onDelete != null
 
     AdaptiveSheet(onDismissRequest = onDismissRequest) {
         Column(
             modifier = Modifier.padding(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall)) {
-                ActionButton(
-                    modifier = Modifier.weight(1f),
-                    title = stringResource(MR.strings.action_cover),
-                    icon = Icons.Outlined.Photo,
-                    onClick = { showSetCoverDialog = true },
-                    labelStyle = rowLabelStyle,
-                    contentPadding = rowContentPadding,
-                )
-                if (onSetAsChapterCover != null) {
+            if (splitIntoTwoRows) {
+                Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall)) {
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_cover),
+                        icon = Icons.Outlined.Photo,
+                        onClick = { showSetCoverDialog = true },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
                     ActionButton(
                         modifier = Modifier.weight(1f),
                         title = stringResource(MR.strings.action_chapter_cover),
-                        icon = Icons.Outlined.Photo,
+                        icon = Icons.Outlined.PhotoLibrary,
                         onClick = { showSetChapterCoverDialog = true },
                         labelStyle = rowLabelStyle,
                         contentPadding = rowContentPadding,
                     )
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_copy),
+                        icon = Icons.Outlined.ContentCopy,
+                        onClick = {
+                            onShare(true)
+                            onDismissRequest()
+                        },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
                 }
-                ActionButton(
-                    modifier = Modifier.weight(1f),
-                    title = stringResource(MR.strings.action_copy),
-                    icon = Icons.Outlined.ContentCopy,
-                    onClick = {
-                        onShare(true)
-                        onDismissRequest()
-                    },
-                    labelStyle = rowLabelStyle,
-                    contentPadding = rowContentPadding,
-                )
-                ActionButton(
-                    modifier = Modifier.weight(1f),
-                    title = stringResource(MR.strings.action_share),
-                    icon = Icons.Outlined.Share,
-                    onClick = {
-                        onShare(false)
-                        onDismissRequest()
-                    },
-                    labelStyle = rowLabelStyle,
-                    contentPadding = rowContentPadding,
-                )
-                ActionButton(
-                    modifier = Modifier.weight(1f),
-                    title = stringResource(MR.strings.action_save),
-                    icon = Icons.Outlined.Save,
-                    onClick = {
-                        onSave()
-                        onDismissRequest()
-                    },
-                    labelStyle = rowLabelStyle,
-                    contentPadding = rowContentPadding,
-                )
-                if (onDelete != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall)) {
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_share),
+                        icon = Icons.Outlined.Share,
+                        onClick = {
+                            onShare(false)
+                            onDismissRequest()
+                        },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_save),
+                        icon = Icons.Outlined.Save,
+                        onClick = {
+                            onSave()
+                            onDismissRequest()
+                        },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
                     ActionButton(
                         modifier = Modifier.weight(1f),
                         title = stringResource(MR.strings.action_delete),
@@ -112,6 +112,71 @@ fun ReaderPageActionsDialog(
                         labelStyle = rowLabelStyle,
                         contentPadding = rowContentPadding,
                     )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall)) {
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_cover),
+                        icon = Icons.Outlined.Photo,
+                        onClick = { showSetCoverDialog = true },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
+                    if (onSetAsChapterCover != null) {
+                        ActionButton(
+                            modifier = Modifier.weight(1f),
+                            title = stringResource(MR.strings.action_chapter_cover),
+                            icon = Icons.Outlined.PhotoLibrary,
+                            onClick = { showSetChapterCoverDialog = true },
+                            labelStyle = rowLabelStyle,
+                            contentPadding = rowContentPadding,
+                        )
+                    }
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_copy),
+                        icon = Icons.Outlined.ContentCopy,
+                        onClick = {
+                            onShare(true)
+                            onDismissRequest()
+                        },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_share),
+                        icon = Icons.Outlined.Share,
+                        onClick = {
+                            onShare(false)
+                            onDismissRequest()
+                        },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(MR.strings.action_save),
+                        icon = Icons.Outlined.Save,
+                        onClick = {
+                            onSave()
+                            onDismissRequest()
+                        },
+                        labelStyle = rowLabelStyle,
+                        contentPadding = rowContentPadding,
+                    )
+                    if (onDelete != null) {
+                        ActionButton(
+                            modifier = Modifier.weight(1f),
+                            title = stringResource(MR.strings.action_delete),
+                            icon = Icons.Outlined.Delete,
+                            onClick = onDelete,
+                            iconTint = MaterialTheme.colorScheme.error,
+                            labelStyle = rowLabelStyle,
+                            contentPadding = rowContentPadding,
+                        )
+                    }
                 }
             }
         }

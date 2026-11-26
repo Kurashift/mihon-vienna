@@ -40,7 +40,6 @@
     <string name="action_global_search">全局搜索</string>
     <string name="manga_title_search_local">本地搜索</string>
     <string name="manga_title_search_sources">图源搜索</string>
-    <string name="manga_title_action_web_search">网页搜索</string>
     <string name="action_select_all">全选</string>
     <string name="action_mark_as_read">标记为已读</string>
     <string name="action_mark_as_unread">标记为未读</string>
@@ -577,8 +576,8 @@
     <string name="edge_nav">边缘</string>
     <string name="kindlish_nav">类 Kindle</string>
     <string name="webtoon_nav">条漫</string>
-    <string name="audio_added_to_playlist">已加入播放列表</string>
-    <string name="audio_removed_from_playlist">已从播放列表移除</string>
+    <string name="audio_added_to_playlist">已加入播放队列</string>
+    <string name="audio_removed_from_playlist">已从播放队列移除</string>
     <string name="l_nav">L 形</string>
     <string name="track_finished_reading_date">阅读完毕日期</string>
     <string name="track_started_reading_date">开始阅读日期</string>
@@ -938,9 +937,6 @@
     <string name="onboarding_storage_help_info">如果你是从旧版更新而来，可以查看存储指南了解详情。</string>
     <string name="onboarding_storage_help_action">存储指南</string>
     <string name="pref_storage_location">存储位置</string>
-    <string name="pref_local_source_direct_access">本库文件访问</string>
-    <string name="pref_local_source_direct_access_summary">仅在本库刷新无法识别文件变化时开启</string>
-    <string name="pref_local_source_direct_access_granted">已开启，仅用于当前设置的本库目录</string>
     <string name="pref_permissions">应用权限</string>
     <string name="onboarding_storage_action_select">选择文件夹</string>
     <string name="onboarding_storage_info">选择一个文件夹供 %1$s 存放下载篇目、备份文件等。\n\n推荐使用一个专门的文件夹。\n\n已选文件夹：%2$s</string>
@@ -1076,11 +1072,6 @@
     <string name="more_section_reading_mode">阅读模式</string>
     <string name="more_section_library">书架与列表</string>
     <string name="more_section_settings">设置</string>
-    <string name="more_section_about">支持与关于</string>
-    <string name="settings_section_interface_reader">界面与阅读</string>
-    <string name="settings_section_content_library">内容与书架</string>
-    <string name="settings_section_privacy">隐私与安全</string>
-    <string name="settings_section_system">系统</string>
     <string name="supportUsScreen.perks">以下入口用于支持上游 Mihon 项目，不是 Mihon Vienna 的赞助渠道。</string>
     <string name="supportUsScreen.donationPlatform.patreon">Patreon（首选）</string>
     <string name="supportUsScreen.donationPlatform.opencollective">OpenCollective</string>
@@ -1117,7 +1108,6 @@
     <string name="my_lists_entry_count">%1$d 个篇目 · %2$d 部漫画</string>
     <string name="my_lists_share_header">%1$s：共 %2$d 条</string>
     <string name="my_lists_export_failed">导出清单失败</string>
-    <string name="my_lists_empty_hint">在漫画的篇目列表里标记篇目、左滑加入好本子，或读完整部本地作品，这里就会出现条目。</string>
     <string name="marks_list_title">标记清单</string>
     <string name="marks_list_empty">暂无标记篇目。在篇目列表标记加入吧</string>
     <string name="marks_list_share">分享</string>
@@ -1187,7 +1177,7 @@
     <string name="audio_playlist_clear">清空队列</string>
     <string name="audio_playlist_clear_confirm">移除队列里的所有音轨？此操作无法撤销。</string>
     <string name="audio_playlist_remove_selected_confirm">从队列移除选中的 %1$d 首音轨？</string>
-    <string name="audio_add_work_to_playlist">整部加入播放列表</string>
+    <string name="audio_add_work_to_playlist">整部加入队列</string>
     <string name="audio_add_to_playlist">加入队列</string>
     <string name="audio_remove_work_from_history">移除这部作品的最近播放记录</string>
     <string name="audio_history_continue">继续收听</string>
@@ -1212,8 +1202,6 @@
     <string name="audio_register_title">注册账号</string>
     <string name="audio_register_failed">注册失败，请换个用户名再试</string>
     <string name="audio_register_hint">用户名和密码各至少 5 个字符</string>
-    <string name="audio_switch_to_register">没有账号？注册</string>
-    <string name="audio_switch_to_login">已有账号？登录</string>
     <string name="audio_account">账号</string>
     <string name="audio_account_loading">加载中…</string>
     <string name="audio_account_email">邮箱</string>
@@ -1248,7 +1236,7 @@
     <string name="audio_favorite_add">收藏作品</string>
     <string name="audio_favorite_remove">取消收藏</string>
     <string name="audio_favorite_remove_selected_confirm">取消收藏选中的 %1$d 部作品？</string>
-    <string name="audio_subtitle">歌词</string>
+    <string name="audio_subtitle">字幕</string>
     <string name="audio_subtitle_loading">正在载入字幕…</string>
     <string name="audio_subtitle_unavailable">这条音轨没有随附字幕</string>
     <string name="audio_subtitle_error">字幕加载失败 · 点此重试</string>
@@ -1297,8 +1285,6 @@
     <string name="local_read_review_group_subtitle">%1$d 个篇目 · 最新篇目 %2$s</string>
     <string name="action_import_local_chapters">导入本地本子</string>
     <string name="action_import_local_chapters_short">导入本地</string>
-    <string name="action_import_target">导入到</string>
-    <string name="action_create_local_manga">新建本地漫画</string>
     <string name="action_move_to">移动到</string>
     <string name="action_mark_group">标记</string>
     <string name="notification_local_transfer_complete">已导入 %1$d，跳过 %2$d，失败 %3$d</string>
@@ -1379,7 +1365,6 @@
     <string name="local_import_pick_collection_title">选择已有合集</string>
     <string name="local_import_no_collections">暂无可选合集</string>
     <string name="audio_play_pause">播放/暂停</string>
-    <string name="settings_import_local_chapters_summary">从本地文件夹或压缩包导入本子</string>
     <string name="track_original_title">作品原名：%1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_未译名</string>
     <string name="confirm_clear_reading_history_title">清空阅读进度？</string>

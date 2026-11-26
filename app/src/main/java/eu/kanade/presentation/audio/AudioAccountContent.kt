@@ -334,7 +334,7 @@ private fun ChangePasswordDialog(
                                 } else {
                                     Icons.Outlined.Visibility
                                 },
-                                contentDescription = null,
+                                contentDescription = stringResource(MR.strings.audio_password),
                             )
                         }
                     },

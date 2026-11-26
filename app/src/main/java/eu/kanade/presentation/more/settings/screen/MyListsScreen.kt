@@ -1,9 +1,9 @@
 package eu.kanade.presentation.more.settings.screen
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Flag
-import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -94,7 +94,7 @@ class MyListsScreen : Screen() {
                 }
                 item {
                     MyListEntryRow(
-                        icon = Icons.Outlined.RemoveDone,
+                        icon = Icons.Outlined.DoneAll,
                         title = stringResource(MR.strings.local_read_review_action),
                         summary = stringResource(MR.strings.local_read_review_summary),
                         entryCount = localReadCount?.first,

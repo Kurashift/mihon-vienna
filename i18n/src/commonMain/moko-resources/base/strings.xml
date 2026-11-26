@@ -55,11 +55,6 @@
     <string name="more_section_reading_mode">Reading mode</string>
     <string name="more_section_library">Library &amp; lists</string>
     <string name="more_section_settings">Settings</string>
-    <string name="more_section_about">Support &amp; about</string>
-    <string name="settings_section_interface_reader">Interface &amp; reader</string>
-    <string name="settings_section_content_library">Content &amp; library</string>
-    <string name="settings_section_privacy">Privacy &amp; security</string>
-    <string name="settings_section_system">System</string>
     <string name="label_default">Default</string>
     <string name="label_warning">Warning</string>
     <string name="label_auto">Auto</string>
@@ -119,7 +114,6 @@
     <string name="action_global_search">Global search</string>
     <string name="manga_title_search_local">Local search</string>
     <string name="manga_title_search_sources">Source search</string>
-    <string name="manga_title_action_web_search">Web search</string>
     <string name="action_select_all">Select all</string>
     <string name="action_select_inverse">Select inverse</string>
     <string name="action_mark_as_read">Mark as read</string>
@@ -653,9 +647,6 @@
       <!-- Data and storage section -->
     <string name="pref_storage_location">Storage location</string>
     <string name="pref_storage_location_info">Used for automatic backups, work downloads, and local source.</string>
-    <string name="pref_local_source_direct_access">Local library file access</string>
-    <string name="pref_local_source_direct_access_summary">Enable only when local library refresh cannot detect file changes</string>
-    <string name="pref_local_source_direct_access_granted">Enabled; used only for the configured local library folder</string>
     <string name="pref_permissions">App permissions</string>
     <string name="pref_create_backup">Create backup</string>
     <string name="pref_create_backup_summ">Can be used to restore current library</string>
@@ -1266,7 +1257,6 @@
     <string name="my_lists_entry_count">%1$d works · %2$d manga</string>
     <string name="my_lists_share_header">%1$s: %2$d entries</string>
     <string name="my_lists_export_failed">Couldn\'t export the list</string>
-    <string name="my_lists_empty_hint">Lists fill up as you mark works from a manga's work list, swipe to keep good doujins, or finish reading local works.</string>
     <string name="marks_list_title">Marked works</string>
     <string name="marks_list_empty">No marked works yet. Flag a few from the work list.</string>
     <string name="marks_list_share">Share</string>
@@ -1336,7 +1326,7 @@
     <string name="audio_playlist_clear">Clear queue</string>
     <string name="audio_playlist_clear_confirm">Remove every track from the queue? This cannot be undone.</string>
     <string name="audio_playlist_remove_selected_confirm">Remove the selected %1$d tracks from the queue?</string>
-    <string name="audio_add_work_to_playlist">Add entire work to playlist</string>
+    <string name="audio_add_work_to_playlist">Add entire work to queue</string>
     <string name="audio_add_to_playlist">Add to queue</string>
     <string name="audio_remove_work_from_history">Remove work from recently played</string>
     <string name="audio_history_continue">Continue listening</string>
@@ -1361,8 +1351,6 @@
     <string name="audio_register_title">Create account</string>
     <string name="audio_register_failed">Registration failed, try a different username</string>
     <string name="audio_register_hint">Username and password need at least 5 characters each</string>
-    <string name="audio_switch_to_register">No account? Register</string>
-    <string name="audio_switch_to_login">Already have an account? Sign in</string>
     <string name="audio_account">Account</string>
     <string name="audio_account_loading">Loading…</string>
     <string name="audio_account_email">Email</string>
@@ -1397,7 +1385,7 @@
     <string name="audio_favorite_add">Collect work</string>
     <string name="audio_favorite_remove">Remove from collection</string>
     <string name="audio_favorite_remove_selected_confirm">Remove the selected %1$d works from your collection?</string>
-    <string name="audio_subtitle">Lyrics</string>
+    <string name="audio_subtitle">Subtitles</string>
     <string name="audio_subtitle_loading">Loading subtitles…</string>
     <string name="audio_subtitle_unavailable">This track does not include subtitles</string>
     <string name="audio_subtitle_error">Subtitle loading failed · Retry</string>
@@ -1447,8 +1435,6 @@
     <string name="local_read_review_group_subtitle">%1$d works · latest %2$s</string>
     <string name="action_import_local_chapters">Import local chapters</string>
     <string name="action_import_local_chapters_short">Import local</string>
-    <string name="action_import_target">Import to</string>
-    <string name="action_create_local_manga">Create local manga</string>
     <string name="action_move_to">Move to</string>
     <string name="action_mark_group">Marks</string>
     <string name="notification_local_transfer_complete">Imported %1$d, skipped %2$d, failed %3$d</string>
@@ -1531,7 +1517,6 @@
     <string name="local_import_pick_collection_title">Pick a collection</string>
     <string name="local_import_no_collections">No collections available</string>
     <string name="audio_play_pause">Play/Pause</string>
-    <string name="settings_import_local_chapters_summary">Import works from local folders or archives</string>
     <string name="track_original_title">Original title: %1$s</string>
     <string name="chapter_title_export_untranslated_suffix">_untranslated</string>
     <string name="confirm_clear_reading_history_title">Clear reading progress?</string>

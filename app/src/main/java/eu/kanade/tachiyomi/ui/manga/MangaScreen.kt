@@ -419,7 +419,6 @@ class MangaScreen(
                 onSave = { value ->
                     viewModel.updateChapterTranslatedTitle(chapter, value)
                     editTranslatedTitleChapterId = null
-                    context.toast(MR.strings.chapter_translated_title_saved)
                 },
             )
         }

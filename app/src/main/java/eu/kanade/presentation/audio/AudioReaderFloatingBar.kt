@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,7 +21,6 @@ import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.VolumeDown
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
@@ -51,7 +49,6 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.util.marqueeTitle
@@ -147,6 +144,7 @@ fun AudioReaderFloatingBar(
                         if (state.isBuffering) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
                                 strokeWidth = 2.dp,
                             )
                         } else {
@@ -306,6 +304,7 @@ private fun AudioReaderMiniControl(
                     if (state.isBuffering) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(17.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
                             strokeWidth = 2.dp,
                         )
                     } else {
@@ -315,7 +314,9 @@ private fun AudioReaderMiniControl(
                             } else {
                                 Icons.Outlined.PlayArrow
                             },
-                            contentDescription = null,
+                            contentDescription = stringResource(
+                                if (state.isPlaying) MR.strings.action_pause else MR.strings.action_play,
+                            ),
                             modifier = Modifier.size(20.dp),
                         )
                     }

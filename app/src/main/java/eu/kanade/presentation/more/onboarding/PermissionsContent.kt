@@ -201,7 +201,6 @@ internal fun PermissionList(
 
         HorizontalDivider(
             modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp),
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
 
         val crashlyticsPref = privacyPreferences.crashlytics
@@ -268,11 +267,11 @@ private fun PermissionSwitch(
     onToggleChange: (Boolean) -> Unit,
 ) {
     ListItem(
-        modifier = modifier,
+        modifier = modifier.clickable { onToggleChange(!granted) },
         trailingContent = {
             Switch(
                 checked = granted,
-                onCheckedChange = onToggleChange,
+                onCheckedChange = null,
             )
         },
         supportingContent = { Text(text = subtitle) },

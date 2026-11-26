@@ -49,12 +49,12 @@ fun ChapterTitleTranslationDialog(
             Column {
                 TranslationAction(
                     label = stringResource(MR.strings.export_current_manga_chapter_titles),
-                    icon = Icons.Outlined.FileDownload,
+                    icon = Icons.Outlined.FileUpload,
                     onClick = { showExportFormatDialog = true },
                 )
                 TranslationAction(
                     label = stringResource(MR.strings.import_current_manga_chapter_titles),
-                    icon = Icons.Outlined.FileUpload,
+                    icon = Icons.Outlined.FileDownload,
                     onClick = onImportCurrentManga,
                 )
             }
@@ -90,12 +90,12 @@ fun LocalLibraryChapterTitleTranslationDialog(
             Column {
                 TranslationAction(
                     label = stringResource(MR.strings.export_local_library_chapter_titles),
-                    icon = Icons.Outlined.FileDownload,
+                    icon = Icons.Outlined.FileUpload,
                     onClick = { showExportFormatDialog = true },
                 )
                 TranslationAction(
                     label = stringResource(MR.strings.import_local_library_chapter_titles),
-                    icon = Icons.Outlined.FileUpload,
+                    icon = Icons.Outlined.FileDownload,
                     onClick = onImport,
                 )
             }
@@ -121,12 +121,12 @@ private fun ChapterTitleTranslationExportFormatDialog(
             Column {
                 TranslationAction(
                     label = stringResource(MR.strings.chapter_title_translation_format_json),
-                    icon = Icons.Outlined.FileDownload,
+                    icon = Icons.Outlined.FileUpload,
                     onClick = { onFormatSelected(ChapterTitleTranslationFormat.JSON, onlyUntranslated) },
                 )
                 TranslationAction(
                     label = stringResource(MR.strings.chapter_title_translation_format_csv),
-                    icon = Icons.Outlined.FileDownload,
+                    icon = Icons.Outlined.FileUpload,
                     onClick = { onFormatSelected(ChapterTitleTranslationFormat.CSV, onlyUntranslated) },
                 )
                 Row(

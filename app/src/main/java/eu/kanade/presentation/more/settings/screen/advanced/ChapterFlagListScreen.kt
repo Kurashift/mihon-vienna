@@ -1,6 +1,12 @@
 package eu.kanade.presentation.more.settings.screen.advanced
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -8,26 +14,40 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.PlaylistRemove
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +69,7 @@ import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.DeleteLocalChaptersDialog
 import eu.kanade.presentation.components.SearchToolbar
+import eu.kanade.presentation.components.SelectionToolbar
 import eu.kanade.presentation.mylists.MY_LIST_COVER_ASPECT_RATIO
 import eu.kanade.presentation.mylists.MyListChapterTitle
 import eu.kanade.presentation.mylists.MyListCover
@@ -74,8 +96,11 @@ import eu.kanade.tachiyomi.ui.manga.ChapterScope
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.withIOContext
@@ -91,6 +116,7 @@ import tachiyomi.source.local.LocalSource
 import tachiyomi.source.local.image.LocalChapterCover
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Which per-chapter flag list a screen belongs to. Duplicates and good doujins
@@ -242,104 +268,82 @@ class ChapterFlagListScreen(
 
         Scaffold(
             topBar = { scrollBehavior ->
-                SearchToolbar(
-                    searchQuery = query,
-                    onChangeSearchQuery = { query = it },
-                    placeholderText = stringResource(MR.strings.marks_list_search_hint),
-                    titleContent = {
-                        AppBarTitle(
-                            title = listTitle,
-                            subtitle = stringResource(type.chapterCountRes, marks.size),
-                        )
-                    },
-                    navigateUp = navigator::pop,
-                    actions = {
-                        AppBarActions(
-                            listOfNotNull(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.export),
-                                    icon = Icons.Outlined.FileUpload,
-                                    onClick = exportList,
-                                    enabled = exportText.isNotEmpty(),
-                                ),
-                                // 图标用扫帚而不是垃圾桶：它只清列表，不碰磁盘文件。
-                                // 多选态下 SearchToolbar 会整片换成批量操作，这里不会渲染，
-                                // 不必再判断选中数。
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.marks_list_clear),
-                                    icon = Icons.Outlined.DeleteSweep,
-                                    onClick = {
-                                        // 条目可以原样放回来（连标记时间一起），所以不再弹确认，
-                                        // 清空后给一次撤销即可。
-                                        val cleared = marks
-                                        scope.launch {
-                                            store.clear()
-                                            undoPill.show(context.stringResource(type.clearUndoRes)) {
-                                                store.setAll(cleared, true)
-                                            }
-                                        }
-                                    },
-                                ),
-                            ),
-                        )
-                    },
-                    actionModeCounter = selectedChapterIds.size,
-                    onCancelActionMode = { selectedChapterIds = emptySet() },
-                    actionModeActions = {
-                        AppBarActions(
-                            buildList {
-                                // 导出在多选时导选中项、不选时导全表，所以两种态都得在。
-                                add(
+                if (selectedChapterIds.isNotEmpty()) {
+                    SelectionToolbar(
+                        selectedCount = selectedChapterIds.size,
+                        onClickUnselectAll = { selectedChapterIds = emptySet() },
+                        onClickSelectAll = {
+                            selectedChapterIds = visibleGroups
+                                .flatMapTo(mutableSetOf()) { group -> group.marks.map { it.chapterId } }
+                        },
+                        onClickInvertSelection = {
+                            val allVisible = visibleGroups
+                                .flatMapTo(mutableSetOf()) { group -> group.marks.map { it.chapterId } }
+                            selectedChapterIds = allVisible - selectedChapterIds
+                        },
+                    )
+                } else {
+                    SearchToolbar(
+                        searchQuery = query,
+                        onChangeSearchQuery = { query = it },
+                        placeholderText = stringResource(MR.strings.marks_list_search_hint),
+                        titleContent = {
+                            AppBarTitle(
+                                title = listTitle,
+                                subtitle = stringResource(type.chapterCountRes, marks.size),
+                            )
+                        },
+                        navigateUp = navigator::pop,
+                        actions = {
+                            AppBarActions(
+                                listOf(
                                     AppBar.Action(
                                         title = stringResource(MR.strings.export),
                                         icon = Icons.Outlined.FileUpload,
                                         onClick = exportList,
                                         enabled = exportText.isNotEmpty(),
                                     ),
-                                )
-                                add(
                                     AppBar.Action(
-                                        title = stringResource(MR.strings.marks_list_remove),
-                                        icon = Icons.Outlined.PlaylistRemove,
+                                        title = stringResource(MR.strings.marks_list_clear),
+                                        icon = Icons.Outlined.DeleteSweep,
                                         onClick = {
-                                            // 移除的只是清单条目，可以连标记时间一起放回来。
-                                            val removed = grouped.flatMap { it.marks }
-                                                .filter { it.chapterId in selectedChapterIds }
-                                            selectedChapterIds = emptySet()
+                                            val cleared = marks
                                             scope.launch {
-                                                store.setAll(removed, false)
-                                                undoPill.show(
-                                                    context.stringResource(type.removeUndoRes, removed.size),
-                                                ) {
-                                                    store.setAll(removed, true)
+                                                store.clear()
+                                                undoPill.show(context.stringResource(type.clearUndoRes)) {
+                                                    store.setAll(cleared, true)
                                                 }
                                             }
                                         },
                                     ),
-                                )
-                                // 删除本地文件只给标记清单：好本子清单的条目都在库里管着，
-                                // 误删代价更高，暂不开放。
-                                //
-                                // 放在最右角落：它是这排按钮里唯一不可逆的，夹在中间容易被
-                                // 顺手点到，挪到末端与「仅移除列表项」拉开距离。
-                                if (type == ChapterFlagListType.DUPLICATES) {
-                                    add(
-                                        AppBar.Action(
-                                            title = stringResource(MR.strings.action_delete_local_files),
-                                            icon = Icons.Outlined.Delete,
-                                            iconTint = MaterialTheme.colorScheme.error,
-                                            // 只跟选中数挂钩。「是否本地」要查库才知道，若拿它
-                                            // 当开关，数据没回来前按钮一直是灰的，看着像没做。
-                                            // 到底哪些能删，交给确认弹窗按最新数据过滤。
-                                            enabled = selectedChapterIds.isNotEmpty(),
-                                            onClick = { pendingDeletion = selectedChapterIds },
-                                        ),
-                                    )
-                                }
-                            },
-                        )
+                                ),
+                            )
+                        },
+                        scrollBehavior = scrollBehavior,
+                    )
+                }
+            },
+            bottomBar = {
+                MyListFlagActionMenu(
+                    visible = selectedChapterIds.isNotEmpty(),
+                    exportEnabled = exportText.isNotEmpty(),
+                    onExportClicked = exportList,
+                    onRemoveClicked = {
+                        val removed = grouped.flatMap { it.marks }
+                            .filter { it.chapterId in selectedChapterIds }
+                        selectedChapterIds = emptySet()
+                        scope.launch {
+                            store.setAll(removed, false)
+                            undoPill.show(context.stringResource(type.removeUndoRes, removed.size)) {
+                                store.setAll(removed, true)
+                            }
+                        }
                     },
-                    scrollBehavior = scrollBehavior,
+                    onDeleteLocalFilesClicked = if (type == ChapterFlagListType.DUPLICATES) {
+                        { pendingDeletion = selectedChapterIds }
+                    } else {
+                        null
+                    },
                 )
             },
         ) { contentPadding ->
@@ -593,7 +597,7 @@ private fun ChapterFlagGroupHeader(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = stringResource(MR.strings.marks_list_open_manga),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp),
@@ -743,7 +747,7 @@ private fun StickyGroupHeaderOverlay(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = stringResource(MR.strings.marks_list_open_manga),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp),
@@ -817,6 +821,128 @@ private fun openChapterReader(
             // the manga the mark was recorded against.
             chapter == null || chapter.mangaId != mangaId -> context.toast(MR.strings.chapter_not_found)
             else -> context.startActivity(ReaderActivity.newIntent(context, mangaId, chapterId))
+        }
+    }
+}
+
+@Composable
+private fun MyListFlagActionMenu(
+    visible: Boolean,
+    exportEnabled: Boolean,
+    onExportClicked: () -> Unit,
+    onRemoveClicked: () -> Unit,
+    onDeleteLocalFilesClicked: (() -> Unit)?,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(expandFrom = Alignment.Bottom),
+        exit = shrinkVertically(shrinkTowards = Alignment.Bottom),
+    ) {
+        val scope = rememberCoroutineScope()
+        Surface(
+            shape = MaterialTheme.shapes.large.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            val confirm = remember { mutableStateListOf(false, false, false) }
+            val resetJob = remember<MutableList<Job?>> { mutableListOf(null, null, null) }
+            val onLongClickItem: (Int) -> Unit = { index ->
+                confirm.indices.forEach { i -> confirm[i] = i == index }
+                resetJob.indices.forEach { i -> resetJob[i]?.cancel() }
+                resetJob[index] = scope.launch {
+                    delay(1.seconds)
+                    if (isActive) confirm[index] = false
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            ) {
+                MyListFlagActionButton(
+                    title = stringResource(MR.strings.export),
+                    icon = Icons.Outlined.FileUpload,
+                    toConfirm = confirm[0],
+                    enabled = exportEnabled,
+                    onLongClick = { onLongClickItem(0) },
+                    onClick = onExportClicked,
+                )
+                MyListFlagActionButton(
+                    title = stringResource(MR.strings.marks_list_remove),
+                    icon = Icons.Outlined.PlaylistRemove,
+                    toConfirm = confirm[1],
+                    onLongClick = { onLongClickItem(1) },
+                    onClick = onRemoveClicked,
+                )
+                if (onDeleteLocalFilesClicked != null) {
+                    VerticalDivider(
+                        modifier = Modifier
+                            .align(Alignment.CenterVertically)
+                            .height(24.dp),
+                    )
+                    MyListFlagActionButton(
+                        title = stringResource(MR.strings.action_delete_local_files),
+                        icon = Icons.Outlined.Delete,
+                        toConfirm = confirm[2],
+                        tint = MaterialTheme.colorScheme.error,
+                        fill = false,
+                        onLongClick = { onLongClickItem(2) },
+                        onClick = onDeleteLocalFilesClicked,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.MyListFlagActionButton(
+    title: String,
+    icon: ImageVector,
+    toConfirm: Boolean,
+    onLongClick: () -> Unit,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    tint: Color = LocalContentColor.current,
+    fill: Boolean = true,
+) {
+    val animatedWeight by animateFloatAsState(
+        targetValue = if (toConfirm) 2f else 1f,
+        label = "weight",
+    )
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .then(if (fill) Modifier.weight(animatedWeight) else Modifier)
+            .combinedClickable(
+                interactionSource = null,
+                indication = ripple(bounded = false),
+                enabled = enabled,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = if (enabled) tint else tint.copy(alpha = 0.38f),
+            )
+            AnimatedVisibility(
+                visible = toConfirm,
+                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+            ) {
+                Text(
+                    text = title,
+                    overflow = TextOverflow.Visible,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }
