@@ -37,8 +37,25 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import eu.kanade.domain.base.BasePreferences
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+
+/**
+ * Shared 3-state toggle for the floating subtitle window: when locked (touch-through), the first
+ * tap unlocks it rather than silently hiding an unreachable window.
+ */
+internal fun toggleFloatingSubtitlePreference(
+    basePreferences: BasePreferences,
+    enabled: Boolean,
+    locked: Boolean,
+) {
+    when {
+        !enabled -> basePreferences.audioFloatingSubtitle.set(true)
+        locked -> basePreferences.audioFloatingSubtitleLocked.set(false)
+        else -> basePreferences.audioFloatingSubtitle.set(false)
+    }
+}
 
 /**
  * Switch for the floating subtitle window, drawn as a single glyph inside a ring.

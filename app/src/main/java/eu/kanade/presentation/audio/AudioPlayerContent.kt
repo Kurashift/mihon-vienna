@@ -42,15 +42,12 @@ import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.FullscreenExit
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -566,33 +563,16 @@ fun AudioPlayerContent(
                                 modifier = Modifier.size(32.dp),
                             )
                         }
-                        FilledIconButton(
+                        AudioPlayPauseButton(
+                            isPlaying = state.isPlaying,
+                            isBuffering = state.isBuffering,
                             onClick = onTogglePlay,
                             enabled = item != null,
-                            modifier = Modifier.size(68.dp),
-                        ) {
-                            if (state.isBuffering) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(28.dp),
-                                    strokeWidth = 3.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = if (state.isPlaying) {
-                                        Icons.Outlined.Pause
-                                    } else {
-                                        Icons.Outlined.PlayArrow
-                                    },
-                                    contentDescription = if (state.isPlaying) {
-                                        stringResource(MR.strings.action_pause)
-                                    } else {
-                                        stringResource(MR.strings.action_play)
-                                    },
-                                    modifier = Modifier.size(36.dp),
-                                )
-                            }
-                        }
+                            buttonSize = 68.dp,
+                            spinnerSize = 28.dp,
+                            iconSize = 36.dp,
+                            spinnerStrokeWidth = 3.dp,
+                        )
                         IconButton(
                             onClick = onNext,
                             enabled = state.hasNext,
@@ -826,29 +806,15 @@ private fun BoxScope.FullscreenControls(
                             tint = Color.White,
                         )
                     }
-                    FilledIconButton(onClick = onTogglePlay, modifier = Modifier.size(56.dp)) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 3.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (state.isPlaying) {
-                                    Icons.Outlined.Pause
-                                } else {
-                                    Icons.Outlined.PlayArrow
-                                },
-                                contentDescription = if (state.isPlaying) {
-                                    stringResource(MR.strings.action_pause)
-                                } else {
-                                    stringResource(MR.strings.action_play)
-                                },
-                                modifier = Modifier.size(30.dp),
-                            )
-                        }
-                    }
+                    AudioPlayPauseButton(
+                        isPlaying = state.isPlaying,
+                        isBuffering = state.isBuffering,
+                        onClick = onTogglePlay,
+                        buttonSize = 56.dp,
+                        spinnerSize = 24.dp,
+                        iconSize = 30.dp,
+                        spinnerStrokeWidth = 3.dp,
+                    )
                     IconButton(onClick = onNext, enabled = state.hasNext) {
                         Icon(
                             Icons.Outlined.SkipNext,
