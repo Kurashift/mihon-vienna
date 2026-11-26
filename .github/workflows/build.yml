@@ -44,6 +44,9 @@ jobs:
       - name: Check code format
         run: ./gradlew spotlessCheck
 
+      - name: Run Detekt static analysis
+        run: ./gradlew detekt
+
       - name: Run unit tests
         id: unit_tests
         run: ./gradlew testDebugUnitTest
