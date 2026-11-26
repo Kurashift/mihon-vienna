@@ -6,6 +6,7 @@ import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.JsonObject
 import logcat.LogPriority
@@ -19,6 +20,8 @@ import tachiyomi.domain.chapter.model.ChapterReadState
 import tachiyomi.domain.chapter.model.ChapterTranslatedName
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
+
+private const val CHAPTER_ID_CHUNK_SIZE = 500
 
 class ChapterRepositoryImpl(
     private val database: Database,
@@ -43,7 +46,9 @@ class ChapterRepositoryImpl(
         return database.transactionWithResult {
             currentCoroutineContext().ensureActive()
             if (removedChapterIds.isNotEmpty()) {
-                database.chaptersQueries.removeChaptersWithIds(removedChapterIds)
+                removedChapterIds.chunked(CHAPTER_ID_CHUNK_SIZE).forEach { chunk ->
+                    database.chaptersQueries.removeChaptersWithIds(chunk)
+                }
             }
             val inserted = newChapters.distinctBy { it.mangaId to it.url }.mapNotNull { chapter ->
                 currentCoroutineContext().ensureActive()
@@ -165,7 +170,11 @@ class ChapterRepositoryImpl(
 
     override suspend fun clearProgress(chapterIds: List<Long>) {
         if (chapterIds.isEmpty()) return
-        withoutReadingStateChanges { database.chaptersQueries.clearProgressByChapterIds(chapterIds) }
+        withoutReadingStateChanges {
+            chapterIds.chunked(CHAPTER_ID_CHUNK_SIZE).forEach { chunk ->
+                database.chaptersQueries.clearProgressByChapterIds(chunk)
+            }
+        }
     }
 
     override suspend fun relocateAll(chapterUpdates: List<ChapterUpdate>) {
@@ -288,8 +297,13 @@ class ChapterRepositoryImpl(
     }
 
     override suspend fun removeChaptersWithIds(chapterIds: List<Long>) {
+        if (chapterIds.isEmpty()) return
         try {
-            database.chaptersQueries.removeChaptersWithIds(chapterIds)
+            database.transaction {
+                chapterIds.chunked(CHAPTER_ID_CHUNK_SIZE).forEach { chunk ->
+                    database.chaptersQueries.removeChaptersWithIds(chunk)
+                }
+            }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
         }
@@ -306,7 +320,11 @@ class ChapterRepositoryImpl(
     override suspend fun setAllChaptersUnreadByMangaIds(mangaIds: List<Long>) {
         if (mangaIds.isEmpty()) return
         try {
-            withoutReadingStateChanges { database.chaptersQueries.setAllChaptersUnreadByMangaIds(mangaIds) }
+            withoutReadingStateChanges {
+                mangaIds.chunked(CHAPTER_ID_CHUNK_SIZE).forEach { chunk ->
+                    database.chaptersQueries.setAllChaptersUnreadByMangaIds(chunk)
+                }
+            }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
         }
@@ -323,9 +341,11 @@ class ChapterRepositoryImpl(
         applyScanlatorFilter: Boolean,
     ): List<Chapter> {
         if (mangaIds.isEmpty()) return emptyList()
-        return database.chaptersQueries
-            .getChaptersByMangaIds(mangaIds, applyScanlatorFilter.toLong(), ::mapChapter)
-            .awaitAsList()
+        return mangaIds.chunked(CHAPTER_ID_CHUNK_SIZE).flatMap { chunk ->
+            database.chaptersQueries
+                .getChaptersByMangaIds(chunk, applyScanlatorFilter.toLong(), ::mapChapter)
+                .awaitAsList()
+        }
     }
 
     override fun observeChaptersByMangaIds(
@@ -333,27 +353,49 @@ class ChapterRepositoryImpl(
         applyScanlatorFilter: Boolean,
     ): Flow<List<Chapter>> {
         if (mangaIds.isEmpty()) return flowOf(emptyList())
-        return database.chaptersQueries
-            .getChaptersByMangaIds(mangaIds, applyScanlatorFilter.toLong(), ::mapChapter)
-            .subscribeToList()
+        val chunks = mangaIds.chunked(CHAPTER_ID_CHUNK_SIZE)
+        if (chunks.size == 1) {
+            return database.chaptersQueries
+                .getChaptersByMangaIds(chunks.first(), applyScanlatorFilter.toLong(), ::mapChapter)
+                .subscribeToList()
+        }
+        val flows = chunks.map { chunk ->
+            database.chaptersQueries
+                .getChaptersByMangaIds(chunk, applyScanlatorFilter.toLong(), ::mapChapter)
+                .subscribeToList()
+        }
+        return combine(flows) { lists -> lists.flatMap { it } }
     }
 
     override suspend fun getTranslatedNames(mangaIds: List<Long>): List<ChapterTranslatedName> {
         if (mangaIds.isEmpty()) return emptyList()
-        return database.chaptersQueries
-            .getTranslatedNamesByMangaIds(mangaIds) { mangaId, translatedName ->
-                ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
-            }
-            .awaitAsList()
+        return mangaIds.chunked(CHAPTER_ID_CHUNK_SIZE).flatMap { chunk ->
+            database.chaptersQueries
+                .getTranslatedNamesByMangaIds(chunk) { mangaId, translatedName ->
+                    ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
+                }
+                .awaitAsList()
+        }
     }
 
     override fun observeTranslatedNames(mangaIds: List<Long>): Flow<List<ChapterTranslatedName>> {
         if (mangaIds.isEmpty()) return flowOf(emptyList())
-        return database.chaptersQueries
-            .getTranslatedNamesByMangaIds(mangaIds) { mangaId, translatedName ->
-                ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
-            }
-            .subscribeToList()
+        val chunks = mangaIds.chunked(CHAPTER_ID_CHUNK_SIZE)
+        if (chunks.size == 1) {
+            return database.chaptersQueries
+                .getTranslatedNamesByMangaIds(chunks.first()) { mangaId, translatedName ->
+                    ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
+                }
+                .subscribeToList()
+        }
+        val flows = chunks.map { chunk ->
+            database.chaptersQueries
+                .getTranslatedNamesByMangaIds(chunk) { mangaId, translatedName ->
+                    ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
+                }
+                .subscribeToList()
+        }
+        return combine(flows) { lists -> lists.flatMap { it } }
     }
 
     override suspend fun getTranslatedNamesBySourceId(sourceId: Long): Map<String, List<String>> {

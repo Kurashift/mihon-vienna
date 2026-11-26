@@ -22,6 +22,8 @@ import tachiyomi.domain.history.model.mergeImportedRecord
 import tachiyomi.domain.history.repository.HistoryRepository
 import java.util.Date
 
+private const val HISTORY_ID_CHUNK_SIZE = 500
+
 class HistoryRepositoryImpl(
     private val database: Database,
 ) : HistoryRepository {
@@ -186,11 +188,17 @@ class HistoryRepositoryImpl(
         } else if (ids.isEmpty()) {
             emptyList()
         } else {
-            database.historyQueries.getVisibleHistoryIdsIn(ids.toList()) { id, version ->
-                HistoryVisibilityState(id, version + 1)
-            }.awaitAsList()
+            ids.toList().chunked(HISTORY_ID_CHUNK_SIZE).flatMap { chunk ->
+                database.historyQueries.getVisibleHistoryIdsIn(chunk) { id, version ->
+                    HistoryVisibilityState(id, version + 1)
+                }.awaitAsList()
+            }
         }
-        if (entries.isNotEmpty()) database.historyQueries.resetHistoryByIds(entries.map { it.historyId })
+        if (entries.isNotEmpty()) {
+            entries.map { it.historyId }.chunked(HISTORY_ID_CHUNK_SIZE).forEach { chunk ->
+                database.historyQueries.resetHistoryByIds(chunk)
+            }
+        }
         HistoryVisibilityUndo(entries)
     }
 
