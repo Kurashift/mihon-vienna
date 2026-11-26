@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "zh-CN"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+
+  # 排除自动生成的基线、历史发版文案与非中文翻译文件，避免审查噪音
+  path_filters:
+    - "!config/detekt/baseline.xml"
+    - "!baseline-profile/**"
+    - "!docs/release-post-*.md"
+    - "!i18n/src/commonMain/moko-resources/values-*/**"
+    - "i18n/src/commonMain/moko-resources/values-zh-rCN/**"
+    - "i18n/src/commonMain/moko-resources/values-zh-rTW/**"
+
+  # 按模块补充 Mihon Vienna 的审查重点（与 AGENTS.md 保持一致）
+  path_instructions:
+    - path: "source-local/**"
+      instructions: |
+        - 本地库必须优先展示最后一次确认正常的缓存/索引，普通进入页面和切换筛选不要触发同步磁盘重扫或压缩包打开。
+        - 注意 Android SAF 可能临时返回“可访问但为空”，已有非空索引时不得覆盖为空、删记录或清计数。
+        - 核对文件移动、删除、合并时的事务一致性与稳定 ID 保留，避免只删一半导致进度/译名/封面丢失。
+        - 警惕新增与现有逻辑并存的“第二份事实来源”或半成品读写链。
+
+    - path: "data/**,domain/**"
+      instructions: |
+        - 检查数据库事务边界、迁移安全和跨模块共享调用方影响。
+        - 检查“全部/在读/剩余/读完”、标记与搜索计数是否和可见列表使用完全一致的筛选语义。
+        - 按约 500 部作品 / 3,000 个篇目的真实库规模评估查询与主线程开销。
+
+    - path: "app/src/main/java/eu/kanade/tachiyomi/ui/reader/**"
+      instructions: |
+        - 重点审查条漫连续下滑、反向翻回、跨篇目切换、拖进度条、缩放与退出续读时的边界状态。
+        - 确认阅读进度与历史记录保存顺序正确，不存在重复计时、漏存或隐身模式串写历史。
+
+    - path: "app/src/main/java/eu/kanade/presentation/**,presentation-core/**"
+      instructions: |
+        - 遵循简洁直观的交互原则：避免为日常操作增加多余的提示弹窗、成功 Toast、加载页或重复说明文字。
+        - 检查同类动作的图标、位置和反馈是否与相邻页面保持一致，避免文案啰嗦或语义冲突。
+        - 检查 Compose 状态重组、LaunchedEffect 生命周期与列表滚动性能。
+
+    - path: "app/src/main/java/eu/kanade/tachiyomi/ui/audio/**"
+      instructions: |
+        - 检查音频/视频播放器的生命周期释放、后台状态同步、切曲边界与错误恢复。
+
+    - path: "app/build.gradle.kts,gradle/**"
+      instructions: |
+        - 未经明确发版，不得改动 versionCode / versionName。
+        - 保留上游变体与 splits 配置，不得在正式变体中残留 isDebuggable = true。
+
+chat:
+  auto_reply: true

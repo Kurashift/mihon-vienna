@@ -1,0 +1,69 @@
+# Mihon Vienna Detekt configuration
+# Built upon Detekt defaults (buildUponDefaultConfig = true).
+# Formatting/style rules already handled by Spotless + ktlint are turned off
+# to avoid duplicate or conflicting checks. Existing upstream/historical findings
+# are recorded in config/detekt/baseline.xml so CI only blocks newly introduced issues.
+
+complexity:
+  LongMethod:
+    active: true
+    allowedLines: 80
+  LongParameterList:
+    active: true
+    ignoreDefaultParameters: true
+    ignoreDataClasses: true
+    ignoreAnnotated:
+      - 'Composable'
+  TooManyFunctions:
+    active: true
+    ignoreAnnotated:
+      - 'Composable'
+    ignorePrivate: true
+    ignoreOverridden: true
+  CyclomaticComplexMethod:
+    active: true
+    allowedComplexity: 20
+  NestedBlockDepth:
+    active: true
+    allowedDepth: 5
+
+naming:
+  FunctionNaming:
+    active: true
+    ignoreAnnotated:
+      - 'Composable'
+  TopLevelPropertyNaming:
+    active: false
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    active: false
+  WildcardImport:
+    active: false
+  ReturnCount:
+    active: false
+  ForbiddenComment:
+    active: false
+  DestructuringDeclarationWithTooManyEntries:
+    active: false
+  LoopWithTooManyJumpStatements:
+    active: false
+  NestedClassesVisibility:
+    active: false
+  UseCheckOrError:
+    active: false
+  ThrowsCount:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: true
+
+empty-blocks:
+  EmptyCatchBlock:
+    active: true
+    allowedExceptionNameRegex: '_|(ignore|expected).*'
