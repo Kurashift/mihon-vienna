@@ -452,17 +452,11 @@ class AudioPlayerController(
                 .getOrNull()
                 ?: return@launch
             if (generation != startGeneration || state.item?.workId != workId) return@launch
-            val catalog = nodes.buildAudioTrackCatalog(work, quality)
-            val replacements = catalog.tracks
-                .groupBy { it.trackTitle }
-                .mapValues { (_, tracks) -> ArrayDeque(tracks) }
-            val rebuiltItems = items.map { item ->
-                if (item.workId == workId) {
-                    replacements[item.trackTitle]?.removeFirstOrNull() ?: item
-                } else {
-                    item
-                }
-            }
+            val rebuiltItems = replaceWorkTracks(
+                existingItems = items,
+                workId = workId,
+                refreshedTracks = nodes.buildAudioTrackCatalog(work, quality).tracks,
+            )
             if (rebuiltItems.isEmpty() || generation != startGeneration) return@launch
             start(
                 newItems = rebuiltItems,
@@ -502,15 +496,23 @@ class AudioPlayerController(
         val nodes = api.fetchTracks(target.workId)
         return withContext(Dispatchers.Default) {
             val refreshedTracks = nodes.buildAudioTrackCatalog(target.toWorkSnapshot(), state.audioQuality).tracks
-            val replacements = refreshedTracks.groupBy { it.trackTitle }
-                .mapValues { (_, tracks) -> ArrayDeque(tracks) }
+            replaceWorkTracks(requestedItems, target.workId, refreshedTracks)
+        }
+    }
 
-            requestedItems.map { item ->
-                if (item.workId != target.workId) {
-                    item
-                } else {
-                    replacements[item.trackTitle]?.removeFirstOrNull() ?: item
-                }
+    private fun replaceWorkTracks(
+        existingItems: List<AudioPlayItem>,
+        workId: Long,
+        refreshedTracks: List<AudioPlayItem>,
+    ): List<AudioPlayItem> {
+        val replacements = refreshedTracks
+            .groupBy { it.trackTitle }
+            .mapValues { (_, tracks) -> ArrayDeque(tracks) }
+        return existingItems.map { item ->
+            if (item.workId == workId) {
+                replacements[item.trackTitle]?.removeFirstOrNull() ?: item
+            } else {
+                item
             }
         }
     }

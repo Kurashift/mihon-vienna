@@ -21,12 +21,8 @@ import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.VolumeDown
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -137,30 +133,14 @@ fun AudioReaderFloatingBar(
                             modifier = Modifier.size(20.dp),
                         )
                     }
-                    FilledIconButton(
+                    AudioPlayPauseButton(
+                        isPlaying = state.isPlaying,
+                        isBuffering = state.isBuffering,
                         onClick = controller::togglePlay,
-                        modifier = Modifier.size(38.dp),
-                    ) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (state.isPlaying) {
-                                    Icons.Outlined.Pause
-                                } else {
-                                    Icons.Outlined.PlayArrow
-                                },
-                                contentDescription = stringResource(
-                                    if (state.isPlaying) MR.strings.action_pause else MR.strings.action_play,
-                                ),
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    }
+                        buttonSize = 38.dp,
+                        spinnerSize = 18.dp,
+                        iconSize = 22.dp,
+                    )
                     IconButton(
                         onClick = controller::next,
                         enabled = state.hasNext,
@@ -242,17 +222,11 @@ fun AudioReaderFloatingBar(
                         enabled = floatingSubtitleEnabled,
                         toggleSize = SUBTITLE_TOGGLE_SIZE,
                         onToggle = {
-                            // A locked window is touch-through, so the only way back into it is
-                            // this button. The first tap therefore unlocks instead of closing:
-                            // closing a window the user cannot reach into would look like the tap
-                            // did nothing.
-                            when {
-                                !floatingSubtitleEnabled ->
-                                    basePreferences.audioFloatingSubtitle.set(true)
-                                floatingSubtitleLocked ->
-                                    basePreferences.audioFloatingSubtitleLocked.set(false)
-                                else -> basePreferences.audioFloatingSubtitle.set(false)
-                            }
+                            toggleFloatingSubtitlePreference(
+                                basePreferences = basePreferences,
+                                enabled = floatingSubtitleEnabled,
+                                locked = floatingSubtitleLocked,
+                            )
                         },
                         modifier = Modifier.size(34.dp),
                     )
@@ -297,30 +271,14 @@ private fun AudioReaderMiniControl(
                 modifier = Modifier.padding(3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FilledIconButton(
+                AudioPlayPauseButton(
+                    isPlaying = state.isPlaying,
+                    isBuffering = state.isBuffering,
                     onClick = controller::togglePlay,
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    if (state.isBuffering) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(17.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (state.isPlaying) {
-                                Icons.Outlined.Pause
-                            } else {
-                                Icons.Outlined.PlayArrow
-                            },
-                            contentDescription = stringResource(
-                                if (state.isPlaying) MR.strings.action_pause else MR.strings.action_play,
-                            ),
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
+                    buttonSize = 36.dp,
+                    spinnerSize = 17.dp,
+                    iconSize = 20.dp,
+                )
                 IconButton(
                     onClick = { volumeVisible = !volumeVisible },
                     modifier = Modifier.size(34.dp),

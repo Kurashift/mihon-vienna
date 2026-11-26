@@ -13,11 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Headphones
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -108,25 +104,13 @@ fun AudioMiniPlayerBar(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    FilledIconButton(
+                    AudioPlayPauseButton(
+                        isPlaying = state.isPlaying,
+                        isBuffering = state.isBuffering,
                         onClick = controller::togglePlay,
-                        modifier = Modifier.size(42.dp),
-                    ) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                                contentDescription = stringResource(
-                                    if (state.isPlaying) MR.strings.action_pause else MR.strings.action_play,
-                                ),
-                            )
-                        }
-                    }
+                        buttonSize = 42.dp,
+                        spinnerSize = 20.dp,
+                    )
                     IconButton(
                         onClick = controller::next,
                         enabled = state.hasNext,

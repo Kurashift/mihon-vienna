@@ -25,6 +25,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.audio.AudioPlayerContent
+import eu.kanade.presentation.audio.toggleFloatingSubtitlePreference
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.audio.AudioAccountSync
 import eu.kanade.tachiyomi.data.audio.AudioCategoryField
@@ -266,15 +267,12 @@ class AudioPlayerScreen(
             onCycleSubtitleDisplayMode = {
                 basePreferences.audioSubtitleDisplayMode.set(displayMode.next().preferenceValue)
             },
-            // A locked window is touch-through, so the only way back into it from here is this
-            // button. The first tap therefore unlocks instead of closing: closing a window the
-            // user cannot reach into would look like the tap did nothing.
             onToggleFloatingSubtitle = {
-                when {
-                    !floatingSubtitleEnabled -> basePreferences.audioFloatingSubtitle.set(true)
-                    floatingSubtitleLocked -> basePreferences.audioFloatingSubtitleLocked.set(false)
-                    else -> basePreferences.audioFloatingSubtitle.set(false)
-                }
+                toggleFloatingSubtitlePreference(
+                    basePreferences = basePreferences,
+                    enabled = floatingSubtitleEnabled,
+                    locked = floatingSubtitleLocked,
+                )
             },
             onOpenWorkDetail = {
                 currentItem?.toWorkSnapshot()?.let { snapshot ->
