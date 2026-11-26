@@ -44,6 +44,7 @@ fun AudioSeekBar(
                 dragPosition?.let(controller::seekTo)
                 dragPosition = null
             },
+            onSeekCancelled = { dragPosition = null },
             modifier = Modifier.fillMaxWidth(),
         )
         if (showTimes) {

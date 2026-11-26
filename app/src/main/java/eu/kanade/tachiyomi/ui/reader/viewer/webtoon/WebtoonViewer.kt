@@ -1138,7 +1138,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             recycler.smoothScrollBy(0, -scrollDistance)
         } else {
             recycler.scrollBy(0, -scrollDistance)
-            lastScrollDirection = 0
+            settleDiscreteScroll(-1)
         }
     }
 
@@ -1152,8 +1152,20 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             recycler.smoothScrollBy(0, scrollDistance)
         } else {
             recycler.scrollBy(0, scrollDistance)
-            lastScrollDirection = 0
+            settleDiscreteScroll(1)
         }
+    }
+
+    private fun settleDiscreteScroll(direction: Int) {
+        if (positioning == InitialPositioning.Ready && !recycler.isZoomAnimating && !restoringViewportAnchor) {
+            val candidate = currentVisibleItem(direction)
+            val item = constrainToScrollDirection(candidate, direction)
+            selectCurrentItem(item, userInitiated = true)
+            if (item is ReaderPage) {
+                activity.onScrollSettled(item, userInitiated = true)
+            }
+        }
+        lastScrollDirection = 0
     }
 
     /**

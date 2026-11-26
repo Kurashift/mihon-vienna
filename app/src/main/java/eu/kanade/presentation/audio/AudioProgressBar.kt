@@ -53,6 +53,7 @@ internal fun AudioProgressBar(
     ringColor: Color = MaterialTheme.colorScheme.surface,
     onSeek: (Long) -> Unit = {},
     onSeekFinished: () -> Unit = {},
+    onSeekCancelled: () -> Unit = {},
 ) {
     val progress = progressFraction(positionMs, durationMs)
     val buffered = bufferedFraction(positionMs, bufferedMs, durationMs)
@@ -65,6 +66,7 @@ internal fun AudioProgressBar(
     val currentProgress by rememberUpdatedState(progress)
     val currentOnSeek by rememberUpdatedState(onSeek)
     val currentOnSeekFinished by rememberUpdatedState(onSeekFinished)
+    val currentOnSeekCancelled by rememberUpdatedState(onSeekCancelled)
 
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = TRACK_ALPHA)
     val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = BUFFERED_ALPHA)
@@ -106,6 +108,7 @@ internal fun AudioProgressBar(
                 // then only ever seek to 0: the thumb jumped to the start and the drag looked dead.
                 onValue = { currentOnSeek(it) },
                 onFinished = { currentOnSeekFinished() },
+                onCancelled = { currentOnSeekCancelled() },
                 onDragFraction = { dragging = it != null },
             ),
     ) {
@@ -150,6 +153,7 @@ internal fun AudioVolumeBar(
     enabled: Boolean = true,
     onValue: (Int) -> Unit = {},
     onValueFinished: () -> Unit = {},
+    onValueCancelled: () -> Unit = {},
 ) {
     val maximum = max.coerceAtLeast(1)
     val level = value.coerceIn(0, maximum)
@@ -159,6 +163,7 @@ internal fun AudioVolumeBar(
     val currentProgress by rememberUpdatedState(progress)
     val currentOnValue by rememberUpdatedState(onValue)
     val currentOnValueFinished by rememberUpdatedState(onValueFinished)
+    val currentOnValueCancelled by rememberUpdatedState(onValueCancelled)
 
     val filledColor = MaterialTheme.colorScheme.primary
     val emptyColor = MaterialTheme.colorScheme.onSurface.copy(alpha = TRACK_ALPHA)
@@ -193,6 +198,7 @@ internal fun AudioVolumeBar(
                 // Same wrapping as the progress bar: the gesture captures these once.
                 onValue = { currentOnValue(it) },
                 onFinished = { currentOnValueFinished() },
+                onCancelled = { currentOnValueCancelled() },
             ),
     ) {
         Canvas(modifier = Modifier.fillMaxWidth().align(Alignment.CenterStart)) {

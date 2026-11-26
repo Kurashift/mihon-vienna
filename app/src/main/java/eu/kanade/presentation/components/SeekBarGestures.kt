@@ -129,6 +129,7 @@ internal fun <T> Modifier.seekBarGestures(
     enabled: () -> Boolean = { true },
     onFineSeekChange: (Boolean) -> Unit = {},
     onDragFraction: (Float?) -> Unit = {},
+    onCancelled: () -> Unit = {},
     direction: SeekDirection = SeekDirection.Horizontal,
     finishOnCancel: Boolean = false,
 ): Modifier = pointerInput(direction) {
@@ -203,8 +204,13 @@ internal fun <T> Modifier.seekBarGestures(
                 if (fineSeekOn) onFineSeekChange(false)
                 onDragFraction(null)
                 // The reader can move the bar while a finger is still down. Settle pages already
-                // shown in the viewer without committing an interrupted audio seek.
-                if (finished || (finishOnCancel && lastReported != null)) onFinished()
+                // shown in the viewer without committing an interrupted audio seek, and notify
+                // callers on cancel so transient drag previews never stay frozen.
+                if (finished || (finishOnCancel && lastReported != null)) {
+                    onFinished()
+                } else if (lastReported != null) {
+                    onCancelled()
+                }
             }
         }
     }

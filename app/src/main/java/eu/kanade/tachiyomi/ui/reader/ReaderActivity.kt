@@ -172,7 +172,6 @@ class ReaderActivity : BaseActivity() {
     }
 
     private val readerPreferences = Injekt.get<ReaderPreferences>()
-    private val basePreferences = Injekt.get<BasePreferences>()
     private val preferences = Injekt.get<BasePreferences>()
 
     lateinit var binding: ReaderActivityBinding
