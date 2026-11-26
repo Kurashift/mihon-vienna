@@ -35,6 +35,7 @@ composeMaterialMotion = "2.0.1"
 composeRichEditor = "1.0.0-rc13"
 composeWebview = "0.33.6"
 conscrypt = "2.6.1"
+detekt = "2.0.0-alpha.6"
 directionalViewPager = "1.0.0"
 diskLruCache = "2.0.2"
 firebase-bom = "34.17.0"
@@ -201,6 +202,7 @@ android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version
 android-library = { id = "com.android.library", version.ref = "android-gradle" }
 android-test = { id = "com.android.test", version.ref = "android-gradle" }
 androidx-baselineProfile = { id = "androidx.baselineprofile", version.ref = "androidx-baselineProfile" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
 firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebase-crashlytics" }
 google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }
 kotlin-compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin-gradle" }

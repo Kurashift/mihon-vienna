@@ -1,0 +1,396 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:AudioBrowseScreen.kt:AudioBrowseViewModel$current.loading || current.refreshing || current.loadingMore || current.error</ID>
+    <ID>ComplexCondition:BackupReadingLedger.kt:BackupReadingLedger$record.recordKey.isBlank() || record.workKey.isBlank() || record.mangaUrl.isBlank() || record.chapterUrl.isBlank() || (record.stateVersion &gt; 0 &amp;&amp; record.stateActor.isBlank()) || record.readAt &lt; 0 || record.readDuration &lt; 0 || record.stateVersion &lt; 0 || !keys.add(record.recordKey) || record.recordAliases.any { it.isBlank() } || record.locationAliases.any { it.mangaUrl.isBlank() || it.chapterUrl.isBlank() }</ID>
+    <ID>ComplexCondition:ChapterReadingSession.kt:ChapterReadingSession$reachedUnlockBoundary &amp;&amp; previousPageIndex != null &amp;&amp; previousPageIndex &lt;= backwardUnlockIndex &amp;&amp; pageIndex &gt; backwardUnlockIndex</ID>
+    <ID>ComplexCondition:ChapterRepositoryImpl.kt:ChapterRepositoryImpl$state.expectedStateVersion != null &amp;&amp; ( record?.state_version != state.expectedStateVersion || record?.visibility_version != state.historyVisibilityVersion || chapter?.read != state.expectedRead )</ID>
+    <ID>ComplexCondition:ChapterTitleTranslation.kt:ChapterTitleTranslationCodec$value.any { it == ',' || it == '"' || it == '\r' || it == '\n' }</ID>
+    <ID>ComplexCondition:LibraryContent.kt:showPageTabs &amp;&amp; categories.isNotEmpty() &amp;&amp; (categories.size &gt; 1 || !categories.first().isSystemCategory)</ID>
+    <ID>ComplexCondition:LocalChapterTransferJob.kt:LocalChapterTransferJob$(!isGroupedImport &amp;&amp; targetMangaId &lt; 0L) || (!isMove &amp;&amp; !isGroupedImport &amp;&amp; uris.isEmpty()) || (isMove &amp;&amp; chapterIds.isEmpty())</ID>
+    <ID>ComplexCondition:LocalChapterTransferJob.kt:LocalChapterTransferJob.Companion$groups.isEmpty() || groups.any { it.targetMangaId &lt; 0L || it.uris.isEmpty() } || isRunning(context)</ID>
+    <ID>ComplexCondition:LocalChapterTransferService.kt:LocalChapterTransferService$DocumentsContract.isDocumentUri(context, sourceUri) &amp;&amp; DocumentsContract.isDocumentUri(context, sourceParentUri) &amp;&amp; DocumentsContract.isDocumentUri(context, targetParentUri) &amp;&amp; sourceUri.authority == targetParentUri.authority</ID>
+    <ID>ComplexCondition:LocalChapterTransferService.kt:LocalChapterTransferService$options.replaceConflicts &amp;&amp; (approval != null || matching.isNotEmpty() || candidateCounts.getValue(key) &gt; 1)</ID>
+    <ID>ComplexCondition:LocalDeletionReport.kt:LocalDeletionReportCsv$value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }</ID>
+    <ID>ComplexCondition:LocalSource.kt:LocalSource$cachedPage != null &amp;&amp; cachedPage.listing === allEntries &amp;&amp; cachedPage.query == query &amp;&amp; cachedPage.orderByIndex == orderByIndex &amp;&amp; cachedPage.ascending == ascending &amp;&amp; cachedPage.latestWindow == latestWindow &amp;&amp; cachedPage.urlFilter == urlFilter &amp;&amp; cachedPage.chapterNames == chapterNames &amp;&amp; cachedPage.translatedNames == translatedNames</ID>
+    <ID>ComplexCondition:LocalSource.kt:LocalSource$entries.count == 0 &amp;&amp; previouslyPopulated &amp;&amp; knownNames.isEmpty() &amp;&amp; directory.filePath == null</ID>
+    <ID>ComplexCondition:LocalSource.kt:LocalSource$reuseUnchangedFolders &amp;&amp; (modified &lt;= 0L || (previous == null &amp;&amp; name in knownDirectoryNames))</ID>
+    <ID>ComplexCondition:MangaChapterGridItem.kt:read || bookmark || goodDoujinMarked || flagMarked</ID>
+    <ID>ComplexCondition:MangaChapterListItem.kt:scanlator != null || goodDoujinMarked || bookmark || flagMarked</ID>
+    <ID>ComplexCondition:MangaViewModel.kt:MangaViewModel$(selectedItem.selected &amp;&amp; selected) || (!selectedItem.selected &amp;&amp; !selected)</ID>
+    <ID>ComplexCondition:ReaderNavigationOverlayView.kt:ReaderNavigationOverlayView$isVisible || (!showOnStart &amp;&amp; firstLaunch) || navigation is DisabledNavigation</ID>
+    <ID>ComplexCondition:ReaderPageImageView.kt:ReaderPageImageView$config != null &amp;&amp; config!!.landscapeZoom &amp;&amp; config!!.minimumScaleType == SCALE_TYPE_CENTER_INSIDE &amp;&amp; sWidth &gt; sHeight &amp;&amp; scale == minScale</ID>
+    <ID>ComplexCondition:StorageManager.kt:StorageManager$child != null &amp;&amp; runCatching { child.exists() &amp;&amp; (!directoryOnly || child.isDirectory) }.getOrDefault(false)</ID>
+    <ID>ComplexCondition:StringExtensions.kt:char == '.' &amp;&amp; currentIsDigit == true &amp;&amp; getOrNull(index - 1)?.isDigit() == true &amp;&amp; getOrNull(index + 1)?.isDigit() == true</ID>
+    <ID>ComplexCondition:WebtoonFrame.kt:WebtoonFrame$width &gt; 0 &amp;&amp; height &gt; 0 &amp;&amp; oldWidth &gt; 0 &amp;&amp; oldHeight &gt; 0 &amp;&amp; (width != oldWidth || height != oldHeight)</ID>
+    <ID>ComplexCondition:WebtoonZoom.kt:WebtoonZoom$zoomOutDisabled || viewportHeight &lt;= 0 || viewportWidth &lt;= viewportHeight || pageHeight &lt;= 0</ID>
+    <ID>ConstructorParameterNaming:BackupManga.kt:BackupManga$@ProtoNumber(103) var viewer_flags: Int? = null</ID>
+    <ID>ConstructorParameterNaming:ExtensionDetailsViewModel.kt:ExtensionDetailsViewModel.State$private val _sources: List&lt;ExtensionSourceItem&gt;? = null</ID>
+    <ID>ConstructorParameterNaming:KavitaModels.kt:SeriesDto$val thumbnail_url: String? = ""</ID>
+    <ID>CyclomaticComplexMethod:AudioBrowseContent.kt:@Composable fun AudioBrowseContent</ID>
+    <ID>CyclomaticComplexMethod:AudioDetailContent.kt:@OptIn(ExperimentalLayoutApi::class) @Composable fun AudioDetailContent</ID>
+    <ID>CyclomaticComplexMethod:AudioPlayerContent.kt:@Composable fun AudioPlayerContent</ID>
+    <ID>CyclomaticComplexMethod:AudioPlayerContent.kt:@Composable private fun LyricsPanel</ID>
+    <ID>CyclomaticComplexMethod:AudioPlayerScreen.kt:AudioPlayerScreen$@Composable override fun Content</ID>
+    <ID>CyclomaticComplexMethod:AudioPlaylistContent.kt:@Composable fun AudioPlaylistContent</ID>
+    <ID>CyclomaticComplexMethod:AudioTrackCatalog.kt:internal fun List&lt;TrackNode&gt;.buildAudioTrackCatalog: AudioTrackCatalog</ID>
+    <ID>CyclomaticComplexMethod:BrowseSourceComfortableGrid.kt:@Composable fun BrowseSourceComfortableGrid</ID>
+    <ID>CyclomaticComplexMethod:BrowseSourceCompactGrid.kt:@Composable fun BrowseSourceCompactGrid</ID>
+    <ID>CyclomaticComplexMethod:BrowseSourceList.kt:@Composable fun BrowseSourceList</ID>
+    <ID>CyclomaticComplexMethod:BrowseSourceScreen.kt:@Composable fun BrowseSourceContent</ID>
+    <ID>CyclomaticComplexMethod:BrowseSourceScreen.kt:BrowseSourceScreen$@OptIn(ExperimentalFoundationApi::class) @Composable override fun Content</ID>
+    <ID>CyclomaticComplexMethod:BrowseSourceViewModel.kt:BrowseSourceViewModel$private suspend fun relocateMovedLocalChapters</ID>
+    <ID>CyclomaticComplexMethod:BrowseSourceViewModel.kt:BrowseSourceViewModel$private suspend fun runChapterRefresh: ChapterRefreshResult</ID>
+    <ID>CyclomaticComplexMethod:ChapterFlagListScreen.kt:ChapterFlagListScreen$@Composable override fun Content</ID>
+    <ID>CyclomaticComplexMethod:ChapterGridDragState.kt:@Composable fun Modifier.chapterGridDragSource: Modifier</ID>
+    <ID>CyclomaticComplexMethod:ChapterSort.kt:fun getChapterSort: ( Chapter, Chapter, ) -&gt; Int</ID>
+    <ID>CyclomaticComplexMethod:DownloadCache.kt:DownloadCache$@Synchronized private fun renewCache</ID>
+    <ID>CyclomaticComplexMethod:ExtensionsScreen.kt:@Composable private fun ExtensionContent</ID>
+    <ID>CyclomaticComplexMethod:HistoryItem.kt:@Composable fun HistoryItem</ID>
+    <ID>CyclomaticComplexMethod:HistoryRepositoryImpl.kt:HistoryRepositoryImpl$override suspend fun importPermanentRecords</ID>
+    <ID>CyclomaticComplexMethod:ImageUtil.kt:ImageUtil$fun chooseBackground: Drawable</ID>
+    <ID>CyclomaticComplexMethod:LibraryTab.kt:LibraryTab$@Composable override fun Content</ID>
+    <ID>CyclomaticComplexMethod:LibraryViewModel.kt:LibraryViewModel$private fun Map&lt;Category, List&lt;/* LibraryItem */ Long&gt;&gt;.applySort: Map&lt;Category, List&lt;/* LibraryItem */ Long&gt;&gt;</ID>
+    <ID>CyclomaticComplexMethod:LocalChapterTransferService.kt:LocalChapterTransferService$private suspend fun importUrisInternal: Result</ID>
+    <ID>CyclomaticComplexMethod:LocalImportScreen.kt:LocalImportScreen$@Composable override fun Content</ID>
+    <ID>CyclomaticComplexMethod:LocalSource.kt:LocalSource$private suspend fun buildListing: List&lt;LocalMangaEntry&gt;</ID>
+    <ID>CyclomaticComplexMethod:LocalSource.kt:LocalSource$private suspend fun getChapterNamesIndex: Map&lt;String, List&lt;String&gt;&gt;</ID>
+    <ID>CyclomaticComplexMethod:LocalSource.kt:LocalSource$private suspend fun getListing: List&lt;LocalMangaEntry&gt;</ID>
+    <ID>CyclomaticComplexMethod:LocalSource.kt:LocalSource$private suspend fun getMangaDetails: SManga</ID>
+    <ID>CyclomaticComplexMethod:LocalSource.kt:LocalSource$private suspend fun getSearchMangaList: List&lt;SManga&gt;</ID>
+    <ID>CyclomaticComplexMethod:LocalSource.kt:LocalSource$suspend fun scanChapterChanges: LocalChapterSyncScan</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt:MainActivity$override fun onCreate</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt:MainActivity$private fun handleIntentAction: Boolean</ID>
+    <ID>CyclomaticComplexMethod:MangaChapterListItem.kt:@Composable fun MangaChapterListItem</ID>
+    <ID>CyclomaticComplexMethod:MangaInfoHeader.kt:@Composable private fun ColumnScope.MangaContentInfo</ID>
+    <ID>CyclomaticComplexMethod:MangaScreen.kt:@Composable fun MangaScreenLargeImpl</ID>
+    <ID>CyclomaticComplexMethod:MangaScreen.kt:@Composable private fun MangaScreenSmallImpl</ID>
+    <ID>CyclomaticComplexMethod:MangaScreen.kt:MangaScreen$@Composable override fun Content</ID>
+    <ID>CyclomaticComplexMethod:MangaScreen.kt:private fun LazyListScope.sharedChapterItems</ID>
+    <ID>CyclomaticComplexMethod:MigrationListViewModel.kt:MigrationListViewModel$private suspend fun runMigrations</ID>
+    <ID>CyclomaticComplexMethod:PagerViewer.kt:PagerViewer$override fun handleKeyEvent: Boolean</ID>
+    <ID>CyclomaticComplexMethod:PinchColumns.kt:private fun Modifier.pinchToColumns: Modifier</ID>
+    <ID>CyclomaticComplexMethod:PreferenceRestorer.kt:PreferenceRestorer$private suspend fun restorePreferences</ID>
+    <ID>CyclomaticComplexMethod:QueryNodeExtensions.kt:private fun FieldQueryNode.matches: Boolean</ID>
+    <ID>CyclomaticComplexMethod:RandomGestureFab.kt:@Composable fun RandomGestureFab</ID>
+    <ID>CyclomaticComplexMethod:ReaderActivity.kt:ReaderActivity$override fun onCreate</ID>
+    <ID>CyclomaticComplexMethod:ReaderActivity.kt:ReaderActivity$private fun ReaderActivityBinding.setComposeOverlay: Unit</ID>
+    <ID>CyclomaticComplexMethod:ReaderAppBars.kt:@Composable fun ReaderAppBars</ID>
+    <ID>CyclomaticComplexMethod:Scaffold.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable private fun ScaffoldLayout</ID>
+    <ID>CyclomaticComplexMethod:SearchPinyinData.kt:SearchPinyinData$fun matches: Boolean</ID>
+    <ID>CyclomaticComplexMethod:SeekBarGestures.kt:internal fun &lt;T&gt; Modifier.seekBarGestures: Modifier</ID>
+    <ID>CyclomaticComplexMethod:SyncChaptersWithSource.kt:SyncChaptersWithSource$suspend fun await: List&lt;Chapter&gt;</ID>
+    <ID>CyclomaticComplexMethod:VerticalFastScroller.kt:@Composable fun VerticalFastScroller</ID>
+    <ID>CyclomaticComplexMethod:VerticalFastScroller.kt:@Composable fun VerticalGridFastScroller</ID>
+    <ID>CyclomaticComplexMethod:WebViewScreenContent.kt:@Composable fun WebViewScreenContent</ID>
+    <ID>CyclomaticComplexMethod:WebtoonRecyclerView.kt:WebtoonRecyclerView.Detector$override fun onTouchEvent: Boolean</ID>
+    <ID>CyclomaticComplexMethod:WebtoonViewer.kt:WebtoonViewer$private fun alignInitialPagePass</ID>
+    <ID>CyclomaticComplexMethod:WebtoonViewer.kt:WebtoonViewer$private fun currentVisibleItem: Any?</ID>
+    <ID>EqualsAlwaysReturnsTrueOrFalse:FilterList.kt:FilterList$override fun equals: Boolean</ID>
+    <ID>ExplicitItLambdaMultipleParameters:SettingsReaderScreen.kt:SettingsReaderScreen${ index, it -&gt; index + 1 to stringResource(it) }</ID>
+    <ID>ExplicitItLambdaParameter:LibraryTab.kt:LibraryTab${ it: LibraryManga -&gt; scope.launchIO { val chapter = viewModel.getNextUnreadChapter(it.manga) if (chapter != null) { context.startActivity( ReaderActivity.newIntent(context, chapter.mangaId, chapter.id), ) } else { snackbarHostState.showSnackbarReplacing( context.stringResource(MR.strings.no_next_chapter), ) } } Unit }</ID>
+    <ID>ForEachOnRange:UpdatesWidget.kt:0..&lt;rowCount</ID>
+    <ID>FunctionNaming:Pin.kt:fun Pins</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:chapter_id: Long</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:chapter_name: String</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:chapter_translated_name: String?</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:chapter_url: String</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:date_upload: Long</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:last_modified_at: Long</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:last_page_read: Long</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:manga_id: Long</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:manga_title: String</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:marked_read_at: Long</ID>
+    <ID>FunctionParameterNaming:LocalReadReviewScreen.kt:total_pages: Long</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$finished_at: Long</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$finished_count: Long</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$last_opened_at: Long</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$last_read: Long</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$manga_id: Long</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$manga_url: String</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$read_count: Long</ID>
+    <ID>FunctionParameterNaming:MangaMapper.kt:MangaMapper$total_chapters: Long</ID>
+    <ID>FunctionParameterNaming:MangaMarkStore.kt:GoodDoujinStore$chapter_id: Long</ID>
+    <ID>FunctionParameterNaming:MangaMarkStore.kt:GoodDoujinStore$chapter_name: String</ID>
+    <ID>FunctionParameterNaming:MangaMarkStore.kt:GoodDoujinStore$manga_id: Long</ID>
+    <ID>FunctionParameterNaming:MangaMarkStore.kt:GoodDoujinStore$manga_title: String</ID>
+    <ID>FunctionParameterNaming:MangaMarkStore.kt:GoodDoujinStore$marked_at: Long</ID>
+    <ID>FunctionParameterNaming:MangaScreen.kt:MangaScreen$manga_: Manga?</ID>
+    <ID>FunctionParameterNaming:MangaScreen.kt:MangaScreen$source_: Source?</ID>
+    <ID>LargeClass:AudioBrowseScreen.kt:AudioBrowseViewModel : ViewModel</ID>
+    <ID>LargeClass:AudioPlayerController.kt:AudioPlayerController</ID>
+    <ID>LargeClass:BrowseSourceScreen.kt:BrowseSourceScreen : ScreenAssistContentScreen</ID>
+    <ID>LargeClass:BrowseSourceViewModel.kt:BrowseSourceViewModel : StateViewModel</ID>
+    <ID>LargeClass:LibraryViewModel.kt:LibraryViewModel : StateViewModel</ID>
+    <ID>LargeClass:LocalChapterTransferService.kt:LocalChapterTransferService</ID>
+    <ID>LargeClass:LocalImportScreen.kt:LocalImportScreen : Screen</ID>
+    <ID>LargeClass:LocalSource.kt:LocalSource : SourceUnmeteredSource</ID>
+    <ID>LargeClass:MangaViewModel.kt:MangaViewModel : StateViewModel</ID>
+    <ID>LargeClass:ReaderActivity.kt:ReaderActivity : BaseActivity</ID>
+    <ID>LargeClass:ReaderViewModel.kt:ReaderViewModel : ViewModel</ID>
+    <ID>LargeClass:SearchPinyinData.kt:SearchPinyinData</ID>
+    <ID>LargeClass:WebtoonViewer.kt:WebtoonViewer : Viewer</ID>
+    <ID>LongMethod:AboutScreen.kt:AboutScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:AdaptiveSheet.kt:@Composable fun AdaptiveSheet</ID>
+    <ID>LongMethod:AppBar.kt:@Composable fun AppBarActions</ID>
+    <ID>LongMethod:AppBar.kt:@Composable fun SearchToolbar</ID>
+    <ID>LongMethod:AppModule.kt:AppModule$override fun InjektRegistrar.registerInjectables</ID>
+    <ID>LongMethod:AppThemePreferenceWidget.kt:@Composable fun AppThemePreviewItem</ID>
+    <ID>LongMethod:AudioAccountContent.kt:@Composable fun AudioAccountContent</ID>
+    <ID>LongMethod:AudioAccountContent.kt:@Composable private fun ChangePasswordDialog</ID>
+    <ID>LongMethod:AudioBrowseContent.kt:@Composable fun AudioBrowseContent</ID>
+    <ID>LongMethod:AudioBrowseContent.kt:@Composable internal fun LoginDialog</ID>
+    <ID>LongMethod:AudioCategoryContent.kt:@Composable fun AudioCategoryContent</ID>
+    <ID>LongMethod:AudioDetailContent.kt:@Composable private fun WorkHeader</ID>
+    <ID>LongMethod:AudioDetailContent.kt:@OptIn(ExperimentalLayoutApi::class) @Composable fun AudioDetailContent</ID>
+    <ID>LongMethod:AudioDetailScreen.kt:AudioDetailViewModel$fun load</ID>
+    <ID>LongMethod:AudioHistoryContent.kt:@Composable fun AudioHistoryContent</ID>
+    <ID>LongMethod:AudioHistoryContent.kt:@Composable private fun HistoryWorkRow</ID>
+    <ID>LongMethod:AudioMiniPlayerBar.kt:@Composable fun AudioMiniPlayerBar</ID>
+    <ID>LongMethod:AudioPlayerContent.kt:@Composable fun AudioPlayerContent</ID>
+    <ID>LongMethod:AudioPlayerContent.kt:@Composable private fun BoxScope.FullscreenControls</ID>
+    <ID>LongMethod:AudioPlayerContent.kt:@Composable private fun LyricsPanel</ID>
+    <ID>LongMethod:AudioPlayerScreen.kt:AudioPlayerScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:AudioPlaylistContent.kt:@Composable fun AudioPlaylistContent</ID>
+    <ID>LongMethod:AudioPlaylistContent.kt:@Composable private fun QueueSectionHeader</ID>
+    <ID>LongMethod:AudioPlaylistScreen.kt:AudioPlaylistScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:AudioQuickPlaySheet.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun AudioQuickPlaySheet</ID>
+    <ID>LongMethod:AudioReaderFloatingBar.kt:@Composable fun AudioReaderFloatingBar</ID>
+    <ID>LongMethod:AudioReaderFloatingBar.kt:@Composable private fun AudioVerticalVolumeControl</ID>
+    <ID>LongMethod:AudioRows.kt:@Composable fun AudioTrackRow</ID>
+    <ID>LongMethod:AudioVideoStage.kt:@Composable internal fun AudioVideoStage</ID>
+    <ID>LongMethod:BrowseSourceComfortableGrid.kt:@Composable fun BrowseSourceComfortableGrid</ID>
+    <ID>LongMethod:BrowseSourceCompactGrid.kt:@Composable fun BrowseSourceCompactGrid</ID>
+    <ID>LongMethod:BrowseSourceList.kt:@Composable fun BrowseSourceList</ID>
+    <ID>LongMethod:BrowseSourceScreen.kt:@Composable fun BrowseSourceContent</ID>
+    <ID>LongMethod:BrowseSourceScreen.kt:@Composable private fun LocalSortControl</ID>
+    <ID>LongMethod:BrowseSourceScreen.kt:BrowseSourceScreen$@OptIn(ExperimentalFoundationApi::class) @Composable override fun Content</ID>
+    <ID>LongMethod:BrowseSourceToolbar.kt:@Composable fun BrowseSourceToolbar</ID>
+    <ID>LongMethod:BrowseSourceViewModel.kt:BrowseSourceViewModel$private suspend fun relocateMovedLocalChapters</ID>
+    <ID>LongMethod:CategoryDialogs.kt:@Composable fun ChangeCategoryDialog</ID>
+    <ID>LongMethod:ChapterFlagListScreen.kt:ChapterFlagListScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:ChapterSettingsDialog.kt:@Composable fun ChapterSettingsDialog</ID>
+    <ID>LongMethod:ChapterTitleTranslation.kt:ChapterTitleTranslationCodec$fun planLocalLibraryImport: LocalLibraryChapterTitleImportPlan</ID>
+    <ID>LongMethod:ChapterTransition.kt:@Composable private fun ChapterText</ID>
+    <ID>LongMethod:ClearDatabaseScreen.kt:ClearDatabaseScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:DomainModule.kt:DomainModule$override fun InjektRegistrar.registerInjectables</ID>
+    <ID>LongMethod:DownloadCache.kt:DownloadCache$@Synchronized private fun renewCache</ID>
+    <ID>LongMethod:DownloadQueueScreen.kt:DownloadQueueScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:DuplicateMangaDialog.kt:@Composable private fun DuplicateMangaListItem</ID>
+    <ID>LongMethod:ExtensionDetailsScreen.kt:@Composable private fun DetailsHeader</ID>
+    <ID>LongMethod:ExtensionLoader.kt:ExtensionLoader$private suspend fun loadExtension: LoadResult</ID>
+    <ID>LongMethod:ExtensionsScreen.kt:@Composable private fun ExtensionContent</ID>
+    <ID>LongMethod:FloatingSubtitleToggle.kt:@Composable fun FloatingSubtitleToggle</ID>
+    <ID>LongMethod:HistoryItem.kt:@Composable fun HistoryItem</ID>
+    <ID>LongMethod:HistoryRepositoryImpl.kt:HistoryRepositoryImpl$override suspend fun importPermanentRecords</ID>
+    <ID>LongMethod:HistoryTab.kt:HistoryTab$@Composable override fun Content</ID>
+    <ID>LongMethod:HomeScreen.kt:HomeScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:ImageUtil.kt:ImageUtil$fun chooseBackground: Drawable</ID>
+    <ID>LongMethod:LibraryPager.kt:@Composable fun LibraryPager</ID>
+    <ID>LongMethod:LibraryTab.kt:LibraryTab$@Composable override fun Content</ID>
+    <ID>LongMethod:LocalChapterTransferService.kt:LocalChapterTransferService$private suspend fun importUrisInternal: Result</ID>
+    <ID>LongMethod:LocalChapterTransferService.kt:LocalChapterTransferService$suspend fun moveChapters: MoveResult</ID>
+    <ID>LongMethod:LocalEntryDeletionService.kt:LocalEntryDeletionService$private suspend fun runChapters: Result</ID>
+    <ID>LongMethod:LocalImportScreen.kt:LocalImportScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:LocalReadReviewScreen.kt:LocalReadReviewDetailScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:LocalReadReviewScreen.kt:LocalReadReviewScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:LocalSource.kt:LocalSource$internal fun buildChapterEntry: ChapterIndexEntry</ID>
+    <ID>LongMethod:LocalSource.kt:LocalSource$private suspend fun buildListing: List&lt;LocalMangaEntry&gt;</ID>
+    <ID>LongMethod:LocalSource.kt:LocalSource$private suspend fun getSearchMangaList: List&lt;SManga&gt;</ID>
+    <ID>LongMethod:LocalSource.kt:LocalSource$suspend fun scanChapterChanges: LocalChapterSyncScan</ID>
+    <ID>LongMethod:MainActivity.kt:MainActivity$@Composable private fun ShowDonationCampaign</ID>
+    <ID>LongMethod:MainActivity.kt:MainActivity$override fun onCreate</ID>
+    <ID>LongMethod:MainActivity.kt:MainActivity$private fun handleIntentAction: Boolean</ID>
+    <ID>LongMethod:MangaBottomActionMenu.kt:@Composable fun LibraryBottomActionMenu</ID>
+    <ID>LongMethod:MangaBottomActionMenu.kt:@Composable fun MangaBottomActionMenu</ID>
+    <ID>LongMethod:MangaChapterGridItem.kt:@Composable fun MangaChapterGridItem</ID>
+    <ID>LongMethod:MangaChapterListItem.kt:@Composable fun MangaChapterListItem</ID>
+    <ID>LongMethod:MangaCoverDialog.kt:@Composable fun MangaCoverDialog</ID>
+    <ID>LongMethod:MangaInfoHeader.kt:@Composable fun ExpandableMangaDescription</ID>
+    <ID>LongMethod:MangaInfoHeader.kt:@Composable private fun ColumnScope.MangaContentInfo</ID>
+    <ID>LongMethod:MangaInfoHeader.kt:@Composable private fun MangaSummary</ID>
+    <ID>LongMethod:MangaNotesTextArea.kt:@Composable fun MangaNotesTextArea</ID>
+    <ID>LongMethod:MangaScreen.kt:@Composable fun MangaScreen</ID>
+    <ID>LongMethod:MangaScreen.kt:@Composable fun MangaScreenLargeImpl</ID>
+    <ID>LongMethod:MangaScreen.kt:@Composable private fun ChapterGridCard</ID>
+    <ID>LongMethod:MangaScreen.kt:@Composable private fun MangaScreenSmallImpl</ID>
+    <ID>LongMethod:MangaScreen.kt:MangaScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:MangaScreen.kt:private fun LazyListScope.sharedChapterItems</ID>
+    <ID>LongMethod:MangaToolbar.kt:@Composable fun MangaToolbar</ID>
+    <ID>LongMethod:MigrateSourceSearchScreen.kt:MigrateSourceSearchScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:MigrationConfigScreen.kt:MigrationConfigScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:MigrationConfigScreenSheet.kt:@Composable fun MigrationConfigScreenSheet</ID>
+    <ID>LongMethod:MigrationListScreenContent.kt:@Composable fun MigrationListScreenContent</ID>
+    <ID>LongMethod:MoreScreen.kt:@Composable fun MoreScreen</ID>
+    <ID>LongMethod:Notifications.kt:Notifications$fun createChannels</ID>
+    <ID>LongMethod:PermissionsContent.kt:@Composable internal fun PermissionList</ID>
+    <ID>LongMethod:PillSnackbar.kt:@Composable fun PillSnackbar</ID>
+    <ID>LongMethod:PreferenceItem.kt:@Composable internal fun PreferenceItem</ID>
+    <ID>LongMethod:RandomGestureFab.kt:@Composable fun RandomGestureFab</ID>
+    <ID>LongMethod:ReaderActivity.kt:ReaderActivity$override fun onCreate</ID>
+    <ID>LongMethod:ReaderActivity.kt:ReaderActivity$private fun ReaderActivityBinding.setComposeOverlay: Unit</ID>
+    <ID>LongMethod:ReaderAppBars.kt:@Composable fun ReaderAppBars</ID>
+    <ID>LongMethod:ReaderPageActionsDialog.kt:@Composable fun ReaderPageActionsDialog</ID>
+    <ID>LongMethod:ReaderPageSeekBar.kt:@Composable internal fun ReaderPageSeekBar</ID>
+    <ID>LongMethod:ReaderTopBar.kt:@Composable fun ReaderTopBar</ID>
+    <ID>LongMethod:Scaffold.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable private fun ScaffoldLayout</ID>
+    <ID>LongMethod:ScanlatorFilterDialog.kt:@Composable fun ScanlatorFilterDialog</ID>
+    <ID>LongMethod:SettingsAdvancedScreen.kt:SettingsAdvancedScreen$@Composable private fun getNetworkGroup: Preference.PreferenceGroup</ID>
+    <ID>LongMethod:SettingsLibraryScreen.kt:SettingsLibraryScreen$@Composable private fun getGlobalUpdateGroup: Preference.PreferenceGroup</ID>
+    <ID>LongMethod:SettingsMainScreen.kt:SettingsMainScreen$@Composable fun Content</ID>
+    <ID>LongMethod:SettingsReaderScreen.kt:SettingsReaderScreen$@Composable private fun getPagedGroup: Preference.PreferenceGroup</ID>
+    <ID>LongMethod:SettingsReaderScreen.kt:SettingsReaderScreen$@Composable private fun getWebtoonGroup: Preference.PreferenceGroup</ID>
+    <ID>LongMethod:SettingsSearchScreen.kt:@Composable private fun SearchResult</ID>
+    <ID>LongMethod:SettingsSearchScreen.kt:SettingsSearchScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:SettingsStorageScreen.kt:SettingsStorageScreen$@Composable private fun coverMaintenanceGroup: Preference.PreferenceGroup</ID>
+    <ID>LongMethod:SettingsTrackingScreen.kt:SettingsTrackingScreen$@Composable override fun getPreferences: List&lt;Preference&gt;</ID>
+    <ID>LongMethod:SettingsTrackingScreen.kt:SettingsTrackingScreen$@Composable private fun TrackingLoginDialog</ID>
+    <ID>LongMethod:SourceFilterDialog.kt:@Composable private fun FilterItem</ID>
+    <ID>LongMethod:SuwayomiApi.kt:SuwayomiApi$suspend fun updateProgress: Track</ID>
+    <ID>LongMethod:SyncChaptersWithSource.kt:SyncChaptersWithSource$suspend fun await: List&lt;Chapter&gt;</ID>
+    <ID>LongMethod:TrackInfoDialog.kt:TrackInfoDialogHomeScreen$@Composable override fun Content</ID>
+    <ID>LongMethod:TrackInfoDialogHome.kt:@Composable private fun TrackInfoItem</ID>
+    <ID>LongMethod:TrackerSearch.kt:@Composable fun TrackerSearch</ID>
+    <ID>LongMethod:TrackerSearch.kt:@Composable private fun SearchResultItem</ID>
+    <ID>LongMethod:TriStateListDialog.kt:@Composable fun &lt;T&gt; TriStateListDialog</ID>
+    <ID>LongMethod:UpdatesUiItem.kt:@Composable private fun UpdatesUiItem</ID>
+    <ID>LongMethod:VerticalFastScroller.kt:@Composable fun VerticalFastScroller</ID>
+    <ID>LongMethod:VerticalFastScroller.kt:@Composable fun VerticalGridFastScroller</ID>
+    <ID>LongMethod:WebViewScreenContent.kt:@Composable fun WebViewScreenContent</ID>
+    <ID>LongMethod:WebtoonViewer.kt:WebtoonViewer$private fun currentVisibleItem: Any?</ID>
+    <ID>LongMethod:WheelPicker.kt:@Composable private fun &lt;T&gt; WheelPicker</ID>
+    <ID>MatchingDeclarationName:AudioBottomActionMenu.kt:AudioBottomAction</ID>
+    <ID>MatchingDeclarationName:AudioListeningTabs.kt:AudioListeningTab</ID>
+    <ID>MatchingDeclarationName:AudioQueueRows.kt:AudioQueueRow</ID>
+    <ID>MatchingDeclarationName:ChapterDownloadIndicator.kt:ChapterDownloadAction</ID>
+    <ID>MatchingDeclarationName:ChapterNavigator.kt:ChapterNavigatorType</ID>
+    <ID>MatchingDeclarationName:CommonMangaItem.kt:CommonMangaItemDefaults</ID>
+    <ID>MatchingDeclarationName:EmptyScreen.kt:EmptyScreenAction</ID>
+    <ID>MatchingDeclarationName:LibrarySortMode.kt:LibrarySort : FlagWithMask</ID>
+    <ID>MatchingDeclarationName:MyListChapterTitles.kt:MyListChapterTitle</ID>
+    <ID>MatchingDeclarationName:NetworkStateTracker.kt:NetworkState</ID>
+    <ID>MatchingDeclarationName:SettingsItems.kt:SettingsItemsPaddings</ID>
+    <ID>MatchingDeclarationName:TabbedDialog.kt:TabbedDialogPaddings</ID>
+    <ID>MatchingDeclarationName:TransientNotice.kt:TransientNoticeState</ID>
+    <ID>MayBeConstant:VerticalFastScroller.kt:// Sits at a fraction of the thumb's opacity: present enough to close off the track, quiet // enough not to compete with the thumb itself. private val EndMarkerMaxAlpha = 0.4f</ID>
+    <ID>NestedBlockDepth:LibraryUpdateJob.kt:LibraryUpdateJob$private fun writeErrorFile: File</ID>
+    <ID>NestedBlockDepth:LocalSource.kt:LocalSource$private fun ensureChapterIndexLoaded</ID>
+    <ID>NestedBlockDepth:PreferenceRestorer.kt:PreferenceRestorer$private suspend fun restorePreferences</ID>
+    <ID>NestedBlockDepth:SearchPinyinData.kt:SearchPinyinData$fun matches: Boolean</ID>
+    <ID>RethrowCaughtException:LocalSource.kt:LocalSource$throw e</ID>
+    <ID>SerialVersionUIDInSerializableClass:Category.kt:Category : Serializable</ID>
+    <ID>SerialVersionUIDInSerializableClass:LocalGroupedImportPlanning.kt:LocalImportDraft : Serializable</ID>
+    <ID>SerialVersionUIDInSerializableClass:Track.kt:Track : Serializable</ID>
+    <ID>SwallowedException:ALManga.kt:ALManga$e: IllegalArgumentException</ID>
+    <ID>SwallowedException:AndroidPreference.kt:AndroidPreference$e: ClassCastException</ID>
+    <ID>SwallowedException:AndroidPreference.kt:AndroidPreference.ObjectAsInt$e: Exception</ID>
+    <ID>SwallowedException:AndroidPreference.kt:AndroidPreference.ObjectAsString$e: Exception</ID>
+    <ID>SwallowedException:Anilist.kt:Anilist$e: ClassCastException</ID>
+    <ID>SwallowedException:Anilist.kt:Anilist$e: Exception</ID>
+    <ID>SwallowedException:Anilist.kt:Anilist$e: Throwable</ID>
+    <ID>SwallowedException:AudioBrowseScreen.kt:AudioBrowseViewModel$e: Exception</ID>
+    <ID>SwallowedException:AudioHistoryStore.kt:AudioHistoryStore$e: Exception</ID>
+    <ID>SwallowedException:BrowseIcons.kt:e: Exception</ID>
+    <ID>SwallowedException:ContextExtensions.kt:e: PackageManager.NameNotFoundException</ID>
+    <ID>SwallowedException:CreateBackupScreen.kt:CreateBackupScreen$e: ActivityNotFoundException</ID>
+    <ID>SwallowedException:DeviceUtil.kt:DeviceUtil$e: Exception</ID>
+    <ID>SwallowedException:DownloadPendingDeleter.kt:DownloadPendingDeleter$e: Exception</ID>
+    <ID>SwallowedException:DownloadStore.kt:DownloadStore$e: Exception</ID>
+    <ID>SwallowedException:GetChapterByUrlAndMangaId.kt:GetChapterByUrlAndMangaId$e: Exception</ID>
+    <ID>SwallowedException:ImageUtil.kt:ImageUtil$e: Exception</ID>
+    <ID>SwallowedException:Kavita.kt:Kavita$e: Exception</ID>
+    <ID>SwallowedException:KavitaApi.kt:KavitaApi$e: SocketTimeoutException</ID>
+    <ID>SwallowedException:Komga.kt:Komga$e: Exception</ID>
+    <ID>SwallowedException:LibrarySortMode.kt:LibrarySort.Companion$e: Exception</ID>
+    <ID>SwallowedException:LocalImportScreen.kt:LocalImportScreen$e: Exception</ID>
+    <ID>SwallowedException:LocalImportScreen.kt:LocalImportScreen$e: SecurityException</ID>
+    <ID>SwallowedException:LocalSource.kt:LocalSource$e: Format.UnknownFormatException</ID>
+    <ID>SwallowedException:MangaScreen.kt:MangaScreen$e: Exception</ID>
+    <ID>SwallowedException:MangaUpdates.kt:MangaUpdates$e: Exception</ID>
+    <ID>SwallowedException:MangaUpdatesApi.kt:MangaUpdatesApi$e: Exception</ID>
+    <ID>SwallowedException:MyAnimeList.kt:MyAnimeList$e: Exception</ID>
+    <ID>SwallowedException:MyAnimeList.kt:MyAnimeList$e: Throwable</ID>
+    <ID>SwallowedException:Pager.kt:Pager$e: IllegalArgumentException</ID>
+    <ID>SwallowedException:Pager.kt:Pager$e: IndexOutOfBoundsException</ID>
+    <ID>SwallowedException:Pager.kt:Pager$e: NullPointerException</ID>
+    <ID>SwallowedException:PreferenceStore.kt:e: IllegalArgumentException</ID>
+    <ID>SwallowedException:ReaderViewModel.kt:ReaderViewModel$e: Exception</ID>
+    <ID>SwallowedException:SettingsStorageScreen.kt:SettingsStorageScreen$e: android.content.ActivityNotFoundException</ID>
+    <ID>SwallowedException:Shikimori.kt:Shikimori$e: Exception</ID>
+    <ID>SwallowedException:Shikimori.kt:Shikimori$e: Throwable</ID>
+    <ID>SwallowedException:StorageStep.kt:StorageStep$e: ActivityNotFoundException</ID>
+    <ID>SwallowedException:Suwayomi.kt:Suwayomi$e: Exception</ID>
+    <ID>SwallowedException:TelemetryConfig.kt:TelemetryConfig$e: PackageManager.NameNotFoundException</ID>
+    <ID>ThrowingExceptionsWithoutMessageOrCause:MangaViewModel.kt:MangaViewModel$IllegalStateException()</ID>
+    <ID>ThrowingExceptionsWithoutMessageOrCause:OkHttpExtensions.kt:Exception()</ID>
+    <ID>ThrowingExceptionsWithoutMessageOrCause:PackageInstallerInstaller.kt:PackageInstallerInstaller$IllegalStateException()</ID>
+    <ID>ThrowingExceptionsWithoutMessageOrCause:TrackInfoDialog.kt:TrackInfoDialogHomeScreen.Model$Exception()</ID>
+    <ID>TooGenericExceptionThrown:Anilist.kt:Anilist$throw Exception("$track not found on user library")</ID>
+    <ID>TooGenericExceptionThrown:Anilist.kt:Anilist$throw Exception("Unknown score type")</ID>
+    <ID>TooGenericExceptionThrown:AnilistApi.kt:AnilistApi$throw Exception("Could not find manga")</ID>
+    <ID>TooGenericExceptionThrown:AnilistInterceptor.kt:AnilistInterceptor$throw Exception("Not authenticated with Anilist")</ID>
+    <ID>TooGenericExceptionThrown:Bangumi.kt:Bangumi$throw Exception("Could not find manga")</ID>
+    <ID>TooGenericExceptionThrown:BangumiInterceptor.kt:BangumiInterceptor$throw Exception("Not authenticated with Bangumi")</ID>
+    <ID>TooGenericExceptionThrown:ChapterLoader.kt:ChapterLoader$throw Exception(context.stringResource(MR.strings.page_list_empty_error))</ID>
+    <ID>TooGenericExceptionThrown:Constants.kt:throw Exception("targetAppId not passed as instrumentation runner arg")</ID>
+    <ID>TooGenericExceptionThrown:DownloadManager.kt:DownloadManager$throw Exception(context.stringResource(MR.strings.page_list_empty_error))</ID>
+    <ID>TooGenericExceptionThrown:Downloader.kt:Downloader$throw Exception(context.stringResource(MR.strings.page_list_empty_error))</ID>
+    <ID>TooGenericExceptionThrown:ExtensionLoader.kt:ExtensionLoader$throw Exception("Unknown source class type: ${obj.javaClass}")</ID>
+    <ID>TooGenericExceptionThrown:Hikka.kt:Hikka$throw Exception("Could not find manga")</ID>
+    <ID>TooGenericExceptionThrown:HikkaInterceptor.kt:HikkaInterceptor$throw Exception("Hikka: Auth token info failed")</ID>
+    <ID>TooGenericExceptionThrown:HikkaInterceptor.kt:HikkaInterceptor$throw Exception("Hikka: The token is expired")</ID>
+    <ID>TooGenericExceptionThrown:HikkaInterceptor.kt:HikkaInterceptor$throw Exception("Hikka: You are not authorized")</ID>
+    <ID>TooGenericExceptionThrown:KitsuApi.kt:KitsuApi$throw Exception("Could not find manga")</ID>
+    <ID>TooGenericExceptionThrown:KitsuInterceptor.kt:KitsuInterceptor$throw Exception("Not authenticated with Kitsu")</ID>
+    <ID>TooGenericExceptionThrown:KitsuListSearch.kt:KitsuListSearchResult$throw Exception("Unknown status")</ID>
+    <ID>TooGenericExceptionThrown:KitsuUtils.kt:throw Exception("Unknown status")</ID>
+    <ID>TooGenericExceptionThrown:LocalSource.kt:LocalSource$throw Exception(context.stringResource(MR.strings.chapter_not_found))</ID>
+    <ID>TooGenericExceptionThrown:LocalSource.kt:LocalSource$throw Exception(context.stringResource(MR.strings.local_invalid_format))</ID>
+    <ID>TooGenericExceptionThrown:MangaBaka.kt:MangaBaka$throw Exception("Could not find manga")</ID>
+    <ID>TooGenericExceptionThrown:MangaBaka.kt:MangaBaka$throw Exception("Unknown score step size ${currentUser.ratingSteps}")</ID>
+    <ID>TooGenericExceptionThrown:MangaBaka.kt:MangaBaka$throw Exception("Unknown score type")</ID>
+    <ID>TooGenericExceptionThrown:MangaBakaInterceptor.kt:MangaBakaInterceptor$throw Exception("Not authenticated with MangaBaka")</ID>
+    <ID>TooGenericExceptionThrown:Shikimori.kt:Shikimori$throw Exception("Could not find manga")</ID>
+    <ID>TooGenericExceptionThrown:ShikimoriInterceptor.kt:ShikimoriInterceptor$throw Exception("Not authenticated with Shikimori")</ID>
+    <ID>TooGenericExceptionThrown:TrackInfoDialog.kt:TrackInfoDialogHomeScreen.Model$throw Exception()</ID>
+    <ID>TooManyFunctions:AudioBrowseScreen.kt:AudioBrowseViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:AudioPlayerController.kt:AudioPlayerController</ID>
+    <ID>TooManyFunctions:BrowseSourceViewModel.kt:BrowseSourceViewModel : StateViewModel</ID>
+    <ID>TooManyFunctions:CategoryRepository.kt:CategoryRepository</ID>
+    <ID>TooManyFunctions:ChapterGridDragState.kt:ChapterGridDragState</ID>
+    <ID>TooManyFunctions:ChapterRepository.kt:ChapterRepository</ID>
+    <ID>TooManyFunctions:ContextExtensions.kt:eu.kanade.tachiyomi.util.system.ContextExtensions.kt</ID>
+    <ID>TooManyFunctions:DohProviders.kt:eu.kanade.tachiyomi.network.DohProviders.kt</ID>
+    <ID>TooManyFunctions:DownloadCache.kt:DownloadCache</ID>
+    <ID>TooManyFunctions:DownloadManager.kt:DownloadManager</ID>
+    <ID>TooManyFunctions:ExtensionManager.kt:ExtensionManager</ID>
+    <ID>TooManyFunctions:HistoryRepository.kt:HistoryRepository</ID>
+    <ID>TooManyFunctions:HistoryViewModel.kt:HistoryViewModel : StateViewModel</ID>
+    <ID>TooManyFunctions:HttpSource.kt:HttpSource : CatalogueSource</ID>
+    <ID>TooManyFunctions:ImageUtil.kt:ImageUtil</ID>
+    <ID>TooManyFunctions:KikoeruApi.kt:KikoeruApi</ID>
+    <ID>TooManyFunctions:LibraryViewModel.kt:LibraryViewModel : StateViewModel</ID>
+    <ID>TooManyFunctions:LocalChapterCoverManager.kt:LocalChapterCoverManager</ID>
+    <ID>TooManyFunctions:LocalSource.kt:LocalSource : SourceUnmeteredSource</ID>
+    <ID>TooManyFunctions:LocalSource.kt:tachiyomi.source.local.LocalSource.kt</ID>
+    <ID>TooManyFunctions:LocalSourceFileSystem.kt:LocalSourceFileSystem</ID>
+    <ID>TooManyFunctions:MangaRepository.kt:MangaRepository</ID>
+    <ID>TooManyFunctions:MangaViewModel.kt:MangaViewModel : StateViewModel</ID>
+    <ID>TooManyFunctions:NotificationReceiver.kt:NotificationReceiver$Companion</ID>
+    <ID>TooManyFunctions:ParsedHttpSource.kt:ParsedHttpSource : HttpSource</ID>
+    <ID>TooManyFunctions:ReaderActivity.kt:ReaderActivity : BaseActivity</ID>
+    <ID>TooManyFunctions:ReaderPageImageView.kt:ReaderPageImageView : FrameLayout</ID>
+    <ID>TooManyFunctions:ReaderViewModel.kt:ReaderViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:SettingsItems.kt:tachiyomi.presentation.core.components.SettingsItems.kt</ID>
+    <ID>TooManyFunctions:Tracker.kt:Tracker</ID>
+    <ID>TooManyFunctions:UpdatesViewModel.kt:UpdatesViewModel : StateViewModel</ID>
+    <ID>UnusedParameter:AudioReaderFloatingBar.kt:onExpand: () -&gt; Unit</ID>
+    <ID>UnusedParameter:AudioVideoStage.kt:aspectRatio: Float</ID>
+    <ID>UnusedParameter:DeepLinkViewModel.kt:DeepLinkViewModel$source: Source</ID>
+    <ID>UnusedParameter:HistoryScreen.kt:onDialogChange: (HistoryViewModel.Dialog?) -&gt; Unit</ID>
+    <ID>UnusedParameter:LocalChapterTransferService.kt:LocalChapterTransferService$target: Manga</ID>
+    <ID>UnusedParameter:ReaderViewModel.kt:ReaderViewModel$resolveDefault: Boolean = true</ID>
+    <ID>UnusedPrivateClass:BrowseSourceViewModel.kt:BrowseSourceViewModel$FilterArgs</ID>
+  </CurrentIssues>
+</SmellBaseline>
