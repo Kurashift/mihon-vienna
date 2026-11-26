@@ -367,17 +367,6 @@ class ChapterRepositoryImpl(
         return combine(flows) { lists -> lists.flatMap { it } }
     }
 
-    override suspend fun getTranslatedNames(mangaIds: List<Long>): List<ChapterTranslatedName> {
-        if (mangaIds.isEmpty()) return emptyList()
-        return mangaIds.chunked(CHAPTER_ID_CHUNK_SIZE).flatMap { chunk ->
-            database.chaptersQueries
-                .getTranslatedNamesByMangaIds(chunk) { mangaId, translatedName ->
-                    ChapterTranslatedName(mangaId = mangaId, name = translatedName.trim())
-                }
-                .awaitAsList()
-        }
-    }
-
     override fun observeTranslatedNames(mangaIds: List<Long>): Flow<List<ChapterTranslatedName>> {
         if (mangaIds.isEmpty()) return flowOf(emptyList())
         val chunks = mangaIds.chunked(CHAPTER_ID_CHUNK_SIZE)

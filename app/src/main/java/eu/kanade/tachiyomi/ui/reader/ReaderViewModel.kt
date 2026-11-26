@@ -1086,7 +1086,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     private suspend fun findRandomGoodDoujinTarget(allowCooldownReset: Boolean): RandomJumpTarget? {
         val currentManga = manga ?: return null
-        val marks = Injekt.get<GoodDoujinStore>().marks.value
+        val marks = goodDoujinStore.marks.value
         val mangaIds = marks.mapTo(linkedSetOf()) { it.mangaId }.toList()
         if (mangaIds.isEmpty()) return null
 
@@ -1287,15 +1287,6 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
 
-    fun toggleCropBorders(): Boolean {
-        val isPagerType = ReadingMode.isPagerType(getMangaReadingMode())
-        return if (isPagerType) {
-            readerPreferences.cropBorders.toggle()
-        } else {
-            readerPreferences.cropBordersWebtoon.toggle()
-        }
-    }
-
     /**
      * Generate a filename for the given [manga] and [page]
      */
@@ -1317,14 +1308,6 @@ class ReaderViewModel @JvmOverloads constructor(
 
     fun showLoadingDialog() {
         mutableState.update { it.copy(dialog = Dialog.Loading) }
-    }
-
-    fun openReadingModeSelectDialog() {
-        mutableState.update { it.copy(dialog = Dialog.ReadingModeSelect) }
-    }
-
-    fun openOrientationModeSelectDialog() {
-        mutableState.update { it.copy(dialog = Dialog.OrientationModeSelect) }
     }
 
     fun openPageDialog(page: ReaderPage) {
@@ -1690,8 +1673,6 @@ class ReaderViewModel @JvmOverloads constructor(
     sealed interface Dialog {
         data object Loading : Dialog
         data object Settings : Dialog
-        data object ReadingModeSelect : Dialog
-        data object OrientationModeSelect : Dialog
         data class PageActions(val page: ReaderPage) : Dialog
     }
 

@@ -157,7 +157,6 @@ internal fun AudioVideoStage(
                 val fittedHeight = fittedWidth / videoAspect
                 VideoOutput(
                     controller = controller,
-                    aspectRatio = videoAspect,
                     modifier = Modifier.size(fittedWidth, fittedHeight),
                 )
             }
@@ -248,7 +247,6 @@ internal fun AudioVideoStage(
 @Composable
 private fun VideoOutput(
     controller: AudioPlayerController,
-    aspectRatio: Float,
     modifier: Modifier = Modifier,
 ) {
     val owner = remember { Any() }

@@ -257,15 +257,6 @@ class HistoryRepositoryImpl(
         }
     }
 
-    override suspend fun resetHistoryByIds(historyIds: List<Long>) {
-        if (historyIds.isEmpty()) return
-        try {
-            database.historyQueries.resetHistoryByIds(historyIds)
-        } catch (e: Exception) {
-            logcat(LogPriority.ERROR, throwable = e)
-        }
-    }
-
     override suspend fun resetHistoryBySourceId(sourceId: Long) {
         try {
             database.historyQueries.resetHistoryBySourceId(sourceId)
@@ -281,15 +272,6 @@ class HistoryRepositoryImpl(
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
             false
-        }
-    }
-
-    override suspend fun getAllHistory(): List<History> {
-        return try {
-            database.historyQueries.getAllHistory(HistoryMapper::mapHistory).awaitAsList()
-        } catch (e: Exception) {
-            logcat(LogPriority.ERROR, throwable = e)
-            emptyList()
         }
     }
 

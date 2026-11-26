@@ -201,9 +201,6 @@ class BasePreferences(
     /** Anonymous recommender UUID used for personalized recommendations. */
     val audioRecommenderUuid: Preference<String> = preferenceStore.getString("audio_recommender_uuid", "")
 
-    /** Base-directory mtime of the last local-source chapter rescan, used to detect disk changes. */
-    val localSourceSyncMtime: Preference<Long> = preferenceStore.getLong("local_source_sync_mtime", 0L)
-
     /**
      * The home tab the user was last on, as a stable id (see `HomeTabKey` in the ui.home package).
      *

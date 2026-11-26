@@ -365,11 +365,5 @@ class AudioPlaybackService : Service() {
         fun start(context: Context) {
             context.startForegroundService(Intent(context, AudioPlaybackService::class.java))
         }
-
-        fun stop(context: Context) {
-            context.startService(
-                Intent(context, AudioPlaybackService::class.java).setAction(ACTION_STOP),
-            )
-        }
     }
 }

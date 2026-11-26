@@ -90,7 +90,6 @@ internal fun ChapterNavigator(
 ) {
     var dragPage by remember { mutableStateOf<Int?>(null) }
     val textColor = MaterialTheme.colorScheme.onSurface
-    val labelStyle = MaterialTheme.typography.labelLarge
 
     Surface(
         modifier = modifier.width(railWidth),

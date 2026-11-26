@@ -36,18 +36,9 @@ interface HistoryRepository {
 
     suspend fun resetHistoryByMangaIds(mangaIds: List<Long>)
 
-    suspend fun resetHistoryByIds(historyIds: List<Long>)
-
     suspend fun resetHistoryBySourceId(sourceId: Long)
 
     suspend fun deleteAllHistory(): Boolean
-
-    /**
-     * Compatibility projection of all retained rows, including hidden and detached records.
-     * Detached records use chapterId = -1; permanent export carries their durable identities.
-     * Visibility undo uses [hideHistory] and [undoHistoryVisibility], not this projection.
-     */
-    suspend fun getAllHistory(): List<History>
 
     /**
      * Compatibility restore using absolute lower bounds for time; never subtracts newer reading.

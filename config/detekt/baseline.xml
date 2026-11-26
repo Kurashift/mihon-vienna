@@ -385,12 +385,9 @@
     <ID>TooManyFunctions:SettingsItems.kt:tachiyomi.presentation.core.components.SettingsItems.kt</ID>
     <ID>TooManyFunctions:Tracker.kt:Tracker</ID>
     <ID>TooManyFunctions:UpdatesViewModel.kt:UpdatesViewModel : StateViewModel</ID>
-    <ID>UnusedParameter:AudioReaderFloatingBar.kt:onExpand: () -&gt; Unit</ID>
-    <ID>UnusedParameter:AudioVideoStage.kt:aspectRatio: Float</ID>
     <ID>UnusedParameter:DeepLinkViewModel.kt:DeepLinkViewModel$source: Source</ID>
     <ID>UnusedParameter:HistoryScreen.kt:onDialogChange: (HistoryViewModel.Dialog?) -&gt; Unit</ID>
     <ID>UnusedParameter:LocalChapterTransferService.kt:LocalChapterTransferService$target: Manga</ID>
     <ID>UnusedParameter:ReaderViewModel.kt:ReaderViewModel$resolveDefault: Boolean = true</ID>
-    <ID>UnusedPrivateClass:BrowseSourceViewModel.kt:BrowseSourceViewModel$FilterArgs</ID>
   </CurrentIssues>
 </SmellBaseline>

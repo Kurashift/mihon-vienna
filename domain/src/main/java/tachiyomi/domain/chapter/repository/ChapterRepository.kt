@@ -59,8 +59,6 @@ interface ChapterRepository {
         applyScanlatorFilter: Boolean = false,
     ): Flow<List<Chapter>>
 
-    suspend fun getTranslatedNames(mangaIds: List<Long>): List<ChapterTranslatedName>
-
     fun observeTranslatedNames(mangaIds: List<Long>): Flow<List<ChapterTranslatedName>>
 
     /**

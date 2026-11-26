@@ -63,7 +63,6 @@ import kotlin.math.roundToInt
 @Composable
 fun AudioReaderFloatingBar(
     compact: Boolean,
-    onExpand: () -> Unit,
     onDismiss: () -> Unit,
     onOpenWork: () -> Unit,
     onOpenPlaylist: () -> Unit,

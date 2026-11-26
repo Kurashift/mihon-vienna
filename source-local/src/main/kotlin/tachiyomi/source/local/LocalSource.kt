@@ -2788,24 +2788,6 @@ class LocalSource(
     }
 
     /**
-     * Returns page counts from the local chapter index, keyed by the chapter URL used in the
-     * database. This lets the detail screen prefill progress bars without entering the reader
-     * and without rewriting source order.
-     */
-    suspend fun getChapterPageCounts(manga: SManga): Map<String, Long> = withIOContext {
-        val snapshot = getMangaDirectorySnapshot(manga.url, confirmEmptyChapters = true)
-        if (!snapshot.isAccessible || snapshot.files.isEmpty()) return@withIOContext emptyMap()
-        val chapterEntries = chapterEntriesOf(snapshot.files)
-        val entries = if (chapterEntries.isSingleChapter) {
-            listOf(buildSingleChapterEntry(chapterEntries.singleChapterPages))
-        } else {
-            getChapterIndex(manga, chapterEntries.chapterFiles)
-        }
-
-        entries.associate { entry -> "${manga.url}/${entry.name}" to entry.pageCount.toLong() }
-    }
-
-    /**
      * Cheap detail-screen change check. This only lists direct children and never opens archives.
      * Unavailable or unexpectedly empty reads are treated as unchanged so entering a manga cannot
      * trigger a slow scan, or remove chapters, because of a transient document-provider failure.
