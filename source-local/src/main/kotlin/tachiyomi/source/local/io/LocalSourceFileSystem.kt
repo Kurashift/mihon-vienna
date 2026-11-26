@@ -7,6 +7,9 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.concurrent.thread
 
 class LocalSourceFileSystem(
     private val storageManager: StorageManager,
@@ -100,7 +103,7 @@ class LocalSourceFileSystem(
             }
 
             val directPath = runCatching { directory.filePath }.getOrNull()?.let(::File)
-            val files = if (directPath != null) {
+            val rawFiles = if (directPath != null) {
                 when {
                     prefetchDirectChildren -> readDirectTree(directPath)?.also { directTreeListing = it }
                         ?.childrenByParentPath
@@ -117,6 +120,10 @@ class LocalSourceFileSystem(
                 directory.listFiles()?.toList()
             } ?: return@runCatching DirectorySnapshot(directory, emptyList(), isAccessible = false)
 
+            val files = rawFiles.filter { entry ->
+                runCatching { !entry.name.isNullOrBlank() }.getOrDefault(false)
+            }
+
             DirectorySnapshot(directory, files, isAccessible = true)
         }.getOrElse {
             DirectorySnapshot(directory, emptyList(), isAccessible = false)
@@ -129,7 +136,9 @@ class LocalSourceFileSystem(
      * entries before constructing File/UniFile objects.
      */
     private fun readDirectTree(baseDirectory: File): DirectTreeListing? {
-        val paths = runFind(baseDirectory, maxDepth = 2) ?: return null
+        val paths = runFind(baseDirectory, maxDepth = 2)
+            ?: readDirectPathsFallback(baseDirectory, maxDepth = 2)
+            ?: return null
         return DirectTreeListing(
             basePath = baseDirectory.absolutePath,
             childrenByParentPath = directTreeChildrenByParent(baseDirectory, paths),
@@ -137,24 +146,33 @@ class LocalSourceFileSystem(
     }
 
     private fun readDirectDirectory(directory: File): List<UniFile>? {
-        return runFind(directory, maxDepth = 1)
-            ?.mapNotNull { path -> UniFile.fromFile(File(path)) }
+        val paths = runFind(directory, maxDepth = 1)
+            ?: readDirectPathsFallback(directory, maxDepth = 1)
+            ?: return null
+        return paths.mapNotNull { path -> runCatching { UniFile.fromFile(File(path)) }.getOrNull() }
     }
 
     private fun runFind(directory: File, maxDepth: Int): List<String>? {
-        val process = ProcessBuilder(
-            "/system/bin/find",
-            directory.absolutePath,
-            "-mindepth",
-            "1",
-            "-maxdepth",
-            maxDepth.toString(),
-            "-print0",
-        ).start()
-        val output = process.inputStream.use { it.readBytes() }
-        process.errorStream.use { it.readBytes() }
-        if (process.waitFor() != 0) return null
-        return decodeNullSeparatedUtf8Paths(output).paths
+        return runCatching {
+            val process = ProcessBuilder(
+                "/system/bin/find",
+                directory.absolutePath,
+                "-mindepth",
+                "1",
+                "-maxdepth",
+                maxDepth.toString(),
+                "-print0",
+            ).start()
+            // Drain stderr concurrently so warnings about unreadable/emoji entries cannot fill
+            // the pipe buffer and deadlock find while stdout is being read.
+            val stderrDrain = thread(start = true, isDaemon = true, name = "local-find-stderr") {
+                runCatching { process.errorStream.use { it.readBytes() } }
+            }
+            val output = process.inputStream.use { it.readBytes() }
+            stderrDrain.join()
+            val exitCode = process.waitFor()
+            resolveFindPaths(exitCode, output)
+        }.getOrNull()
     }
 
     private data class DirectTreeListing(
@@ -204,4 +222,47 @@ internal fun decodeNullSeparatedUtf8Paths(bytes: ByteArray): DecodedPaths {
         start = index + 1
     }
     return DecodedPaths(paths, malformedCount)
+}
+
+/**
+ * Keeps valid stdout paths even when `find` exits non-zero because one individual entry
+ * (for example an unreadable or unstatable emoji/0B filename on older Android storage)
+ * produced a warning. Only a non-zero exit with zero emitted entries is treated as a failed scan.
+ */
+internal fun resolveFindPaths(exitCode: Int, stdoutBytes: ByteArray): List<String>? {
+    val decoded = decodeNullSeparatedUtf8Paths(stdoutBytes)
+    if (exitCode == 0) return decoded.paths
+    return if (decoded.paths.isNotEmpty() || decoded.malformedCount > 0) {
+        decoded.paths
+    } else {
+        null
+    }
+}
+
+/**
+ * Fallback direct-directory walker for devices whose `/system/bin/find` fails or lacks flags.
+ * Isolates per-entry errors so a single unreadable/corrupt filename cannot fail the whole library.
+ */
+internal fun readDirectPathsFallback(directory: File, maxDepth: Int): List<String>? {
+    if (!directory.isDirectory || !directory.canRead()) return null
+    val results = mutableListOf<String>()
+    fun walk(dir: Path, depth: Int): Boolean {
+        return runCatching {
+            Files.newDirectoryStream(dir).use { stream ->
+                val iterator = stream.iterator()
+                while (true) {
+                    val hasNext = runCatching { iterator.hasNext() }.getOrDefault(false)
+                    if (!hasNext) break
+                    val child = runCatching { iterator.next() }.getOrNull() ?: continue
+                    val childPath = runCatching { child.toAbsolutePath().toString() }.getOrNull() ?: continue
+                    results += childPath
+                    if (depth < maxDepth && runCatching { Files.isDirectory(child) }.getOrDefault(false)) {
+                        walk(child, depth + 1)
+                    }
+                }
+            }
+            true
+        }.getOrDefault(false)
+    }
+    return if (walk(directory.toPath(), depth = 1)) results else null
 }

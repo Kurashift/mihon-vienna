@@ -143,6 +143,43 @@ class LocalSourceFileSystemTest {
         assertEquals(1, decoded.malformedCount)
     }
 
+    @Test
+    fun `non-zero find exit keeps valid paths instead of failing the whole library`() {
+        val validWork = "/storage/emulated/0/MIHON/local/Collection/01.cbz".toByteArray()
+        val emojiWork = "/storage/emulated/0/MIHON/local/Collection/02_🔥.cbz".toByteArray()
+        val bytes = validWork + byteArrayOf(0) + emojiWork + byteArrayOf(0)
+
+        val resolved = resolveFindPaths(exitCode = 1, stdoutBytes = bytes)
+
+        assertEquals(
+            listOf(
+                "/storage/emulated/0/MIHON/local/Collection/01.cbz",
+                "/storage/emulated/0/MIHON/local/Collection/02_🔥.cbz",
+            ),
+            resolved,
+        )
+    }
+
+    @Test
+    fun `non-zero find exit with empty output stays failed`() {
+        val resolved = resolveFindPaths(exitCode = 1, stdoutBytes = ByteArray(0))
+
+        assertEquals(null, resolved)
+    }
+
+    @Test
+    fun `fallback direct walker lists up to maxDepth cleanly`(@TempDir directory: Path) {
+        val mangaDir = directory.resolve("Work").toFile().apply { mkdirs() }
+        val chapterFile = mangaDir.resolve("ch1.cbz").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+
+        val paths = readDirectPathsFallback(directory.toFile(), maxDepth = 2)
+
+        assertEquals(
+            setOf(mangaDir.absolutePath, chapterFile.absolutePath),
+            paths?.toSet(),
+        )
+    }
+
     private fun createFileSystem(directory: UniFile): LocalSourceFileSystem {
         val storageManager = mockk<StorageManager>()
         every { storageManager.getDirectLocalSourceDirectory() } returns null

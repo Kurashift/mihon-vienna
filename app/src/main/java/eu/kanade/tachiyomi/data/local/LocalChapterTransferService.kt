@@ -13,11 +13,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import logcat.LogPriority
 import mihon.core.archive.ZipWriter
 import mihon.core.archive.archiveReader
 import tachiyomi.core.common.storage.extension
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.PageImageName
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
@@ -282,83 +284,84 @@ class LocalChapterTransferService(
                     onProgress(Progress(index + 1, chapters.size, chapter.name, 0L, 0L))
                     return@forEachIndexed
                 }
-                val sourceDir = fileSystem.getBaseDirectory()?.findFile(source.url)
-                val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
-                    ?: fileSystem.getBaseDirectory()?.createDirectory(target.url)
-                val sourceFile = sourceDir?.findFile(fileName)
-                if (sourceFile == null || targetDir == null) {
-                    failed++
-                    onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
-                    return@forEachIndexed
-                }
-                val normalized = normalizeName(fileName.substringBeforeLast('.'))
-                if (targetDir.listFiles().orEmpty().any {
-                        normalizeName(it.name.orEmpty().substringBeforeLast('.')) == normalized
+                val lockOrder = listOf(source.url, target.url).distinct().sorted()
+                withOrderedLocalChapterMutationLocks(lockOrder) {
+                    val sourceDir = fileSystem.getBaseDirectory()?.findFile(source.url)
+                    val targetDir = fileSystem.getBaseDirectory()?.findFile(target.url)
+                        ?: fileSystem.getBaseDirectory()?.createDirectory(target.url)
+                    val sourceFile = sourceDir?.findFile(fileName)
+                    if (sourceFile == null || targetDir == null) {
+                        failed++
+                        onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
+                        return@withOrderedLocalChapterMutationLocks
                     }
-                ) {
-                    skipped++
-                    onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
-                    return@forEachIndexed
-                }
-                var temp: UniFile? = null
-                var movedDirectly = false
-                var databaseRelocated = false
-                try {
-                    movedDirectly = moveEntryDirect(sourceFile, sourceDir, targetDir, fileName)
-                    if (!movedDirectly) {
-                        temp = if (sourceFile.isDirectory) {
-                            targetDir.createDirectory(".mihon-move-${UUID.randomUUID()}")
-                        } else {
-                            targetDir.createFile(".mihon-move-${UUID.randomUUID()}.tmp")
-                        } ?: error("Cannot create temporary move target")
-                        copyEntry(sourceFile, temp) { copied ->
-                            onProgress(Progress(index, chapters.size, fileName, copied, sourceFile.length()))
+                    val sourceKey = entryKey(sourceFile)
+                    if (targetDir.listFiles().orEmpty().any { entryKey(it) == sourceKey }) {
+                        skipped++
+                        onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
+                        return@withOrderedLocalChapterMutationLocks
+                    }
+                    var temp: UniFile? = null
+                    var movedDirectly = false
+                    var databaseRelocated = false
+                    try {
+                        movedDirectly = moveEntryDirect(sourceFile, sourceDir, targetDir, fileName)
+                        if (!movedDirectly) {
+                            temp = if (sourceFile.isDirectory) {
+                                targetDir.createDirectory(".mihon-move-${UUID.randomUUID()}")
+                            } else {
+                                targetDir.createFile(".mihon-move-${UUID.randomUUID()}.tmp")
+                            } ?: error("Cannot create temporary move target")
+                            copyEntry(sourceFile, temp) { copied ->
+                                onProgress(Progress(index, chapters.size, fileName, copied, sourceFile.length()))
+                            }
+                            if (!temp.renameTo(fileName)) error("Cannot commit move target")
                         }
-                        if (!temp.renameTo(fileName)) error("Cannot commit move target")
+                        val newUrl = "${target.url}/$fileName"
+                        chapterRepository.relocateAll(
+                            listOf(ChapterUpdate(id = chapter.id, mangaId = target.id, url = newUrl)),
+                        )
+                        databaseRelocated = true
+                        runCatching { coverManager.migrateLegacyCover(chapter.id, chapter.url, newUrl) }
+                        mangaMarkStore.relocate(chapter.id, target.id, target.title)
+                        if (!movedDirectly) {
+                            // Local chapters are commonly directories. Delete recursively so a successful
+                            // copy-based move does not leave a second source copy to be rediscovered.
+                            deleteRecursively(sourceFile)
+                        }
+                        moved++
+                        changedWorks += source.url
+                        changedWorks += target.url
+                    } catch (e: CancellationException) {
+                        temp?.let(::deleteRecursively)
+                        rollbackMove(
+                            chapter = chapter,
+                            source = source,
+                            target = target,
+                            sourceDir = sourceDir,
+                            targetDir = targetDir,
+                            fileName = fileName,
+                            movedDirectly = movedDirectly,
+                            databaseRelocated = databaseRelocated,
+                        )
+                        throw e
+                    } catch (e: Throwable) {
+                        logcat(LogPriority.WARN, e) { "Failed to move local chapter ${chapter.url} to ${target.url}" }
+                        temp?.let(::deleteRecursively)
+                        rollbackMove(
+                            chapter = chapter,
+                            source = source,
+                            target = target,
+                            sourceDir = sourceDir,
+                            targetDir = targetDir,
+                            fileName = fileName,
+                            movedDirectly = movedDirectly,
+                            databaseRelocated = databaseRelocated,
+                        )
+                        failed++
                     }
-                    val newUrl = "${target.url}/$fileName"
-                    coverManager.migrateLegacyCover(chapter.id, chapter.url, newUrl)
-                    chapterRepository.relocateAll(
-                        listOf(ChapterUpdate(id = chapter.id, mangaId = target.id, url = newUrl)),
-                    )
-                    databaseRelocated = true
-                    mangaMarkStore.relocate(chapter.id, target.id, target.title)
-                    if (!movedDirectly) {
-                        // Local chapters are commonly directories. Delete recursively so a successful
-                        // copy-based move does not leave a second source copy to be rediscovered.
-                        deleteRecursively(sourceFile)
-                    }
-                    moved++
-                    changedWorks += source.url
-                    changedWorks += target.url
-                } catch (e: CancellationException) {
-                    temp?.delete()
-                    rollbackMove(
-                        chapter = chapter,
-                        source = source,
-                        target = target,
-                        sourceDir = sourceDir,
-                        targetDir = targetDir,
-                        fileName = fileName,
-                        movedDirectly = movedDirectly,
-                        databaseRelocated = databaseRelocated,
-                    )
-                    throw e
-                } catch (_: Throwable) {
-                    temp?.delete()
-                    rollbackMove(
-                        chapter = chapter,
-                        source = source,
-                        target = target,
-                        sourceDir = sourceDir,
-                        targetDir = targetDir,
-                        fileName = fileName,
-                        movedDirectly = movedDirectly,
-                        databaseRelocated = databaseRelocated,
-                    )
-                    failed++
+                    onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
                 }
-                onProgress(Progress(index + 1, chapters.size, fileName, 0L, 0L))
             }
         } finally {
             withContext(NonCancellable) {
@@ -602,9 +605,6 @@ class LocalChapterTransferService(
                 withLocalChapterMutationLock(target.url) {
                     check(targetDir.findFile(committedName) == null) { "Import destination already exists" }
                     if (!staged.renameTo(committedName)) error("Cannot commit imported chapter")
-                    committedNames += key
-                    changedWorks += target.url
-                    firstImportedChapterFileName = firstImportedChapterFileName ?: committedName
                     val chapterUrl = "${target.url}/$committedName"
                     if (chapterRepository.getChapterByUrlAndMangaId(chapterUrl, target.id) == null) {
                         val added = chapterRepository.addAll(
@@ -624,16 +624,20 @@ class LocalChapterTransferService(
                         )
                         if (added.isEmpty()) error("Chapter database commit failed")
                     }
+                    committedNames += key
+                    changedWorks += target.url
+                    firstImportedChapterFileName = firstImportedChapterFileName ?: committedName
                 }
                 if (options.deleteSourceAfterSuccess && canDeleteSource(candidate.file, options)) {
                     deleteRecursively(candidate.file)
                 }
                 imported++
             } catch (e: CancellationException) {
-                temp?.delete()
+                temp?.let(::deleteRecursively)
                 throw e
-            } catch (_: Throwable) {
-                temp?.delete()
+            } catch (e: Throwable) {
+                logcat(LogPriority.WARN, e) { "Failed to import local chapter ${candidate.name} into ${target.url}" }
+                temp?.let(::deleteRecursively)
                 failed++
             }
             onProgress(Progress(index + 1, candidates.size, candidate.name, copiedBytes, totalBytes))
@@ -866,10 +870,14 @@ class LocalChapterTransferService(
                 }
                 val chapterUrl = "${target.url}/${approval.fileName}"
                 val chapter = chapterRepository.getChapterByUrlAndMangaId(chapterUrl, target.id)
+                val oldCoverFiles = runCatching {
+                    coverManager.generatedCoverFilesFor(chapterUrl, current)
+                }.getOrDefault(emptyList())
                 if (!commitArchiveReplacement(approval, staged)) return@withLocalChapterMutationLock false
                 changedWorks += target.url
                 withContext(NonCancellable) {
                     LocalPageListCache.invalidateArchive(original.uri.toString())
+                    oldCoverFiles.forEach { it.delete() }
                     runCatching { coverManager.invalidateGeneratedCover(chapterUrl) }
                     runCatching { localSource()?.invalidateChapterMetadata(target.url, approval.fileName) }
                     if (chapter != null) {
@@ -1030,3 +1038,14 @@ private const val CHAPTER_NAME_RESERVED_BYTES = 11
 
 internal fun chapterImportKey(name: String, isFile: Boolean): String =
     (if (isFile) name.substringBeforeLast('.') else name).trim().lowercase()
+
+private suspend fun <T> withOrderedLocalChapterMutationLocks(
+    mangaUrls: List<String>,
+    block: suspend () -> T,
+): T {
+    suspend fun acquire(index: Int): T {
+        if (index >= mangaUrls.size) return block()
+        return withLocalChapterMutationLock(mangaUrls[index]) { acquire(index + 1) }
+    }
+    return acquire(0)
+}

@@ -259,7 +259,7 @@ class LocalEntryDeletionService(
 
             _progress.value = Progress(Progress.Phase.DELETING, done = 0, total = total)
             var done = 0
-            val deleted = mutableListOf<Pair<ChapterTarget, String>>()
+            val deleted = mutableListOf<Triple<ChapterTarget, String, List<java.io.File>>>()
             val failed = mutableListOf<String>()
             val entries = mutableListOf<LocalDeletionEntry>()
 
@@ -274,6 +274,11 @@ class LocalEntryDeletionService(
                     entries += plan.toEntry(LocalDeletionOutcome.FAILED)
                     return@forEach
                 }
+                // Capture generated cover cache paths BEFORE removing the file on disk: the
+                // generated cover filename hashes the file's size and lastModified.
+                val generatedCoverFiles = runCatching {
+                    coverManager.generatedCoverFilesFor(plan.chapterUrl, file)
+                }.getOrDefault(emptyList())
                 val onFileDeleted = {
                     done++
                     _progress.value = Progress(Progress.Phase.DELETING, done = done, total = total)
@@ -285,7 +290,7 @@ class LocalEntryDeletionService(
                 }
                 entries += plan.toEntry(outcome)
                 if (outcome == LocalDeletionOutcome.DELETED) {
-                    deleted += plan.target to plan.chapterUrl
+                    deleted += Triple(plan.target, plan.chapterUrl, generatedCoverFiles)
                 } else {
                     failed += plan.target.name
                 }
@@ -307,7 +312,7 @@ class LocalEntryDeletionService(
                 cleanupChapters(deleted)
             }
 
-            val changedWorks = deleted.mapTo(mutableSetOf()) { (_, url) -> url.substringBefore('/') }
+            val changedWorks = deleted.mapTo(mutableSetOf()) { (_, url, _) -> url.substringBefore('/') }
             val removedFolderMangaIds = mutableSetOf<Long>()
             val keptFolders = folders.mapNotNull { folder ->
                 val removed = folder.url in changedWorks && !stopRequested.get() &&
@@ -435,15 +440,18 @@ class LocalEntryDeletionService(
         )
     }
 
-    private suspend fun cleanupChapters(chapters: List<Pair<ChapterTarget, String>>) {
+    private suspend fun cleanupChapters(chapters: List<Triple<ChapterTarget, String, List<java.io.File>>>) {
         runCatching {
-            // Covers must go first: the generated name is derived from the file on disk.
-            chapters.forEach { (target, url) -> coverManager.deleteChapterCovers(target.id, url) }
+            // Delete custom covers plus the generated cache files captured before disk removal.
+            chapters.forEach { (target, url, generatedFiles) ->
+                coverManager.deleteChapterCovers(target.id, url)
+                generatedFiles.forEach { it.delete() }
+            }
             // Marks are keyed by chapter id, so the timestamp is only carried to rebuild the
             // entry; the store drops whatever matches the id.
             val known = mangaMarkStore.marks.value.associateBy { it.chapterId }
             mangaMarkStore.setAll(
-                chapters.map { (target, _) ->
+                chapters.map { (target, _, _) ->
                     MangaMark(
                         mangaId = target.mangaId,
                         mangaTitle = target.mangaTitle,
@@ -454,7 +462,7 @@ class LocalEntryDeletionService(
                 },
                 false,
             )
-            chapterRepository.removeChaptersWithIds(chapters.map { (target, _) -> target.id })
+            chapterRepository.removeChaptersWithIds(chapters.map { (target, _, _) -> target.id })
         }.onFailure {
             logcat(LogPriority.ERROR, it) { "Failed to clean up deleted chapters" }
         }

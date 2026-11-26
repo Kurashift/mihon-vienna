@@ -789,6 +789,12 @@ class LocalSource(
                     observation.state.chapterFileNames.orEmpty().map(::chapterBaseName)
                 },
             )
+            val currentSync = loadSyncIndex()?.takeIf { it.baseUri == baseUri }
+            if (currentSync != null) {
+                val mergedFolders = currentSync.folders.toMutableMap()
+                observed.forEach { (url, observation) -> mergedFolders[url] = observation.state }
+                saveSyncIndex(currentSync.copy(folders = mergedFolders))
+            }
         }
     }
 
@@ -867,8 +873,12 @@ class LocalSource(
         val persistedChapterNames = loadPersistedChapterNamesIndex()
 
         val dirs = baseFiles
-            .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
-            .distinctBy { it.name }
+            .filter { entry ->
+                runCatching {
+                    entry.isDirectory && !entry.name.isNullOrBlank() && !entry.name.orEmpty().startsWith('.')
+                }.getOrDefault(false)
+            }
+            .distinctBy { runCatching { it.name }.getOrNull() }
 
         if (
             shouldReuseListingAfterUnexpectedEmptyScan(
@@ -891,56 +901,67 @@ class LocalSource(
             dirs.map { dir ->
                 async {
                     coverLookups.withPermit {
-                        val name = dir.name.orEmpty()
-                        val dirLastModified = dir.lastModified()
+                        val name = runCatching { dir.name.orEmpty() }.getOrDefault("")
+                        if (name.isBlank()) return@withPermit null
                         val indexed = index?.entries?.get(name)
-                        val directoryMetadataUnchanged = indexed != null && indexed.dirLastModified == dirLastModified
-                        // A folder-level single work takes its cover from its own pages, so an
-                        // entry saved before that rule existed carries no cover decision at all.
-                        // Those are measured once and the answer is stored: reusing the blank one
-                        // would leave the card empty until something else touched the folder.
-                        val coverLookedUp = directoryMetadataUnchanged && indexed.coverLookedUp
-                        val coverUri = if (coverLookedUp) {
-                            indexed.coverUri
-                        } else {
-                            coverManager.find(name)?.uri?.toString()
-                        }
-                        val reusesIndexedStats = directoryMetadataUnchanged &&
-                            coverLookedUp &&
-                            indexed.chapterCount >= 0 &&
-                            (indexed.chapterCount == 0 || indexed.latestChapterModified > 0)
-                        val indexedEntry = indexed
-                        val measuredChapterStats = if (reusesIndexedStats && indexedEntry != null) {
-                            ChapterListingStats(indexedEntry.chapterCount, indexedEntry.latestChapterModified)
-                        } else {
-                            val snapshot = fileSystem.getDirectorySnapshot(dir)
-                            if (!snapshot.isAccessible) return@withPermit indexed?.let { name to it }
-                            getChapterListingStats(dir, persistedChapterNames[name].orEmpty(), snapshot.files)
-                        }
-                        val chapterStats = measuredChapterStats.copy(
-                            count = resolvedLocalChapterCount(
-                                scannedChapterFiles = null,
-                                measuredChapterCount = measuredChapterStats.count,
-                                previousConfirmedChapterCount = indexed?.chapterCount,
-                            ),
-                            latestModified = if (
-                                measuredChapterStats.count == 0 &&
-                                indexed?.chapterCount?.let { it > 0 } == true
-                            ) {
-                                indexed.latestChapterModified
+                        try {
+                            val dirLastModified = dir.lastModified()
+                            val directoryMetadataUnchanged =
+                                indexed != null && indexed.dirLastModified == dirLastModified
+                            // A folder-level single work takes its cover from its own pages, so an
+                            // entry saved before that rule existed carries no cover decision at all.
+                            // Those are measured once and the answer is stored: reusing the blank one
+                            // would leave the card empty until something else touched the folder.
+                            val coverLookedUp = directoryMetadataUnchanged && indexed.coverLookedUp
+                            val coverUri = if (coverLookedUp) {
+                                indexed.coverUri
                             } else {
-                                measuredChapterStats.latestModified
-                            },
-                        )
-                        name to ListingIndexEntry(
-                            dirLastModified = dirLastModified,
-                            coverUri = coverUri ?: measuredChapterStats.coverPage?.uri?.toString(),
-                            // Every entry this build writes has had its cover decided, one way or
-                            // the other; only entries from before the page-cover rule say false.
-                            coverLookedUp = true,
-                            chapterCount = chapterStats.count,
-                            latestChapterModified = chapterStats.latestModified,
-                        )
+                                coverManager.find(name)?.uri?.toString()
+                            }
+                            val reusesIndexedStats = directoryMetadataUnchanged &&
+                                coverLookedUp &&
+                                indexed.chapterCount >= 0 &&
+                                (indexed.chapterCount == 0 || indexed.latestChapterModified > 0)
+                            val indexedEntry = indexed
+                            val measuredChapterStats = if (reusesIndexedStats && indexedEntry != null) {
+                                ChapterListingStats(indexedEntry.chapterCount, indexedEntry.latestChapterModified)
+                            } else {
+                                val snapshot = fileSystem.getDirectorySnapshot(dir)
+                                if (!snapshot.isAccessible) return@withPermit indexed?.let { name to it }
+                                getChapterListingStats(dir, persistedChapterNames[name].orEmpty(), snapshot.files)
+                            }
+                            val chapterStats = measuredChapterStats.copy(
+                                count = resolvedLocalChapterCount(
+                                    scannedChapterFiles = null,
+                                    measuredChapterCount = measuredChapterStats.count,
+                                    previousConfirmedChapterCount = indexed?.chapterCount,
+                                ),
+                                latestModified = if (
+                                    measuredChapterStats.count == 0 &&
+                                    indexed?.chapterCount?.let { it > 0 } == true
+                                ) {
+                                    indexed.latestChapterModified
+                                } else {
+                                    measuredChapterStats.latestModified
+                                },
+                            )
+                            name to ListingIndexEntry(
+                                dirLastModified = dirLastModified,
+                                coverUri = coverUri ?: measuredChapterStats.coverPage?.uri?.toString(),
+                                // Every entry this build writes has had its cover decided, one way or
+                                // the other; only entries from before the page-cover rule say false.
+                                coverLookedUp = true,
+                                chapterCount = chapterStats.count,
+                                latestChapterModified = chapterStats.latestModified,
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            logcat(LogPriority.WARN, e) {
+                                "Skipping unreadable local manga directory during listing scan: $name"
+                            }
+                            indexed?.let { name to it }
+                        }
                     }
                 }
             }.awaitAll().filterNotNull()
@@ -2133,9 +2154,9 @@ class LocalSource(
         return null
     }
 
-    private fun readChapterFiles(dir: UniFile): List<UniFile> {
-        return fileSystem.getFilesInDirectory(dir)
-            .filter(Archive::isChapterEntry)
+    private fun readChapterFiles(dir: UniFile, fresh: Boolean = false): List<UniFile> {
+        return fileSystem.getDirectorySnapshot(dir, fresh = fresh).files
+            .filter { entry -> runCatching { Archive.isChapterEntry(entry) }.getOrDefault(false) }
     }
 
     private suspend fun readChapterFilesWithRecovery(
@@ -2144,14 +2165,14 @@ class LocalSource(
         initialFiles: List<UniFile>? = null,
     ): List<UniFile> {
         var chapterFiles = (initialFiles ?: fileSystem.getFilesInDirectory(dir))
-            .filter(Archive::isChapterEntry)
+            .filter { entry -> runCatching { Archive.isChapterEntry(entry) }.getOrDefault(false) }
         if (chapterFiles.isEmpty()) {
             chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
         }
         for (retryDelay in EMPTY_DIRECTORY_RETRY_DELAYS) {
             if (chapterFiles.isNotEmpty()) break
             delay(retryDelay)
-            chapterFiles = readChapterFiles(dir)
+            chapterFiles = readChapterFiles(dir, fresh = true)
             if (chapterFiles.isEmpty()) {
                 chapterFiles = recoverChapterFiles(dir, knownChapterFileNames)
             }
@@ -2318,13 +2339,13 @@ class LocalSource(
 
         val latestModified: Long
             get() = (if (isSingleChapter) singleChapterPages else chapterFiles)
-                .maxOfOrNull(UniFile::lastModified) ?: 0L
+                .maxOfOrNull { file -> runCatching { file.lastModified() }.getOrDefault(0L) } ?: 0L
 
         val chapterFileNames: Set<String>
             get() = if (isSingleChapter) {
                 setOf(LOCAL_SINGLE_CHAPTER_NAME)
             } else {
-                chapterFiles.mapTo(linkedSetOf()) { it.name.orEmpty() }
+                chapterFiles.mapTo(linkedSetOf()) { runCatching { it.name.orEmpty() }.getOrDefault("") }
             }
 
         /**
@@ -2333,8 +2354,11 @@ class LocalSource(
          */
         val fingerprintParts: List<String>
             get() = (if (isSingleChapter) singleChapterPages else chapterFiles).map { file ->
-                val size = if (file.isDirectory) 0L else file.length()
-                "${file.name.orEmpty()}|${file.lastModified()}|$size"
+                val isDir = runCatching { file.isDirectory }.getOrDefault(false)
+                val size = if (isDir) 0L else runCatching { file.length() }.getOrDefault(0L)
+                val name = runCatching { file.name.orEmpty() }.getOrDefault("")
+                val mtime = runCatching { file.lastModified() }.getOrDefault(0L)
+                "$name|$mtime|$size"
             }
 
         /**
@@ -2371,13 +2395,18 @@ class LocalSource(
     }
 
     private fun chapterEntriesOf(files: List<UniFile>): ChapterEntries {
-        val chapterFiles = files.filter(Archive::isChapterEntry)
+        val chapterFiles = files.filter { entry ->
+            runCatching { Archive.isChapterEntry(entry) }.getOrDefault(false)
+        }
         // Chapter entries win: a folder that has chapters of its own keeps the layout it has
         // always had, and any loose file next to them belongs to no chapter.
         return if (chapterFiles.isNotEmpty()) {
             ChapterEntries(chapterFiles = chapterFiles, singleChapterPages = emptyList())
         } else {
-            ChapterEntries(chapterFiles = emptyList(), singleChapterPages = loosePages(files))
+            ChapterEntries(
+                chapterFiles = emptyList(),
+                singleChapterPages = runCatching { loosePages(files) }.getOrDefault(emptyList()),
+            )
         }
     }
 
@@ -2481,18 +2510,61 @@ class LocalSource(
         )
     }
 
+    private data class SafeChapterFileMeta(
+        val fileName: String,
+        val isDirectory: Boolean,
+        val lastModified: Long,
+        val size: Long,
+        val baseName: String,
+        val isEmptyDirectFile: Boolean,
+    )
+
+    private fun readSafeChapterFileMeta(chapterFile: UniFile): SafeChapterFileMeta {
+        val fileName = runCatching { chapterFile.name.orEmpty() }.getOrDefault("")
+        val isDirectory = runCatching { chapterFile.isDirectory }.getOrDefault(false)
+        val lastModified = runCatching { chapterFile.lastModified() }.getOrDefault(0L)
+        val size = if (isDirectory) 0L else runCatching { chapterFile.length() }.getOrDefault(0L)
+        val baseName = if (isDirectory) {
+            fileName
+        } else {
+            runCatching { chapterFile.nameWithoutExtension.orEmpty() }.getOrDefault(fileName)
+        }
+        val isEmptyDirect = !isDirectory && size <= 0L && runCatching {
+            val direct = chapterFile.filePath?.takeIf(String::isNotBlank)?.let { java.io.File(it) }
+            direct != null && direct.isFile && direct.length() == 0L
+        }.getOrDefault(false)
+        return SafeChapterFileMeta(fileName, isDirectory, lastModified, size, baseName, isEmptyDirect)
+    }
+
     internal fun buildChapterEntry(manga: SManga, chapterFile: UniFile): ChapterIndexEntry {
-        val fileName = chapterFile.name.orEmpty()
-        val isDirectory = chapterFile.isDirectory
-        val lastModified = chapterFile.lastModified()
-        val size = if (isDirectory) 0L else chapterFile.length()
-        val baseName = if (isDirectory) fileName else chapterFile.nameWithoutExtension.orEmpty()
-        var displayName = baseName
-        var chapterNumber = ChapterRecognition.parseChapterNumber(manga.title, baseName, -1.0).toFloat()
+        val meta = readSafeChapterFileMeta(chapterFile)
+        val fileName = meta.fileName
+        val lastModified = meta.lastModified
+        val size = meta.size
+        var displayName = meta.baseName
+        var chapterNumber = ChapterRecognition.parseChapterNumber(manga.title, meta.baseName, -1.0).toFloat()
         var scanlator: String? = null
         var dateUpload = lastModified
         var hasComicInfo = false
         var pageCount = 0
+
+        // A 0-byte direct file (common when older devices fail to read special emoji filenames
+        // over FUSE/exFAT) has no archive payload to parse; keep its filename entry safely without
+        // invoking native archive readers. SAF files may report 0 for unknown length, so only
+        // short-circuit when backed by a direct filePath.
+        if (meta.isEmptyDirectFile) {
+            return ChapterIndexEntry(
+                name = fileName,
+                lastModified = lastModified,
+                size = size,
+                displayName = displayName,
+                chapterNumber = chapterNumber,
+                scanlator = scanlator,
+                dateUpload = dateUpload,
+                hasComicInfo = false,
+                pageCount = 0,
+            )
+        }
 
         // Opening a chapter is the only thing that can fail here, and it must not take down the
         // whole chapter list of the manga: a password-protected, truncated or otherwise corrupt
@@ -2832,10 +2904,17 @@ class LocalSource(
             allReadsAccessibleAndEmpty = allReadsAccessibleAndEmpty && snapshot.isAccessible &&
                 (if (confirmEmptyChapters) snapshot.files.none(Archive::isChapterEntry) else snapshot.files.isEmpty())
         }
+        val hadSingleChapter = existingChapterUrls.any { url ->
+            isSingleChapterEntryName(url.removePrefix("$mangaUrl/"))
+        }
+        val singleChapterUnconfirmedOnSaf =
+            confirmEmptyChapters && hadSingleChapter && snapshot.directory?.filePath == null
         return snapshot.copy(
             // Exact child lookups are repeated along with the empty directory query. Only then is
             // an all-chapters deletion considered real; ordinary false-empty reads recover above.
-            isConfirmedEmpty = allReadsAccessibleAndEmpty,
+            // A SAF single-chapter work has no child chapter file to verify by name, so never treat
+            // a bare empty directory listing as confirmed deletion here.
+            isConfirmedEmpty = allReadsAccessibleAndEmpty && !singleChapterUnconfirmedOnSaf,
         )
     }
 

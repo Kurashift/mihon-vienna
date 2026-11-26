@@ -119,6 +119,37 @@ class LocalSourceChapterEntryTest {
     }
 
     @Test
+    fun `a single unreadable emoji manga folder does not block listing the rest of the local library`(
+        @TempDir privateFiles: File,
+    ) = runBlocking {
+        val root = mockk<UniFile> { every { lastModified() } returns 100L }
+        val goodWork = mockk<UniFile> {
+            every { name } returns "Good Collection"
+            every { isDirectory } returns true
+            every { lastModified() } returns 99L
+        }
+        val brokenWork = mockk<UniFile> {
+            every { name } returns "Broken 🔥 Collection"
+            every { isDirectory } returns true
+            every { lastModified() } throws IllegalStateException("unreadable emoji entry")
+        }
+        val chapter = chapterFile("01.cbz")
+        every { context.filesDir } returns privateFiles
+        every { fileSystem.getBaseDirectoryIdentityUri() } returns "root-emoji-test"
+        every { fileSystem.getCachedBaseDirectoryIdentityUri() } returns "root-emoji-test"
+        every { fileSystem.getBaseDirectory() } returns root
+        every { fileSystem.getBaseDirectorySnapshot(any()) } returns
+            LocalSourceFileSystem.DirectorySnapshot(root, listOf(brokenWork, goodWork), isAccessible = true)
+        every { fileSystem.getDirectorySnapshot(goodWork, any()) } returns
+            LocalSourceFileSystem.DirectorySnapshot(goodWork, listOf(chapter), isAccessible = true)
+        every { coverManager.find("Good Collection") } returns null
+
+        val urls = source.getPopularMangaUrls()
+
+        assertEquals(listOf("Good Collection"), urls)
+    }
+
+    @Test
     fun `archive metadata and pages use one reader and one header pass`() {
         val chapter = chapterFile("Chapter 1.cbz")
         val reader = mockk<ArchiveReader>(relaxed = true)
