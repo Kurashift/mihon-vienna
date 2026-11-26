@@ -84,8 +84,6 @@ import uy.kohesive.injekt.injectLazy
 import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
@@ -333,6 +331,13 @@ class LocalSource(
 
     private val chapterNamesIndexFile: File by lazy {
         File(context.filesDir, "local_source_chapter_names_index.json")
+    }
+
+    private val chapterNamesIndexStore: LocalChapterNamesIndexStore by lazy {
+        LocalChapterNamesIndexStore(
+            fileProvider = { chapterNamesIndexFile },
+            version = CHAPTER_NAMES_INDEX_VERSION,
+        )
     }
 
     /**
@@ -1157,39 +1162,30 @@ class LocalSource(
      * covers intact until a later healthy directory scan refreshes the full listing.
      */
     private fun recoverListingIndexFromChapterNames(baseUri: String?, now: Long): ListingIndex? {
-        if (baseUri == null || !chapterNamesIndexFile.exists()) return null
-        return try {
-            val root = JSONObject(chapterNamesIndexFile.readText())
-            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return null
-            if (root.optString("baseUri") != baseUri) return null
-            val mangaObject = root.optJSONObject("manga") ?: return null
-            val entries = buildMap {
-                mangaObject.keys().forEach { url ->
-                    val chapterCount = mangaObject.optJSONArray(url)?.length() ?: return@forEach
-                    if (url.isNotEmpty()) {
-                        put(
-                            url,
-                            ListingIndexEntry(
-                                dirLastModified = 0L,
-                                coverUri = null,
-                                chapterCount = chapterCount,
-                                latestChapterModified = 0L,
-                            ),
-                        )
-                    }
+        if (baseUri.isNullOrEmpty()) return null
+        val snapshot = chapterNamesIndexStore.readSnapshot(baseUri) ?: return null
+        val entries = buildMap {
+            snapshot.manga.forEach { (url, names) ->
+                if (url.isNotEmpty()) {
+                    put(
+                        url,
+                        ListingIndexEntry(
+                            dirLastModified = 0L,
+                            coverUri = null,
+                            chapterCount = names.size,
+                            latestChapterModified = 0L,
+                        ),
+                    )
                 }
             }
-            if (entries.isEmpty()) return null
-            ListingIndex(
-                baseUri = baseUri,
-                entries = entries,
-                baseDirLastModified = root.optLong("baseDirLastModified", -1L),
-                builtAt = now,
-            ).also { saveListingIndex(it) }
-        } catch (e: Throwable) {
-            logcat(LogPriority.ERROR, e) { "Failed to recover local listing from chapter names" }
-            null
         }
+        if (entries.isEmpty()) return null
+        return ListingIndex(
+            baseUri = baseUri,
+            entries = entries,
+            baseDirLastModified = snapshot.baseDirLastModified,
+            builtAt = now,
+        ).also { saveListingIndex(it) }
     }
 
     private fun saveListingIndex(index: ListingIndex, notify: Boolean = true): Boolean {
@@ -1214,7 +1210,7 @@ class LocalSource(
                 .put("builtAt", index.builtAt)
                 .put("entries", array)
 
-            writeIndexAtomically(listingIndexFile, root.toString())
+            writeLocalIndexAtomically(listingIndexFile, root.toString())
             if (notify) libraryIndexRevision.update { it + 1 }
             true
         } catch (e: Throwable) {
@@ -1438,30 +1434,12 @@ class LocalSource(
         baseDirLastModified: Long,
         now: Long,
     ): Map<String, List<String>>? {
-        if (baseDirLastModified < 0 || !chapterNamesIndexFile.exists()) return null
-        return try {
-            val root = JSONObject(chapterNamesIndexFile.readText())
-            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return null
-            if (root.optString("baseUri").takeIf(String::isNotEmpty) != baseUri) return null
-            if (root.optLong("baseDirLastModified", -1L) != baseDirLastModified) return null
-            val builtAt = root.optLong("builtAt", 0L)
-            if (now - builtAt !in 0 until LISTING_MAX_AGE.inWholeMilliseconds) return null
-            val mangaObject = root.optJSONObject("manga") ?: return null
-            val map = mutableMapOf<String, List<String>>()
-            mangaObject.keys().forEach { url ->
-                val array = mangaObject.optJSONArray(url) ?: return@forEach
-                val names = mutableListOf<String>()
-                for (i in 0 until array.length()) {
-                    val name = array.optString(i)
-                    if (name.isNotEmpty()) names.add(name)
-                }
-                if (names.isNotEmpty() || array.length() == 0) map[url] = names
-            }
-            map
-        } catch (e: Throwable) {
-            logcat(LogPriority.ERROR, e) { "Failed to load local source chapter names index" }
-            null
-        }
+        return chapterNamesIndexStore.readFresh(
+            expectedBaseUri = baseUri,
+            expectedBaseDirLastModified = baseDirLastModified,
+            now = now,
+            maxAgeMillis = LISTING_MAX_AGE.inWholeMilliseconds,
+        )
     }
 
     private fun saveChapterNamesIndex(
@@ -1470,22 +1448,12 @@ class LocalSource(
         baseDirLastModified: Long,
         now: Long,
     ) {
-        try {
-            val mangaObject = JSONObject()
-            index.forEach { (url, names) ->
-                mangaObject.put(url, JSONArray(names))
-            }
-            val root = JSONObject()
-                .put("version", CHAPTER_NAMES_INDEX_VERSION)
-                .put("baseUri", baseUri.orEmpty())
-                .put("baseDirLastModified", baseDirLastModified)
-                .put("builtAt", now)
-                .put("manga", mangaObject)
-
-            writeIndexAtomically(chapterNamesIndexFile, root.toString())
-        } catch (e: Throwable) {
-            logcat(LogPriority.ERROR, e) { "Failed to save local source chapter names index" }
-        }
+        chapterNamesIndexStore.save(
+            index = index,
+            baseUri = baseUri,
+            baseDirLastModified = baseDirLastModified,
+            now = now,
+        )
     }
 
     private suspend fun getSearchMangaInternal(
@@ -2292,7 +2260,7 @@ class LocalSource(
                 .put("baseDirectoryLastModified", index.baseDirectoryLastModified)
                 .put("folders", folders)
                 .put("pending", JSONArray(index.pending.toList()))
-            writeIndexAtomically(syncIndexFile, root.toString())
+            writeLocalIndexAtomically(syncIndexFile, root.toString())
             true
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Failed to save local source sync index" }
@@ -2758,32 +2726,9 @@ class LocalSource(
                 .put("baseUri", baseUri.orEmpty())
                 .put("manga", mangaObject)
 
-            writeIndexAtomically(chapterIndexFile, root.toString())
+            writeLocalIndexAtomically(chapterIndexFile, root.toString())
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Failed to save local source chapter index" }
-        }
-    }
-
-    private fun writeIndexAtomically(target: File, content: String) {
-        val tempFile = File(target.parentFile, "${target.name}.tmp")
-        tempFile.writeText(content)
-        try {
-            try {
-                Files.move(
-                    tempFile.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (_: Exception) {
-                Files.move(
-                    tempFile.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            }
-        } finally {
-            if (tempFile.exists()) tempFile.delete()
         }
     }
 
@@ -2949,17 +2894,8 @@ class LocalSource(
 
     private fun loadPersistedChapterNames(mangaUrl: String): List<String> {
         return try {
-            if (!chapterNamesIndexFile.exists()) return emptyList()
-            val root = JSONObject(chapterNamesIndexFile.readText())
-            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return emptyList()
             val baseUri = fileSystem.getBaseDirectoryIdentityUri()
-            if (root.optString("baseUri").takeIf(String::isNotEmpty) != baseUri) return emptyList()
-            val array = root.optJSONObject("manga")?.optJSONArray(mangaUrl) ?: return emptyList()
-            buildList {
-                for (i in 0 until array.length()) {
-                    array.optString(i).takeIf(String::isNotEmpty)?.let(::add)
-                }
-            }
+            chapterNamesIndexStore.readSnapshot(baseUri)?.manga?.get(mangaUrl).orEmpty()
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Failed to recover local chapter names for $mangaUrl" }
             emptyList()
@@ -2968,23 +2904,11 @@ class LocalSource(
 
     private fun loadPersistedChapterNamesIndex(): Map<String, Set<String>> {
         return try {
-            if (!chapterNamesIndexFile.exists()) return emptyMap()
-            val root = JSONObject(chapterNamesIndexFile.readText())
-            if (root.optInt("version", -1) != CHAPTER_NAMES_INDEX_VERSION) return emptyMap()
             val baseUri = fileSystem.getBaseDirectoryIdentityUri()
-            if (root.optString("baseUri").takeIf(String::isNotEmpty) != baseUri) return emptyMap()
-            val mangaObject = root.optJSONObject("manga") ?: return emptyMap()
-            buildMap {
-                mangaObject.keys().forEach { mangaUrl ->
-                    val array = mangaObject.optJSONArray(mangaUrl) ?: return@forEach
-                    val names = buildSet {
-                        for (i in 0 until array.length()) {
-                            array.optString(i).takeIf(String::isNotEmpty)?.let(::add)
-                        }
-                    }
-                    if (names.isNotEmpty() || array.length() == 0) put(mangaUrl, names)
-                }
-            }
+            chapterNamesIndexStore.readSnapshot(baseUri)
+                ?.manga
+                ?.mapValues { (_, names) -> names.toSet() }
+                .orEmpty()
         } catch (e: Throwable) {
             logcat(LogPriority.ERROR, e) { "Failed to load persisted local chapter names" }
             emptyMap()
