@@ -213,7 +213,7 @@ class LocalChapterCoverManager(
             lock.withLock {
                 if (!target.isValidCover()) {
                     target.parentFile?.mkdirs()
-                    duplicate.copyTo(target, overwrite = false)
+                    duplicate.copyTo(target, overwrite = true)
                 }
             }
         } finally {
@@ -230,13 +230,27 @@ class LocalChapterCoverManager(
      * Must run before the chapter row is deleted: the generated file name is derived from the
      * chapter file on disk, which is already gone afterwards.
      */
-    suspend fun deleteChapterCovers(chapterId: Long, chapterUrl: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteChapterCovers(
+        chapterId: Long,
+        chapterUrl: String,
+        chapterFile: UniFile? = null,
+    ) = withContext(Dispatchers.IO) {
         customFile(chapterId).delete()
-        deleteGenerated(chapterUrl)
+        deleteGenerated(chapterUrl, chapterFile)
     }
 
-    suspend fun invalidateGeneratedCover(chapterUrl: String) = withContext(Dispatchers.IO) {
-        deleteGenerated(chapterUrl)
+    suspend fun invalidateGeneratedCover(
+        chapterUrl: String,
+        chapterFile: UniFile? = null,
+    ) = withContext(Dispatchers.IO) {
+        deleteGenerated(chapterUrl, chapterFile)
+    }
+
+    /** Captures generated cache paths before the underlying chapter file is deleted or overwritten. */
+    fun generatedCoverFilesFor(chapterUrl: String, chapterFile: UniFile?): List<File> {
+        val file = chapterFile ?: findChapterFile(chapterUrl) ?: return emptyList()
+        val generated = targetFile(chapterUrl, file)
+        return listOf(generated, missingFile(generated))
     }
 
     suspend fun generateAll(
@@ -294,12 +308,13 @@ class LocalChapterCoverManager(
             onProgress(index + 1, chapters.size)
         }
 
+        val canSafelyPruneOrphans = chapters.isNotEmpty() || snapshot.directory?.filePath != null
         LocalChapterCoverGenerationResult(
             total = chapters.size,
             generated = generated,
             skipped = skipped,
             failed = failed,
-            removed = removeOrphans(liveFiles),
+            removed = if (canSafelyPruneOrphans) removeOrphans(liveFiles) else 0,
         )
     }
 
@@ -521,9 +536,9 @@ class LocalChapterCoverManager(
         return File(customCoverDirectory, localCustomChapterCoverFileName(chapterId))
     }
 
-    private fun deleteGenerated(chapterUrl: String) {
-        val chapterFile = findChapterFile(chapterUrl) ?: return
-        val generated = targetFile(chapterUrl, chapterFile)
+    private fun deleteGenerated(chapterUrl: String, chapterFile: UniFile? = null) {
+        val file = chapterFile ?: findChapterFile(chapterUrl) ?: return
+        val generated = targetFile(chapterUrl, file)
         generated.delete()
         missingFile(generated).delete()
     }

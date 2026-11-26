@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
 import java.io.File
+import java.io.FileNotFoundException
 
 class StorageManager(
     private val context: Context,
@@ -192,7 +193,7 @@ class StorageManager(
                 LocalSourceDirectoryEntryState.UNKNOWN
             } else {
                 val childUri = DocumentsContract.buildDocumentUriUsingTree(directoryUri, childDocumentId)
-                runCatching {
+                try {
                     context.contentResolver.query(
                         childUri,
                         arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE),
@@ -210,7 +211,11 @@ class StorageManager(
                             LocalSourceDirectoryEntryState.MISSING
                         }
                     } ?: LocalSourceDirectoryEntryState.UNKNOWN
-                }.getOrDefault(LocalSourceDirectoryEntryState.UNKNOWN)
+                } catch (_: FileNotFoundException) {
+                    LocalSourceDirectoryEntryState.MISSING
+                } catch (_: Throwable) {
+                    LocalSourceDirectoryEntryState.UNKNOWN
+                }
             }
         }
     }
