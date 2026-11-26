@@ -444,9 +444,14 @@ class AudioPlayerController(
         val oldIndex = player.currentMediaItemIndex
         val oldPosition = player.currentPosition.coerceAtLeast(0)
         val playWhenReady = player.playWhenReady
+        val generation = startGeneration
 
         scope.launch {
-            val nodes = api.fetchTracks(workId)
+            val nodes = runCatching { api.fetchTracks(workId) }
+                .onFailure { logcat(LogPriority.WARN, it) { "Failed to reload audio tracks for quality $quality" } }
+                .getOrNull()
+                ?: return@launch
+            if (generation != startGeneration || state.item?.workId != workId) return@launch
             val catalog = nodes.buildAudioTrackCatalog(work, quality)
             val replacements = catalog.tracks
                 .groupBy { it.trackTitle }
@@ -458,7 +463,7 @@ class AudioPlayerController(
                     item
                 }
             }
-            if (rebuiltItems.isEmpty()) return@launch
+            if (rebuiltItems.isEmpty() || generation != startGeneration) return@launch
             start(
                 newItems = rebuiltItems,
                 startIndex = oldIndex.coerceIn(rebuiltItems.indices),
@@ -622,15 +627,6 @@ class AudioPlayerController(
         return false
     }
 
-    fun random() {
-        if (items.size <= 1) return
-        applyVolumeProtection()
-        val current = player.currentMediaItemIndex
-        val target = items.indices.filterNot { it == current }.random()
-        player.seekTo(target, resumePositionFor(items.getOrNull(target)))
-        player.play()
-    }
-
     fun cycleRepeatMode() {
         publish(state.copy(repeatMode = state.repeatMode.next()))
         applyRepeatMode()
@@ -751,11 +747,19 @@ class AudioPlayerController(
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         sleepTimerEndsAt = 0L
+        volumeProtectionVerificationJob?.cancel()
+        volumeProtectionVerificationJob = null
+        speedBeforeBoost = null
         lastPeriodicHistoryAt = 0L
         volumeProtectionApplied = false
         lastActiveAt = 0L
         readerControlsVisible = false
-        publish(AudioPlayerState())
+        publish(
+            AudioPlayerState(
+                audioQuality = AudioQualityMode.fromPreference(basePreferences.audioQuality.get()),
+            ),
+        )
+        refreshSystemVolume(notifyService = false)
     }
 
     private fun updateCurrentItem(
@@ -1071,6 +1075,7 @@ class AudioPlayerController(
         // has nothing to report, while the progress loop has been publishing where the track was.
         val startPositionMs = state.positionMs.coerceAtLeast(0)
         val playWhenReady = player.playWhenReady
+        val generation = startGeneration
         scope.launch {
             // No URI guard here, unlike the retry above: the point of this path is that the address
             // may come back different, and a resolve that lands on the same one is still the answer
@@ -1078,7 +1083,11 @@ class AudioPlayerController(
             val resolvedItems = runCatching {
                 resolveLegacyWorkStreams(items.takeIf { it.isNotEmpty() } ?: listOf(item), startIndex)
             }.getOrNull()
-            if (resolvedItems.isNullOrEmpty()) return@launch
+            if (generation != startGeneration) return@launch
+            if (resolvedItems.isNullOrEmpty()) {
+                retryOrSkipPlayback(error)
+                return@launch
+            }
             beginPlayback(resolvedItems, startIndex, startPositionMs, playWhenReady)
         }
         return true

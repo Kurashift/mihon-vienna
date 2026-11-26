@@ -408,25 +408,22 @@ private fun AudioVerticalVolumeControl(
                             val fraction = (1f - (py / heightPx).coerceIn(0f, 1f))
                             val target = (fraction * maximum).roundToInt().coerceIn(0, maximum)
                             dragValue = target.toFloat()
-                            if (target != state.mediaVolume) {
+                            if (target != controller.state.mediaVolume) {
                                 controller.setMediaVolume(target)
                             }
                         }
                         awaitPointerEventScope {
                             while (true) {
                                 val down = awaitFirstDown()
-                                seekAt(down.position.y)
-                                var released = false
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) {
-                                        released = true
-                                        break
+                                try {
+                                    seekAt(down.position.y)
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) break
+                                        seekAt(change.position.y)
                                     }
-                                    seekAt(change.position.y)
-                                }
-                                if (released) {
+                                } finally {
                                     dragValue = null
                                     controller.refreshSystemVolume()
                                 }

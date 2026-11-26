@@ -243,7 +243,11 @@ class AudioPlaybackService : Service() {
                         (if (state.hasPrevious) PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS else 0L) or
                         (if (state.hasNext) PlaybackStateCompat.ACTION_SKIP_TO_NEXT else 0L),
                 )
-                .setState(playbackState, state.positionMs, if (state.isPlaying) 1f else 0f)
+                .setState(
+                    playbackState,
+                    state.positionMs,
+                    if (state.isPlaying) (state.boostedSpeed ?: state.playbackSpeed) else 0f,
+                )
                 .build(),
         )
         state.item?.let { item ->

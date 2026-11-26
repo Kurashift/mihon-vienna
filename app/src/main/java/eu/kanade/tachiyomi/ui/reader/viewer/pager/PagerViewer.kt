@@ -197,6 +197,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
     private fun onPageChange(position: Int) {
         val page = adapter.items.getOrNull(position)
         if (page != null && currentPage != page) {
+            val userInitiated = currentPage != null
             val allowPreload = checkAllowPreload(page as? ReaderPage)
             val forward = when {
                 currentPage is ReaderPage && page is ReaderPage -> {
@@ -214,7 +215,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             }
             currentPage = page
             when (page) {
-                is ReaderPage -> onReaderPageSelected(page, allowPreload, forward)
+                is ReaderPage -> onReaderPageSelected(page, allowPreload, forward, userInitiated)
                 is ChapterTransition -> onTransitionSelected(page)
             }
         }
@@ -243,12 +244,17 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Called when a [ReaderPage] is marked as active. It notifies the
      * activity of the change and requests the preload of the next chapter if this is the last page.
      */
-    private fun onReaderPageSelected(page: ReaderPage, allowPreload: Boolean, forward: Boolean) {
+    private fun onReaderPageSelected(
+        page: ReaderPage,
+        allowPreload: Boolean,
+        forward: Boolean,
+        userInitiated: Boolean,
+    ) {
         val pages = page.chapter.pages ?: return
         logcat { "onReaderPageSelected: ${page.number}/${pages.size}" }
-        activity.onPageSelected(page)
+        activity.onPageSelected(page, userInitiated = userInitiated)
         // In pager mode a page selection is already settled, so persist progress right away.
-        activity.onScrollSettled(page)
+        activity.onScrollSettled(page, userInitiated = userInitiated)
 
         // Notify holder of page change
         getPageHolder(page)?.onPageSelected(forward)

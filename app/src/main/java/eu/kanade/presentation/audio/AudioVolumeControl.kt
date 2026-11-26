@@ -66,6 +66,10 @@ fun AudioVolumeControl(
                 dragValue = null
                 controller.refreshSystemVolume()
             },
+            onValueCancelled = {
+                dragValue = null
+                controller.refreshSystemVolume()
+            },
             modifier = Modifier.weight(1f),
         )
         IconButton(

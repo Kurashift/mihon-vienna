@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -92,8 +93,11 @@ class AudioPlayerScreen(
             BackHandler(onBack = ::navigateBack)
         }
 
+        var startedInitialSession by rememberSaveable { mutableStateOf(false) }
+
         LaunchedEffect(controller) {
-            if (!resumeExisting) {
+            if (!resumeExisting && !startedInitialSession) {
+                startedInitialSession = true
                 controller.start(items, startIndex, startPositionMs)
             }
             // Keep playing (and show a notification) after the user leaves this screen.

@@ -525,6 +525,7 @@ fun AudioPlayerContent(
                             dragPosition?.let(onSeek)
                             dragPosition = null
                         },
+                        onSeekCancelled = { dragPosition = null },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Row(
@@ -786,6 +787,7 @@ private fun BoxScope.FullscreenControls(
                     dragPosition?.let(onSeek)
                     dragPosition = null
                 },
+                onSeekCancelled = { dragPosition = null },
                 modifier = Modifier.fillMaxWidth(),
             )
             Row(

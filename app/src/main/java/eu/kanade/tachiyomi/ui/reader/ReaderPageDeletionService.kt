@@ -5,6 +5,7 @@ import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +81,15 @@ class ReaderPageDeletionService(
         deferredCallbacks = emptyList()
         mutablePendingSnackbar.value = null
         submit(targets) { result -> callbacks.forEach { it(result) } }
+    }
+
+    /** Runs post-deletion DB updates on the app-scoped service so reader exit cannot cancel them. */
+    fun launchNonCancellableIo(block: suspend () -> Unit) {
+        scope.launch(Dispatchers.IO + NonCancellable) {
+            runCatching { block() }.onFailure {
+                logcat(LogPriority.ERROR, it) { "Post-deletion chapter update failed" }
+            }
+        }
     }
 
     fun submit(

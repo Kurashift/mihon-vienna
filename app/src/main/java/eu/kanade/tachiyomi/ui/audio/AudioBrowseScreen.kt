@@ -1119,7 +1119,7 @@ class AudioBrowseViewModel(
             AudioSort.COLLECTED_DESC -> filtered
             AudioSort.RELEASE_DESC, AudioSort.CREATE_DESC -> filtered.sortedByDescending { it.release.orEmpty() }
             AudioSort.RATING_DESC -> filtered.sortedByDescending { it.rateAverage2dp ?: 0.0 }
-            AudioSort.DL_DESC -> filtered
+            AudioSort.DL_DESC -> filtered.sortedByDescending { it.dlCount }
             AudioSort.RANDOM -> shuffledFavorites(filtered)
         }
         _state.update {

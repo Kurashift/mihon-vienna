@@ -138,7 +138,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     val hasValidArgs = mangaId != -1L && initialChapterId != -1L
 
-    private val eventChannel = Channel<Event>()
+    private val eventChannel = Channel<Event>(Channel.BUFFERED)
     val eventFlow = eventChannel.receiveAsFlow()
 
     /**
@@ -1244,9 +1244,12 @@ class ReaderViewModel @JvmOverloads constructor(
         readerPreferences.defaultReadingMode.set(resolved.flagValue)
         val currChapters = state.value.viewerChapters
         if (currChapters != null) {
-            // Save current page
+            // Preserve live page on already-read chapters or in incognito; fall back to resume index
+            // only if no live page was recorded yet.
             val currChapter = currChapters.currChapter
-            currChapter.requestedPage = currChapter.resumePageIndex()
+            if (currChapter.requestedPage < 0) {
+                currChapter.requestedPage = currChapter.resumePageIndex()
+            }
 
             mutableState.update {
                 it.copy(viewerChapters = currChapters)
@@ -1271,9 +1274,10 @@ class ReaderViewModel @JvmOverloads constructor(
         readerPreferences.defaultOrientationType.set(resolved.flagValue)
         val currChapters = state.value.viewerChapters
         if (currChapters != null) {
-            // Save current page
             val currChapter = currChapters.currChapter
-            currChapter.requestedPage = currChapter.resumePageIndex()
+            if (currChapter.requestedPage < 0) {
+                currChapter.requestedPage = currChapter.resumePageIndex()
+            }
 
             mutableState.update {
                 it.copy(viewerChapters = currChapters)
@@ -1437,7 +1441,7 @@ class ReaderViewModel @JvmOverloads constructor(
                     )
                 }
                 chapter.chapter.id?.let { chapterId ->
-                    viewModelScope.launchNonCancellable {
+                    pageDeletionService.launchNonCancellableIo {
                         updateChapter.await(
                             ChapterUpdate(
                                 id = chapterId,
@@ -1451,8 +1455,6 @@ class ReaderViewModel @JvmOverloads constructor(
         }
         if (failedKeys.isNotEmpty()) {
             eventChannel.trySend(Event.PageDeletionFailed(result.failedTargets.size))
-        }
-        if (failedKeys.isNotEmpty()) {
             suppressPageChangedUntilNanos = System.nanoTime() + 500_000_000L
             eventChannel.trySend(Event.ReloadViewerChapters)
         }

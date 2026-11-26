@@ -85,6 +85,9 @@ internal fun AudioVideoStage(
     val currentOnDoubleTap by rememberUpdatedState(onDoubleTap)
     val currentOnSpeedUp by rememberUpdatedState(onSpeedUp)
     val currentOnSpeedUpEnd by rememberUpdatedState(onSpeedUpEnd)
+    DisposableEffect(Unit) {
+        onDispose { currentOnSpeedUpEnd?.invoke() }
+    }
     val tapModifier = Modifier.pointerInput(Unit) {
         detectTapGestures(
             onTap = { currentOnTap() },
@@ -94,8 +97,11 @@ internal fun AudioVideoStage(
             // when the user lets go.
             onLongPress = { currentOnSpeedUp?.invoke() },
             onPress = {
-                tryAwaitRelease()
-                currentOnSpeedUpEnd?.invoke()
+                try {
+                    tryAwaitRelease()
+                } finally {
+                    currentOnSpeedUpEnd?.invoke()
+                }
             },
         )
     }
