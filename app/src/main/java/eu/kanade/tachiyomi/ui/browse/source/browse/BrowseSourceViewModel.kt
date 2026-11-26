@@ -2,13 +2,9 @@ package eu.kanade.tachiyomi.ui.browse.source.browse
 
 import android.content.Context
 import android.content.res.Configuration
-import android.os.SystemClock
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
@@ -156,8 +152,6 @@ class BrowseSourceViewModel(
     companion object {
         private const val CLEAR_HISTORY_BATCH_SIZE = 500
         private const val LOCAL_REFRESH_CONCURRENCY = 6
-        private const val LOCAL_AUTO_REFRESH_ENABLED = false
-        private const val LOCAL_QUIET_SYNC_COOLDOWN_MILLIS = 5 * 60_000L
 
         /**
          * The load states of a list that is already complete: nothing is loading, and there is
@@ -253,7 +247,6 @@ class BrowseSourceViewModel(
 
     private var visibleSnapshotRefreshJob: Job? = null
     private var chapterSyncJob: Job? = null
-    private var lastQuietChapterSyncAt: Long? = null
     private val chapterSyncRunning = MutableStateFlow(false)
     private val screenVisible = MutableStateFlow(false)
 
@@ -508,15 +501,6 @@ class BrowseSourceViewModel(
     fun onScreenHidden() {
         screenVisible.value = false
         visibleSnapshotRefreshJob?.cancel()
-    }
-
-    private fun maybeSyncLocalChaptersQuietly() {
-        if (!screenVisible.value || chapterSyncJob?.isActive == true) return
-        val now = SystemClock.elapsedRealtime()
-        val last = lastQuietChapterSyncAt
-        if (last != null && now - last < LOCAL_QUIET_SYNC_COOLDOWN_MILLIS) return
-        lastQuietChapterSyncAt = now
-        startChapterRefresh()
     }
 
     private suspend fun refreshVisibleSnapshots() = coroutineScope {
@@ -1333,38 +1317,6 @@ class BrowseSourceViewModel(
                 buildPager(listing, placeholdersEnabled)
             }
         }
-    }
-
-    /**
-     * Watches the process coming back to the foreground.
-     *
-     * The local source only learns about chapter files copied in from outside when it reads the
-     * folders, and doing that on entry to this screen left a gap: a reader who just dropped a file
-     * in comes back to the app wherever they left, often not this screen, and nothing would notice
-     * until they went looking. The moment the app is in front is the moment they expect the change
-     * to be there, so the catch-up hangs off that instead of off a page they have to remember.
-     */
-    private val foregroundSyncObserver: DefaultLifecycleObserver? = if (LOCAL_AUTO_REFRESH_ENABLED &&
-        source is LocalSource
-    ) {
-        object : DefaultLifecycleObserver {
-            private var returning = false
-
-            override fun onStart(owner: LifecycleOwner) {
-                if (returning) maybeSyncLocalChaptersQuietly()
-            }
-
-            override fun onStop(owner: LifecycleOwner) {
-                returning = true
-            }
-        }.also { ProcessLifecycleOwner.get().lifecycle.addObserver(it) }
-    } else {
-        null
-    }
-
-    override fun onCleared() {
-        foregroundSyncObserver?.let { ProcessLifecycleOwner.get().lifecycle.removeObserver(it) }
-        super.onCleared()
     }
 
     init {
@@ -2330,7 +2282,7 @@ class BrowseSourceViewModel(
                 return@withIOContext ChapterRefreshResult.BUSY
             }
             val scan = local.scanChapterChanges(
-                lastSuccessfulBaseDirectoryLastModified = basePreferences.localSourceSyncMtime.get(),
+                lastSuccessfulBaseDirectoryLastModified = 0L,
                 reuseUnchangedFolders = quiet,
             )
             if (!scan.isRootReadable) return@withIOContext ChapterRefreshResult.STORAGE_UNAVAILABLE

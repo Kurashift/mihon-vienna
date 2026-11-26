@@ -22,9 +22,4 @@ class ReaderSettingsViewModel(
         .map { it.viewer }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
-
-    val mangaFlow = readerState
-        .map { it.manga }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Lazily, null)
 }

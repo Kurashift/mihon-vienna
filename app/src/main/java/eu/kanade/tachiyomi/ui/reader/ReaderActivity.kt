@@ -73,11 +73,9 @@ import eu.kanade.presentation.audio.AudioQuickPlaySheet
 import eu.kanade.presentation.audio.AudioReaderFloatingBar
 import eu.kanade.presentation.components.ReaderPageDeletionSnackbar
 import eu.kanade.presentation.reader.DisplayRefreshHost
-import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
 import eu.kanade.presentation.reader.ReaderPageActionsDialog
 import eu.kanade.presentation.reader.ReaderPageIndicator
-import eu.kanade.presentation.reader.ReadingModeSelectDialog
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
@@ -219,7 +217,6 @@ class ReaderActivity : BaseActivity() {
         }
     }
 
-    private var menuToggleToast: Toast? = null
     private val displayRefreshHost = DisplayRefreshHost()
 
     private val windowInsetsController by lazy { WindowInsetsControllerCompat(window, window.decorView) }
@@ -484,7 +481,6 @@ class ReaderActivity : BaseActivity() {
                         Box(modifier = Modifier.fillMaxWidth()) {
                             AudioReaderFloatingBar(
                                 compact = false,
-                                onExpand = {},
                                 onDismiss = audioController::hideReaderControls,
                                 onOpenWork = {
                                     if (audioController.state.item != null) openAudioPlayer()
@@ -531,7 +527,6 @@ class ReaderActivity : BaseActivity() {
             if (!state.menuVisible && hasAudioSession && audioVisible) {
                 AudioReaderFloatingBar(
                     compact = true,
-                    onExpand = { setMenuVisibility(true) },
                     onDismiss = audioController::hideReaderControls,
                     onOpenWork = {
                         if (audioController.state.item != null) openAudioPlayer()
@@ -603,26 +598,6 @@ class ReaderActivity : BaseActivity() {
                     onShowMenus = { setMenuVisibility(true) },
                     onHideMenus = { setMenuVisibility(false) },
                     viewModel = settingsviewModel,
-                )
-            }
-            is ReaderViewModel.Dialog.ReadingModeSelect -> {
-                ReadingModeSelectDialog(
-                    onDismissRequest = onDismissRequest,
-                    viewModel = settingsviewModel,
-                    onChange = { stringRes ->
-                        menuToggleToast?.cancel()
-                        menuToggleToast = toast(stringRes)
-                    },
-                )
-            }
-            is ReaderViewModel.Dialog.OrientationModeSelect -> {
-                OrientationSelectDialog(
-                    onDismissRequest = onDismissRequest,
-                    viewModel = settingsviewModel,
-                    onChange = { stringRes ->
-                        menuToggleToast?.cancel()
-                        menuToggleToast = toast(stringRes)
-                    },
                 )
             }
             is ReaderViewModel.Dialog.PageActions -> {
@@ -788,7 +763,6 @@ class ReaderActivity : BaseActivity() {
         super.onDestroy()
         viewModel.state.value.viewer?.destroy()
         config = null
-        menuToggleToast?.cancel()
         // Relaunch the reader for an onNewIntent-delivered jump only after this instance has
         // fully finished, so singleTask routes the intent to a brand-new activity instead of
         // re-delivering it to this finishing instance (which would swallow it and leave the
