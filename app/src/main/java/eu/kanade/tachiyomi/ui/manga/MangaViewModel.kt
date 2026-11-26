@@ -1516,58 +1516,64 @@ class MangaViewModel(
         fromLongPress: Boolean = false,
     ) {
         updateSuccessState { successState ->
-            val newChapters = successState.processedChapters.toMutableList().apply {
-                val selectedIndex = successState.processedChapters.indexOfFirst { it.id == item.chapter.id }
-                if (selectedIndex < 0) return@apply
+            val visibleChapters = successState.processedChapters.toMutableList()
+            val selectedIndex = visibleChapters.indexOfFirst { it.id == item.chapter.id }
+            if (selectedIndex < 0) return@updateSuccessState successState
 
-                val selectedItem = get(selectedIndex)
-                if ((selectedItem.selected && selected) || (!selectedItem.selected && !selected)) return@apply
+            val selectedItem = visibleChapters[selectedIndex]
+            if ((selectedItem.selected && selected) || (!selectedItem.selected && !selected)) {
+                return@updateSuccessState successState
+            }
 
-                val firstSelection = none { it.selected }
-                set(selectedIndex, selectedItem.copy(selected = selected))
-                selectedChapterIds.addOrRemove(item.id, selected)
+            val firstSelection = visibleChapters.none { it.selected }
+            visibleChapters[selectedIndex] = selectedItem.copy(selected = selected)
+            selectedChapterIds.addOrRemove(item.id, selected)
 
-                if (selected && fromLongPress) {
-                    if (firstSelection) {
+            if (selected && fromLongPress) {
+                if (firstSelection) {
+                    selectedPositions[0] = selectedIndex
+                    selectedPositions[1] = selectedIndex
+                } else {
+                    val range: IntRange
+                    if (selectedIndex < selectedPositions[0]) {
+                        range = selectedIndex + 1..<selectedPositions[0]
                         selectedPositions[0] = selectedIndex
+                    } else if (selectedIndex > selectedPositions[1]) {
+                        range = (selectedPositions[1] + 1)..<selectedIndex
                         selectedPositions[1] = selectedIndex
                     } else {
-                        // Try to select the items in-between when possible
-                        val range: IntRange
-                        if (selectedIndex < selectedPositions[0]) {
-                            range = selectedIndex + 1..<selectedPositions[0]
-                            selectedPositions[0] = selectedIndex
-                        } else if (selectedIndex > selectedPositions[1]) {
-                            range = (selectedPositions[1] + 1)..<selectedIndex
-                            selectedPositions[1] = selectedIndex
-                        } else {
-                            // Just select itself
-                            range = IntRange.EMPTY
-                        }
-
-                        range.forEach {
-                            val inbetweenItem = get(it)
-                            if (!inbetweenItem.selected) {
-                                selectedChapterIds.add(inbetweenItem.id)
-                                set(it, inbetweenItem.copy(selected = true))
-                            }
-                        }
+                        range = IntRange.EMPTY
                     }
-                } else if (!fromLongPress) {
-                    if (!selected) {
-                        if (selectedIndex == selectedPositions[0]) {
-                            selectedPositions[0] = indexOfFirst { it.selected }
-                        } else if (selectedIndex == selectedPositions[1]) {
-                            selectedPositions[1] = indexOfLast { it.selected }
-                        }
-                    } else {
-                        if (selectedIndex < selectedPositions[0]) {
-                            selectedPositions[0] = selectedIndex
-                        } else if (selectedIndex > selectedPositions[1]) {
-                            selectedPositions[1] = selectedIndex
+
+                    range.forEach {
+                        val inbetweenItem = visibleChapters[it]
+                        if (!inbetweenItem.selected) {
+                            selectedChapterIds.add(inbetweenItem.id)
+                            visibleChapters[it] = inbetweenItem.copy(selected = true)
                         }
                     }
                 }
+            } else if (!fromLongPress) {
+                if (!selected) {
+                    if (selectedIndex == selectedPositions[0]) {
+                        selectedPositions[0] = visibleChapters.indexOfFirst { it.selected }
+                    } else if (selectedIndex == selectedPositions[1]) {
+                        selectedPositions[1] = visibleChapters.indexOfLast { it.selected }
+                    }
+                } else {
+                    if (selectedIndex < selectedPositions[0]) {
+                        selectedPositions[0] = selectedIndex
+                    } else if (selectedIndex > selectedPositions[1]) {
+                        selectedPositions[1] = selectedIndex
+                    }
+                }
+            }
+            // Keep the full chapters list intact instead of overwriting it with the filtered
+            // processedChapters subset (which would drop non-matching chapters when switching
+            // ChapterScope back to ALL).
+            val newChapters = successState.chapters.map { chapter ->
+                val isSelected = chapter.id in selectedChapterIds
+                if (chapter.selected == isSelected) chapter else chapter.copy(selected = isSelected)
             }
             successState.copy(chapters = newChapters)
         }
@@ -1575,9 +1581,19 @@ class MangaViewModel(
 
     fun toggleAllSelection(selected: Boolean) {
         updateSuccessState { successState ->
+            val visibleIds = if (selected) {
+                successState.processedChapters.mapTo(hashSetOf()) { it.id }
+            } else {
+                null
+            }
             val newChapters = successState.chapters.map {
-                selectedChapterIds.addOrRemove(it.id, selected)
-                it.copy(selected = selected)
+                val targetSelected = if (visibleIds != null) {
+                    if (it.id in visibleIds) true else it.selected
+                } else {
+                    false
+                }
+                selectedChapterIds.addOrRemove(it.id, targetSelected)
+                if (it.selected == targetSelected) it else it.copy(selected = targetSelected)
             }
             selectedPositions[0] = -1
             selectedPositions[1] = -1
@@ -1587,9 +1603,15 @@ class MangaViewModel(
 
     fun invertSelection() {
         updateSuccessState { successState ->
+            val visibleIds = successState.processedChapters.mapTo(hashSetOf()) { it.id }
             val newChapters = successState.chapters.map {
-                selectedChapterIds.addOrRemove(it.id, !it.selected)
-                it.copy(selected = !it.selected)
+                if (it.id !in visibleIds) {
+                    it
+                } else {
+                    val toggled = !it.selected
+                    selectedChapterIds.addOrRemove(it.id, toggled)
+                    it.copy(selected = toggled)
+                }
             }
             selectedPositions[0] = -1
             selectedPositions[1] = -1

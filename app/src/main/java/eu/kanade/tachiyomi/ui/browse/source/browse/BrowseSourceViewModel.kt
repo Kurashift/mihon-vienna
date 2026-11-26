@@ -748,6 +748,7 @@ class BrowseSourceViewModel(
         val favoriteUrls: Set<String> = emptySet(),
         val finishedUrls: Set<String> = emptySet(),
         val startedUrls: Set<String> = emptySet(),
+        val emptyUrls: Set<String> = emptySet(),
     ) {
         /**
          * Newest mark time on the work at [url] of the kind [axis] tracks, 0 when it carries none.
@@ -842,6 +843,11 @@ class BrowseSourceViewModel(
                 },
                 startedUrls = if (readingFilter == ReadingFilter.IN_PROGRESS) {
                     context.progressByUrl.filterValues(MangaProgress::hasBeenRead).keys.toSet()
+                } else {
+                    emptySet()
+                },
+                emptyUrls = if (readingFilter != ReadingFilter.ALL) {
+                    context.fsChapterCounts.filterValues { it == 0L }.keys.toSet()
                 } else {
                     emptySet()
                 },
@@ -1259,6 +1265,7 @@ class BrowseSourceViewModel(
     /** Whether [manga] passes the reading and mark filters in force. */
     private fun Manga.matches(applied: AppliedFilter): Boolean {
         val url = this.url
+        if (applied.readingFilter != ReadingFilter.ALL && url in applied.context.emptyUrls) return false
         val readingMatch = when (applied.readingFilter) {
             ReadingFilter.ALL -> true
             ReadingFilter.UNREAD -> url !in applied.context.finishedUrls
@@ -1452,23 +1459,7 @@ class BrowseSourceViewModel(
                         matchedChapter = manga.memo[LocalSource.MATCHED_CHAPTER_KEY]?.jsonPrimitive?.contentOrNull,
                         listGeneration = generation,
                     )
-                }.filter { model ->
-                    val url = model.manga.url
-                    val readingMatch = when (applied.readingFilter) {
-                        ReadingFilter.ALL -> true
-                        ReadingFilter.UNREAD -> url !in applied.context.finishedUrls
-                        ReadingFilter.IN_PROGRESS ->
-                            url in applied.context.startedUrls && url !in applied.context.finishedUrls
-                        ReadingFilter.FINISHED -> url in applied.context.finishedUrls
-                    }
-                    val markMatch = when (applied.markFilter) {
-                        MarkFilter.NONE -> true
-                        MarkFilter.FLAGGED -> url in applied.context.flaggedUrls
-                        MarkFilter.GOOD_DOUJIN -> url in applied.context.goodDoujinUrls
-                        MarkFilter.NOT_IN_LIBRARY -> url !in applied.context.favoriteUrls
-                    }
-                    readingMatch && markMatch
-                }
+                }.filter { model -> model.manga.matches(applied) }
                 // Date headers group runs of consecutive entries, so they only read as sections
                 // while the list really is ordered by date. Under any other sort the dates jump
                 // around and every entry would open its own header. The "recently updated" listing
@@ -2626,6 +2617,7 @@ class BrowseSourceViewModel(
         markFilter: MarkFilter,
         favoriteUrls: Set<String>,
     ): Boolean {
+        if (hideInLibraryItems && url in favoriteUrls) return false
         if (readingFilter != ReadingFilter.ALL && context.fsChapterCounts[url] == 0L) return false
         val progress = context.progressByUrl[url]
             ?: context.fsChapterCounts[url]
@@ -2711,14 +2703,6 @@ class BrowseSourceViewModel(
         /** Confirms a read-status change across a selection, which can touch every chapter at once. */
         data class MarkSelectionRead(val read: Boolean, val count: Int) : Dialog
     }
-
-    @Immutable
-    private data class FilterArgs(
-        val listing: Listing,
-        val context: ProgressContext,
-        val readingFilter: ReadingFilter,
-        val markFilter: MarkFilter,
-    )
 
     @Immutable
     private data class CountFilterArgs(
